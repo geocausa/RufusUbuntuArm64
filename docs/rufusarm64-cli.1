@@ -1,0 +1,59 @@
+.TH RUFUSARM64-CLI 1 "15 July 2026" "RufusArm64 0.4.0" "User Commands"
+.SH NAME
+rufusarm64-cli \- safely create bootable USB media on Linux ARM64
+.SH SYNOPSIS
+.B rufusarm64-cli list
+.RI [ --all ]
+.RI [ --json ]
+.PP
+.B sudo rufusarm64-cli write
+.BI --image " FILE"
+.BI --device " /dev/DEVICE"
+.RI [ options ]
+.PP
+.B sudo rufusarm64-cli verify
+.BI --image " FILE"
+.BI --device " /dev/DEVICE"
+.PP
+.B rufusarm64-cli hash
+.I FILE
+.SH DESCRIPTION
+.B rufusarm64-cli
+writes recognized GPT/MBR disk images and ISOHybrid Linux images directly, or
+creates a modern GPT/FAT32 Windows UEFI installer from a standard Windows ISO.
+Large Windows installation images are split before the target is erased.
+.SH WRITE OPTIONS
+.TP
+.B --verify
+Flush block buffers and verify data after writing. Recommended.
+.TP
+.B --yes
+Skip the interactive destructive-operation confirmation.
+.TP
+.B --allow-fixed
+Permit a non-removable whole disk after all other safety checks pass.
+.TP
+.B --force-raw
+Expert override that forces raw writing of a deliberately unrecognized or plain optical image.
+.TP
+.B --no-unmount
+Do not issue initial unmount commands. The operation is still refused if a
+filesystem is mounted at the final safety check.
+.TP
+.B --dry-run
+Perform basic discovery, signature, size, and target-safety checks without writing. Windows ISO mounting and payload validation occur only during the privileged creation operation.
+.TP
+.B --expected-identity " TOKEN"
+Require the selected device to match a token returned by the JSON list command.
+The graphical application always supplies this fail-closed check.
+.SH SAFETY
+The program refuses partitions, read-only targets, the running root disk, and an
+image stored on the selected target. It refreshes device identity immediately
+before destructive work, locks the target, removes stale signatures, flushes
+kernel block buffers, and verifies before requesting a partition-table reread.
+.SH EXIT STATUS
+Zero indicates success. A non-zero status indicates refusal, cancellation,
+validation failure, I/O failure, filesystem failure, or verification mismatch.
+.SH COPYRIGHT
+GPL-3.0-or-later. Rufus is a separate project by Pete Batard and contributors.
+No endorsement is implied.

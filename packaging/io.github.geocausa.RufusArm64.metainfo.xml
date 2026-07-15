@@ -16,9 +16,9 @@
     <binary>rufusarm64</binary>
   </provides>
   <releases>
-    <release version="0.2.0" date="2026-07-15">
+    <release version="0.4.0" date="2026-07-15">
       <description>
-        <p>First graphical Ubuntu ARM64 package with Linux/raw image writing and Windows UEFI ISO preparation.</p>
+        <p>Responsive graphical ARM64 release with Windows Setup options, compact WIM progress, direct partition detection, a bundled WIM engine, and expanded safety tests.</p>
       </description>
     </release>
   </releases>

@@ -3,37 +3,48 @@
 ## 0.1 — safe raw writer (completed)
 
 - Whole-disk enumeration
-- Root-disk, partition, and read-only-target refusal
-- Unmount, raw write, sync, and full verification
-- Linux ARM64 static helper build
+- System-disk refusal
+- Raw write, sync, and verification
 
 ## 0.2 — graphical Ubuntu ARM64 application (completed)
 
-- GTK desktop interface
-- Installable ARM64 `.deb`
+- GTK interface and `.deb` package
 - Polkit privilege separation
-- Standard Windows UEFI ISO preparation
-- GPT/FAT32 creation and WIM splitting
-- Windows and raw-image verification
-- CI package artifact
+- Windows UEFI ISO preparation
 
-## 0.3 — hardware qualification
+## 0.3 — full code-hardening pass (completed)
 
-- Surface Pro 11 X1E USB creation and boot tests
+- Device-identity binding and repeated destructive-command checks
+- Reliable GUI cancellation and active-write close protection
+- Strict image recognition and stronger MBR/GPT inspection
+- Prevalidated WIM splitting and post-copy verification
+- Cache-flushed verification and FAT32 filesystem checking
+
+## 0.4 — Windows experience and usability (completed)
+
+- Resizable, scrollable interface with remembered window size
+- Detected layout display and editable volume label
+- Windows Setup customization dialog and validated answer-file generation
+- Early USB-capacity rejection and faster WIM preparation
+- Compact WIM progress reporting
+- Direct partition detection without a global udev-queue dependency
+- Verified bundled AArch64 WIM engine with system fallback
+
+## 0.5 — hardware qualification
+
+- Surface Pro 11 X1E Windows and Linux USB boot tests
 - Additional Snapdragon X Elite systems
-- Multiple USB flash-drive controllers and capacities
-- Recovery and failure-injection tests
+- Multiple USB controllers, flash sizes, and failure-injection tests
 
-## 0.4 — broader image support
+## 0.6 — broader image support
 
 - Streaming `.xz`, `.gz`, and `.zst` images
 - Linux persistence partition creation
 - Bad-block testing
-- Downloaded-image checksum catalogue support
 
 ## 1.0 — supportable stable release
 
 - Signed release artifacts
 - Reproducible-build documentation
 - Hardware compatibility matrix
-- Independent security review of privileged operations
+- Independent review of privileged operations

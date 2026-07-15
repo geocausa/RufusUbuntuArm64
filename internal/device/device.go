@@ -2,29 +2,44 @@ package device
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
-// BlockDevice is a normalized subset of lsblk's JSON output.
+// BlockDevice is a normalized subset of lsblk's JSON output. Identity is a
+// deterministic fingerprint of the kernel device metadata that the GUI passes
+// back to the privileged helper. It is not an authentication token; it is a
+// fail-closed guard against /dev/sdX being reassigned between selection and use.
 type BlockDevice struct {
-	Name        string        `json:"name"`
-	Path        string        `json:"path"`
-	Type        string        `json:"type"`
-	Size        uint64        `json:"size"`
-	Model       string        `json:"model"`
-	Vendor      string        `json:"vendor"`
-	Transport   string        `json:"tran"`
-	Removable   bool          `json:"removable"`
-	ReadOnly    bool          `json:"read_only"`
-	ParentName  string        `json:"pkname"`
-	Mountpoints []string      `json:"mountpoints"`
-	Children    []BlockDevice `json:"children,omitempty"`
+	Name         string        `json:"name"`
+	Path         string        `json:"path"`
+	Type         string        `json:"type"`
+	Size         uint64        `json:"size"`
+	Model        string        `json:"model"`
+	Vendor       string        `json:"vendor"`
+	Transport    string        `json:"tran"`
+	Removable    bool          `json:"removable"`
+	ReadOnly     bool          `json:"read_only"`
+	Hotplug      bool          `json:"hotplug"`
+	ParentName   string        `json:"pkname"`
+	MajorMinor   string        `json:"major_minor"`
+	Serial       string        `json:"serial"`
+	WWN          string        `json:"wwn"`
+	DiskSequence string        `json:"disk_sequence"`
+	Identity     string        `json:"identity"`
+	Mountpoints  []string      `json:"mountpoints"`
+	Children     []BlockDevice `json:"children,omitempty"`
 }
 
 type rawDevice struct {
@@ -37,7 +52,11 @@ type rawDevice struct {
 	Transport   string      `json:"tran"`
 	Removable   any         `json:"rm"`
 	ReadOnly    any         `json:"ro"`
+	Hotplug     any         `json:"hotplug"`
 	ParentName  string      `json:"pkname"`
+	MajorMinor  string      `json:"maj:min"`
+	Serial      string      `json:"serial"`
+	WWN         string      `json:"wwn"`
 	Mountpoints any         `json:"mountpoints"`
 	Children    []rawDevice `json:"children,omitempty"`
 }
@@ -46,12 +65,22 @@ type rawList struct {
 	BlockDevices []rawDevice `json:"blockdevices"`
 }
 
+var sysClassBlockRoot = "/sys/class/block"
+
 func List() ([]BlockDevice, error) {
-	cmd := exec.Command("lsblk", "--json", "--bytes", "--output", "NAME,PATH,TYPE,SIZE,MODEL,VENDOR,TRAN,RM,RO,MOUNTPOINTS,PKNAME")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx,
+		"lsblk", "--json", "--bytes", "--output",
+		"NAME,PATH,TYPE,SIZE,MODEL,VENDOR,TRAN,RM,RO,HOTPLUG,MOUNTPOINTS,PKNAME,MAJ:MIN,SERIAL,WWN",
+	)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("run lsblk: %w", ctx.Err())
+		}
 		return nil, fmt.Errorf("run lsblk: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 
@@ -113,6 +142,35 @@ func MountedDescendants(dev BlockDevice) []BlockDevice {
 	return out
 }
 
+// IsNormalRemovableTarget is deliberately conservative. USB-attached disks are
+// accepted because many USB enclosures report RM=0. MMC is accepted only when
+// the kernel explicitly marks it removable, avoiding internal eMMC exposure.
+func IsNormalRemovableTarget(dev BlockDevice) bool {
+	return dev.Removable || dev.Transport == "usb"
+}
+
+// IdentityToken returns a stable representation of the exact lsblk snapshot.
+// MAJ:MIN intentionally participates so a disconnect/reconnect or path reuse
+// causes the privileged operation to fail rather than guessing.
+func IdentityToken(dev BlockDevice) string {
+	fields := []string{
+		dev.Path,
+		dev.Type,
+		strconv.FormatUint(dev.Size, 10),
+		dev.MajorMinor,
+		dev.Serial,
+		dev.WWN,
+		dev.DiskSequence,
+		dev.Vendor,
+		dev.Model,
+		dev.Transport,
+		strconv.FormatBool(dev.Removable),
+		strconv.FormatBool(dev.ReadOnly),
+	}
+	sum := sha256.Sum256([]byte(strings.Join(fields, "\x00")))
+	return hex.EncodeToString(sum[:])
+}
+
 func findRecursive(dev BlockDevice, path string) (BlockDevice, bool) {
 	if dev.Path == path {
 		return dev, true
@@ -138,24 +196,34 @@ func convert(in rawDevice) (BlockDevice, error) {
 	if err != nil {
 		return BlockDevice{}, fmt.Errorf("parse read-only flag for %s: %w", in.Path, err)
 	}
+	hotplug, err := parseBool(in.Hotplug)
+	if err != nil {
+		return BlockDevice{}, fmt.Errorf("parse hotplug flag for %s: %w", in.Path, err)
+	}
 	mounts, err := parseMountpoints(in.Mountpoints)
 	if err != nil {
 		return BlockDevice{}, fmt.Errorf("parse mountpoints for %s: %w", in.Path, err)
 	}
 
 	out := BlockDevice{
-		Name:        strings.TrimSpace(in.Name),
-		Path:        strings.TrimSpace(in.Path),
-		Type:        strings.TrimSpace(in.Type),
-		Size:        size,
-		Model:       strings.TrimSpace(in.Model),
-		Vendor:      strings.TrimSpace(in.Vendor),
-		Transport:   strings.TrimSpace(in.Transport),
-		Removable:   removable,
-		ReadOnly:    readOnly,
-		ParentName:  strings.TrimSpace(in.ParentName),
-		Mountpoints: mounts,
+		Name:         strings.TrimSpace(in.Name),
+		Path:         strings.TrimSpace(in.Path),
+		Type:         strings.TrimSpace(in.Type),
+		Size:         size,
+		Model:        strings.TrimSpace(in.Model),
+		Vendor:       strings.TrimSpace(in.Vendor),
+		Transport:    strings.ToLower(strings.TrimSpace(in.Transport)),
+		Removable:    removable,
+		ReadOnly:     readOnly,
+		Hotplug:      hotplug,
+		ParentName:   strings.TrimSpace(in.ParentName),
+		MajorMinor:   strings.TrimSpace(in.MajorMinor),
+		Serial:       strings.TrimSpace(in.Serial),
+		WWN:          strings.TrimSpace(in.WWN),
+		DiskSequence: readDiskSequence(strings.TrimSpace(in.Name)),
+		Mountpoints:  mounts,
 	}
+	out.Identity = IdentityToken(out)
 	for _, child := range in.Children {
 		converted, err := convert(child)
 		if err != nil {
@@ -164,6 +232,18 @@ func convert(in rawDevice) (BlockDevice, error) {
 		out.Children = append(out.Children, converted)
 	}
 	return out, nil
+}
+
+func readDiskSequence(name string) string {
+	name = filepath.Base(strings.TrimSpace(name))
+	if name == "" || name == "." || name == string(filepath.Separator) {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(sysClassBlockRoot, name, "diskseq"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 func parseUint(v any) (uint64, error) {

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -17,10 +18,12 @@ import (
 	"github.com/geocausa/RufusArm64/internal/device"
 	"github.com/geocausa/RufusArm64/internal/imaging"
 	"github.com/geocausa/RufusArm64/internal/safety"
+	"github.com/geocausa/RufusArm64/internal/sourcefile"
+	"github.com/geocausa/RufusArm64/internal/windowsconfig"
 	"github.com/geocausa/RufusArm64/internal/windowsmedia"
 )
 
-var version = "0.2.0-dev"
+var version = "0.4.0-dev"
 
 type jsonEvent struct {
 	Event   string  `json:"event"`
@@ -60,6 +63,8 @@ func run(args []string) error {
 	switch args[0] {
 	case "list":
 		return runList(args[1:])
+	case "inspect":
+		return runInspect(args[1:])
 	case "write":
 		return runWrite(args[1:])
 	case "verify":
@@ -82,8 +87,9 @@ func usage() {
 	fmt.Printf(`RufusArm64 %s — bootable USB creator for Linux ARM64
 
 Usage:
-  rufus-linux list [--json]
-  sudo rufus-linux write --image FILE --device /dev/DEVICE [--verify]
+  rufusarm64-cli list [--json]
+  rufusarm64-cli inspect --image FILE [--json]
+  sudo rufusarm64-cli write --image FILE --device /dev/DEVICE [--verify]
 
 The automatic mode writes Linux ISOHybrid/raw images directly and creates
 standard Windows installation USBs using FAT32 and automatic WIM splitting.
@@ -105,7 +111,7 @@ func runList(args []string) error {
 	disks := device.WholeDisks(devices)
 	filtered := make([]device.BlockDevice, 0, len(disks))
 	for _, d := range disks {
-		if !*all && !d.Removable && d.Transport != "usb" && d.Transport != "mmc" {
+		if !*all && !device.IsNormalRemovableTarget(d) {
 			continue
 		}
 		filtered = append(filtered, d)
@@ -126,18 +132,96 @@ func runList(args []string) error {
 	return nil
 }
 
+type inspectResult struct {
+	Mode            string `json:"mode"`
+	Recognized      bool   `json:"recognized"`
+	PartitionScheme string `json:"partition_scheme"`
+	TargetSystem    string `json:"target_system"`
+	FileSystem      string `json:"filesystem"`
+	WindowsOptions  bool   `json:"windows_options"`
+	Description     string `json:"description"`
+}
+
+func runInspect(args []string) error {
+	fs := flag.NewFlagSet("inspect", flag.ContinueOnError)
+	imagePath := fs.String("image", "", "image or ISO file")
+	asJSON := fs.Bool("json", false, "output JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *imagePath == "" {
+		return errors.New("--image is required")
+	}
+	resolved, identity, err := sourcefile.Inspect(*imagePath)
+	if err != nil {
+		return err
+	}
+	file, err := sourcefile.OpenRegular(resolved, identity)
+	if err != nil {
+		return err
+	}
+	inspection, inspectErr := imaging.InspectOpenFile(file)
+	closeErr := file.Close()
+	if inspectErr != nil {
+		return inspectErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	result := inspectResult{Recognized: inspection.Recognized()}
+	mode, err := selectWriteMode("auto", inspection, false)
+	if err != nil {
+		result.Description = err.Error()
+	} else if mode == "windows" {
+		result.Mode = "windows"
+		result.PartitionScheme = "GPT"
+		result.TargetSystem = "UEFI"
+		result.FileSystem = "FAT32"
+		result.WindowsOptions = true
+		result.Description = "Standard Windows UEFI installation media"
+	} else {
+		result.Mode = "raw"
+		result.PartitionScheme = "From image"
+		result.TargetSystem = "From image"
+		result.FileSystem = "From image"
+		result.Description = "Raw/ISOHybrid image; embedded layout will be preserved"
+	}
+	if *asJSON {
+		return json.NewEncoder(os.Stdout).Encode(result)
+	}
+	fmt.Printf("Mode: %s\nPartition scheme: %s\nTarget system: %s\nFile system: %s\n", result.Mode, result.PartitionScheme, result.TargetSystem, result.FileSystem)
+	if result.Description != "" {
+		fmt.Println(result.Description)
+	}
+	if !result.Recognized {
+		return errors.New("image is not recognized")
+	}
+	return err
+}
+
 func runWrite(args []string) error {
 	fs := flag.NewFlagSet("write", flag.ContinueOnError)
 	imagePath := fs.String("image", "", "image or ISO file")
 	devicePath := fs.String("device", "", "whole target disk")
 	mode := fs.String("mode", "auto", "auto, raw, or windows")
-	verify := fs.Bool("verify", false, "verify raw media after writing")
+	verify := fs.Bool("verify", false, "verify data after writing")
 	yes := fs.Bool("yes", false, "skip interactive confirmation")
 	allowFixed := fs.Bool("allow-fixed", false, "allow a non-removable disk")
 	noUnmount := fs.Bool("no-unmount", false, "do not unmount mounted filesystems")
 	forceRaw := fs.Bool("force-raw", false, "force raw writing of a plain ISO")
 	dryRun := fs.Bool("dry-run", false, "check only")
 	jsonProgress := fs.Bool("json-progress", false, "emit JSON lines for the GUI")
+	expectedIdentity := fs.String("expected-identity", "", "expected device identity from the list command")
+	cancelFile := fs.String("cancel-file", "", "per-user cancellation marker used by the graphical app")
+	allowForeignArchitecture := fs.Bool("allow-foreign-windows-architecture", false, "allow x86-64-only Windows media on an ARM64 host")
+	volumeLabel := fs.String("volume-label", "RUFUSARM64", "FAT32 volume label for Windows media")
+	winBypassHardware := fs.Bool("win-bypass-hardware", false, "bypass Windows TPM, Secure Boot, and RAM checks")
+	winBypassOnline := fs.Bool("win-bypass-online-account", false, "remove Windows online-account requirement")
+	winLocalUser := fs.String("win-local-user", "", "create a local Windows administrator account")
+	winPrivacy := fs.Bool("win-reduce-data-collection", false, "reduce Windows setup data collection and recommendations")
+	winDisableBitLocker := fs.Bool("win-disable-bitlocker", false, "disable automatic Windows device encryption provisioning")
+	winLocale := fs.String("win-locale", "", "apply a Windows regional locale, such as en-GB")
+	winTimeZone := fs.String("win-timezone", "", "apply a Windows time-zone name")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -145,36 +229,62 @@ func runWrite(args []string) error {
 	if *imagePath == "" || *devicePath == "" {
 		return errors.New("--image and --device are required")
 	}
+	if *jsonProgress && *expectedIdentity == "" {
+		return errors.New("the graphical writer requires an expected device identity; refresh the drive list and try again")
+	}
 	switch *mode {
 	case "auto", "raw", "windows":
 	default:
 		return errors.New("--mode must be auto, raw, or windows")
 	}
+	if os.Getenv("PKEXEC_UID") != "" {
+		if !*jsonProgress || !*yes || *expectedIdentity == "" || *cancelFile == "" || *mode != "auto" || *allowFixed || *noUnmount || *forceRaw || *allowForeignArchitecture {
+			return errors.New("unsafe or unsupported arguments were supplied to the graphical privileged writer")
+		}
+	}
 	if err := safety.RequireRoot(); err != nil && !*dryRun {
 		return err
 	}
-	imageInfo, err := os.Stat(*imagePath)
-	if err != nil {
-		return fmt.Errorf("stat image: %w", err)
+	if os.Geteuid() == 0 {
+		setTrustedSystemPath()
 	}
-	if !imageInfo.Mode().IsRegular() || imageInfo.Size() <= 0 {
-		return errors.New("image must be a non-empty regular file")
-	}
-	inspection, err := imaging.InspectImage(*imagePath)
+	resolvedImage, sourceIdentity, err := sourcefile.Inspect(*imagePath)
 	if err != nil {
 		return err
 	}
-
-	selectedMode := *mode
-	if selectedMode == "auto" {
-		if inspection.HasOpticalFilesystem() && !inspection.LooksLikeRawBootMedia() {
-			selectedMode = "windows"
-		} else {
-			selectedMode = "raw"
-		}
+	imagePath = &resolvedImage
+	inspectionFile, err := sourcefile.OpenRegular(*imagePath, sourceIdentity)
+	if err != nil {
+		return err
 	}
-	if selectedMode == "raw" && inspection.HasOpticalFilesystem() && !inspection.LooksLikeRawBootMedia() && !*forceRaw {
-		return errors.New("this optical ISO is not raw-bootable; use automatic Windows mode or select a bootable disk image")
+	inspection, inspectErr := imaging.InspectOpenFile(inspectionFile)
+	closeErr := inspectionFile.Close()
+	if inspectErr != nil {
+		return inspectErr
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close image after inspection: %w", closeErr)
+	}
+	imageSize := uint64(sourceIdentity.Size)
+
+	selectedMode, err := selectWriteMode(*mode, inspection, *forceRaw)
+	if err != nil {
+		return err
+	}
+	winOptions := windowsconfig.Options{
+		BypassHardwareChecks: *winBypassHardware,
+		BypassOnlineAccount:  *winBypassOnline,
+		LocalAccount:         *winLocalUser,
+		ReduceDataCollection: *winPrivacy,
+		DisableBitLocker:     *winDisableBitLocker,
+		Locale:               *winLocale,
+		TimeZone:             *winTimeZone,
+	}
+	if selectedMode != "windows" && winOptions.Enabled() {
+		return errors.New("Windows setup options can only be used with a supported Windows installation ISO")
+	}
+	if err := windowsconfig.Validate(winOptions); err != nil {
+		return err
 	}
 
 	resolved, err := safety.ResolveDevice(*devicePath)
@@ -185,14 +295,21 @@ func runWrite(args []string) error {
 	if err != nil {
 		return err
 	}
+	selectedIdentity := *expectedIdentity
+	if selectedIdentity == "" {
+		selectedIdentity = dev.Identity
+	}
+	if err := safety.ValidateExpectedIdentity(dev, selectedIdentity); err != nil {
+		return err
+	}
 	if err := safety.ValidateTarget(resolved, dev, *allowFixed); err != nil {
 		return err
 	}
 	if err := safety.EnsureImageNotOnTarget(*imagePath, resolved); err != nil {
 		return err
 	}
-	if selectedMode == "raw" && uint64(imageInfo.Size()) > dev.Size {
-		return fmt.Errorf("image is %s but target is only %s", humanBytes(uint64(imageInfo.Size())), humanBytes(dev.Size))
+	if selectedMode == "raw" && imageSize > dev.Size {
+		return fmt.Errorf("image is %s but target is only %s", humanBytes(imageSize), humanBytes(dev.Size))
 	}
 
 	out.event(jsonEvent{Event: "preflight", Stage: "preflight", Message: fmt.Sprintf("Image: %s; target: %s (%s)", filepath.Base(*imagePath), resolved, humanBytes(dev.Size))})
@@ -201,7 +318,7 @@ func runWrite(args []string) error {
 		return errors.New("target has mounted filesystems")
 	}
 	if *dryRun {
-		out.event(jsonEvent{Event: "complete", Message: "Checks passed; no data was written."})
+		out.event(jsonEvent{Event: "complete", Message: "Basic non-destructive checks passed; no data was written."})
 		return nil
 	}
 	if !*yes {
@@ -209,17 +326,57 @@ func runWrite(args []string) error {
 			return err
 		}
 	}
+
+	// Refresh metadata after confirmation and immediately before opening the
+	// destructive path. This catches unplug/replug and /dev name reuse.
+	dev, kernelDeviceID, err := safety.RevalidateTarget(resolved, selectedIdentity, *allowFixed)
+	if err != nil {
+		return err
+	}
 	if !*noUnmount {
 		if err := safety.UnmountDescendants(dev); err != nil {
 			return err
 		}
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	ctx, cancelCleanup, err := safety.CancellationContext(signalCtx, *cancelFile)
+	if err != nil {
+		return err
+	}
+	defer cancelCleanup()
+	finalTargetCheck := func(source *os.File) error {
+		fresh, currentID, err := safety.RevalidateTarget(resolved, selectedIdentity, *allowFixed)
+		if err != nil {
+			return err
+		}
+		if currentID != kernelDeviceID {
+			return errors.New("the selected kernel device changed after confirmation")
+		}
+		if err := safety.EnsureOpenFileNotOnTarget(source, fresh); err != nil {
+			return err
+		}
+		if !*noUnmount {
+			if err := safety.UnmountDescendants(fresh); err != nil {
+				return err
+			}
+		}
+		return safety.EnsureNoMountedDescendants(resolved)
+	}
+
 	if selectedMode == "windows" {
 		out.event(jsonEvent{Event: "stage", Stage: "windows", Message: "Creating Windows installation media…"})
-		err := windowsmedia.Create(ctx, *imagePath, resolved, windowsmedia.Options{TargetSize: dev.Size, Verify: *verify}, func(ev windowsmedia.Event) {
+		err := windowsmedia.Create(ctx, *imagePath, resolved, windowsmedia.Options{
+			TargetSize:        dev.Size,
+			Verify:            *verify,
+			ExpectedDeviceID:  kernelDeviceID,
+			ExpectedSource:    sourceIdentity,
+			RequireARM64:      runtime.GOARCH == "arm64" && !*allowForeignArchitecture,
+			VolumeLabel:       *volumeLabel,
+			Customizations:    winOptions,
+			BeforeDestructive: finalTargetCheck,
+		}, func(ev windowsmedia.Event) {
 			eventName := "stage"
 			if ev.Stage == "log" {
 				eventName = "log"
@@ -232,23 +389,51 @@ func runWrite(args []string) error {
 		if err != nil {
 			return err
 		}
-		_ = safety.RereadPartitionTable(resolved)
+		if err := safety.RereadPartitionTable(resolved); err != nil {
+			out.event(jsonEvent{Event: "log", Stage: "warning", Message: fmt.Sprintf("Warning: %v", err)})
+		}
+		out.event(jsonEvent{Event: "complete", Stage: "complete", Message: "Windows installation USB created successfully."})
 		return nil
 	}
 
+	rawSource, err := sourcefile.OpenRegular(*imagePath, sourceIdentity)
+	if err != nil {
+		return err
+	}
+	rawSourceClosed := false
+	defer func() {
+		if !rawSourceClosed {
+			_ = rawSource.Close()
+		}
+	}()
+	if err := finalTargetCheck(rawSource); err != nil {
+		return err
+	}
+	// Keep the exact selected source descriptor open from this point until the
+	// write and optional verification finish. The writer opens the whole target
+	// exclusively and clears stale signatures through that same descriptor.
 	out.event(jsonEvent{Event: "stage", Stage: "write", Message: "Writing the image…"})
 	var last time.Time
-	written, err := imaging.WriteImage(ctx, *imagePath, resolved, imaging.WriteOptions{Progress: func(p imaging.Progress) {
-		if !*jsonProgress && time.Since(last) < 200*time.Millisecond && p.Done != p.Total {
-			return
-		}
-		last = time.Now()
-		if *jsonProgress {
-			out.event(jsonEvent{Event: "progress", Stage: "write", Done: p.Done, Total: p.Total, Rate: p.BytesPerSec})
-		} else {
-			printProgress("write", p)
-		}
-	}})
+	written, err := imaging.WriteOpenImage(ctx, rawSource, resolved, imaging.WriteOptions{
+		ExpectedDeviceID:     kernelDeviceID,
+		ExpectedSource:       sourceIdentity,
+		TargetSize:           dev.Size,
+		ClearStaleSignatures: true,
+		BeforeWrite: func(source *os.File) error {
+			return finalTargetCheck(source)
+		},
+		Progress: func(p imaging.Progress) {
+			if !*jsonProgress && time.Since(last) < 200*time.Millisecond && p.Done != p.Total {
+				return
+			}
+			last = time.Now()
+			if *jsonProgress {
+				out.event(jsonEvent{Event: "progress", Stage: "write", Done: p.Done, Total: p.Total, Rate: p.BytesPerSec})
+			} else {
+				printProgress("write", p)
+			}
+		},
+	})
 	if !*jsonProgress {
 		fmt.Println()
 	}
@@ -256,10 +441,17 @@ func runWrite(args []string) error {
 		return err
 	}
 	out.event(jsonEvent{Event: "stage", Stage: "sync", Message: fmt.Sprintf("Wrote %s successfully.", humanBytes(written))})
-	_ = safety.RereadPartitionTable(resolved)
+	if err := finalTargetCheck(rawSource); err != nil {
+		return err
+	}
+	if err := safety.FlushBuffers(ctx, resolved); err != nil {
+		return fmt.Errorf("flush USB write buffers: %w", err)
+	}
+	completionMessage := "Bootable USB created successfully."
+	completionHash := ""
 	if *verify {
-		out.event(jsonEvent{Event: "stage", Stage: "verify", Message: "Verifying the USB…"})
-		hash, err := imaging.VerifyImage(ctx, *imagePath, resolved, func(p imaging.Progress) {
+		out.event(jsonEvent{Event: "stage", Stage: "verify", Message: "Verifying the USB from the physical device…"})
+		hash, err := imaging.VerifyOpenImageWithOptions(ctx, rawSource, resolved, imaging.VerifyOptions{ExpectedDeviceID: kernelDeviceID, ExpectedDeviceSize: dev.Size, ExpectedSource: sourceIdentity}, func(p imaging.Progress) {
 			if *jsonProgress {
 				out.event(jsonEvent{Event: "progress", Stage: "verify", Done: p.Done, Total: p.Total, Rate: p.BytesPerSec})
 			} else {
@@ -272,11 +464,41 @@ func runWrite(args []string) error {
 		if err != nil {
 			return err
 		}
-		out.event(jsonEvent{Event: "complete", Stage: "complete", Message: "USB created and verified successfully.", Hash: hash})
-	} else {
-		out.event(jsonEvent{Event: "complete", Stage: "complete", Message: "Bootable USB created successfully."})
+		completionMessage = "USB created and verified successfully."
+		completionHash = hash
 	}
+	if err := safety.RereadPartitionTable(resolved); err != nil {
+		out.event(jsonEvent{Event: "log", Stage: "warning", Message: fmt.Sprintf("Warning: %v", err)})
+	}
+	if err := rawSource.Close(); err != nil {
+		return fmt.Errorf("close image after writing: %w", err)
+	}
+	rawSourceClosed = true
+	out.event(jsonEvent{Event: "complete", Stage: "complete", Message: completionMessage, Hash: completionHash})
 	return nil
+}
+
+func selectWriteMode(requested string, inspection imaging.ImageInfo, forceRaw bool) (string, error) {
+	if requested != "auto" && requested != "raw" && requested != "windows" {
+		return "", errors.New("mode must be auto, raw, or windows")
+	}
+	if !inspection.Recognized() && !forceRaw {
+		return "", errors.New("the selected file is not a recognized ISOHybrid, GPT, or MBR disk image; refusing to write an arbitrary or damaged file")
+	}
+	selected := requested
+	if selected == "auto" && forceRaw {
+		selected = "raw"
+	} else if selected == "auto" {
+		if inspection.HasOpticalFilesystem() && !inspection.LooksLikeRawBootMedia() {
+			selected = "windows"
+		} else {
+			selected = "raw"
+		}
+	}
+	if selected == "raw" && inspection.HasOpticalFilesystem() && !inspection.LooksLikeRawBootMedia() && !forceRaw {
+		return "", errors.New("this optical ISO is not raw-bootable; use automatic Windows mode or select a bootable disk image")
+	}
+	return selected, nil
 }
 
 func runVerify(args []string) error {
@@ -293,9 +515,24 @@ func runVerify(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := safety.RequireRoot(); err != nil {
+		return err
+	}
+	setTrustedSystemPath()
+	kernelDeviceID, err := safety.KernelDeviceID(resolved)
+	if err != nil {
+		return err
+	}
+	verifyDevice, err := device.Find(resolved)
+	if err != nil {
+		return err
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	hash, err := imaging.VerifyImage(ctx, *image, resolved, func(p imaging.Progress) { printProgress("verify", p) })
+	if err := safety.FlushBuffers(ctx, resolved); err != nil {
+		return fmt.Errorf("flush target buffers before verification: %w", err)
+	}
+	hash, err := imaging.VerifyImageWithOptions(ctx, *image, resolved, imaging.VerifyOptions{ExpectedDeviceID: kernelDeviceID, ExpectedDeviceSize: verifyDevice.Size}, func(p imaging.Progress) { printProgress("verify", p) })
 	fmt.Println()
 	if err != nil {
 		return err
@@ -303,6 +540,10 @@ func runVerify(args []string) error {
 	fmt.Printf("Verification succeeded. SHA-256: %s\n", hash)
 	return nil
 }
+func setTrustedSystemPath() {
+	_ = os.Setenv("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
+}
+
 func runHash(args []string) error {
 	if len(args) != 1 {
 		return errors.New("hash requires exactly one file")
