@@ -26,8 +26,19 @@ jobs:
           rm -rf /tmp/rufus-base
           mkdir -p /tmp/rufus-base
           cat import/part-00.b64 import/part-00a.b64 import/part-00b.b64 import/part-01.b64 import/part-02.b64 import/part-03.b64 import/part-04.b64 import/part-05.b64 | tr -d '\r\n\t ' | base64 -d > /tmp/rufus-base.tar.gz
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/rufus-base.tar.gz')
+          data = bytearray(p.read_bytes())
+          repairs = {34155: 0x9b, 72022: 0x4b}
+          for offset, value in repairs.items():
+              data[offset] = value
+          p.write_bytes(data)
+          PY
+          echo 'bb9ced0fdce12f786cf01328af132a1a7188595d3297a14f575b8861fb0ca8b0  /tmp/rufus-base.tar.gz' | sha256sum -c -
           tar -xzf /tmp/rufus-base.tar.gz -C /tmp/rufus-base
           cat import/final-patch-00.b64 import/final-patch-01.b64 import/final-patch-02.b64 | tr -d '\r\n\t ' | base64 -d > /tmp/rufus-final.patch.gz
+          echo '1d4327246099a842e894fd403fff82a69470b63f6b9a7747e3b0f74cee43d8bc  /tmp/rufus-final.patch.gz' | sha256sum -c -
           gzip -dc /tmp/rufus-final.patch.gz > /tmp/rufus-final.patch
           (cd /tmp/rufus-base && patch -p3 --forward --batch < /tmp/rufus-final.patch)
 
@@ -50,25 +61,6 @@ jobs:
           if len(files) != 52 or actual != expected:
               raise SystemExit('reconstructed source tree does not match the tested v0.4.0 tree')
           PY
-
-      - name: Capture exact transport diagnostics
-        if: failure()
-        shell: bash
-        run: |
-          set +e
-          mkdir -p /tmp/import-diagnostics
-          cp -f /tmp/rufus-base.tar.gz /tmp/import-diagnostics/assembled-base.tar.gz
-          cp -f /tmp/rufus-final.patch.gz /tmp/import-diagnostics/assembled-final-patch.gz
-          sha256sum /tmp/import-diagnostics/* > /tmp/import-diagnostics/SHA256SUMS.txt
-          wc -c import/*.b64 > /tmp/import-diagnostics/payload-sizes.txt
-          sha256sum import/*.b64 > /tmp/import-diagnostics/payload-SHA256SUMS.txt
-
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: import-v0.4.0-raw-diagnostics
-          path: /tmp/import-diagnostics/
-          if-no-files-found: error
 
       - name: Run source checks before publishing the branch
         working-directory: /tmp/rufus-base
