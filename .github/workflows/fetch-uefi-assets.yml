@@ -61,9 +61,12 @@ jobs:
           }
           for header, binary in mapping.items():
               text = (src / header).read_text(encoding='utf-8')
-              values = bytes(int(token, 16) for token in re.findall(r'0x([0-9A-Fa-f]{1,2})', text))
-              if not values:
+              match = re.search(r'\{(.*?)\};', text, re.S)
+              if not match:
                   raise SystemExit(f'no byte array found in {header}')
+              values = bytes(int(token, 16) for token in re.findall(r'0x([0-9A-Fa-f]{1,2})', match.group(1)))
+              if not values:
+                  raise SystemExit(f'empty byte array in {header}')
               (out / binary).write_bytes(values)
               print(header, len(values), '->', binary)
           expected = {
