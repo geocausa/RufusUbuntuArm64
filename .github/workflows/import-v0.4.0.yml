@@ -51,37 +51,23 @@ jobs:
               raise SystemExit('reconstructed source tree does not match the tested v0.4.0 tree')
           PY
 
-      - name: Collect reconstruction diagnostics
+      - name: Capture exact transport diagnostics
         if: failure()
         shell: bash
         run: |
           set +e
-          {
-            echo 'PAYLOAD FILES'
-            wc -c import/*.b64
-            echo
-            echo 'PAYLOAD SHA256'
-            sha256sum import/*.b64
-            echo
-            echo 'ASSEMBLED FILES'
-            ls -l /tmp/rufus-base.tar.gz /tmp/rufus-final.patch.gz /tmp/rufus-final.patch 2>&1
-            sha256sum /tmp/rufus-base.tar.gz /tmp/rufus-final.patch.gz /tmp/rufus-final.patch 2>&1
-            echo
-            echo 'ARCHIVE TESTS'
-            gzip -tv /tmp/rufus-base.tar.gz 2>&1
-            tar -tzf /tmp/rufus-base.tar.gz 2>&1 | tail -20
-            gzip -tv /tmp/rufus-final.patch.gz 2>&1
-            echo
-            echo 'RECONSTRUCTED FILES'
-            find /tmp/rufus-base -type f -printf '%m %p %s bytes\n' | sort
-          } > /tmp/import-diagnostics.txt 2>&1
-          cat /tmp/import-diagnostics.txt
+          mkdir -p /tmp/import-diagnostics
+          cp -f /tmp/rufus-base.tar.gz /tmp/import-diagnostics/assembled-base.tar.gz
+          cp -f /tmp/rufus-final.patch.gz /tmp/import-diagnostics/assembled-final-patch.gz
+          sha256sum /tmp/import-diagnostics/* > /tmp/import-diagnostics/SHA256SUMS.txt
+          wc -c import/*.b64 > /tmp/import-diagnostics/payload-sizes.txt
+          sha256sum import/*.b64 > /tmp/import-diagnostics/payload-SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: import-v0.4.0-diagnostics
-          path: /tmp/import-diagnostics.txt
+          name: import-v0.4.0-raw-diagnostics
+          path: /tmp/import-diagnostics/
           if-no-files-found: error
 
       - name: Run source checks before publishing the branch
