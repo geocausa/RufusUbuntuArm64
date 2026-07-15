@@ -48,7 +48,6 @@ jobs:
 
           python3 - <<'PY'
           import hashlib
-          import os
           import stat
           from pathlib import Path
 
@@ -63,7 +62,7 @@ jobs:
           expected = 'c09f73407a981fd787a0f1a3533f6d08fcfde87308325b6eef1096047454ec47'
           actual = digest.hexdigest()
           print(f'verified {len(files)} files; tree SHA-256 {actual}')
-          if len(files) != 53 or actual != expected:
+          if len(files) != 52 or actual != expected:
               raise SystemExit('reconstructed source tree does not match the tested v0.4.0 tree')
           PY
 
