@@ -1,0 +1,70 @@
+name: Build bundled ARM64 WIM engine
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-wimlib:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cross-build dependencies
+        run: |
+          sudo dpkg --add-architecture arm64
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            autoconf automake libtool pkg-config git ca-certificates \
+            libxml2-dev:arm64 zlib1g-dev:arm64 liblzma-dev:arm64 \
+            libbz2-dev:arm64 liblz4-dev:arm64 libzstd-dev:arm64
+
+      - name: Fetch pinned wimlib source
+        run: |
+          git clone --depth 1 --branch v1.14.5 https://github.com/ebiggers/wimlib.git wimlib-src
+          git -C wimlib-src rev-parse HEAD | tee wimlib-commit.txt
+
+      - name: Configure and build AArch64 engine
+        working-directory: wimlib-src
+        env:
+          CC: aarch64-linux-gnu-gcc
+          AR: aarch64-linux-gnu-ar
+          RANLIB: aarch64-linux-gnu-ranlib
+          STRIP: aarch64-linux-gnu-strip
+          PKG_CONFIG: aarch64-linux-gnu-pkg-config
+        run: |
+          ./bootstrap
+          ./configure \
+            --build=x86_64-linux-gnu \
+            --host=aarch64-linux-gnu \
+            --without-fuse \
+            --without-ntfs-3g \
+            --disable-shared \
+            --enable-static
+          make -j"$(nproc)" wimlib-imagex
+          aarch64-linux-gnu-strip programs/wimlib-imagex
+
+      - name: Inspect binary and dependencies
+        run: |
+          mkdir -p artifact/source
+          cp wimlib-src/programs/wimlib-imagex artifact/wimlib-imagex
+          cp wimlib-src/COPYING artifact/COPYING
+          cp wimlib-src/COPYING.GPLv3 artifact/COPYING.GPLv3
+          cp wimlib-src/COPYING.LGPL artifact/COPYING.LGPL
+          cp wimlib-commit.txt artifact/source/UPSTREAM_COMMIT
+          printf '%s\n' 'https://github.com/ebiggers/wimlib/tree/v1.14.5' > artifact/source/UPSTREAM_SOURCE
+          file artifact/wimlib-imagex
+          aarch64-linux-gnu-readelf -h artifact/wimlib-imagex
+          aarch64-linux-gnu-readelf -d artifact/wimlib-imagex || true
+          sha256sum artifact/wimlib-imagex | tee artifact/wimlib-imagex.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wimlib-imagex-arm64-v1.14.5
+          path: artifact/
+          if-no-files-found: error
