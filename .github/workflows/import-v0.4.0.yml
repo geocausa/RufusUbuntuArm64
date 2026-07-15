@@ -1,0 +1,93 @@
+name: Import RufusArm64 v0.4.0
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'import-v0.4.0'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: import-v0.4.0
+          fetch-depth: 0
+
+      - name: Reconstruct and verify the tested source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/rufus-base
+
+          cat \
+            import/part-00.b64 \
+            import/part-00a.b64 \
+            import/part-00b.b64 \
+            import/part-01.b64 \
+            import/part-02.b64 \
+            import/part-03.b64 \
+            import/part-04.b64 \
+            import/part-05.b64 \
+            | tr -d '\r\n\t ' | base64 -d > /tmp/rufus-base.tar.gz
+          echo 'bb9ced0fdce12f786cf01328af132a1a7188595d3297a14f575b8861fb0ca8b0  /tmp/rufus-base.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/rufus-base.tar.gz -C /tmp/rufus-base
+
+          cat \
+            import/final-patch-00.b64 \
+            import/final-patch-01.b64 \
+            import/final-patch-02.b64 \
+            | tr -d '\r\n\t ' | base64 -d > /tmp/rufus-final.patch.gz
+          echo '1d4327246099a842e894fd403fff82a69470b63f6b9a7747e3b0f74cee43d8bc  /tmp/rufus-final.patch.gz' | sha256sum -c -
+          gzip -dc /tmp/rufus-final.patch.gz > /tmp/rufus-final.patch
+          (cd /tmp/rufus-base && patch -p3 --forward --batch < /tmp/rufus-final.patch)
+
+          python3 - <<'PY'
+          import hashlib
+          import os
+          import stat
+          from pathlib import Path
+
+          root = Path('/tmp/rufus-base')
+          files = sorted(p for p in root.rglob('*') if p.is_file())
+          digest = hashlib.sha256()
+          for path in files:
+              rel = path.relative_to(root).as_posix()
+              mode = stat.S_IMODE(path.stat().st_mode)
+              file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+              digest.update(f'{mode:o} {rel} {file_hash}\n'.encode())
+          expected = 'c09f73407a981fd787a0f1a3533f6d08fcfde87308325b6eef1096047454ec47'
+          actual = digest.hexdigest()
+          print(f'verified {len(files)} files; tree SHA-256 {actual}')
+          if len(files) != 53 or actual != expected:
+              raise SystemExit('reconstructed source tree does not match the tested v0.4.0 tree')
+          PY
+
+      - name: Run source checks before publishing the branch
+        working-directory: /tmp/rufus-base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l cmd internal)"
+          go test -race -shuffle=on ./...
+          go vet ./...
+          python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_logic.py
+          python3 -m unittest discover -s gui -p 'test_*.py'
+          bash -n scripts/*.sh
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...
+
+      - name: Replace the staging branch with clean v0.4.0 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
+          cp -a /tmp/rufus-base/. .
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Release RufusArm64 0.4.0 Windows customization and GPT hardening'
+          git push origin HEAD:import-v0.4.0
