@@ -46,16 +46,20 @@ jobs:
           test -x wimlib-imagex
           strip wimlib-imagex
 
-      - name: Collect binary, licences and logs
+      - name: Collect binary, licences, source and logs
         if: always()
         run: |
           mkdir -p artifact/source artifact/logs
           cp -f bootstrap.log configure.log make.log artifact/logs/ 2>/dev/null || true
           cp -f wimlib-commit.txt artifact/source/UPSTREAM_COMMIT 2>/dev/null || true
           printf '%s\n' 'https://github.com/ebiggers/wimlib/tree/v1.14.5' > artifact/source/UPSTREAM_SOURCE
+          printf '%s\n' './configure --without-fuse --without-ntfs-3g --disable-shared --enable-static' > artifact/source/BUILD_CONFIGURATION
           cp -f wimlib-src/COPYING artifact/COPYING 2>/dev/null || true
           cp -f wimlib-src/COPYING.GPLv3 artifact/COPYING.GPLv3 2>/dev/null || true
           cp -f wimlib-src/COPYING.LGPL artifact/COPYING.LGPL 2>/dev/null || true
+          if [ -d wimlib-src ]; then
+            tar --exclude='wimlib-src/.git' -czf artifact/source/wimlib-1.14.5-source.tar.gz wimlib-src
+          fi
           if [ -x wimlib-src/wimlib-imagex ]; then
             cp wimlib-src/wimlib-imagex artifact/wimlib-imagex
             file artifact/wimlib-imagex | tee artifact/file.txt
@@ -63,6 +67,7 @@ jobs:
             readelf -d artifact/wimlib-imagex > artifact/readelf-dynamic.txt || true
             sha256sum artifact/wimlib-imagex | tee artifact/wimlib-imagex.sha256
           fi
+          sha256sum artifact/source/wimlib-1.14.5-source.tar.gz > artifact/source/wimlib-1.14.5-source.tar.gz.sha256
 
       - uses: actions/upload-artifact@v4
         if: always()
