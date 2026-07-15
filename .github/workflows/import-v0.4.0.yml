@@ -51,6 +51,39 @@ jobs:
               raise SystemExit('reconstructed source tree does not match the tested v0.4.0 tree')
           PY
 
+      - name: Collect reconstruction diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          {
+            echo 'PAYLOAD FILES'
+            wc -c import/*.b64
+            echo
+            echo 'PAYLOAD SHA256'
+            sha256sum import/*.b64
+            echo
+            echo 'ASSEMBLED FILES'
+            ls -l /tmp/rufus-base.tar.gz /tmp/rufus-final.patch.gz /tmp/rufus-final.patch 2>&1
+            sha256sum /tmp/rufus-base.tar.gz /tmp/rufus-final.patch.gz /tmp/rufus-final.patch 2>&1
+            echo
+            echo 'ARCHIVE TESTS'
+            gzip -tv /tmp/rufus-base.tar.gz 2>&1
+            tar -tzf /tmp/rufus-base.tar.gz 2>&1 | tail -20
+            gzip -tv /tmp/rufus-final.patch.gz 2>&1
+            echo
+            echo 'RECONSTRUCTED FILES'
+            find /tmp/rufus-base -type f -printf '%m %p %s bytes\n' | sort
+          } > /tmp/import-diagnostics.txt 2>&1
+          cat /tmp/import-diagnostics.txt
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: import-v0.4.0-diagnostics
+          path: /tmp/import-diagnostics.txt
+          if-no-files-found: error
+
       - name: Run source checks before publishing the branch
         working-directory: /tmp/rufus-base
         shell: bash
