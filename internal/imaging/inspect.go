@@ -5,19 +5,26 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 type ImageInfo struct {
 	HasMBR          bool
 	HasGPT          bool
 	HasISO9660      bool
+	HasUDF          bool
 	HasMBRPartition bool
 }
+
+func (i ImageInfo) HasOpticalFilesystem() bool { return i.HasISO9660 || i.HasUDF }
 
 func (i ImageInfo) LooksLikeRawBootMedia() bool {
 	return i.HasGPT || (i.HasMBR && i.HasMBRPartition)
 }
 
+// InspectImage performs a deliberately small, read-only preflight inspection.
+// It does not attempt to prove bootability; it only identifies signatures that
+// distinguish disk-style media from a plain optical ISO image.
 func InspectImage(path string) (ImageInfo, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -54,6 +61,12 @@ func InspectImage(path string) (ImageInfo, error) {
 	isoHeader := make([]byte, 6)
 	if _, err := f.ReadAt(isoHeader, 16*2048); err == nil {
 		info.HasISO9660 = isoHeader[0] == 1 && string(isoHeader[1:6]) == "CD001"
+	}
+	// UDF volume recognition descriptors normally appear shortly after sector 16.
+	udfProbe := make([]byte, 128*1024)
+	if n, _ := f.ReadAt(udfProbe, 16*2048); n > 0 {
+		probe := string(udfProbe[:n])
+		info.HasUDF = strings.Contains(probe, "NSR02") || strings.Contains(probe, "NSR03")
 	}
 	return info, nil
 }

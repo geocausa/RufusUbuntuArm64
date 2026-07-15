@@ -16,14 +16,14 @@ type BlockDevice struct {
 	Name        string        `json:"name"`
 	Path        string        `json:"path"`
 	Type        string        `json:"type"`
-	Size        uint64        `json:"-"`
+	Size        uint64        `json:"size"`
 	Model       string        `json:"model"`
 	Vendor      string        `json:"vendor"`
 	Transport   string        `json:"tran"`
-	Removable   bool          `json:"-"`
-	ReadOnly    bool          `json:"-"`
+	Removable   bool          `json:"removable"`
+	ReadOnly    bool          `json:"read_only"`
 	ParentName  string        `json:"pkname"`
-	Mountpoints []string      `json:"-"`
+	Mountpoints []string      `json:"mountpoints"`
 	Children    []BlockDevice `json:"children,omitempty"`
 }
 

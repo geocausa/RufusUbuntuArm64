@@ -1,0 +1,21 @@
+RufusArm64
+Copyright (C) 2026 geocausa and contributors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+On Debian and Ubuntu systems, the complete GPL version 3 text is installed at:
+
+    /usr/share/common-licenses/GPL-3
+
+The complete license text is also available from:
+
+    https://www.gnu.org/licenses/gpl-3.0.html
+
+SPDX-License-Identifier: GPL-3.0-or-later

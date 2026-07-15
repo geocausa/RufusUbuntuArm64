@@ -1,81 +1,99 @@
-# Rufus Linux ARM64 MVP
+# RufusArm64
 
-An **experimental, unofficial** Linux ARM64 boot-media writer inspired by the safe raw-image workflow of Rufus.
+RufusArm64 is an **unofficial bootable-USB creator for Ubuntu on ARM64 computers**, including Snapdragon X Elite devices such as Surface Pro 11 X1E.
 
-This is not an official Rufus release and it is not yet a feature-complete port. Version 0.1 focuses on a narrow, auditable core:
+It provides a graphical application and supports two common jobs:
 
-- List removable USB/MMC whole disks using `lsblk`
-- Refuse partitions, read-only devices, and the running root disk
-- Refuse fixed disks unless `--allow-fixed` is explicitly supplied
-- Show mounted child filesystems and unmount them before writing
-- Stream `.img` and ISOHybrid images to a raw block device
-- Refuse plain optical ISOs without disk signatures unless `--force-raw` is explicit
-- Flush writes before reporting success
-- Optionally compare every written byte and report SHA-256
-- Build a static Linux ARM64 binary with Go
+- Writing Linux ISOHybrid images and raw `.img` files directly to USB.
+- Creating modern Windows UEFI installation USBs from standard Windows ISOs, using FAT32 and automatically splitting an oversized `install.wim` or `install.esd` file.
 
-## Destructive-operation warning
+It is not produced or endorsed by the official Rufus project.
 
-Writing an image erases the selected target. Review the device path, capacity, model, and transport every time. The software includes safety checks, but no safety mechanism can compensate for selecting the wrong disk.
+## Install on Ubuntu ARM64
 
-## Build on Linux ARM64
+Download the ARM64 `.deb` release, then either open it with Ubuntu's App Center or install it from a terminal:
 
 ```bash
-go build -trimpath -ldflags="-s -w" -o rufus-linux ./cmd/rufus-linux
+sudo apt install ./rufusarm64_0.2.0_arm64.deb
 ```
 
-## Cross-compile from Linux x86-64
+Ubuntu will install the required system tools automatically. Open **RufusArm64** from the application menu afterward.
+
+## Use it
+
+1. Connect a USB drive.
+2. Open **RufusArm64**.
+3. Choose the ISO or disk-image file.
+4. Choose the USB drive.
+5. Leave verification enabled.
+6. Click **Create USB**, confirm the selected drive, and enter your Ubuntu administrator password.
+7. Wait for the success message before removing the drive.
+
+Everything on the selected USB drive is erased.
+
+For Windows on Surface Pro 11 X1E, choose an official **Windows ARM64** ISO. An x86-64 Windows ISO can be copied, but it will not boot an ARM64 Surface.
+
+## Supported media
+
+### Linux and raw images
+
+- ISOHybrid Linux images
+- Raw `.img`, `.raw`, and similar disk images
+- Full byte-for-byte verification after writing
+
+### Windows installation media
+
+- Standard Windows 10/11 UEFI installation ISOs
+- ARM64 and x86-64 UEFI boot files
+- GPT partition table
+- FAT32 EFI System Partition
+- Automatic `install.wim`/`install.esd` splitting through Ubuntu's `wimtools`
+- Optional SHA-256 verification of copied setup files
+
+## Safety design
+
+The privileged helper:
+
+- accepts only whole block devices under `/dev`;
+- refuses partitions and read-only devices;
+- refuses the disk backing the running Ubuntu system;
+- hides fixed internal disks from the normal graphical device list;
+- refuses an image stored on the selected target disk;
+- unmounts the target before writing;
+- uses an exclusive writer lock and explicit flush;
+- requires a final destructive-action confirmation in the GUI.
+
+## Current limitations
+
+Version 0.2.0 targets modern UEFI installation media. It does not yet provide legacy BIOS mode, Windows To Go, Rufus Windows-installation bypass customizations, multiboot menus, persistent Linux partitions, bad-block scanning, or compressed `.xz`/`.zst` image streaming.
+
+The build and automated tests pass in the development environment. A physical USB boot test on every supported ARM64 computer is not possible in CI, so hardware feedback remains important.
+
+## Build from source
+
+Requirements for building are Go 1.22 or newer, Python 3, and `dpkg-deb`.
 
 ```bash
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
-  go build -trimpath -ldflags="-s -w" -o dist/rufus-linux-arm64 ./cmd/rufus-linux
+./scripts/test.sh
 ```
 
-## Install a release binary
+The ARM64 installer is produced at:
+
+```text
+dist/rufusarm64_0.2.0_arm64.deb
+```
+
+## Command-line interface
+
+The graphical package also installs `rufusarm64-cli`:
 
 ```bash
-tar -xzf rufus-linux-arm64-v0.1.0-linux-arm64.tar.gz
-cd rufus-linux-arm64-v0.1.0-linux-arm64
-sudo ./install.sh ./rufus-linux-arm64
+rufusarm64-cli list
+sudo rufusarm64-cli write --image ubuntu.iso --device /dev/sdX --verify
 ```
 
-## Usage
+Use the graphical app unless command-line operation is specifically needed.
 
-```bash
-./rufus-linux list
-sudo ./rufus-linux write --image ubuntu.iso --device /dev/sda --verify
-```
+## License and relationship to Rufus
 
-For a fixed/non-removable target, the tool refuses to continue unless all other checks pass and `--allow-fixed` is provided:
-
-```bash
-sudo ./rufus-linux write --image image.img --device /dev/nvme1n1 --allow-fixed --verify
-```
-
-Use `--dry-run` to perform selection and size checks without opening the target for writing. Plain optical ISOs such as standard Windows installation media are refused because raw copying usually does not create Rufus-equivalent USB media; `--force-raw` exists only for deliberate expert use.
-
-## Current scope and non-goals
-
-Version 0.1 writes images that are already bootable as raw disk images or ISOHybrid media. It does **not** yet implement Rufus's extracted-ISO workflow, FAT32 creation, WIM splitting, Windows installation customizations, UEFI:NTFS, Windows To Go, persistence partition creation, bad-block testing, or a graphical interface.
-
-See [ROADMAP.md](ROADMAP.md) for the staged plan and [CHANGELOG.md](CHANGELOG.md) for completed work.
-
-## Runtime dependencies
-
-- Linux
-- `lsblk`, `findmnt`, `umount`, and `blockdev` from util-linux
-- Root privileges for writing
-
-The executable itself uses only the Go standard library and can be built with `CGO_ENABLED=0`.
-
-## Validation status
-
-Version 0.1.0 passes unit tests, the Go race detector, `go vet`, native CLI smoke tests, and Linux ARM64 cross-compilation. The generated executable is a statically linked AArch64 ELF. A physical USB write/boot test has not been performed in the build environment, so treat this as an engineering preview rather than production-proven media software.
-
-## Relationship to Rufus
-
-Rufus is a separate GPL-licensed project by Pete Batard and contributors. This repository is an independent Linux implementation and does not claim endorsement or official status. Any future incorporation of Rufus source code must preserve its GPL notices and corresponding-source obligations.
-
-## License
-
-GPL-3.0-or-later. See [LICENSE](LICENSE).
+RufusArm64 is GPL-3.0-or-later. Rufus is a separate GPL-licensed project by Pete Batard and contributors. This implementation does not claim official Rufus status or endorsement.
