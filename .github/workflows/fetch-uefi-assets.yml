@@ -1,0 +1,35 @@
+name: Fetch official UEFI NTFS assets
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download pinned Rufus 4.15 UEFI NTFS image
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifact
+          base='https://raw.githubusercontent.com/pbatard/rufus/6d8fbf98305ff37eb531c45cbd6ff44563c53917/res/uefi'
+          curl --fail --location --retry 5 --retry-all-errors \
+            "$base/uefi-ntfs.img" -o artifact/uefi-ntfs.img
+          curl --fail --location --retry 5 --retry-all-errors \
+            "$base/readme.txt" -o artifact/README-RUFUS-UEFI-NTFS.txt
+          test "$(stat -c %s artifact/uefi-ntfs.img)" -eq 1048576
+          sha256sum artifact/* | tee artifact/SHA256SUMS
+          file artifact/uefi-ntfs.img
+
+      - name: Upload pinned assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: rufus-4.15-uefi-ntfs-assets
+          path: artifact
+          if-no-files-found: error
+          retention-days: 7
