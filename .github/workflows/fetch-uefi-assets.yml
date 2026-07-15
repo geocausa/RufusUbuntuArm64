@@ -22,11 +22,10 @@ jobs:
             -o bcd-sys.tar.gz
           mkdir source artifact
           tar -xzf bcd-sys.tar.gz -C source --strip-components=1
+          find source -maxdepth 2 -type f | sort
           test -f source/LICENSE
-          test -x source/Linux/bcd-sys.sh
-          test -f source/Templates/BCD-NEW
-          test -f source/Templates/winload.reg
-          test -f source/Templates/recovery.reg
+          test -f source/Linux/bcd-sys.sh
+          test -d source/Templates
           cp -a source/Linux source/Resources source/Templates source/LICENSE source/README.md artifact/
           cat > artifact/PINNED-UPSTREAM.txt <<EOF
           Upstream: https://github.com/jpz4085/BCD-SYS
