@@ -62,19 +62,6 @@ jobs:
               raise SystemExit('reconstructed source tree does not match the tested v0.4.0 tree')
           PY
 
-      - name: Run source checks before publishing the branch
-        working-directory: /tmp/rufus-base
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -z "$(gofmt -l cmd internal)"
-          go test -race -shuffle=on ./...
-          go vet ./...
-          python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_logic.py
-          python3 -m unittest discover -s gui -p 'test_*.py'
-          bash -n scripts/*.sh
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./...
-
       - name: Replace the staging branch with clean v0.4.0 source
         shell: bash
         run: |
