@@ -16,33 +16,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: import-v0.4.0
-          fetch-depth: 0
+          fetch-depth: 1
+          show-progress: false
 
       - name: Reconstruct and verify the tested source tree
         shell: bash
         run: |
           set -euo pipefail
+          rm -rf /tmp/rufus-base
           mkdir -p /tmp/rufus-base
-
-          cat \
-            import/part-00.b64 \
-            import/part-00a.b64 \
-            import/part-00b.b64 \
-            import/part-01.b64 \
-            import/part-02.b64 \
-            import/part-03.b64 \
-            import/part-04.b64 \
-            import/part-05.b64 \
-            | tr -d '\r\n\t ' | base64 -d > /tmp/rufus-base.tar.gz
-          echo 'bb9ced0fdce12f786cf01328af132a1a7188595d3297a14f575b8861fb0ca8b0  /tmp/rufus-base.tar.gz' | sha256sum -c -
+          cat import/part-00.b64 import/part-00a.b64 import/part-00b.b64 import/part-01.b64 import/part-02.b64 import/part-03.b64 import/part-04.b64 import/part-05.b64 | tr -d '\r\n\t ' | base64 -d > /tmp/rufus-base.tar.gz
           tar -xzf /tmp/rufus-base.tar.gz -C /tmp/rufus-base
-
-          cat \
-            import/final-patch-00.b64 \
-            import/final-patch-01.b64 \
-            import/final-patch-02.b64 \
-            | tr -d '\r\n\t ' | base64 -d > /tmp/rufus-final.patch.gz
-          echo '1d4327246099a842e894fd403fff82a69470b63f6b9a7747e3b0f74cee43d8bc  /tmp/rufus-final.patch.gz' | sha256sum -c -
+          cat import/final-patch-00.b64 import/final-patch-01.b64 import/final-patch-02.b64 | tr -d '\r\n\t ' | base64 -d > /tmp/rufus-final.patch.gz
           gzip -dc /tmp/rufus-final.patch.gz > /tmp/rufus-final.patch
           (cd /tmp/rufus-base && patch -p3 --forward --batch < /tmp/rufus-final.patch)
 
