@@ -43,8 +43,8 @@ jobs:
             --disable-shared \
             --enable-static 2>&1 | tee ../configure.log
           make -j"$(nproc)" 2>&1 | tee ../make.log
-          test -x programs/wimlib-imagex
-          strip programs/wimlib-imagex
+          test -x wimlib-imagex
+          strip wimlib-imagex
 
       - name: Collect binary, licences and logs
         if: always()
@@ -56,8 +56,8 @@ jobs:
           cp -f wimlib-src/COPYING artifact/COPYING 2>/dev/null || true
           cp -f wimlib-src/COPYING.GPLv3 artifact/COPYING.GPLv3 2>/dev/null || true
           cp -f wimlib-src/COPYING.LGPL artifact/COPYING.LGPL 2>/dev/null || true
-          if [ -x wimlib-src/programs/wimlib-imagex ]; then
-            cp wimlib-src/programs/wimlib-imagex artifact/wimlib-imagex
+          if [ -x wimlib-src/wimlib-imagex ]; then
+            cp wimlib-src/wimlib-imagex artifact/wimlib-imagex
             file artifact/wimlib-imagex | tee artifact/file.txt
             readelf -h artifact/wimlib-imagex > artifact/readelf-header.txt
             readelf -d artifact/wimlib-imagex > artifact/readelf-dynamic.txt || true
