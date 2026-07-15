@@ -24,17 +24,30 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential autoconf automake libtool pkg-config ca-certificates curl \
-            libxml2-dev zlib1g-dev liblzma-dev libbz2-dev liblz4-dev libzstd-dev \
-            libntfs-3g-dev ntfs-3g
-      - name: Build wimlib 1.14.5 with libntfs-3g volume apply support
+            libxml2-dev zlib1g-dev liblzma-dev libbz2-dev liblz4-dev libzstd-dev
+      - name: Build private libntfs-3g and wimlib 1.14.5
         shell: bash
         run: |
           set -euo pipefail
+          prefix="$PWD/prefix"
           curl --fail --location --retry 5 --retry-all-errors \
-            https://wimlib.net/downloads/wimlib-1.14.5.tar.gz -o source.tar.gz
-          tar -xzf source.tar.gz
+            https://codeload.github.com/tuxera/ntfs-3g/tar.gz/refs/tags/2022.10.3 \
+            -o ntfs-3g-source.tar.gz
+          mkdir ntfs-src
+          tar -xzf ntfs-3g-source.tar.gz -C ntfs-src --strip-components=1
+          cd ntfs-src
+          autoreconf -fi
+          ./configure --prefix="$prefix" --disable-ntfs-3g --disable-ntfsprogs --disable-shared --enable-static
+          make -j"$(nproc)"
+          make install
+          cd ..
+
+          curl --fail --location --retry 5 --retry-all-errors \
+            https://wimlib.net/downloads/wimlib-1.14.5.tar.gz -o wimlib-source.tar.gz
+          tar -xzf wimlib-source.tar.gz
           cd wimlib-1.14.5
-          ./configure --without-fuse --disable-shared --enable-static
+          PKG_CONFIG_PATH="$prefix/lib/pkgconfig" CPPFLAGS="-I$prefix/include/ntfs-3g" LDFLAGS="-L$prefix/lib" \
+            ./configure --without-fuse --disable-shared --enable-static
           make -j"$(nproc)"
           mkdir -p ../artifact
           cp wimlib-imagex ../artifact/wimlib-imagex
@@ -47,7 +60,8 @@ jobs:
             exit 1
           fi
           cd ..
-          cp source.tar.gz artifact/wimlib-1.14.5-source.tar.gz
+          cp wimlib-source.tar.gz artifact/wimlib-1.14.5-source.tar.gz
+          cp ntfs-3g-source.tar.gz artifact/ntfs-3g-2022.10.3-source.tar.gz
           sha256sum artifact/* > artifact/SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
