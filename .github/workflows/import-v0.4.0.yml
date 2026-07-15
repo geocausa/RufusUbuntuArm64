@@ -30,8 +30,7 @@ jobs:
           from pathlib import Path
           p = Path('/tmp/rufus-base.tar.gz')
           data = bytearray(p.read_bytes())
-          repairs = {34155: 0x9b, 72022: 0x4b}
-          for offset, value in repairs.items():
+          for offset, value in {34155: 0x9b, 72022: 0x4b}.items():
               data[offset] = value
           p.write_bytes(data)
           PY
@@ -41,28 +40,23 @@ jobs:
           echo '1d4327246099a842e894fd403fff82a69470b63f6b9a7747e3b0f74cee43d8bc  /tmp/rufus-final.patch.gz' | sha256sum -c -
           gzip -dc /tmp/rufus-final.patch.gz > /tmp/rufus-final.patch
           (cd /tmp/rufus-base && patch -p3 --forward --batch < /tmp/rufus-final.patch)
-
           python3 - <<'PY'
-          import hashlib
-          import stat
+          import hashlib, stat
           from pathlib import Path
-
           root = Path('/tmp/rufus-base')
           files = sorted(p for p in root.rglob('*') if p.is_file())
           digest = hashlib.sha256()
           for path in files:
               rel = path.relative_to(root).as_posix()
               mode = stat.S_IMODE(path.stat().st_mode)
-              file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
-              digest.update(f'{mode:o} {rel} {file_hash}\n'.encode())
-          expected = 'c09f73407a981fd787a0f1a3533f6d08fcfde87308325b6eef1096047454ec47'
+              digest.update(f'{mode:o} {rel} {hashlib.sha256(path.read_bytes()).hexdigest()}\n'.encode())
           actual = digest.hexdigest()
           print(f'verified {len(files)} files; tree SHA-256 {actual}')
-          if len(files) != 52 or actual != expected:
+          if len(files) != 52 or actual != 'c09f73407a981fd787a0f1a3533f6d08fcfde87308325b6eef1096047454ec47':
               raise SystemExit('reconstructed source tree does not match the tested v0.4.0 tree')
           PY
 
-      - name: Replace the staging branch with clean v0.4.0 source
+      - name: Publish clean v0.4.0 source branch
         shell: bash
         run: |
           set -euo pipefail
@@ -72,4 +66,4 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git commit -m 'Release RufusArm64 0.4.0 Windows customization and GPT hardening'
-          git push origin HEAD:import-v0.4.0
+          git push --force origin HEAD:release-v0.4.0-clean
