@@ -1,4 +1,4 @@
-name: Fetch official UEFI NTFS assets
+name: Fetch pinned Rufus boot assets
 
 on:
   pull_request:
@@ -12,12 +12,13 @@ jobs:
   fetch:
     runs-on: ubuntu-24.04
     steps:
-      - name: Download pinned Rufus 4.15 UEFI NTFS image and reference source
+      - name: Download pinned Rufus UEFI and BIOS boot assets
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifact/reference-src
+          mkdir -p artifact/reference-src artifact/ms-sys-src
           root='https://raw.githubusercontent.com/pbatard/rufus/6d8fbf98305ff37eb531c45cbd6ff44563c53917'
+
           curl --fail --location --retry 5 --retry-all-errors \
             "$root/res/uefi/uefi-ntfs.img" -o artifact/uefi-ntfs.img
           curl --fail --location --retry 5 --retry-all-errors \
@@ -26,14 +27,68 @@ jobs:
             curl --fail --location --retry 5 --retry-all-errors \
               "$root/$path" -o "artifact/reference-src/$(basename "$path")"
           done
+
+          for path in \
+            src/ms-sys/br.c \
+            src/ms-sys/ntfs.c \
+            src/ms-sys/fat32.c \
+            src/ms-sys/inc/mbr_win7.h \
+            src/ms-sys/inc/br_ntfs_0x0.h \
+            src/ms-sys/inc/br_ntfs_0x54.h \
+            src/ms-sys/inc/br_fat32_0x0.h \
+            src/ms-sys/inc/br_fat32pe_0x52.h \
+            src/ms-sys/inc/br_fat32pe_0x3f0.h \
+            src/ms-sys/inc/br_fat32pe_0x1800.h; do
+            curl --fail --location --retry 5 --retry-all-errors \
+              "$root/$path" -o "artifact/ms-sys-src/$(basename "$path")"
+          done
+          curl --fail --location --retry 5 --retry-all-errors \
+            "$root/src/ms-sys/COPYING" -o artifact/ms-sys-src/COPYING
+
+          python3 - <<'PY'
+          import pathlib, re
+          src = pathlib.Path('artifact/ms-sys-src')
+          out = pathlib.Path('artifact/ms-sys-bin')
+          out.mkdir()
+          mapping = {
+              'mbr_win7.h': 'windows7-mbr-code.bin',
+              'br_ntfs_0x0.h': 'ntfs-pbr-0x0.bin',
+              'br_ntfs_0x54.h': 'ntfs-pbr-0x54.bin',
+              'br_fat32_0x0.h': 'fat32-pbr-0x0.bin',
+              'br_fat32pe_0x52.h': 'fat32-pbr-0x52.bin',
+              'br_fat32pe_0x3f0.h': 'fat32-pbr-0x3f0.bin',
+              'br_fat32pe_0x1800.h': 'fat32-pbr-0x1800.bin',
+          }
+          for header, binary in mapping.items():
+              text = (src / header).read_text(encoding='utf-8')
+              values = bytes(int(token, 16) for token in re.findall(r'0x([0-9A-Fa-f]{1,2})', text))
+              if not values:
+                  raise SystemExit(f'no byte array found in {header}')
+              (out / binary).write_bytes(values)
+              print(header, len(values), '->', binary)
+          expected = {
+              'windows7-mbr-code.bin': 440,
+              'ntfs-pbr-0x0.bin': 11,
+          }
+          for name, size in expected.items():
+              actual = (out / name).stat().st_size
+              if actual != size:
+                  raise SystemExit(f'{name}: expected {size}, got {actual}')
+          PY
+
           test "$(stat -c %s artifact/uefi-ntfs.img)" -eq 1048576
+          cat > artifact/PINNED-UPSTREAM.txt <<'EOF'
+          Upstream: https://github.com/pbatard/rufus
+          Commit: 6d8fbf98305ff37eb531c45cbd6ff44563c53917 (Rufus 4.15 build 2396)
+          Assets: res/uefi/uefi-ntfs.img and GPL ms-sys Windows 7 MBR/NTFS/FAT32 PE boot code arrays
+          EOF
           (cd artifact && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum) | tee artifact/SHA256SUMS
-          file artifact/uefi-ntfs.img
+          file artifact/uefi-ntfs.img artifact/ms-sys-bin/*
 
       - name: Upload pinned assets
         uses: actions/upload-artifact@v4
         with:
-          name: rufus-4.15-uefi-ntfs-assets
+          name: rufus-4.15-boot-assets
           path: artifact
           if-no-files-found: error
           retention-days: 7
