@@ -1,0 +1,57 @@
+name: Build NTFS-capable wimlib engines
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+          - runner: ubuntu-24.04
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool pkg-config ca-certificates curl \
+            libxml2-dev zlib1g-dev liblzma-dev libbz2-dev liblz4-dev libzstd-dev \
+            libntfs-3g-dev ntfs-3g
+      - name: Build wimlib 1.14.5 with libntfs-3g volume apply support
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 5 --retry-all-errors \
+            https://wimlib.net/downloads/wimlib-1.14.5.tar.gz -o source.tar.gz
+          tar -xzf source.tar.gz
+          cd wimlib-1.14.5
+          ./configure --without-fuse --disable-shared --enable-static
+          make -j"$(nproc)"
+          mkdir -p ../artifact
+          cp wimlib-imagex ../artifact/wimlib-imagex
+          cp COPYING COPYING.GPLv3 COPYING.LGPL ../artifact/
+          ../artifact/wimlib-imagex --version
+          ldd ../artifact/wimlib-imagex | tee ../artifact/LDD.txt
+          ../artifact/wimlib-imagex apply --help >/dev/null
+          if ! strings ../artifact/wimlib-imagex | grep -q 'NTFS volume'; then
+            echo 'NTFS volume apply support was not compiled in' >&2
+            exit 1
+          fi
+          cd ..
+          cp source.tar.gz artifact/wimlib-1.14.5-source.tar.gz
+          sha256sum artifact/* > artifact/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wimlib-ntfs-${{ matrix.arch }}
+          path: artifact
+          if-no-files-found: error
+          retention-days: 7
