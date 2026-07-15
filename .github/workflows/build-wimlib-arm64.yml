@@ -10,19 +10,21 @@ permissions:
 
 jobs:
   build-wimlib:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install cross-build dependencies
+      - name: Confirm native architecture
         run: |
-          sudo dpkg --add-architecture arm64
+          test "$(uname -m)" = aarch64
+          uname -a
+
+      - name: Install build dependencies
+        run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
-            autoconf automake libtool pkg-config git ca-certificates \
-            libxml2-dev:arm64 zlib1g-dev:arm64 liblzma-dev:arm64 \
-            libbz2-dev:arm64 liblz4-dev:arm64 libzstd-dev:arm64
+            build-essential autoconf automake libtool pkg-config git ca-certificates \
+            libxml2-dev zlib1g-dev liblzma-dev libbz2-dev liblz4-dev libzstd-dev
 
       - name: Fetch pinned wimlib source
         run: |
@@ -31,23 +33,15 @@ jobs:
 
       - name: Configure and build AArch64 engine
         working-directory: wimlib-src
-        env:
-          CC: aarch64-linux-gnu-gcc
-          AR: aarch64-linux-gnu-ar
-          RANLIB: aarch64-linux-gnu-ranlib
-          STRIP: aarch64-linux-gnu-strip
-          PKG_CONFIG: aarch64-linux-gnu-pkg-config
         run: |
           ./bootstrap
           ./configure \
-            --build=x86_64-linux-gnu \
-            --host=aarch64-linux-gnu \
             --without-fuse \
             --without-ntfs-3g \
             --disable-shared \
             --enable-static
           make -j"$(nproc)" wimlib-imagex
-          aarch64-linux-gnu-strip programs/wimlib-imagex
+          strip programs/wimlib-imagex
 
       - name: Inspect binary and dependencies
         run: |
@@ -59,8 +53,8 @@ jobs:
           cp wimlib-commit.txt artifact/source/UPSTREAM_COMMIT
           printf '%s\n' 'https://github.com/ebiggers/wimlib/tree/v1.14.5' > artifact/source/UPSTREAM_SOURCE
           file artifact/wimlib-imagex
-          aarch64-linux-gnu-readelf -h artifact/wimlib-imagex
-          aarch64-linux-gnu-readelf -d artifact/wimlib-imagex || true
+          readelf -h artifact/wimlib-imagex
+          readelf -d artifact/wimlib-imagex || true
           sha256sum artifact/wimlib-imagex | tee artifact/wimlib-imagex.sha256
 
       - uses: actions/upload-artifact@v4
