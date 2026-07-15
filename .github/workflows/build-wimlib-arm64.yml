@@ -32,32 +32,40 @@ jobs:
           git -C wimlib-src rev-parse HEAD | tee wimlib-commit.txt
 
       - name: Configure and build AArch64 engine
+        id: build
         working-directory: wimlib-src
         run: |
-          ./bootstrap
+          set -o pipefail
+          ./bootstrap 2>&1 | tee ../bootstrap.log
           ./configure \
             --without-fuse \
             --without-ntfs-3g \
             --disable-shared \
-            --enable-static
-          make -j"$(nproc)" wimlib-imagex
+            --enable-static 2>&1 | tee ../configure.log
+          make -j"$(nproc)" 2>&1 | tee ../make.log
+          test -x programs/wimlib-imagex
           strip programs/wimlib-imagex
 
-      - name: Inspect binary and dependencies
+      - name: Collect binary, licences and logs
+        if: always()
         run: |
-          mkdir -p artifact/source
-          cp wimlib-src/programs/wimlib-imagex artifact/wimlib-imagex
-          cp wimlib-src/COPYING artifact/COPYING
-          cp wimlib-src/COPYING.GPLv3 artifact/COPYING.GPLv3
-          cp wimlib-src/COPYING.LGPL artifact/COPYING.LGPL
-          cp wimlib-commit.txt artifact/source/UPSTREAM_COMMIT
+          mkdir -p artifact/source artifact/logs
+          cp -f bootstrap.log configure.log make.log artifact/logs/ 2>/dev/null || true
+          cp -f wimlib-commit.txt artifact/source/UPSTREAM_COMMIT 2>/dev/null || true
           printf '%s\n' 'https://github.com/ebiggers/wimlib/tree/v1.14.5' > artifact/source/UPSTREAM_SOURCE
-          file artifact/wimlib-imagex
-          readelf -h artifact/wimlib-imagex
-          readelf -d artifact/wimlib-imagex || true
-          sha256sum artifact/wimlib-imagex | tee artifact/wimlib-imagex.sha256
+          cp -f wimlib-src/COPYING artifact/COPYING 2>/dev/null || true
+          cp -f wimlib-src/COPYING.GPLv3 artifact/COPYING.GPLv3 2>/dev/null || true
+          cp -f wimlib-src/COPYING.LGPL artifact/COPYING.LGPL 2>/dev/null || true
+          if [ -x wimlib-src/programs/wimlib-imagex ]; then
+            cp wimlib-src/programs/wimlib-imagex artifact/wimlib-imagex
+            file artifact/wimlib-imagex | tee artifact/file.txt
+            readelf -h artifact/wimlib-imagex > artifact/readelf-header.txt
+            readelf -d artifact/wimlib-imagex > artifact/readelf-dynamic.txt || true
+            sha256sum artifact/wimlib-imagex | tee artifact/wimlib-imagex.sha256
+          fi
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: wimlib-imagex-arm64-v1.14.5
           path: artifact/
