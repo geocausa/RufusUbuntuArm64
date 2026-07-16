@@ -1,0 +1,60 @@
+name: Verify recovered RufusArm64 0.8.0
+
+on:
+  push:
+    branches:
+      - recovery/0.8.0
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: ${{ github.event.head_commit.message == 'Verify recovered 0.8.0 branch' }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out recovery branch
+        uses: actions/checkout@v4
+        with:
+          ref: recovery/0.8.0
+          fetch-depth: 0
+
+      - name: Verify recovered parent commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(tr -d '\r\n' < VERSION)" = "0.8.0"
+          test "$(git show HEAD^:VERSION | tr -d '\r\n')" = "0.8.0"
+          test ! -e .github/workflows/recover-0.8.0.yml
+          if git cat-file -e HEAD^:.github/workflows/verify-recovery.yml 2>/dev/null; then
+            echo "Verifier unexpectedly exists in candidate parent commit" >&2
+            exit 1
+          fi
+          test "$(git log -1 --format=%s HEAD^)" = "Recover RufusArm64 0.8.0 source tree"
+          go test ./...
+          python3 -m unittest discover -s gui/tests -p 'test_*.py'
+
+      - name: Publish verified review branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$(git rev-parse HEAD^)"
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          common=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28")
+          code="$(curl --silent --output /tmp/ref.json --write-out '%{http_code}' "${common[@]}" "${api}/git/ref/heads/recovery/0.8.0-verified")"
+          if [ "${code}" = "200" ]; then
+            payload="$(python3 -c 'import json,sys; print(json.dumps({"sha": sys.argv[1], "force": False}))' "${target}")"
+            curl --fail --silent --show-error --request PATCH "${common[@]}" \
+              "${api}/git/refs/heads/recovery/0.8.0-verified" \
+              --data "${payload}" >/dev/null
+          elif [ "${code}" = "404" ]; then
+            payload="$(python3 -c 'import json,sys; print(json.dumps({"ref": "refs/heads/recovery/0.8.0-verified", "sha": sys.argv[1]}))' "${target}")"
+            curl --fail --silent --show-error --request POST "${common[@]}" \
+              "${api}/git/refs" \
+              --data "${payload}" >/dev/null
+          else
+            cat /tmp/ref.json >&2
+            exit 1
+          fi
