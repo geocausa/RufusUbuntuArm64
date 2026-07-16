@@ -17,6 +17,11 @@
     <binary>rufusarm64-persistence</binary>
   </provides>
   <releases>
+    <release version="0.10.1" date="2026-07-16">
+      <description>
+        <p>Aligns persistence analysis with the fresh GPT/FAT32/ext4 creator layout, fixes Canonical Resolute concept-image compatibility, and removes reliance on embedded ISOHybrid MBR geometry.</p>
+      </description>
+    </release>
     <release version="0.10.0" date="2026-07-16">
       <description>
         <p>Adds the guarded graphical persistent-live USB wizard, identity-bound read-only analysis and creation, modern Ubuntu casper cmdline support, reboot qualification records, and the threshold-signed built-in acquisition-channel foundation.</p>
