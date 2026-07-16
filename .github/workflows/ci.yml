@@ -43,14 +43,20 @@ jobs:
         with:
           name: wimlib-arm64
           path: vendor/wimlib
+      - name: Read canonical project version
+        id: version
+        run: |
+          version="$(tr -d '\r\n' < VERSION)"
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
       - name: Full test, audit, and ARM64 package pass
-        run: VERSION=0.6.0 ./scripts/test.sh
+        run: ./scripts/test.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: rufusarm64-ubuntu-arm64
+          name: rufusarm64-${{ steps.version.outputs.version }}-ubuntu-arm64
           path: |
-            dist/rufusarm64_0.6.0_arm64.deb
-            dist/rufusarm64_0.6.0_arm64.deb.sha256
+            dist/rufusarm64_${{ steps.version.outputs.version }}_arm64.deb
+            dist/rufusarm64_${{ steps.version.outputs.version }}_arm64.deb.sha256
           if-no-files-found: error
 
   native-arm64-smoke:
@@ -66,12 +72,18 @@ jobs:
         with:
           name: wimlib-arm64
           path: vendor/wimlib
+      - name: Read canonical project version
+        id: version
+        run: |
+          version="$(tr -d '\r\n' < VERSION)"
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
       - name: Run the complete suite natively on ARM64
-        run: VERSION=0.6.0 ./scripts/test.sh
+        run: ./scripts/test.sh
       - name: Execute packaged ARM64 binaries
         run: |
           package_root="$(mktemp -d)"
           trap 'rm -rf "${package_root}"' EXIT
-          dpkg-deb -x dist/rufusarm64_0.6.0_arm64.deb "${package_root}"
-          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-helper" version)" = 0.6.0
+          dpkg-deb -x "dist/rufusarm64_${VERSION}_arm64.deb" "${package_root}"
+          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-helper" version)" = "${VERSION}"
           "${package_root}/usr/lib/rufusarm64/wimlib-imagex" --version
