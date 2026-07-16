@@ -1,0 +1,59 @@
+name: Apply 0.10A GUI acquisition and planning
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'develop/0.10.0-gui-acquisition-planning'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/0.10.0-gui-acquisition-planning
+          fetch-depth: 0
+
+      - name: Reconstruct and verify reviewed GUI payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .changes/0.10A/part-* > /tmp/0.10A-gui.tar.xz.b64
+          echo '62ab35f995395e6839667e940dad6b6e292a45d2a3648245352523f0ffcaad58  /tmp/0.10A-gui.tar.xz.b64' | sha256sum --check --strict
+          base64 --decode /tmp/0.10A-gui.tar.xz.b64 > /tmp/0.10A-gui.tar.xz
+          echo 'ca7046ba4e6eddb86d3029d7f0ab8d01bf37755645b3e31748e8f501de3f0c2b  /tmp/0.10A-gui.tar.xz' | sha256sum --check --strict
+          tar -xJf /tmp/0.10A-gui.tar.xz -C .
+          rm -rf .changes
+
+      - name: Validate GUI acquisition and read-only persistence planning
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_logic.py gui/test_logic.py
+          (cd gui && python3 -m unittest test_logic.py)
+          python3 - <<'PY'
+          from pathlib import Path
+          gui = Path('gui/rufusarm64.py').read_text(encoding='utf-8')
+          logic = Path('gui/rufusarm64_logic.py').read_text(encoding='utf-8')
+          assert '--experimental-persistence' not in gui
+          assert '"linux-persistent"' not in gui
+          assert 'build_persistence_plan_command' in gui
+          assert 'build_acquisition_download_command' in gui
+          assert 'helper, "persistence", "plan"' in logic
+          assert '"acquire", "download"' in logic
+          PY
+          test -f docs/gui-acquisition-persistence.md
+
+      - name: Commit validated 0.10A source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git commit -m '0.10A: graphical verified acquisition and persistence planning'
+          git push origin HEAD:develop/0.10.0-gui-acquisition-planning
