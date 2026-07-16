@@ -4,6 +4,9 @@ from rufusarm64_logic import (
     build_writer_command,
     device_label,
     human_bytes,
+    human_duration,
+    human_rate,
+    progress_status,
     normalize_cluster_size,
     normalize_filesystem,
     normalize_partition_scheme,
@@ -20,6 +23,17 @@ from rufusarm64_logic import (
 class LogicTests(unittest.TestCase):
     def test_human_bytes(self):
         self.assertEqual(human_bytes(1024), "1.0 KiB")
+
+    def test_progress_formatting(self):
+        self.assertEqual(human_rate(1024), "1.0 KiB/s")
+        self.assertEqual(human_duration(65), "1:05")
+        self.assertEqual(human_duration(3661), "1:01:01")
+        text = progress_status("write", 512, 1024, 256)
+        self.assertIn("Write: 50.0%", text)
+        self.assertIn("512 B of 1.0 KiB", text)
+        self.assertIn("256 B/s", text)
+        self.assertIn("0:02 remaining", text)
+        self.assertEqual(progress_status("prepare", 0, 0), "Prepare")
 
     def test_supported_image_name(self):
         self.assertTrue(supported_image_name("Windows.ISO"))
