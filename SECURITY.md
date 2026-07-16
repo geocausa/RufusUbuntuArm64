@@ -31,7 +31,9 @@ The 0.9 persistence command is unprivileged and read-only. It accepts a source i
 
 The materialization primitives repeat the plan against the already-open target before changing partition metadata. GPT updates write and sync the relocated backup before the primary, verify both copies and CRCs, and clear obsolete backup metadata only after the new pair is durable. Boot-tree replacement pins the root and parent descriptors, refuses symbolic-link components, rechecks the original inode, writes a same-directory temporary file, and fsyncs before and after atomic rename. Ext4 creation operates through an inherited open partition descriptor, requires the expected block-device identity and size, invokes a final caller safety callback immediately before `mkfs.ext4`, mounts with `nosuid,nodev,noexec`, initializes Debian `persistence.conf` with no-follow creation, unmounts, and runs `e2fsck -f -n`.
 
-These functions are not a public persistence writer. A future orchestration layer must still use an identity-bound writable Linux extraction tree, keep the whole-disk lock across table refresh and filesystem creation, repeat source/target checks, and preserve cancellation and pre-erasure preparation guarantees.
+The writable-tree copy primitive builds a bounded SHA-256 manifest from the read-only media mount, rejects FAT32 collisions and unsafe names, refuses external or directory symbolic links, materializes only in-tree regular-file links, copies through same-directory temporary files, fsyncs around rename, and rehashes the destination. Its destination must be a private mount held under the future whole-disk orchestration lock.
+
+These functions are not a public persistence writer. A future orchestration layer must still create the writable boot-partition layout, keep the whole-disk lock across copy, table refresh and filesystem creation, repeat source/target checks, and preserve cancellation and pre-erasure preparation guarantees.
 
 ## Known limitations
 
