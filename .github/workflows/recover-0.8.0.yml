@@ -1,0 +1,86 @@
+name: Recover RufusArm64 0.8.0
+
+on:
+  push:
+    branches:
+      - recovery/0.8.0
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    if: ${{ github.event.head_commit.message == 'Install verified 0.8.0 recovery workflow' }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out recovery branch
+        uses: actions/checkout@v4
+        with:
+          ref: recovery/0.8.0
+          fetch-depth: 0
+
+      - name: Reassemble and verify source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          shas=(
+            29b4c922d8097e1ccf69028db2185ade3d627c59
+            362e66cf6d832d5e5f114242b2aae10a6adeba27
+            e636fa3422c93f742f27ddc20048bddd90adfa8d
+            f8466999952dbdb39fc506d351a2e9f8827c498d
+            78e05bd453b4900a9e4ed195a57c5ba9b1cc1084
+            40ebca17a103241ab0bf478c1347c8be5272fa8c
+            587da54947dc06f53d973b6197fce3994ffdc7b9
+            b48df8f9c503ee91c234397967bc016737933468
+            57d0dc4b849b35a0ff9ad619d36da36a59c1ac1e
+            e0bba8db321c03bc555bdb2553ecea322fd3436a
+            232830cf9a03e463ea71583d3deed63891b368d8
+            1c535c0a6e2758b5a89a4c305d490c6897628859
+            72e1638bf304162cb48207ee8451a331b2c3c344
+            6ea88c51621b3a5349e55dfaafc7ef6be61c01ee
+            e4b96ae0fbd9f0467d42c5ae1de17c644e6a2b03
+          )
+          : > /tmp/source-tree.tar.xz.b64
+          for sha in "${shas[@]}"; do
+            curl --fail --silent --show-error --location \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/blobs/${sha}" \
+              | python3 -c 'import base64,json,sys; d=json.load(sys.stdin); sys.stdout.buffer.write(base64.b64decode(d["content"]))' \
+              >> /tmp/source-tree.tar.xz.b64
+          done
+          base64 --decode /tmp/source-tree.tar.xz.b64 > /tmp/source-tree.tar.xz
+          echo "2f9c26685049c93bead03e52924187f0ae5469f0a95df3e3f96326a1a9531cdf  /tmp/source-tree.tar.xz" | sha256sum --check --strict
+
+      - name: Restore exact 0.8.0 source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          tar -xJf /tmp/source-tree.tar.xz -C .
+          mkdir -p vendor/uefi-ntfs
+          curl --fail --silent --show-error --location --retry 3 \
+            https://raw.githubusercontent.com/pbatard/rufus/6d8fbf98305ff37eb531c45cbd6ff44563c53917/res/uefi/uefi-ntfs.img \
+            -o vendor/uefi-ntfs/uefi-ntfs.img
+          echo "72683fa1250eeea772d3399277b434d4e55ba8dd0dc926e52d817e701fc2eb9e  vendor/uefi-ntfs/uefi-ntfs.img" | sha256sum --check --strict
+          test "$(tr -d '\r\n' < VERSION)" = "0.8.0"
+
+      - name: Run recovery checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./...
+          python3 -m unittest discover -s gui/tests -p 'test_*.py'
+
+      - name: Commit recovered source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Recover RufusArm64 0.8.0 source tree"
+          git push origin HEAD:recovery/0.8.0
