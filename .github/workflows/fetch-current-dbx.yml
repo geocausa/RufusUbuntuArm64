@@ -1,0 +1,33 @@
+name: Fetch current Microsoft DBX
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download current Microsoft DBX updates
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dbx
+          base='https://raw.githubusercontent.com/microsoft/secureboot_objects/main/PostSignedObjects/DBX'
+          for arch in x86 amd64 arm arm64; do
+            curl --fail --location --retry 5 --retry-all-errors \
+              "$base/$arch/DBXUpdate.bin" -o "dbx/$arch-DBXUpdate.bin"
+            test "$(stat -c %s "dbx/$arch-DBXUpdate.bin")" -gt 1000
+          done
+          sha256sum dbx/* | tee dbx/SHA256SUMS
+          file dbx/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: current-microsoft-dbx
+          path: dbx
+          if-no-files-found: error
+          retention-days: 2
