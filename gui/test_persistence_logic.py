@@ -71,6 +71,38 @@ class PersistenceLogicTests(unittest.TestCase):
         self.assertEqual(plan["label"], "casper-rw")
         self.assertEqual(plan["parameter"], "persistent")
 
+    def test_plan_rejects_impossible_partition_size(self):
+        with self.assertRaisesRegex(ValueError, "impossible target layout"):
+            normalize_plan({
+                "detection": {"display_name": "Ubuntu", "family": "ubuntu-casper"},
+                "plan": {
+                    "filesystem": "ext4",
+                    "filesystem_label": "casper-rw",
+                    "boot_parameter": "persistent",
+                    "size_bytes": 64 * 1024**3,
+                    "patch_paths": ["boot/grub/grub.cfg"],
+                },
+                "target_size": 64 * 1024**3,
+            })
+
+    def test_plan_rejects_unsafe_or_duplicate_patch_paths(self):
+        base = {
+            "detection": {"display_name": "Ubuntu", "family": "ubuntu-casper"},
+            "plan": {
+                "filesystem": "ext4",
+                "filesystem_label": "casper-rw",
+                "boot_parameter": "persistent",
+                "size_bytes": 16 * 1024**3,
+                "patch_paths": ["../boot/grub/grub.cfg"],
+            },
+            "target_size": 64 * 1024**3,
+        }
+        with self.assertRaisesRegex(ValueError, "invalid boot-file edit path"):
+            normalize_plan(base)
+        base["plan"]["patch_paths"] = ["boot/grub/grub.cfg", "boot/grub/grub.cfg"]
+        with self.assertRaisesRegex(ValueError, "duplicate boot-file edits"):
+            normalize_plan(base)
+
 
 if __name__ == "__main__":
     unittest.main()
