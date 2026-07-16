@@ -1,0 +1,87 @@
+name: Apply 0.10D offline channel administration
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'develop/0.10.0-offline-channel-admin'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Verify, apply, and validate reviewed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f cmd/rufus-channel-admin/main.go ]]; then
+            echo 'Validated production source is already committed.'
+            exit 0
+          fi
+
+          cat .github/transfer/0.10d.patch.small00 \
+              .github/transfer/0.10d.patch.small01 \
+              .github/transfer/0.10d.patch.small02 \
+              .github/transfer/0.10d.patch.small03 \
+              .github/transfer/0.10d.patch.small04 > /tmp/0.10d.patch.xz.b64
+          test "$(wc -c < /tmp/0.10d.patch.xz.b64)" -eq 24888
+          echo 'd28c45e331ecebc98c59c3f37386911dd482e2072dab162edc769b2788b22c9d  /tmp/0.10d.patch.xz.b64' | sha256sum -c -
+          base64 --decode /tmp/0.10d.patch.xz.b64 > /tmp/0.10d.patch.xz
+          test "$(wc -c < /tmp/0.10d.patch.xz)" -eq 18664
+          echo '44b1c2dff7f2c7c9c8e90a0304f08322cc2d7d832e0defd6a691df3c0cfa3ea0  /tmp/0.10d.patch.xz' | sha256sum -c -
+          xz --decompress --stdout /tmp/0.10d.patch.xz > /tmp/0.10d.patch
+          test "$(wc -c < /tmp/0.10d.patch)" -eq 91943
+          echo '6430490c55703e7199c1255e1481318dc2e44f1cd4f76ec89d5ac45f6dc4e95d  /tmp/0.10d.patch' | sha256sum -c -
+          git apply --check /tmp/0.10d.patch
+          git apply /tmp/0.10d.patch
+
+          expected="$(mktemp)"
+          actual="$(mktemp)"
+          cat > "${expected}" <<'FILES'
+          CHANGELOG.md
+          README.md
+          ROADMAP.md
+          SECURITY.md
+          cmd/rufus-channel-admin/main.go
+          cmd/rufus-channel-admin/main_test.go
+          docs/acquisition-admin.md
+          internal/acquisition/admin.go
+          internal/acquisition/admin_test.go
+          internal/acquisition/channel.go
+          internal/acquisition/trust.go
+          scripts/build-deb.sh
+          scripts/test.sh
+          FILES
+          git status --short | sed -E 's/^.. //' | sort > "${actual}"
+          sort -o "${expected}" "${expected}"
+          diff -u "${expected}" "${actual}"
+
+          test -z "$(gofmt -l cmd/rufus-channel-admin internal/acquisition)"
+          go test ./...
+          go test -race ./internal/acquisition ./cmd/rufus-channel-admin ./cmd/rufus-linux
+          go test -shuffle=on -count=5 ./internal/acquisition ./cmd/rufus-channel-admin ./cmd/rufus-linux
+          go vet ./...
+          python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_logic.py
+          PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
+          for script in scripts/*.sh; do bash -n "${script}"; done
+          ! grep -R -- '--private-key' cmd/rufus-channel-admin internal/acquisition/admin.go
+          ! grep -R -E 'ed25519\.PrivateKey|ed25519\.Sign\(' cmd/rufus-channel-admin internal/acquisition/admin.go
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add CHANGELOG.md README.md ROADMAP.md SECURITY.md \
+            cmd/rufus-channel-admin/main.go cmd/rufus-channel-admin/main_test.go \
+            docs/acquisition-admin.md internal/acquisition/admin.go \
+            internal/acquisition/admin_test.go internal/acquisition/channel.go \
+            internal/acquisition/trust.go scripts/build-deb.sh scripts/test.sh
+          git commit -m '0.10D: add offline acquisition metadata administration'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
