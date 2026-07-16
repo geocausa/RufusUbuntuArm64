@@ -1,4 +1,5 @@
 import os
+import py_compile
 import tempfile
 import unittest
 
@@ -51,6 +52,9 @@ class PersistenceLogicTests(unittest.TestCase):
         self.assertEqual(normalize_boot_label("rufus-live"), "RUFUS-LIVE")
         with self.assertRaises(ValueError):
             normalize_boot_label("TOO-LONG-LABEL")
+
+    def test_wizard_source_compiles(self):
+        py_compile.compile(os.path.join(os.path.dirname(__file__), "rufusarm64_persistence.py"), doraise=True)
 
     def test_plan_normalization(self):
         plan = normalize_plan({
