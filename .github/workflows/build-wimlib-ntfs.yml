@@ -11,6 +11,7 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - runner: ubuntu-24.04-arm
@@ -38,8 +39,11 @@ jobs:
           cd ntfs-src
           autoreconf -fi
           ./configure --prefix="$prefix" --disable-ntfs-3g --disable-ntfsprogs --disable-shared --enable-static
-          make -j"$(nproc)"
-          make install
+          make -j"$(nproc)" libntfs
+          make -C include install
+          make -C libntfs-3g install
+          test -f "$prefix/lib/pkgconfig/libntfs-3g.pc"
+          test -f "$prefix/lib/libntfs-3g.a"
           cd ..
 
           curl --fail --location --retry 5 --retry-all-errors \
@@ -47,15 +51,14 @@ jobs:
           tar -xzf wimlib-source.tar.gz
           cd wimlib-1.14.5
           PKG_CONFIG_PATH="$prefix/lib/pkgconfig" CPPFLAGS="-I$prefix/include/ntfs-3g" LDFLAGS="-L$prefix/lib" \
-            ./configure --without-fuse --disable-shared --enable-static
+            ./configure --with-ntfs-3g --without-fuse --disable-shared --enable-static
           make -j"$(nproc)"
           mkdir -p ../artifact
           cp wimlib-imagex ../artifact/wimlib-imagex
           cp COPYING COPYING.GPLv3 COPYING.LGPL ../artifact/
           ../artifact/wimlib-imagex --version
           ldd ../artifact/wimlib-imagex | tee ../artifact/LDD.txt
-          ../artifact/wimlib-imagex apply --help >/dev/null
-          if ! strings ../artifact/wimlib-imagex | grep -q 'NTFS volume'; then
+          if ! grep -q '^#define WITH_NTFS_3G 1' config.h; then
             echo 'NTFS volume apply support was not compiled in' >&2
             exit 1
           fi
