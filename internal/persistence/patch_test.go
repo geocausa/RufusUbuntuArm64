@@ -9,8 +9,18 @@ import (
 	"testing"
 )
 
+func readyUbuntuDetection() Detection {
+	return Detection{
+		Family:          FamilyUbuntuCasper,
+		BootParameter:   "persistent",
+		Filesystem:      "ext4",
+		FilesystemLabel: "casper-rw",
+		PatchPaths:      []string{"boot/grub/grub.cfg"},
+	}
+}
+
 func TestPatchBootConfigPreservesLineEndingsAndInsertionPoint(t *testing.T) {
-	detection := readyDetection()
+	detection := readyUbuntuDetection()
 	input := "menuentry Ubuntu {\r\n\tlinux /casper/vmlinuz boot=casper quiet splash ---\r\n}\r\n"
 	got, changes, err := PatchBootConfig(input, detection)
 	if err != nil {
@@ -26,7 +36,7 @@ func TestPatchBootConfigPreservesLineEndingsAndInsertionPoint(t *testing.T) {
 }
 
 func TestPatchBootConfigSupportsResoluteCmdlineLayout(t *testing.T) {
-	detection := readyDetection()
+	detection := readyUbuntuDetection()
 	input := "linux  /casper/vmlinuz $cmdline  --- quiet splash console=tty0\ninitrd /casper/initrd\n"
 	got, changes, err := PatchBootConfig(input, detection)
 	if err != nil {
@@ -39,7 +49,7 @@ func TestPatchBootConfigSupportsResoluteCmdlineLayout(t *testing.T) {
 }
 
 func TestPatchBootConfigSupportsPrefixedCasperPath(t *testing.T) {
-	detection := readyDetection()
+	detection := readyUbuntuDetection()
 	input := "linuxefi ($root)/casper/vmlinuz $cmdline ---\n"
 	got, changes, err := PatchBootConfig(input, detection)
 	if err != nil {
@@ -52,10 +62,6 @@ func TestPatchBootConfigSupportsPrefixedCasperPath(t *testing.T) {
 
 func TestPatchBootConfigLeavesUnrelatedAndEnabledLines(t *testing.T) {
 	detection := readyDetection()
-	detection.Family = FamilyDebianLive
-	detection.BootParameter = "persistence"
-	detection.FilesystemLabel = "persistence"
-	detection.PersistenceConfig = "/ union\n"
 	input := "append boot=live components persistence\nlinux /vmlinuz root=/dev/sda1\n# append boot=live\n"
 	got, changes, err := PatchBootConfig(input, detection)
 	if err != nil {
@@ -67,7 +73,7 @@ func TestPatchBootConfigLeavesUnrelatedAndEnabledLines(t *testing.T) {
 }
 
 func TestPatchBootConfigRefusesUnrelatedCmdlineKernel(t *testing.T) {
-	detection := readyDetection()
+	detection := readyUbuntuDetection()
 	input := "linux /other/vmlinuz $cmdline --- quiet\n"
 	got, changes, err := PatchBootConfig(input, detection)
 	if err != nil {
@@ -87,13 +93,7 @@ func TestPatchBootTreeAtomicallyPatchesDetectedPath(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte("linux /casper/vmlinuz $cmdline --- quiet\n"), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	detection := Detection{
-		Family:          FamilyUbuntuCasper,
-		BootParameter:   "persistent",
-		Filesystem:      "ext4",
-		FilesystemLabel: "casper-rw",
-		PatchPaths:      []string{"boot/grub/grub.cfg"},
-	}
+	detection := readyUbuntuDetection()
 	patched, err := PatchBootTree(root, detection)
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +129,7 @@ func TestPatchBootTreeRejectsSymlinkFinalPath(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, "boot", "grub", "grub.cfg")); err != nil {
 		t.Fatal(err)
 	}
-	detection := Detection{Family: FamilyUbuntuCasper, BootParameter: "persistent", Filesystem: "ext4", FilesystemLabel: "casper-rw", PatchPaths: []string{"boot/grub/grub.cfg"}}
+	detection := readyUbuntuDetection()
 	if _, err := PatchBootTree(root, detection); err == nil {
 		t.Fatal("symlink boot configuration accepted")
 	}
@@ -154,7 +154,7 @@ func TestPatchBootTreeRejectsSymlinkParent(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, "boot", "grub")); err != nil {
 		t.Fatal(err)
 	}
-	detection := Detection{Family: FamilyUbuntuCasper, BootParameter: "persistent", Filesystem: "ext4", FilesystemLabel: "casper-rw", PatchPaths: []string{"boot/grub/grub.cfg"}}
+	detection := readyUbuntuDetection()
 	if _, err := PatchBootTree(root, detection); err == nil {
 		t.Fatal("symlink parent accepted")
 	}
