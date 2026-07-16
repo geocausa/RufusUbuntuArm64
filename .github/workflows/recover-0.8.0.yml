@@ -4,16 +4,21 @@ on:
   push:
     branches:
       - recovery/import-0.8.0
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
   recover:
+    if: github.event_name == 'push' || github.head_ref == 'recovery/import-0.8.0'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: recovery/import-0.8.0
           fetch-depth: 0
 
       - name: Reconstruct and verify recovered source
