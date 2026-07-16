@@ -359,9 +359,7 @@ func runWrite(args []string) error {
 	}
 	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	timeoutCtx, timeoutCancel := context.WithTimeout(signalCtx, 2*time.Minute)
-	defer timeoutCancel()
-	ctx, cancelCleanup, err := safety.CancellationContext(timeoutCtx, *cancelFile)
+	ctx, cancelCleanup, err := newWriterCancellationContext(signalCtx, *cancelFile)
 	if err != nil {
 		return err
 	}
@@ -881,6 +879,24 @@ func runPersistencePlan(args []string) error {
 	return nil
 }
 
+func newWriterCancellationContext(parent context.Context, cancelFile string) (context.Context, context.CancelFunc, error) {
+	return safety.CancellationContext(parent, cancelFile)
+}
+
+func newPersistenceAnalysisContext(parent context.Context, cancelFile string) (context.Context, context.CancelFunc, error) {
+	timeoutCtx, timeoutCancel := context.WithTimeout(parent, 2*time.Minute)
+	ctx, cancelCleanup, err := safety.CancellationContext(timeoutCtx, cancelFile)
+	if err != nil {
+		timeoutCancel()
+		return nil, nil, err
+	}
+	cleanup := func() {
+		cancelCleanup()
+		timeoutCancel()
+	}
+	return ctx, cleanup, nil
+}
+
 func runPersistenceAnalyze(args []string) error {
 	fsFlags := flag.NewFlagSet("persistence analyze", flag.ContinueOnError)
 	imagePath := fsFlags.String("image", "", "plain ISOHybrid image")
@@ -930,9 +946,7 @@ func runPersistenceAnalyze(args []string) error {
 	setTrustedSystemPath()
 	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	timeoutCtx, timeoutCancel := context.WithTimeout(signalCtx, 2*time.Minute)
-	defer timeoutCancel()
-	ctx, cancelCleanup, err := safety.CancellationContext(timeoutCtx, *cancelFile)
+	ctx, cancelCleanup, err := newPersistenceAnalysisContext(signalCtx, *cancelFile)
 	if err != nil {
 		return err
 	}

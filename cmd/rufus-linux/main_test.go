@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
@@ -147,6 +148,33 @@ func TestAcquireCatalogCommands(t *testing.T) {
 func TestReadLimitedRegularFileRejectsDirectory(t *testing.T) {
 	if _, err := readLimitedRegularFile(t.TempDir(), 1024); err == nil || !strings.Contains(err.Error(), "regular file") {
 		t.Fatalf("directory error = %v", err)
+	}
+}
+
+func TestWriterContextHasNoAutomaticDeadline(t *testing.T) {
+	ctx, cleanup, err := newWriterCancellationContext(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if _, ok := ctx.Deadline(); ok {
+		t.Fatal("normal USB writer unexpectedly has an automatic deadline")
+	}
+}
+
+func TestPersistenceAnalysisContextHasBoundedDeadline(t *testing.T) {
+	ctx, cleanup, err := newPersistenceAnalysisContext(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("read-only persistence analysis is missing its cleanup deadline")
+	}
+	remaining := time.Until(deadline)
+	if remaining < 119*time.Second || remaining > 121*time.Second {
+		t.Fatalf("unexpected persistence analysis deadline: %v", remaining)
 	}
 }
 
