@@ -50,7 +50,7 @@ jobs:
           tar -xzf ntfs-3g-source.tar.gz -C ntfs-src --strip-components=1
           cd ntfs-src
           autoreconf -fi >>"$log" 2>&1
-          ./configure --prefix="$prefix" --disable-ntfs-3g --disable-ntfsprogs \
+          ./configure --prefix="$prefix" --disable-ntfs-3g \
             --disable-shared --enable-static >>"$log" 2>&1
           make -j"$(nproc)" libntfs >>"$log" 2>&1
           make -C include install >>"$log" 2>&1
