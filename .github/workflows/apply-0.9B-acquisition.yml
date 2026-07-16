@@ -1,0 +1,69 @@
+name: Apply 0.9B acquisition foundation
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'develop/0.9.0-acquisition-foundation'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/0.9.0-acquisition-foundation
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+
+      - name: Detect staged acquisition patch
+        id: staged
+        shell: bash
+        run: |
+          if test -f .changes/0.9B-acquisition.patch.xz.b64; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Decode and verify staged patch
+        if: steps.staged.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 --decode .changes/0.9B-acquisition.patch.xz.b64 > /tmp/0.9B-acquisition.patch.xz
+          echo '0aadc3cc2e79dfd256c19af19d3dfda23a31f6b0e34e2b901ac7499d7c263020  /tmp/0.9B-acquisition.patch.xz' | sha256sum --check --strict
+          xz --decompress --stdout /tmp/0.9B-acquisition.patch.xz > /tmp/0.9B-acquisition.patch
+          echo '6e84c5c0911d4000c1866b15fe55076fffa4d38a18bf4bb2560e4f2e22978019  /tmp/0.9B-acquisition.patch' | sha256sum --check --strict
+          git apply --check /tmp/0.9B-acquisition.patch
+          git apply /tmp/0.9B-acquisition.patch
+          rm -rf .changes
+
+      - name: Validate acquisition implementation
+        if: steps.staged.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l cmd internal)"
+          go test ./...
+          go test -race ./internal/acquisition ./cmd/rufus-linux
+          go test -shuffle=on -count=5 ./internal/acquisition ./cmd/rufus-linux
+          go vet ./...
+          python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_logic.py gui/test_logic.py
+
+      - name: Commit validated acquisition foundation
+        if: steps.staged.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git commit -m 'Add signed catalog and verified image acquisition'
+          git push origin HEAD:develop/0.9.0-acquisition-foundation
