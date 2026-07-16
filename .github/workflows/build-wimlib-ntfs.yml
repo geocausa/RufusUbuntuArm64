@@ -22,51 +22,73 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
             build-essential autoconf automake libtool pkg-config ca-certificates curl \
             libxml2-dev zlib1g-dev liblzma-dev libbz2-dev liblz4-dev libzstd-dev
       - name: Build private libntfs-3g and wimlib 1.14.5
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          mkdir -p debug artifact
+          log="$PWD/debug/build-${{ matrix.arch }}.log"
+          : > "$log"
+          fail() {
+            status=$?
+            echo "Build failed with status $status" >&2
+            tail -n 240 "$log" >&2 || true
+            exit "$status"
+          }
+          trap fail ERR
+          exec 3>&1 4>&2
           prefix="$PWD/prefix"
+          echo 'Downloading ntfs-3g...' | tee -a "$log"
           curl --fail --location --retry 5 --retry-all-errors \
             https://codeload.github.com/tuxera/ntfs-3g/tar.gz/refs/tags/2022.10.3 \
-            -o ntfs-3g-source.tar.gz
+            -o ntfs-3g-source.tar.gz >>"$log" 2>&1
           mkdir ntfs-src
           tar -xzf ntfs-3g-source.tar.gz -C ntfs-src --strip-components=1
           cd ntfs-src
-          autoreconf -fi
-          ./configure --prefix="$prefix" --disable-ntfs-3g --disable-ntfsprogs --disable-shared --enable-static
-          make -j"$(nproc)" libntfs
-          make -C include install
-          make -C libntfs-3g install
+          autoreconf -fi >>"$log" 2>&1
+          ./configure --prefix="$prefix" --disable-ntfs-3g --disable-ntfsprogs \
+            --disable-shared --enable-static >>"$log" 2>&1
+          make -j"$(nproc)" libntfs >>"$log" 2>&1
+          make -C include install >>"$log" 2>&1
+          make -C libntfs-3g install >>"$log" 2>&1
+          find "$prefix" -maxdepth 4 -type f -o -type l | sort >>"$log" 2>&1
           test -f "$prefix/lib/pkgconfig/libntfs-3g.pc"
           test -f "$prefix/lib/libntfs-3g.a"
           cd ..
 
+          echo 'Downloading and building wimlib...' | tee -a "$log"
           curl --fail --location --retry 5 --retry-all-errors \
-            https://wimlib.net/downloads/wimlib-1.14.5.tar.gz -o wimlib-source.tar.gz
+            https://wimlib.net/downloads/wimlib-1.14.5.tar.gz -o wimlib-source.tar.gz >>"$log" 2>&1
           tar -xzf wimlib-source.tar.gz
           cd wimlib-1.14.5
-          PKG_CONFIG_PATH="$prefix/lib/pkgconfig" CPPFLAGS="-I$prefix/include/ntfs-3g" LDFLAGS="-L$prefix/lib" \
-            ./configure --with-ntfs-3g --without-fuse --disable-shared --enable-static
-          make -j"$(nproc)"
-          mkdir -p ../artifact
+          PKG_CONFIG_PATH="$prefix/lib/pkgconfig" CPPFLAGS="-I$prefix/include/ntfs-3g" \
+            LDFLAGS="-L$prefix/lib" ./configure --with-ntfs-3g --without-fuse \
+            --disable-shared --enable-static >>"$log" 2>&1
+          make -j"$(nproc)" >>"$log" 2>&1
           cp wimlib-imagex ../artifact/wimlib-imagex
           cp COPYING COPYING.GPLv3 COPYING.LGPL ../artifact/
-          ../artifact/wimlib-imagex --version
-          ldd ../artifact/wimlib-imagex | tee ../artifact/LDD.txt
-          if ! grep -q '^#define WITH_NTFS_3G 1' config.h; then
-            echo 'NTFS volume apply support was not compiled in' >&2
-            exit 1
-          fi
+          ../artifact/wimlib-imagex --version | tee -a "$log"
+          ldd ../artifact/wimlib-imagex | tee ../artifact/LDD.txt | tee -a "$log"
+          grep -q '^#define WITH_NTFS_3G 1' config.h
           cd ..
           cp wimlib-source.tar.gz artifact/wimlib-1.14.5-source.tar.gz
           cp ntfs-3g-source.tar.gz artifact/ntfs-3g-2022.10.3-source.tar.gz
           sha256sum artifact/* > artifact/SHA256SUMS
-      - uses: actions/upload-artifact@v4
+          trap - ERR
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wimlib-ntfs-build-log-${{ matrix.arch }}
+          path: debug
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Upload engine
+        uses: actions/upload-artifact@v4
         with:
           name: wimlib-ntfs-${{ matrix.arch }}
           path: artifact
