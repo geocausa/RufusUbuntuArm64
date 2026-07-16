@@ -24,10 +24,12 @@ from rufusarm64_logic import (
     acquisition_image_label,
     build_acquisition_download_command,
     build_acquisition_list_command,
-    build_persistence_plan_command,
+    build_persistence_analyze_command,
     build_writer_command,
     device_label,
     human_bytes,
+    human_duration,
+    inspect_source_identity,
     normalize_acquisition_images,
     persistence_plan_summary,
     progress_status,
@@ -333,7 +335,7 @@ class AcquisitionDialog(Gtk.Dialog):
 
 
 class PersistencePlanDialog(Gtk.Dialog):
-    """Collect the read-only inputs required by the persistence planner."""
+    """Collect the requested size for automatic read-only analysis."""
 
     def __init__(self, parent, settings):
         super().__init__(title="Analyze Linux persistence compatibility", transient_for=parent, modal=True)
@@ -344,22 +346,14 @@ class PersistencePlanDialog(Gtk.Dialog):
         box.set_border_width(18)
         self.get_content_area().pack_start(box, True, True, 0)
         intro = Gtk.Label(label=(
-            "Choose the read-only mounted or extracted root of the selected Ubuntu or Debian image. "
-            "Analysis does not modify the image or USB drive."
+            "RufusArm64 will request administrator authentication, mount the selected ISO in a private read-only folder, "
+            "inspect its approved boot files, then unmount it automatically. The image and USB drive are not modified."
         ))
         intro.set_xalign(0)
         intro.set_line_wrap(True)
         box.pack_start(intro, False, False, 0)
         grid = Gtk.Grid(column_spacing=12, row_spacing=10)
         box.pack_start(grid, False, False, 0)
-        label = Gtk.Label(label="Mounted media folder")
-        label.set_xalign(0)
-        self.media_root = Gtk.FileChooserButton(title="Choose mounted Linux media", action=Gtk.FileChooserAction.SELECT_FOLDER)
-        saved = settings.get("persistence_media_root", "")
-        if saved and os.path.isdir(saved):
-            self.media_root.set_filename(saved)
-        grid.attach(label, 0, 0, 1, 1)
-        grid.attach(self.media_root, 1, 0, 1, 1)
         size_label = Gtk.Label(label="Persistence size")
         size_label.set_xalign(0)
         self.size = Gtk.SpinButton.new_with_range(0, 1024, 1)
@@ -368,9 +362,12 @@ class PersistencePlanDialog(Gtk.Dialog):
         size_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         size_box.pack_start(self.size, False, False, 0)
         size_box.pack_start(Gtk.Label(label="GiB (0 = remaining space)"), False, False, 0)
-        grid.attach(size_label, 0, 1, 1, 1)
-        grid.attach(size_box, 1, 1, 1, 1)
-        note = Gtk.Label(label="Persistent USB creation remains experimental and command-line only; this screen only explains compatibility and sizing.")
+        grid.attach(size_label, 0, 0, 1, 1)
+        grid.attach(size_box, 1, 0, 1, 1)
+        note = Gtk.Label(label=(
+            "Only the image is mounted, with read-only, no-suid, no-device and no-exec restrictions. "
+            "Persistent USB creation remains experimental and command-line only."
+        ))
         note.set_xalign(0)
         note.set_line_wrap(True)
         note.get_style_context().add_class("dim-label")
@@ -378,10 +375,7 @@ class PersistencePlanDialog(Gtk.Dialog):
         self.show_all()
 
     def values(self):
-        root = self.media_root.get_filename() or ""
-        if not root:
-            raise ValueError("Choose the mounted or extracted Linux media folder.")
-        return root, int(self.size.get_value())
+        return int(self.size.get_value())
 
 
 class RufusWindow(Gtk.ApplicationWindow):
@@ -1125,45 +1119,76 @@ class RufusWindow(Gtk.ApplicationWindow):
             return
         dialog = PersistencePlanDialog(self, self.settings)
         response = dialog.run()
-        try:
-            values = dialog.values() if response == Gtk.ResponseType.OK else None
-        except ValueError as exc:
-            values = None
-            self.message(str(exc), Gtk.MessageType.ERROR)
+        size_gib = dialog.values() if response == Gtk.ResponseType.OK else None
         dialog.destroy()
-        if not values:
+        if size_gib is None:
             return
-        media_root, size_gib = values
-        self.settings["persistence_media_root"] = media_root
         self.settings["persistence_size_gib"] = size_gib
         self.save_settings()
         try:
-            command = build_persistence_plan_command(helper_path(), image, media_root, self.devices[index].get("size"), size_gib)
+            resolved_image, source_identity = inspect_source_identity(image)
         except ValueError as exc:
+            self.message(str(exc), Gtk.MessageType.ERROR)
+            return
+        runtime_dir = f"/run/user/{os.getuid()}"
+        try:
+            fd, self.cancel_path = tempfile.mkstemp(prefix="rufusarm64-", suffix=".cancel", dir=runtime_dir)
+            os.close(fd)
+            os.unlink(self.cancel_path)
+        except OSError as exc:
+            self.cancel_path = None
+            self.message(f"Could not create a safe cancellation channel: {exc}", Gtk.MessageType.ERROR)
+            return
+        if not os.path.isfile(PKEXEC) or not os.access(PKEXEC, os.X_OK):
+            self.cancel_path = None
+            self.message("Ubuntu administrator authentication (pkexec) is not installed.", Gtk.MessageType.ERROR)
+            return
+        try:
+            command = build_persistence_analyze_command(
+                PKEXEC, helper_path(), resolved_image, source_identity,
+                self.devices[index].get("size"), size_gib, self.cancel_path,
+            )
+        except ValueError as exc:
+            self.cancel_path = None
             self.message(str(exc), Gtk.MessageType.ERROR)
             return
         self.active_job = "persistence-plan"
         self.cancel_requested = False
         self.operation_started_at = datetime.now(timezone.utc)
+        self.append_log(f"Read-only persistence analysis image: {resolved_image}")
         self.set_busy(True)
         self.progress.set_fraction(0)
         self.progress.pulse()
-        self.progress.set_text("Analyzing persistence compatibility…")
-        self.progress_detail.set_text("Reading image metadata and approved boot configuration paths. Nothing is being modified.")
+        self.progress.set_text("Requesting permission for read-only analysis…")
+        self.progress_detail.set_text("Waiting for Ubuntu authentication. The USB drive will not be opened or modified.")
+        GLib.timeout_add_seconds(1, self.pulse_persistence_analysis)
         threading.Thread(target=self.run_persistence_plan, args=(command,), daemon=True).start()
+
+    def pulse_persistence_analysis(self):
+        if not self.busy or self.active_job != "persistence-plan":
+            return False
+        self.progress.pulse()
+        elapsed = 0
+        if self.operation_started_at:
+            elapsed = (datetime.now(timezone.utc) - self.operation_started_at).total_seconds()
+        if self.cancel_requested:
+            self.progress_detail.set_text(
+                f"Cancellation requested — waiting for the private read-only mount to be cleaned up ({human_duration(elapsed)} elapsed)."
+            )
+        else:
+            self.progress_detail.set_text(
+                f"Read-only analysis is still running — {human_duration(elapsed)} elapsed. The USB drive is not being accessed."
+            )
+        return True
 
     def run_persistence_plan(self, command):
         try:
             self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
-            stdout, stderr = self.process.communicate(timeout=90)
+            stdout, stderr = self.process.communicate()
             return_code = self.process.returncode
             payload = json.loads(stdout) if return_code == 0 else {}
             error = stderr.strip() or stdout.strip() if return_code != 0 else ""
             GLib.idle_add(self.finish_persistence_plan, return_code, payload, error)
-        except subprocess.TimeoutExpired:
-            if self.process:
-                self.process.kill()
-            GLib.idle_add(self.finish_persistence_plan, 1, {}, "Persistence analysis timed out.")
         except Exception as exc:
             GLib.idle_add(self.finish_persistence_plan, 1, {}, str(exc))
         finally:
@@ -1174,6 +1199,12 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.set_busy(False)
         self.active_job = ""
         self.cancel_requested = False
+        if self.cancel_path:
+            try:
+                os.unlink(self.cancel_path)
+            except FileNotFoundError:
+                pass
+            self.cancel_path = None
         if return_code == 0:
             try:
                 summary = persistence_plan_summary(payload)
@@ -1181,17 +1212,18 @@ class RufusWindow(Gtk.ApplicationWindow):
                 error = str(exc)
             else:
                 self.persistence_summary.set_text(summary)
+                self.progress.set_fraction(1.0)
                 self.progress.set_text("Persistence compatibility confirmed")
-                self.progress_detail.set_text("The result is read-only. Creation remains experimental and command-line only.")
+                self.progress_detail.set_text("The private read-only ISO mount was removed. Creation remains experimental and command-line only.")
                 self.append_log(summary)
                 return False
         if was_cancelled:
             self.progress.set_text("Persistence analysis cancelled")
-            self.progress_detail.set_text("Nothing was modified.")
+            self.progress_detail.set_text("The private read-only mount was cleaned up. Nothing was modified.")
         else:
             self.persistence_summary.set_text("Not compatible with the current experimental persistence scope.\n" + (error or "Unknown planner error"))
             self.progress.set_text("Persistence analysis unavailable")
-            self.progress_detail.set_text("The image and USB were not modified.")
+            self.progress_detail.set_text("The image and USB were not modified; any private analysis mount was cleaned up.")
         return False
 
     def update_dbx(self, *_):

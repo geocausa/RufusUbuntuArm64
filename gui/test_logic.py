@@ -1,15 +1,19 @@
+import os
+import tempfile
 import unittest
 
 from rufusarm64_logic import (
     acquisition_image_label,
     build_acquisition_download_command,
     build_acquisition_list_command,
+    build_persistence_analyze_command,
     build_persistence_plan_command,
     build_writer_command,
     device_label,
     human_bytes,
     human_duration,
     human_rate,
+    inspect_source_identity,
     normalize_acquisition_images,
     persistence_plan_summary,
     progress_status,
@@ -66,6 +70,28 @@ class LogicTests(unittest.TestCase):
             }, {
                 "id": "duplicate", "name": "Two", "filename": "two.iso", "size": 2
             }])
+
+    def test_automatic_persistence_analysis_command_is_read_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            image_path = os.path.join(directory, "ubuntu.iso")
+            with open(image_path, "wb") as handle:
+                handle.write(b"iso")
+            resolved, identity = inspect_source_identity(image_path)
+        self.assertEqual(resolved, os.path.realpath(image_path))
+        self.assertEqual(len(identity.split(":")), 5)
+        command = build_persistence_analyze_command(
+            "/usr/bin/pkexec", "/helper", resolved, identity, 64 * 1024**3, 16,
+            "/run/user/1000/rufusarm64-analysis.cancel",
+        )
+        self.assertEqual(command[:4], ["/usr/bin/pkexec", "/helper", "persistence", "analyze"])
+        self.assertIn("--expected-source-identity", command)
+        self.assertIn("--cancel-file", command)
+        self.assertIn("--json", command)
+        self.assertNotIn("write", command)
+        self.assertNotIn("--experimental-persistence", command)
+        self.assertNotIn("--media-root", command)
+        with self.assertRaises(ValueError):
+            build_persistence_analyze_command("pkexec", "/helper", resolved, "", 1, 0, "/tmp/cancel")
 
     def test_persistence_plan_command_and_summary(self):
         command = build_persistence_plan_command(

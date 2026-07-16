@@ -22,16 +22,17 @@ The **Linux persistence compatibility** panel accepts:
 
 - a selected recognized Linux ISOHybrid image;
 - the selected USB drive's reported capacity;
-- a read-only mounted or extracted root of that image;
 - an optional requested persistence size.
 
-It invokes only:
+The GUI records the selected image's kernel identity before administrator authentication, then invokes only:
 
 ```text
-rufusarm64-cli persistence plan ... --json
+sudo rufusarm64-cli persistence analyze ... --json
 ```
 
-The planner reads bounded expected marker and boot-configuration paths and returns the detected family, filesystem label, boot parameter, requested partition size, and boot files that a future creation operation would update. It does not open the USB for writing, modify the image, patch a boot file, create a partition, or invoke `pkexec`.
+The helper refuses the operation if the image's device, inode, size, modification time, or change time no longer match the pre-authentication identity. It opens the image without following symlinks, mounts the pinned file descriptor in a private `0700` workspace with `loop,ro,nosuid,nodev,noexec`, runs the existing bounded persistence detector and planner, rechecks the source identity, unmounts, and removes the workspace on success, error, timeout, or cancellation.
+
+Only the selected USB drive's capacity is supplied. No target device path is accepted or opened, and the command cannot modify a partition table, filesystem, boot configuration, image, or USB drive. The older unprivileged `persistence plan --media-root` command remains available for scripts and manually mounted media.
 
 The GUI does not expose `--mode linux-persistent` or `--experimental-persistence`. Persistent-media creation remains command-line-only until the physical ARM64 qualification matrix and graphical recovery behavior are sufficiently mature.
 

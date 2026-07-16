@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
@@ -147,6 +148,70 @@ func TestAcquireCatalogCommands(t *testing.T) {
 func TestReadLimitedRegularFileRejectsDirectory(t *testing.T) {
 	if _, err := readLimitedRegularFile(t.TempDir(), 1024); err == nil || !strings.Contains(err.Error(), "regular file") {
 		t.Fatalf("directory error = %v", err)
+	}
+}
+
+func TestWriterContextHasNoAutomaticDeadline(t *testing.T) {
+	ctx, cleanup, err := newWriterCancellationContext(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if _, ok := ctx.Deadline(); ok {
+		t.Fatal("normal USB writer unexpectedly has an automatic deadline")
+	}
+}
+
+func TestPersistenceAnalysisContextHasBoundedDeadline(t *testing.T) {
+	ctx, cleanup, err := newPersistenceAnalysisContext(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("read-only persistence analysis is missing its cleanup deadline")
+	}
+	remaining := time.Until(deadline)
+	if remaining < 119*time.Second || remaining > 121*time.Second {
+		t.Fatalf("unexpected persistence analysis deadline: %v", remaining)
+	}
+}
+
+func TestPKExecPersistenceAnalyzeRequiresJSONAndCancellationChannel(t *testing.T) {
+	t.Setenv("PKEXEC_UID", "1000")
+	base := []string{
+		"--image", "/tmp/linux.iso",
+		"--expected-source-identity", "1:2:3:4:5",
+		"--target-size", "4G",
+	}
+	if err := runPersistenceAnalyze(base); err == nil || !strings.Contains(err.Error(), "requires --json and a trusted --cancel-file") {
+		t.Fatalf("missing graphical boundary flags error = %v", err)
+	}
+	withJSON := append(append([]string{}, base...), "--json")
+	if err := runPersistenceAnalyze(withJSON); err == nil || !strings.Contains(err.Error(), "requires --json and a trusted --cancel-file") {
+		t.Fatalf("missing cancellation channel error = %v", err)
+	}
+}
+
+func TestPersistenceAnalyzeRejectsPositionalArguments(t *testing.T) {
+	err := runPersistenceAnalyze([]string{"unexpected"})
+	if err == nil || !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("positional argument error = %v", err)
+	}
+}
+
+func TestPersistenceAnalyzeRejectsMalformedSourceIdentityBeforePrivilege(t *testing.T) {
+	t.Setenv("PKEXEC_UID", "1000")
+	err := runPersistenceAnalyze([]string{
+		"--image", "/tmp/linux.iso",
+		"--expected-source-identity", "not-an-identity",
+		"--target-size", "4G",
+		"--cancel-file", "/run/user/1000/rufusarm64-test.cancel",
+		"--json",
+	})
+	if err == nil || !strings.Contains(err.Error(), "parse --expected-source-identity") {
+		t.Fatalf("malformed source identity error = %v", err)
 	}
 }
 

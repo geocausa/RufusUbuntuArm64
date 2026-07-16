@@ -36,6 +36,14 @@ rufusarm64-cli \- safely create bootable USB media on Linux
 .RI [ --size " SIZE" ]
 .RI [ --json ]
 .PP
+.B sudo rufusarm64-cli persistence analyze
+.BI --image " FILE"
+.BI --expected-source-identity " ID"
+.BI --target-size " SIZE"
+.RI [ --size " SIZE" ]
+.RI [ --cancel-file " FILE" ]
+.RI [ --json ]
+.PP
 .B sudo rufusarm64-cli qualify start
 .BI --record " FILE"
 .BI --output " FILE"
@@ -156,7 +164,12 @@ Cancellation removes the temporary partial file.
 .SH LINUX PERSISTENCE PLANNING
 .TP
 .B persistence plan --image FILE --media-root DIRECTORY --target-size SIZE [--size SIZE] [--json]
-Inspect a plain raw-bootable ISOHybrid image and a read-only mounted or extracted media tree, then calculate an append-only persistence partition without modifying the image, directory, or any device. The initial scope is Ubuntu 20.04 or newer casper media and Debian live-boot media. Ubuntu plans use the
+Inspect a plain raw-bootable ISOHybrid image and a read-only mounted or extracted media tree, then calculate an append-only persistence partition without modifying the image, directory, or any device.
+.TP
+.B persistence analyze --image FILE --expected-source-identity ID --target-size SIZE [--size SIZE] [--cancel-file FILE] [--json]
+Open an identity-bound plain ISOHybrid image, mount its pinned file descriptor in a private workspace with read-only, no-suid, no-device, and no-exec options, run the same detector and planner, recheck the source identity, then unmount and remove the workspace. Only target capacity is accepted; no target-device path is opened. The graphical application supplies the source identity recorded before authentication and requires JSON plus a trusted per-user cancellation marker.
+.PP
+The manual planner and automatic analyzer share the same initial compatibility scope. The initial scope is Ubuntu 20.04 or newer casper media and Debian live-boot media. Ubuntu plans use the
 .B persistent
 boot parameter and an ext4 partition labeled
 .BR casper-rw .
