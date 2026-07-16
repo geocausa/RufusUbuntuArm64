@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/geocausa/RufusArm64/internal/imaging"
@@ -16,31 +18,43 @@ import (
 	"github.com/geocausa/RufusArm64/internal/sourcefile"
 )
 
+const persistentAnalysisSectorSize = uint64(512)
+
 // PersistentAnalysisOptions describes a read-only persistence compatibility
 // analysis. TargetSize is only geometry supplied by the caller; no target path
 // is accepted or opened by this API.
 type PersistentAnalysisOptions struct {
-	ExpectedSource  sourcefile.Identity
-	TargetSize      uint64
-	PersistenceSize uint64
-	WorkDirectory   string
+	ExpectedSource     sourcefile.Identity
+	TargetSize         uint64
+	PersistenceSize    uint64
+	Architecture       string
+	WorkDirectory      string
+	ManifestMaxEntries int
+	ManifestMaxBytes   uint64
 }
 
-// PersistentAnalysisResult is the same bounded detector and append-only plan
-// produced by the manual persistence planner, but with the ISO mounted in a
-// private read-only workspace by the helper.
+// PersistentAnalysisResult describes the same fresh GPT/FAT32/ext4 layout used
+// by CreatePersistent. Plan is retained for existing CLI and GUI consumers and
+// is the persistence partition within Layout, not an extension of the ISO's
+// embedded hybrid partition table.
 type PersistentAnalysisResult struct {
-	Detection  persistence.Detection `json:"detection"`
-	Plan       persistence.Plan      `json:"plan"`
-	ImageSize  uint64                `json:"image_size"`
-	TargetSize uint64                `json:"target_size"`
+	Detection         persistence.Detection `json:"detection"`
+	Plan              persistence.Plan      `json:"plan"`
+	Layout            PersistentLayout      `json:"layout"`
+	ImageSize         uint64                `json:"image_size"`
+	TargetSize        uint64                `json:"target_size"`
+	ManifestEntries   int                   `json:"manifest_entries"`
+	ManifestBytes     uint64                `json:"manifest_bytes"`
+	FAT32RequiredBytes uint64               `json:"fat32_required_bytes"`
 }
 
 type persistentAnalysisRunner func(context.Context, string, ...string) error
 
 // AnalyzePersistent mounts a plain raw-bootable ISOHybrid image read-only,
-// detects the supported persistence contract, and returns a non-destructive
-// partition plan. It never accepts a target path and cannot write a USB drive.
+// validates the same writable-media requirements as CreatePersistent, and
+// returns a fresh two-partition GPT plan. It never accepts a target path and
+// cannot write a USB drive. Creation repeats the plan using the target's actual
+// logical sector size before any destructive action.
 func AnalyzePersistent(ctx context.Context, isoPath string, opts PersistentAnalysisOptions, emit PersistentEventFunc) (PersistentAnalysisResult, error) {
 	for _, name := range []string{"mount", "umount"} {
 		if _, err := exec.LookPath(name); err != nil {
@@ -142,7 +156,27 @@ func analyzePersistentWithRunner(ctx context.Context, isoPath string, opts Persi
 	if !detection.Ready() {
 		return result, fmt.Errorf("detected %s but its persistence contract is outside the supported scope", detection.DisplayName)
 	}
-	plan, err := persistence.BuildPlan(image, uint64(opts.ExpectedSource.Size), opts.TargetSize, opts.PersistenceSize, detection)
+
+	architecture := strings.TrimSpace(opts.Architecture)
+	if architecture == "" {
+		architecture = runtime.GOARCH
+	}
+	sendPersistent(emit, PersistentEvent{Stage: "inspect", Message: "Checking the complete media tree, fallback UEFI loader, FAT32 safety, and required boot capacity…"})
+	manifest, err := Inspect(ctx, mountRoot, Options{
+		Architecture: architecture,
+		RequireUEFI:  true,
+		RequireFAT32: true,
+		MaxEntries:   opts.ManifestMaxEntries,
+		MaxBytes:     opts.ManifestMaxBytes,
+	})
+	if err != nil {
+		return result, err
+	}
+	fat32Bytes, err := EstimateFAT32Bytes(manifest)
+	if err != nil {
+		return result, err
+	}
+	layout, err := PlanPersistentLayout(opts.TargetSize, persistentAnalysisSectorSize, fat32Bytes, opts.PersistenceSize, detection)
 	if err != nil {
 		return result, err
 	}
@@ -154,11 +188,15 @@ func analyzePersistentWithRunner(ctx context.Context, isoPath string, opts Persi
 	}
 
 	result = PersistentAnalysisResult{
-		Detection:  detection,
-		Plan:       plan,
-		ImageSize:  uint64(opts.ExpectedSource.Size),
-		TargetSize: opts.TargetSize,
+		Detection:          detection,
+		Plan:               layout.Plan,
+		Layout:             layout,
+		ImageSize:          uint64(opts.ExpectedSource.Size),
+		TargetSize:         opts.TargetSize,
+		ManifestEntries:    len(manifest.Entries),
+		ManifestBytes:      manifest.TotalBytes,
+		FAT32RequiredBytes: fat32Bytes,
 	}
-	sendPersistent(emit, PersistentEvent{Stage: "complete", Message: "Persistence compatibility analysis completed without modifying the image or USB drive."})
+	sendPersistent(emit, PersistentEvent{Stage: "complete", Message: "Fresh GPT/FAT32/ext4 persistence analysis completed without modifying the image or USB drive."})
 	return result, nil
 }
