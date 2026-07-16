@@ -4,17 +4,20 @@ The 0.10 development line begins moving previously command-line-only safety foun
 
 ## Verified image download
 
-The **Download…** button accepts three local trust inputs:
+The **Download…** dialog prefers the package-owned built-in channel. The Go helper, not Python, performs the network and trust work:
 
-- an acquisition catalog;
-- its detached Ed25519 signature;
-- the trusted Ed25519 public key.
+- replays the cached root chain from the package bootstrap root;
+- accepts root rotation only when the version advances by exactly one and both the old and replacement root thresholds sign it;
+- verifies the catalog-role threshold, generation and expiry times, monotonic version, and accepted-version digest;
+- downloads metadata only over HTTPS to package-allowlisted hosts;
+- uses only an unexpired, completely reverified cache when the network is unavailable;
+- verifies the selected image's signed URL, redirect hosts, exact size, filename, and SHA-256 before atomic installation.
 
-The graphical application delegates verification and downloading to the existing unprivileged `rufusarm64-cli acquire` commands. It does not parse an unsigned remote feed or download directly with Python. The helper verifies the catalog before listing entries, restricts URLs and redirects according to signed metadata, enforces the signed byte count, calculates SHA-256 while streaming, and installs the destination atomically only after the complete digest matches.
+Catalog refresh runs outside the GTK main loop. The dialog shows the catalog version, generation and expiry times, signing-key IDs, and whether the verified cache was used. Cancellation terminates the unprivileged image download and leaves no installed partial file.
 
-The first graphical version intentionally uses local catalog, signature, and public-key files. A built-in online catalog requires a separately reviewed key-distribution, key-rotation, rollback, and recovery policy.
+The installed channel is deliberately disabled until real offline root keys and a reviewed first catalog are provisioned. While disabled, the dialog reports the trust boundary rather than offering an unsafe bypass. **Advanced recovery: local signed catalog** preserves the original catalog, detached signature, and public-key workflow for metadata obtained through a separately trusted path.
 
-Cancellation terminates the unprivileged download process. The acquisition engine removes temporary data and does not install an unverified partial image.
+See `docs/acquisition-channel.md` for the root-rotation, rollback, cache, and provisioning model.
 
 ## Read-only persistence compatibility
 

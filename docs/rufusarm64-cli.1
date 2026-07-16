@@ -29,6 +29,22 @@ rufusarm64-cli \- safely create bootable USB media on Linux
 .B rufusarm64-cli hash
 .I FILE
 .PP
+.B rufusarm64-cli acquire channel list
+.RI [ --config " FILE" ]
+.RI [ --cache-dir " DIRECTORY" ]
+.RI [ --offline ]
+.RI [ --json ]
+.PP
+.B rufusarm64-cli acquire channel download
+.BI --id " ID"
+.RI [ --output " FILE|DIR" ]
+.RI [ --replace ]
+.RI [ --config " FILE" ]
+.RI [ --cache-dir " DIRECTORY" ]
+.RI [ --offline ]
+.RI [ --json ]
+.RI [ --json-progress ]
+.PP
 .B rufusarm64-cli persistence plan
 .BI --image " FILE"
 .BI --media-root " DIRECTORY"
@@ -160,6 +176,14 @@ List entries only after the complete signed catalog has passed strict schema, UR
 .B acquire download --catalog FILE --signature FILE --public-key FILE --id ID [--output FILE|DIR] [--replace] [--json] [--json-progress]
 Download one immutable catalog entry over HTTPS. Redirects are limited to hosts named by the signed catalog. The response must match the signed size and SHA-256. Data are written to a private temporary file, synchronized, and atomically installed only after verification. An existing file is reused only when its full size and hash match; a different regular file requires
 .BR --replace .
+.TP
+.B acquire channel list [--config FILE] [--cache-dir DIR] [--offline] [--json]
+Refresh and verify the package-owned built-in channel, or reverify only the cached metadata with
+.BR --offline .
+The channel requires canonical JSON, threshold Ed25519 root and catalog signatures, dual-authorized one-version-at-a-time root rotation through a versioned root URL, unexpired metadata, monotonic root/catalog versions, and rejection of a local clock more than 24 hours behind the last accepted metadata time. A network failure may use only an already verified and still-unexpired cache.
+.TP
+.B acquire channel download --id ID [--output FILE|DIR] [--replace] [--config FILE] [--cache-dir DIR] [--offline] [--json] [--json-progress]
+Verify the built-in channel, select one signed immutable image, and use the same exact-size, redirect-host, SHA-256, cancellation, and atomic-install checks as the local catalog downloader. The package channel is disabled until reviewed offline root keys and production metadata are provisioned; no unsafe bypass is available.
 Cancellation removes the temporary partial file.
 .SH LINUX PERSISTENCE PLANNING
 .TP

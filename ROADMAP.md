@@ -59,11 +59,11 @@
 ## 0.9 — parity and product-quality programme (in progress)
 
 - Rich progress and exportable diagnostics (completed)
-- Strict Ed25519-signed acquisition catalog and checksum-gated download core (completed foundation; remote catalog/UI pending)
+- Strict local signed catalog, threshold-root built-in channel, rollback-protected metadata cache, and graphical acquisition workflow (implemented; production offline-key provisioning pending)
 - Linux persistence planner, verified writable-tree copy, CLI-only experimental GPT/UEFI orchestration, and checksum-backed reboot qualification reports (implemented; physical ARM64 matrix and GUI stabilization pending)
 - FreeDOS creation
 - Windows To Go feasibility and implementation
-- Authenticated remote catalog distribution, resumption, and graphical acquisition workflow
+- Production offline-root provisioning, published signed catalog, download resumption, and mirror operations
 - Broader Syslinux/GRUB compatibility workarounds
 
 ## 1.0 — supportable stable release

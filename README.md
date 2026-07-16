@@ -14,7 +14,7 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 - Optional Windows Setup customizations through a generated `autounattend.xml`.
 - Optional Windows driver staging and Windows PE auto-loading, with the normal **Load driver** button retained as a fallback.
 - Optional Microsoft Secure Boot DBX download and pre-write EFI revocation scanning.
-- Signed acquisition-catalog verification and checksum-gated, atomic image downloads through the CLI.
+- Signed acquisition-catalog verification, threshold-root channel support, rollback protection, and checksum-gated atomic image downloads.
 - Ubuntu casper and Debian live-boot persistence planning plus an explicit CLI-only experimental GPT/UEFI creation path with verified writable-tree copying and ext4 initialization.
 - Full copied-file verification plus FAT32/NTFS consistency checks.
 - Optional full zero-write formatting and a one-pass zero-pattern media check.
@@ -129,7 +129,9 @@ This is a media-safety check. It does not write the DBX into firmware, change Se
 
 ## Secure image acquisition foundation
 
-Version 0.9.0 adds a strict CLI foundation for future ISO acquisition. A catalog is accepted only after detached Ed25519 verification, expiry checks, safe filename/HTTPS/redirect validation, exact-size enforcement, and final SHA-256 verification. Downloads are installed atomically and existing files are reused only after a complete hash match. See `docs/acquisition-catalog.md`. No public remote catalog or graphical picker is enabled yet.
+Version 0.9.0 added strict local signed-catalog verification and checksum-gated downloads. The 0.10 graphical workflow now prefers a package-owned built-in channel with canonical metadata, threshold Ed25519 root and catalog roles, dual-authorized sequential root rotation, monotonic version and clock-rollback protection, expiry/freeze checks, owner-only atomic state, and verified offline cache fallback. Image payloads retain exact-size, signed redirect-host, SHA-256, cancellation, and atomic-install enforcement. See `docs/acquisition-catalog.md` and `docs/acquisition-channel.md`.
+
+The package channel intentionally remains disabled until real offline root keys and the first reviewed catalog are provisioned. The GUI reports that boundary clearly and keeps the local catalog/signature/public-key workflow as an advanced recovery path. No private signing key is included in source, CI, packages, or artifacts.
 
 ## Linux persistence planning foundation
 
@@ -141,7 +143,7 @@ A CLI-only experimental writer now connects these foundations for supported GPT/
 
 ## Current limitations
 
-RufusArm64 is not yet feature-equivalent to every official Rufus mode. Version 0.9.0 still does not include Windows To Go, stable GUI-supported Linux persistence, FreeDOS creation, a built-in remote ISO catalog, or FFU restoration. FFU remains explicit rather than deceptive: official Rufus uses Windows’ FFU provider, and a safe Linux-native restore provider has not been integrated.
+RufusArm64 is not yet feature-equivalent to every official Rufus mode. Version 0.9.0 still does not include Windows To Go, stable GUI-supported Linux persistence, FreeDOS creation, a provisioned production remote ISO catalog, or FFU restoration. FFU remains explicit rather than deceptive: official Rufus uses Windows’ FFU provider, and a safe Linux-native restore provider has not been integrated.
 
 Full Authenticode signer-chain construction, every Linux ISO-specific Syslinux/GRUB workaround, and broad physical-hardware qualification remain ongoing. Passing automated tests cannot prove that every firmware or storage controller will boot.
 
@@ -168,6 +170,8 @@ rufusarm64-cli dbx update --arch arm64 --json
 rufusarm64-cli dbx inspect --file ~/.cache/rufusarm64/dbx/arm64-DBXUpdate.bin
 rufusarm64-cli acquire verify --catalog catalog.json --signature catalog.json.sig --public-key catalog.pub
 rufusarm64-cli acquire list --catalog catalog.json --signature catalog.json.sig --public-key catalog.pub
+rufusarm64-cli acquire channel list --json
+rufusarm64-cli acquire channel download --id ubuntu-24.04-arm64 --output ~/Downloads --json-progress
 rufusarm64-cli persistence plan --image ubuntu.iso --media-root /mnt/ubuntu --target-size 64G --size 16G --json
 # The GTK app uses the identity-bound, private read-only form after authentication:
 sudo rufusarm64-cli persistence analyze --image ubuntu.iso --expected-source-identity DEV:INO:SIZE:MTIME:CTIME --target-size 64G --size 16G --json

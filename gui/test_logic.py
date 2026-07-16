@@ -4,6 +4,8 @@ import unittest
 
 from rufusarm64_logic import (
     acquisition_image_label,
+    build_acquisition_channel_download_command,
+    build_acquisition_channel_list_command,
     build_acquisition_download_command,
     build_acquisition_list_command,
     build_persistence_analyze_command,
@@ -14,6 +16,7 @@ from rufusarm64_logic import (
     human_duration,
     human_rate,
     inspect_source_identity,
+    normalize_acquisition_channel,
     normalize_acquisition_images,
     persistence_plan_summary,
     progress_status,
@@ -70,6 +73,44 @@ class LogicTests(unittest.TestCase):
             }, {
                 "id": "duplicate", "name": "Two", "filename": "two.iso", "size": 2
             }])
+
+    def test_built_in_acquisition_channel_commands_and_metadata(self):
+        listing = build_acquisition_channel_list_command(
+            "/helper", "/usr/share/rufusarm64/acquisition/channel.json"
+        )
+        self.assertEqual(listing[1:4], ["acquire", "channel", "list"])
+        self.assertNotIn("pkexec", listing)
+        payload = normalize_acquisition_channel({
+            "root_version": 2,
+            "root_expires": "2027-07-16T00:00:00Z",
+            "root_sha256": "d" * 64,
+            "catalog_version": 7,
+            "catalog_generated": "2026-07-16T12:00:00Z",
+            "catalog_expires": "2026-07-23T12:00:00Z",
+            "catalog_sha256": "b" * 64,
+            "signing_key_ids": ["c" * 64],
+            "from_cache": False,
+            "images": [{
+                "id": "ubuntu-24.04-arm64",
+                "name": "Ubuntu Desktop",
+                "architecture": "arm64",
+                "version": "24.04.2",
+                "filename": "ubuntu.iso",
+                "size": 4 * 1024**3,
+                "sha256": "a" * 64,
+            }],
+        })
+        self.assertEqual(payload["catalog_version"], 7)
+        self.assertEqual(len(payload["images"]), 1)
+        download = build_acquisition_channel_download_command(
+            "/helper", "/usr/share/rufusarm64/acquisition/channel.json",
+            payload["images"][0]["id"], "/downloads",
+        )
+        self.assertEqual(download[1:4], ["acquire", "channel", "download"])
+        self.assertIn("--json-progress", download)
+        self.assertNotIn("--public-key", download)
+        with self.assertRaises(ValueError):
+            normalize_acquisition_channel({"images": []})
 
     def test_automatic_persistence_analysis_command_is_read_only(self):
         with tempfile.TemporaryDirectory() as directory:
