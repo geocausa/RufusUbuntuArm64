@@ -29,7 +29,9 @@ The initial implementation accepts local catalog/signature/public-key files. A f
 
 The 0.9 persistence command is unprivileged and read-only. It accepts a source image, a mounted or extracted media tree, and a caller-supplied target capacity solely to calculate eligibility and geometry. It does not treat the media tree or target-size value as authorization for a future write. Detection reads only bounded expected marker/configuration paths, and partition planning validates MBR or both GPT copies before returning an append-only proposal.
 
-A future destructive implementation must repeat detection and partition validation against identity-bound source and target descriptors, reject symbolic links during boot-file edits, use the actual block-device capacity rather than a planning value, create and verify the filesystem before activation, and preserve cancellation and pre-erasure preparation guarantees.
+The materialization primitives repeat the plan against the already-open target before changing partition metadata. GPT updates write and sync the relocated backup before the primary, verify both copies and CRCs, and clear obsolete backup metadata only after the new pair is durable. Boot-tree replacement pins the root and parent descriptors, refuses symbolic-link components, rechecks the original inode, writes a same-directory temporary file, and fsyncs before and after atomic rename. Ext4 creation operates through an inherited open partition descriptor, requires the expected block-device identity and size, invokes a final caller safety callback immediately before `mkfs.ext4`, mounts with `nosuid,nodev,noexec`, initializes Debian `persistence.conf` with no-follow creation, unmounts, and runs `e2fsck -f -n`.
+
+These functions are not a public persistence writer. A future orchestration layer must still use an identity-bound writable Linux extraction tree, keep the whole-disk lock across table refresh and filesystem creation, repeat source/target checks, and preserve cancellation and pre-erasure preparation guarantees.
 
 ## Known limitations
 

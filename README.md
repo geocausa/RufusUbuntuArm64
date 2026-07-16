@@ -15,7 +15,7 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 - Optional Windows driver staging and Windows PE auto-loading, with the normal **Load driver** button retained as a fallback.
 - Optional Microsoft Secure Boot DBX download and pre-write EFI revocation scanning.
 - Signed acquisition-catalog verification and checksum-gated, atomic image downloads through the CLI (0.9 development foundation).
-- Read-only Ubuntu casper and Debian live-boot persistence eligibility and append-only partition planning through the CLI (0.9 development foundation).
+- Read-only Ubuntu casper and Debian live-boot persistence eligibility and append-only partition planning through the CLI, plus internal identity-bound materialization primitives (0.9 development foundation).
 - Full copied-file verification plus FAT32/NTFS consistency checks.
 - Optional full zero-write formatting and a one-pass zero-pattern media check.
 
@@ -135,7 +135,7 @@ The 0.9 development line adds a strict CLI foundation for future ISO acquisition
 
 The 0.9 development line can inspect a plain ISOHybrid image plus a read-only mounted or extracted media tree and produce a non-destructive persistence plan. The initial scope is Ubuntu 20.04+ casper media (`persistent`, ext4 label `casper-rw`) and Debian live-boot media (`persistence`, ext4 label `persistence`, root `persistence.conf` containing `/ union`). MBR and GPT metadata are validated before a plan is returned, including both GPT copies and their CRCs. See `docs/persistence-planning.md`.
 
-This does **not** yet create persistence media. The privileged write path has not been connected to the planner.
+The codebase now also contains separately tested primitives for applying an exact plan to MBR/GPT metadata, relocating GPT backup data, atomically patching a writable boot tree without following symbolic links, and creating/checking the ext4 persistence filesystem. These primitives are **not yet connected to the public writer** because raw ISOHybrid mode leaves the boot tree inside read-only ISO9660. A Linux extraction/copy mode and physical boot qualification are still required before persistence creation can be offered.
 
 ## Current limitations
 
