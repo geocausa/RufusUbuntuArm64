@@ -1,0 +1,57 @@
+name: Apply 0.9C2 persistence materialization
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'develop/0.9.0-persistence-materialization'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/0.9.0-persistence-materialization
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+
+      - name: Decode and verify persistence materialization patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 --decode .changes/0.9C2/patch.xz.b64 > /tmp/0.9C2.patch.xz
+          echo '2e969ec33fde03f0f2487043c1f6da370f80669a917a2a92efc4605402893004  /tmp/0.9C2.patch.xz' | sha256sum --check --strict
+          xz --decompress --stdout /tmp/0.9C2.patch.xz > /tmp/0.9C2.patch
+          echo 'd71aeb8eb7e59e9c569daaa84a52abfc7451a90fdb9a450557fb82b9c7dbae2a  /tmp/0.9C2.patch' | sha256sum --check --strict
+          git apply --check /tmp/0.9C2.patch
+          git apply /tmp/0.9C2.patch
+          rm -rf .changes
+
+      - name: Validate persistence materialization primitives
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l cmd internal)"
+          go test ./...
+          go test -race ./internal/persistence ./internal/acquisition ./cmd/rufus-linux
+          go test -shuffle=on -count=5 ./internal/persistence ./internal/acquisition ./cmd/rufus-linux
+          go vet ./...
+          python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_logic.py gui/test_logic.py
+          (cd gui && python3 -m unittest test_logic.py)
+
+      - name: Commit validated materialization primitives
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git commit -m 'Add identity-bound persistence materialization primitives'
+          git push origin HEAD:develop/0.9.0-persistence-materialization
