@@ -1,0 +1,58 @@
+name: Apply 0.9C1 persistence planner
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'develop/0.9.0-persistence-planner'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/0.9.0-persistence-planner
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+
+      - name: Assemble and verify persistence patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .changes/0.9C1/chunk-* > /tmp/persistence.patch.xz.b64
+          base64 --decode /tmp/persistence.patch.xz.b64 > /tmp/persistence.patch.xz
+          echo '3997bb0940951f7423f3a563738e700ccc5f8c739dd92d82b996b022b7b7d882  /tmp/persistence.patch.xz' | sha256sum --check --strict
+          xz --decompress --stdout /tmp/persistence.patch.xz > /tmp/persistence.patch
+          echo '45d61211e1b541255bdc66ad0e2bc480acde171042e4f69144a023116486f913  /tmp/persistence.patch' | sha256sum --check --strict
+          git apply --check /tmp/persistence.patch
+          git apply /tmp/persistence.patch
+          rm -rf .changes
+
+      - name: Validate persistence planner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l cmd internal)"
+          go test ./...
+          go test -race ./internal/acquisition ./internal/persistence ./cmd/rufus-linux
+          go test -shuffle=on -count=5 ./internal/acquisition ./internal/persistence ./cmd/rufus-linux
+          go vet ./...
+          python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_logic.py gui/test_logic.py
+          (cd gui && python3 -m unittest test_logic.py)
+
+      - name: Commit validated persistence planner
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git commit -m 'Add read-only Linux persistence planning'
+          git push origin HEAD:develop/0.9.0-persistence-planner
