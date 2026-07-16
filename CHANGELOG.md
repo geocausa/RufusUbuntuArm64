@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.1 — 2026-07-16
+
+- Aligned graphical persistence analysis with the actual fresh GPT/FAT32/ext4 creator instead of extending or validating the ISO's embedded hybrid partition table.
+- Fixed compatibility analysis for Canonical Resolute ARM64/X1E concept images whose ISOHybrid MBR contains embedded boot-image mappings that are irrelevant to the writable target layout.
+- Made mandatory analysis perform the same full media-tree, fallback UEFI loader, FAT32 safety, boot-capacity, and requested persistence-size checks used by creation.
+- Preserved strict read-only source mounting, identity pinning, cancellation cleanup, and pre-destructive target revalidation.
+- Added regression tests proving analysis returns the creator's GPT partition 1 boot layout and partition 2 ext4 persistence contract on both x86-64 and native ARM64 CI.
+
 ## 0.10.0 — 2026-07-16
 
 - Added a graphical verified-image downloader and read-only Linux persistence compatibility planner.
