@@ -60,7 +60,7 @@
 
 - Rich progress and exportable diagnostics (completed)
 - Strict Ed25519-signed acquisition catalog and checksum-gated download core (completed foundation; remote catalog/UI pending)
-- Linux persistence planner, verified writable-tree copy, and CLI-only experimental GPT/UEFI orchestration (implemented; physical ARM64 qualification and GUI stabilization pending)
+- Linux persistence planner, verified writable-tree copy, CLI-only experimental GPT/UEFI orchestration, and checksum-backed reboot qualification reports (implemented; physical ARM64 matrix and GUI stabilization pending)
 - FreeDOS creation
 - Windows To Go feasibility and implementation
 - Authenticated remote catalog distribution, resumption, and graphical acquisition workflow

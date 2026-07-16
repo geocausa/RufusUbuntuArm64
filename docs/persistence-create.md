@@ -35,7 +35,8 @@ MBR persistence, BIOS/Syslinux-only media, images with files larger than FAT32 c
 11. Atomically patches only detector-approved boot configurations and re-runs persistence detection on the writable copy.
 12. Unmounts and checks the FAT32 filesystem.
 13. Identity-binds, formats, initializes, unmounts, and checks the ext4 persistence partition.
-14. Rehashes the source again and flushes target buffers before success.
+14. Stores a canonical `.rufusarm64/creation.json` record and SHA-256 sidecar in the writable boot tree.
+15. Rehashes the source again and flushes target buffers before success.
 
 Cancellation and errors trigger bounded cleanup unmounts. A failure after erasure leaves incomplete media and must be followed by recreating the USB.
 
@@ -57,4 +58,4 @@ A persistence size of `0` uses all aligned capacity remaining after the writable
 
 Automated tests exercise GPT geometry, source and target identity checks, command ordering, symlink refusal, manifest copying, boot-parameter activation, filesystem contracts, cancellation, and ARM64 packaging. They do not prove that every Ubuntu or Debian release boots on every ARM64 firmware.
 
-The mode should remain experimental until a published physical-hardware matrix covers representative Ubuntu and Debian images, multiple USB controllers, 512-byte and 4 KiB logical-sector devices, and supported Snapdragon X firmware.
+The mode should remain experimental until a published physical-hardware matrix covers representative Ubuntu and Debian images, multiple USB controllers, 512-byte and 4 KiB logical-sector devices, and supported Snapdragon X firmware. The `qualify start` / reboot / `qualify verify` procedure in `persistence-qualification.md` produces a reproducible evidence bundle for each matrix entry.

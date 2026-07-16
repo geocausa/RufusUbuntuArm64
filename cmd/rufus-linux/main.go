@@ -22,6 +22,7 @@ import (
 	"github.com/geocausa/RufusArm64/internal/imaging"
 	"github.com/geocausa/RufusArm64/internal/linuxmedia"
 	"github.com/geocausa/RufusArm64/internal/persistence"
+	"github.com/geocausa/RufusArm64/internal/qualification"
 	"github.com/geocausa/RufusArm64/internal/safety"
 	"github.com/geocausa/RufusArm64/internal/secureboot"
 	"github.com/geocausa/RufusArm64/internal/sourcefile"
@@ -83,6 +84,8 @@ func run(args []string) error {
 		return runAcquire(args[1:])
 	case "persistence":
 		return runPersistence(args[1:])
+	case "qualify":
+		return runQualify(args[1:])
 	case "version", "--version", "-v":
 		fmt.Println(version)
 		return nil
@@ -113,10 +116,13 @@ Usage:
   rufusarm64-cli acquire list --catalog FILE --signature FILE --public-key FILE [--json]
   rufusarm64-cli acquire download --catalog FILE --signature FILE --public-key FILE --id ID [--output FILE]
   rufusarm64-cli persistence plan --image FILE --media-root DIR --target-size SIZE [--size SIZE] [--json]
+  sudo rufusarm64-cli qualify start --record FILE --output FILE [--state-dir DIR] [--json]
+  sudo rufusarm64-cli qualify verify --record FILE --output FILE [--state-dir DIR] [--json]
 
 Acquisition catalogs are accepted only after detached Ed25519 signature, expiry, URL, size, filename, and SHA-256 validation.
 Persistence planning accepts mounted or extracted Ubuntu 20.04+ casper and Debian live-boot media trees.
 The experimental persistent writer is CLI-only, GPT/UEFI-only, and is never accepted by the graphical privileged path.
+Qualification start records the first successful persistent boot; qualification verify requires a later reboot and surviving state.
 
 The automatic mode writes Linux ISOHybrid/raw images directly and creates
 standard Windows installation USBs using automatic FAT32/NTFS selection, WIM splitting, and UEFI:NTFS when required.
@@ -564,13 +570,14 @@ func runWrite(args []string) error {
 
 	if selectedMode == "linux-persistent" {
 		out.event(jsonEvent{Event: "stage", Stage: "linux_persistence", Message: "Creating experimental persistent Linux media…"})
-		_, err := linuxmedia.CreatePersistent(ctx, *imagePath, resolved, linuxmedia.PersistentCreateOptions{
+		persistentResult, err := linuxmedia.CreatePersistent(ctx, *imagePath, resolved, linuxmedia.PersistentCreateOptions{
 			TargetSize:        dev.Size,
 			ExpectedDeviceID:  kernelDeviceID,
 			ExpectedSource:    sourceIdentity,
 			Architecture:      runtime.GOARCH,
 			PersistenceSize:   persistenceSize,
 			VolumeLabel:       *volumeLabel,
+			CreatorVersion:    "RufusArm64 " + version,
 			BeforeDestructive: postWriteTargetCheck,
 		}, func(event linuxmedia.PersistentEvent) {
 			eventName := "stage"
@@ -595,6 +602,12 @@ func runWrite(args []string) error {
 		if err := safety.RereadPartitionTable(resolved); err != nil {
 			out.event(jsonEvent{Event: "log", Stage: "warning", Message: fmt.Sprintf("Warning: %v", err)})
 		}
+		out.event(jsonEvent{
+			Event:   "log",
+			Stage:   "qualification",
+			Message: fmt.Sprintf("Qualification record stored at .rufusarm64/%s", qualification.RecordFileName),
+			Hash:    persistentResult.QualificationRecordSHA256,
+		})
 		out.event(jsonEvent{Event: "complete", Stage: "complete", Message: "Experimental persistent Linux USB created and verified."})
 		return nil
 	}
@@ -1253,6 +1266,73 @@ func readLimitedRegularFile(path string, limit int) ([]byte, error) {
 		return nil, fmt.Errorf("input exceeds the %d-byte limit", limit)
 	}
 	return data, nil
+}
+
+func runQualify(args []string) error {
+	if len(args) == 0 {
+		return errors.New("qualify requires start or verify")
+	}
+	switch args[0] {
+	case "start", "verify":
+		return runQualifyPhase(args[0], args[1:])
+	default:
+		return fmt.Errorf("unknown qualify command %q", args[0])
+	}
+}
+
+func runQualifyPhase(phase string, args []string) error {
+	flags := flag.NewFlagSet("qualify "+phase, flag.ContinueOnError)
+	recordPath := flags.String("record", "", "qualification creation record on the persistent USB")
+	outputPath := flags.String("output", "", "qualification evidence JSON output")
+	stateDirectory := flags.String("state-dir", "", "private persistent state directory for the reboot marker")
+	asJSON := flags.Bool("json", false, "output evidence as JSON")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*recordPath) == "" || strings.TrimSpace(*outputPath) == "" {
+		return errors.New("--record and --output are required")
+	}
+	options := qualification.ProbeOptions{StateDirectory: *stateDirectory}
+	var (
+		evidence qualification.Evidence
+		err      error
+	)
+	switch phase {
+	case "start":
+		evidence, err = qualification.Start(*recordPath, options)
+	case "verify":
+		evidence, err = qualification.Verify(*recordPath, options)
+	default:
+		return fmt.Errorf("unknown qualification phase %q", phase)
+	}
+	if err != nil {
+		return err
+	}
+	reportHash, err := qualification.WriteEvidence(*outputPath, evidence)
+	if err != nil {
+		return fmt.Errorf("write qualification evidence: %w", err)
+	}
+	if *asJSON {
+		return json.NewEncoder(os.Stdout).Encode(struct {
+			Evidence     qualification.Evidence `json:"evidence"`
+			ReportPath   string                 `json:"report_path"`
+			ReportSHA256 string                 `json:"report_sha256"`
+		}{Evidence: evidence, ReportPath: *outputPath, ReportSHA256: reportHash})
+	}
+	fmt.Printf("Qualification evidence written to %s\n", *outputPath)
+	fmt.Printf("  Report SHA-256: %s\n", reportHash)
+	fmt.Printf("  Creation record SHA-256: %s\n", evidence.CreationRecordSHA256)
+	fmt.Printf("  Media/runtime architecture: %s / %s\n", evidence.MediaArchitecture, evidence.RuntimeArchitecture)
+	fmt.Printf("  UEFI boot: %t\n", evidence.UEFIBooted)
+	fmt.Printf("  Persistence parameter: %t\n", evidence.PersistenceParameter)
+	fmt.Printf("  Overlay root: %t (%s)\n", evidence.RootOverlay, evidence.RootFilesystem)
+	if phase == "start" {
+		fmt.Println("  Reboot survival: pending; reboot this same USB, then run qualify verify.")
+	} else {
+		fmt.Printf("  Reboot survival: %t\n", evidence.RebootSurvivalConfirmed)
+		fmt.Println("  This confirms persistence across one reboot; it does not by itself qualify every ARM64 firmware or device.")
+	}
+	return nil
 }
 
 func runHash(args []string) error {

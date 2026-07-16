@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geocausa/RufusArm64/internal/qualification"
 	"github.com/geocausa/RufusArm64/internal/sourcefile"
 )
 
@@ -63,6 +64,7 @@ func TestCreatePersistentOrchestratesVerifiedUbuntuMedia(t *testing.T) {
 		PersistenceSize: minimumPersistence,
 		VolumeLabel:     "RUFUS-LIVE",
 		WorkDirectory:   t.TempDir(),
+		CreatorVersion:  "RufusArm64 test",
 	}, func(event PersistentEvent) { stages = append(stages, event.Stage) })
 	if err != nil {
 		t.Fatal(err)
@@ -79,6 +81,16 @@ func TestCreatePersistentOrchestratesVerifiedUbuntuMedia(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(bootRoot, "EFI", "BOOT", "BOOTAA64.EFI")); err != nil {
 		t.Fatal(err)
+	}
+	if result.QualificationRecordPath != ".rufusarm64/creation.json" || len(result.QualificationRecordSHA256) != 64 {
+		t.Fatalf("qualification result = %#v", result)
+	}
+	record, err := qualification.LoadVerifiedRecord(filepath.Join(bootRoot, filepath.FromSlash(result.QualificationRecordPath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Record.Creator != "RufusArm64 test" || record.Record.SourceSize != uint64(identity.Size) || record.Record.Persistence.Label != "casper-rw" {
+		t.Fatalf("qualification record = %#v", record.Record)
 	}
 	logData, err := os.ReadFile(logPath)
 	if err != nil {
