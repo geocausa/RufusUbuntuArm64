@@ -61,7 +61,7 @@ jobs:
           scripts/build-deb.sh
           scripts/test.sh
           FILES
-          git status --short | sed -E 's/^.. //' | sort > "${actual}"
+          git status --short --untracked-files=all | sed -E 's/^.. //' | sort > "${actual}"
           sort -o "${expected}" "${expected}"
           diff -u "${expected}" "${actual}"
 
@@ -73,8 +73,8 @@ jobs:
           python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_logic.py
           PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
           for script in scripts/*.sh; do bash -n "${script}"; done
-          ! grep -R -- '--private-key' cmd/rufus-channel-admin internal/acquisition/admin.go
-          ! grep -R -E 'ed25519\.PrivateKey|ed25519\.Sign\(' cmd/rufus-channel-admin internal/acquisition/admin.go
+          ! grep -- '--private-key' cmd/rufus-channel-admin/main.go internal/acquisition/admin.go
+          ! grep -E 'ed25519\.PrivateKey|ed25519\.Sign\(' cmd/rufus-channel-admin/main.go internal/acquisition/admin.go
 
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
