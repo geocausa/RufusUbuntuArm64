@@ -1,3 +1,0 @@
-./configure --without-fuse --without-ntfs-3g --disable-shared --enable-static
-Native build: GitHub Actions ubuntu-24.04-arm
-Upstream tag: v1.14.5

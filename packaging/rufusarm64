@@ -1,2 +1,0 @@
-#!/bin/sh
-exec /usr/bin/python3 /usr/lib/rufusarm64/rufusarm64.py "$@"
