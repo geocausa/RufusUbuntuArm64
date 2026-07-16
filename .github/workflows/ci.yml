@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  wim-engine:
+    name: Build bundled WIM engine
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install WIM build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool pkg-config git ca-certificates \
+            libxml2-dev zlib1g-dev liblzma-dev libbz2-dev liblz4-dev libzstd-dev
+      - name: Build and inspect the pinned ARM64 engine
+        run: ./scripts/build-wimlib-arm64.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wimlib-arm64
+          path: |
+            vendor/wimlib/arm64/
+            vendor/wimlib/source/wimlib-1.14.5-source.tar.gz
+            vendor/wimlib/source/wimlib-1.14.5-source.tar.gz.sha256
+          if-no-files-found: error
+
+  test-and-package:
+    name: Audit and package
+    needs: wim-engine
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - uses: actions/download-artifact@v4
+        with:
+          name: wimlib-arm64
+          path: vendor/wimlib
+      - name: Full test, audit, and ARM64 package pass
+        run: VERSION=0.6.0 ./scripts/test.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rufusarm64-ubuntu-arm64
+          path: |
+            dist/rufusarm64_0.6.0_arm64.deb
+            dist/rufusarm64_0.6.0_arm64.deb.sha256
+          if-no-files-found: error
+
+  native-arm64-smoke:
+    name: Native ARM64 execution
+    needs: wim-engine
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - uses: actions/download-artifact@v4
+        with:
+          name: wimlib-arm64
+          path: vendor/wimlib
+      - name: Run the complete suite natively on ARM64
+        run: VERSION=0.6.0 ./scripts/test.sh
+      - name: Execute packaged ARM64 binaries
+        run: |
+          package_root="$(mktemp -d)"
+          trap 'rm -rf "${package_root}"' EXIT
+          dpkg-deb -x dist/rufusarm64_0.6.0_arm64.deb "${package_root}"
+          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-helper" version)" = 0.6.0
+          "${package_root}/usr/lib/rufusarm64/wimlib-imagex" --version
