@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/geocausa/RufusArm64/internal/persistence"
@@ -48,8 +49,30 @@ func TestPlanPersistentLayoutRejectsUnsafeGeometry(t *testing.T) {
 	if _, err := PlanPersistentLayout(8*1024*1024*1024, 1000, 128*1024*1024, 0, readyUbuntuDetection()); err == nil {
 		t.Fatal("accepted invalid sector size")
 	}
+	if _, err := PlanPersistentLayout(8*1024*1024*1024, 8192, 128*1024*1024, 0, readyUbuntuDetection()); err == nil {
+		t.Fatal("accepted a logical sector size that FAT32 cannot represent safely")
+	}
 	if _, err := PlanPersistentLayout(8*1024*1024*1024, 512, 128*1024*1024, minimumPersistence+1, readyUbuntuDetection()); err == nil {
 		t.Fatal("accepted unaligned persistence size")
+	}
+}
+
+func TestEstimateFAT32BytesIncludesAllocationAndDirectoryOverhead(t *testing.T) {
+	manifest := Manifest{
+		TotalBytes: 3,
+		Entries: []Entry{
+			{Path: "EFI"},
+			{Path: "EFI/BOOT"},
+			{Path: "EFI/BOOT/BOOTAA64.EFI", Size: 3, SHA256: strings.Repeat("0", 64)},
+		},
+	}
+	estimate, err := EstimateFAT32Bytes(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := manifest.TotalBytes + uint64(len(manifest.Entries))*fat32EntryOverhead
+	if estimate != want {
+		t.Fatalf("estimate=%d want=%d", estimate, want)
 	}
 }
 
@@ -91,6 +114,64 @@ func TestWritePersistentGPTWritesAndVerifiesBothCopies(t *testing.T) {
 	}
 	if err := file.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type recordingLayoutTarget struct {
+	*os.File
+	operations []string
+	sectorSize uint64
+	targetSize uint64
+}
+
+func (target *recordingLayoutTarget) WriteAt(data []byte, offset int64) (int, error) {
+	name := "other"
+	entryBytes := int64(layoutGPTEntryCount * layoutGPTEntrySize)
+	entryLBAs := (uint64(entryBytes) + target.sectorSize - 1) / target.sectorSize
+	backupHeader := int64(target.targetSize - target.sectorSize)
+	backupEntries := int64(target.targetSize - (entryLBAs+1)*target.sectorSize)
+	switch offset {
+	case backupEntries:
+		name = "backup-entries"
+	case backupHeader:
+		name = "backup-header"
+	case int64(2 * target.sectorSize):
+		name = "primary-entries"
+	case int64(target.sectorSize):
+		name = "primary-header"
+	case 0:
+		name = "protective-mbr"
+	}
+	target.operations = append(target.operations, name)
+	return target.File.WriteAt(data, offset)
+}
+
+func (target *recordingLayoutTarget) Sync() error {
+	target.operations = append(target.operations, "sync")
+	return target.File.Sync()
+}
+
+func TestWritePersistentGPTMakesBackupDurableBeforePrimary(t *testing.T) {
+	layout, err := PlanPersistentLayout(4*1024*1024*1024, 512, 64*1024*1024, minimumPersistence, readyUbuntuDetection())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "disk.img")
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if err := file.Truncate(int64(layout.TargetSize)); err != nil {
+		t.Fatal(err)
+	}
+	target := &recordingLayoutTarget{File: file, sectorSize: layout.SectorSize, targetSize: layout.TargetSize}
+	if err := WritePersistentGPT(target, layout); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"backup-entries", "backup-header", "sync", "primary-entries", "primary-header", "protective-mbr", "sync"}
+	if strings.Join(target.operations, ",") != strings.Join(want, ",") {
+		t.Fatalf("operation order=%v want=%v", target.operations, want)
 	}
 }
 

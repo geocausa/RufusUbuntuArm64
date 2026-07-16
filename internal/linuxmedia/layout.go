@@ -20,6 +20,8 @@ const (
 	minimumBootBytes      = uint64(512 * 1024 * 1024)
 	minimumPersistence    = uint64(1024 * 1024 * 1024)
 	minimumLayoutDiskSize = uint64(2 * 1024 * 1024 * 1024)
+	fat32ClusterBytes     = uint64(4096)
+	fat32EntryOverhead    = uint64(8192)
 	layoutGPTHeaderSize   = 92
 	layoutGPTEntrySize    = 128
 	layoutGPTEntryCount   = 128
@@ -65,7 +67,7 @@ func PlanPersistentLayout(targetSize, sectorSize, copiedBytes, requestedPersiste
 	if targetSize < minimumLayoutDiskSize {
 		return PersistentLayout{}, fmt.Errorf("target is too small for persistent Linux media: need at least %d bytes", minimumLayoutDiskSize)
 	}
-	if sectorSize < 512 || sectorSize > 64*1024 || sectorSize&(sectorSize-1) != 0 {
+	if sectorSize < 512 || sectorSize > fat32ClusterBytes || sectorSize&(sectorSize-1) != 0 {
 		return PersistentLayout{}, fmt.Errorf("unsupported logical sector size %d", sectorSize)
 	}
 	if targetSize%sectorSize != 0 {
@@ -148,6 +150,24 @@ func PlanPersistentLayout(targetSize, sectorSize, copiedBytes, requestedPersiste
 	}, nil
 }
 
+// EstimateFAT32Bytes returns a conservative allocation estimate for a manifest
+// copied onto a 4 KiB-cluster FAT32 filesystem. The per-entry allowance covers
+// file tail slack, directory clusters, and long-filename directory records.
+func EstimateFAT32Bytes(manifest Manifest) (uint64, error) {
+	if len(manifest.Entries) == 0 || manifest.TotalBytes == 0 {
+		return 0, errors.New("Linux media manifest is empty")
+	}
+	entryCount := uint64(len(manifest.Entries))
+	if entryCount > ^uint64(0)/fat32EntryOverhead {
+		return 0, errors.New("Linux media entry count overflows FAT32 sizing")
+	}
+	overhead := entryCount * fat32EntryOverhead
+	if manifest.TotalBytes > ^uint64(0)-overhead {
+		return 0, errors.New("Linux media size overflows FAT32 sizing")
+	}
+	return manifest.TotalBytes + overhead, nil
+}
+
 // WritePersistentGPT writes and verifies the exact two-partition layout. The
 // backup table/header are written before the primary metadata, and the whole
 // target is synced before readback validation.
@@ -194,6 +214,19 @@ func WritePersistentGPT(target layoutTarget, layout PersistentLayout) error {
 	}{
 		{backupEntriesLBA * sectorSize, entries, "backup GPT entries"},
 		{backupHeaderLBA * sectorSize, backup, "backup GPT header"},
+	} {
+		if err := writeLayoutAt(target, write.data, write.offset); err != nil {
+			return fmt.Errorf("write %s: %w", write.name, err)
+		}
+	}
+	if err := target.Sync(); err != nil {
+		return fmt.Errorf("sync backup persistent GPT: %w", err)
+	}
+	for _, write := range []struct {
+		offset uint64
+		data   []byte
+		name   string
+	}{
 		{primaryEntriesLBA * sectorSize, entries, "primary GPT entries"},
 		{sectorSize, primary, "primary GPT header"},
 		{0, protective, "protective MBR"},
@@ -203,13 +236,13 @@ func WritePersistentGPT(target layoutTarget, layout PersistentLayout) error {
 		}
 	}
 	if err := target.Sync(); err != nil {
-		return fmt.Errorf("sync persistent GPT: %w", err)
+		return fmt.Errorf("sync primary persistent GPT: %w", err)
 	}
 	return verifyPersistentGPT(target, layout, entriesCRC, diskGUID, bootGUID, persistenceGUID)
 }
 
 func validatePersistentLayout(layout PersistentLayout) error {
-	if layout.SectorSize < 512 || layout.SectorSize > 64*1024 || layout.SectorSize&(layout.SectorSize-1) != 0 ||
+	if layout.SectorSize < 512 || layout.SectorSize > fat32ClusterBytes || layout.SectorSize&(layout.SectorSize-1) != 0 ||
 		layout.TargetSize < minimumLayoutDiskSize || layout.TargetSize%layout.SectorSize != 0 {
 		return errors.New("persistent layout has invalid target geometry")
 	}
@@ -263,17 +296,25 @@ func verifyPersistentGPT(target io.ReaderAt, layout PersistentLayout, entriesCRC
 			return fmt.Errorf("read back %s: %w", read.name, err)
 		}
 	}
-	if protectiveMBR[510] != 0x55 || protectiveMBR[511] != 0xaa || protectiveMBR[450] != 0xee || binary.LittleEndian.Uint32(protectiveMBR[454:458]) != 1 {
+	expectedProtective := makeLayoutProtectiveMBR(totalLBAs, sectorSize)
+	if !bytes.Equal(protectiveMBR, expectedProtective) {
 		return errors.New("protective MBR verification failed")
 	}
-	if !bytes.Equal(primaryEntries, backupEntries) || crc32.ChecksumIEEE(primaryEntries[:entryBytes]) != entriesCRC {
+	expectedEntries := make([]byte, entryLBAs*sectorSize)
+	writeLayoutEntry(expectedEntries[0:layoutGPTEntrySize], layoutEFIType, bootGUID, layout.Boot, sectorSize, "RUFUS-LIVE")
+	writeLayoutEntry(expectedEntries[layoutGPTEntrySize:2*layoutGPTEntrySize], layoutLinuxFilesystemType, persistenceGUID, layout.Persistence, sectorSize, layout.Plan.FilesystemLabel)
+	if !bytes.Equal(primaryEntries, expectedEntries) || !bytes.Equal(backupEntries, expectedEntries) || crc32.ChecksumIEEE(primaryEntries[:entryBytes]) != entriesCRC {
 		return errors.New("persistent GPT entry-table verification failed")
 	}
-	if err := verifyLayoutHeader(primaryHeader, 1, backupHeaderLBA, 2, diskGUID, entriesCRC); err != nil {
-		return fmt.Errorf("verify primary GPT header: %w", err)
+	firstUsableLBA := uint64(2) + entryLBAs
+	lastUsableLBA := backupEntriesLBA - 1
+	expectedPrimary := makeLayoutGPTHeader(sectorSize, 1, backupHeaderLBA, firstUsableLBA, lastUsableLBA, diskGUID, 2, entriesCRC)
+	expectedBackup := makeLayoutGPTHeader(sectorSize, backupHeaderLBA, 1, firstUsableLBA, lastUsableLBA, diskGUID, backupEntriesLBA, entriesCRC)
+	if !bytes.Equal(primaryHeader, expectedPrimary) {
+		return errors.New("primary GPT header verification failed")
 	}
-	if err := verifyLayoutHeader(backupHeader, backupHeaderLBA, 1, backupEntriesLBA, diskGUID, entriesCRC); err != nil {
-		return fmt.Errorf("verify backup GPT header: %w", err)
+	if !bytes.Equal(backupHeader, expectedBackup) {
+		return errors.New("backup GPT header verification failed")
 	}
 	if err := verifyLayoutEntry(primaryEntries[:layoutGPTEntrySize], layoutEFIType, bootGUID, layout.Boot, sectorSize); err != nil {
 		return fmt.Errorf("verify boot partition entry: %w", err)
