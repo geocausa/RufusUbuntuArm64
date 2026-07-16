@@ -29,7 +29,7 @@ import (
 	"github.com/geocausa/RufusArm64/internal/windowsmedia"
 )
 
-var version = "0.8.0"
+var version = "0.9.0"
 
 type jsonEvent struct {
 	Event   string  `json:"event"`

@@ -1,8 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION="${VERSION:-0.8.0}"
+PROJECT_VERSION="$(tr -d '\r\n' < VERSION)"
+VERSION="${VERSION:-${PROJECT_VERSION}}"
+if [[ "${VERSION}" != "${PROJECT_VERSION}" ]]; then
+  echo "Requested version ${VERSION} does not match repository VERSION ${PROJECT_VERSION}" >&2
+  exit 1
+fi
+export VERSION
 PACKAGE="dist/rufusarm64_${VERSION}_arm64.deb"
+
+grep -Fxq "var version = \"${VERSION}\"" cmd/rufus-linux/main.go
+grep -Fxq "VERSION = \"${VERSION}\"" gui/rufusarm64.py
+grep -Fq "RufusArm64 ${VERSION}" docs/rufusarm64-cli.1
+grep -Fq "## ${VERSION} —" CHANGELOG.md
+grep -Fq "release version=\"${VERSION}\"" packaging/io.github.geocausa.RufusArm64.metainfo.xml
+grep -Fq "rufusarm64_${VERSION}_arm64.deb" README.md
 
 unformatted="$(gofmt -l cmd internal)"
 if [[ -n "${unformatted}" ]]; then

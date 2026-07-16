@@ -1,5 +1,5 @@
 BINARY := rufusarm64-helper
-VERSION ?= 0.8.0
+VERSION ?= $(shell tr -d "\r\n" < VERSION)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
 .PHONY: test vet build build-arm64 deb clean

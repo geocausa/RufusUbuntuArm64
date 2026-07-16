@@ -2,7 +2,12 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="${VERSION:-0.8.0}"
+PROJECT_VERSION="$(tr -d '\r\n' < "${ROOT_DIR}/VERSION")"
+VERSION="${VERSION:-${PROJECT_VERSION}}"
+if [[ "${VERSION}" != "${PROJECT_VERSION}" ]]; then
+  echo "Requested version ${VERSION} does not match repository VERSION ${PROJECT_VERSION}" >&2
+  exit 1
+fi
 ARCH="arm64"
 OUTPUT_DIR="${ROOT_DIR}/dist"
 PACKAGE_DIR="$(mktemp -d)"
