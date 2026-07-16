@@ -1,0 +1,275 @@
+--- a/gui/rufusarm64.py
++++ b/gui/rufusarm64.py
+@@ -6,6 +6,7 @@
+ """
+ 
+ import json
++from datetime import datetime, timezone
+ import os
+ import platform
+ import shutil
+@@ -23,6 +24,7 @@
+     build_writer_command,
+     device_label,
+     human_bytes,
++    progress_status,
+     normalize_cluster_size,
+     normalize_filesystem,
+     normalize_partition_scheme,
+@@ -230,6 +232,8 @@
+         self.last_status_key = None
+         self.active_verify_requested = False
+         self.active_mode = ""
++        self.active_filesystem = "auto"
++        self.operation_started_at = None
+         self.settings = self.load_settings()
+         width = max(600, int(self.settings.get("width", 820)))
+         height = max(430, int(self.settings.get("height", 700)))
+@@ -443,17 +447,40 @@
+         self.progress = Gtk.ProgressBar(show_text=True)
+         self.progress.set_text("Ready")
+         outer.pack_start(self.progress, False, False, 0)
++        self.progress_detail = Gtk.Label(label="Select an image and a removable USB drive.")
++        self.progress_detail.set_xalign(0)
++        self.progress_detail.set_line_wrap(True)
++        self.progress_detail.get_style_context().add_class("dim-label")
++        outer.pack_start(self.progress_detail, False, False, 0)
+ 
+-        details = Gtk.Expander(label="Details")
++        details = Gtk.Expander(label="Details and diagnostics")
+         details.set_expanded(bool(self.settings.get("details", False)))
+         details.connect("notify::expanded", lambda widget, *_: self.remember_details(widget.get_expanded()))
++        details_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
++        details_box.set_margin_top(8)
++        details_actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
++        details_actions.set_halign(Gtk.Align.END)
++        self.copy_log_button = Gtk.Button(label="Copy")
++        self.copy_log_button.set_tooltip_text("Copy the current diagnostic log to the clipboard")
++        self.copy_log_button.connect("clicked", self.copy_log)
++        details_actions.pack_start(self.copy_log_button, False, False, 0)
++        self.save_log_button = Gtk.Button(label="Save…")
++        self.save_log_button.set_tooltip_text("Save a diagnostic report for troubleshooting")
++        self.save_log_button.connect("clicked", self.save_log)
++        details_actions.pack_start(self.save_log_button, False, False, 0)
++        self.clear_log_button = Gtk.Button(label="Clear")
++        self.clear_log_button.set_tooltip_text("Clear the diagnostic log")
++        self.clear_log_button.connect("clicked", self.clear_log)
++        details_actions.pack_start(self.clear_log_button, False, False, 0)
++        details_box.pack_start(details_actions, False, False, 0)
+         scroll = Gtk.ScrolledWindow()
+         scroll.set_hexpand(True)
+         scroll.set_vexpand(True)
+         scroll.set_min_content_height(160)
+         self.log = Gtk.TextView(editable=False, cursor_visible=False, monospace=True, wrap_mode=Gtk.WrapMode.WORD_CHAR)
+         scroll.add(self.log)
+-        details.add(scroll)
++        details_box.pack_start(scroll, True, True, 0)
++        details.add(details_box)
+         outer.pack_start(details, True, True, 0)
+ 
+         buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+@@ -550,16 +577,67 @@
+     def remember_details(self, expanded):
+         self.settings["details"] = bool(expanded)
+ 
++    def log_text(self):
++        buffer_ = self.log.get_buffer()
++        return buffer_.get_text(buffer_.get_start_iter(), buffer_.get_end_iter(), True)
++
+     def append_log(self, text):
+         text = str(text).strip()
+         if not text:
+             return False
++        timestamp = datetime.now().astimezone().strftime("%H:%M:%S")
+         buffer_ = self.log.get_buffer()
+-        buffer_.insert(buffer_.get_end_iter(), text + "\n")
++        buffer_.insert(buffer_.get_end_iter(), f"[{timestamp}] {text}\n")
+         mark = buffer_.create_mark(None, buffer_.get_end_iter(), False)
+         self.log.scroll_to_mark(mark, 0.0, True, 0.0, 1.0)
+         return False
+ 
++    def diagnostic_report(self):
++        image = self.image_chooser.get_filename() or "Not selected"
++        target_index = self.target_combo.get_active()
++        target = device_label(self.devices[target_index]) if 0 <= target_index < len(self.devices) else "Not selected"
++        started = self.operation_started_at.isoformat() if self.operation_started_at else "Not started"
++        inspection = json.dumps(self.inspection or {}, indent=2, sort_keys=True)
++        return (
++            f"{APP_NAME} {VERSION} diagnostic report\n"
++            f"Generated: {datetime.now(timezone.utc).isoformat()}\n"
++            f"Platform: {platform.platform()} ({platform.machine()})\n"
++            f"Operation started: {started}\n"
++            f"Image: {image}\n"
++            f"Target: {target}\n\n"
++            f"Inspection\n----------\n{inspection}\n\n"
++            f"Log\n---\n{self.log_text()}"
++        )
++
++    def clear_log(self, *_):
++        self.log.get_buffer().set_text("")
++
++    def copy_log(self, *_):
++        Gtk.Clipboard.get_default(self.get_display()).set_text(self.diagnostic_report(), -1)
++        self.progress_detail.set_text("Diagnostic report copied to the clipboard.")
++
++    def save_log(self, *_):
++        dialog = Gtk.FileChooserDialog(
++            title="Save diagnostic report",
++            transient_for=self,
++            action=Gtk.FileChooserAction.SAVE,
++        )
++        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Save", Gtk.ResponseType.OK)
++        dialog.set_do_overwrite_confirmation(True)
++        dialog.set_current_name(f"rufusubuntuarm64-{datetime.now().strftime('%Y%m%d-%H%M%S')}.log")
++        response = dialog.run()
++        filename = dialog.get_filename() if response == Gtk.ResponseType.OK else None
++        dialog.destroy()
++        if not filename:
++            return
++        try:
++            with open(filename, "w", encoding="utf-8") as handle:
++                handle.write(self.diagnostic_report())
++            os.chmod(filename, 0o600)
++            self.progress_detail.set_text(f"Diagnostic report saved to {filename}")
++        except OSError as exc:
++            self.message(f"Could not save the diagnostic report: {exc}", Gtk.MessageType.ERROR)
++
+     def set_busy(self, busy):
+         self.busy = bool(busy)
+         usable = not busy and bool(self.devices) and bool(self.inspection.get("recognized"))
+@@ -922,6 +1000,7 @@
+             return
+ 
+         self.log.get_buffer().set_text("")
++        self.operation_started_at = datetime.now(timezone.utc)
+         self.cancel_requested = False
+         self.last_status_key = None
+         self.active_verify_requested = verify_requested
+@@ -937,6 +1016,7 @@
+         self.set_busy(True)
+         self.progress.set_fraction(0)
+         self.progress.set_text("Requesting administrator permission…")
++        self.progress_detail.set_text("Waiting for Ubuntu administrator authentication.")
+ 
+         runtime_dir = f"/run/user/{os.getuid()}"
+         try:
+@@ -1019,6 +1099,7 @@
+         event_type = event.get("event")
+         total = int(event.get("total") or 0)
+         done = int(event.get("done") or 0)
++        rate = float(event.get("rate") or 0)
+         stage_key = event.get("stage") or "working"
+         stage = stage_key.replace("_", " ").title()
+ 
+@@ -1036,13 +1117,16 @@
+             fraction = min(1.0, done / total)
+             self.progress.set_fraction(fraction)
+             self.progress.set_text(f"{stage}: {fraction * 100:.1f}%")
++            self.progress_detail.set_text(progress_status(stage_key, done, total, rate))
+         elif event_type in ("stage", "preflight"):
+             self.progress.pulse()
+             if message:
+                 self.progress.set_text(message)
++                self.progress_detail.set_text(message)
+         elif event_type == "complete":
+             self.progress.set_fraction(1.0)
+             self.progress.set_text(message or "Complete")
++            self.progress_detail.set_text(message or "Complete")
+         return False
+ 
+     def finish(self, return_code):
+@@ -1058,12 +1142,15 @@
+         if return_code == 0:
+             self.progress.set_fraction(1.0)
+             self.progress.set_text("USB created successfully")
++            self.progress_detail.set_text("The operation completed successfully. A diagnostic report can be saved from Details.")
+             self.message(success_message(self.active_mode, self.active_verify_requested, self.active_filesystem), Gtk.MessageType.INFO)
+         elif was_cancelled:
+             self.progress.set_text("Cancelled safely")
++            self.progress_detail.set_text("Writing has stopped. The incomplete USB should be recreated before use.")
+             self.message("The operation stopped. The USB is incomplete and should be recreated before use.", Gtk.MessageType.WARNING)
+         else:
+             self.progress.set_text("Failed — see Details")
++            self.progress_detail.set_text("Nothing is being written now. Save the diagnostic report from Details when requesting help.")
+             self.message("The USB could not be created. Nothing is being written now. Open Details for the exact error.", Gtk.MessageType.ERROR)
+         self.refresh_devices()
+         return False
+@@ -1075,6 +1162,7 @@
+         self.cancel_button.set_sensitive(False)
+         self.append_log("Cancellation requested. Do not remove the USB until RufusArm64 confirms that writing has stopped.")
+         self.progress.set_text("Cancelling safely…")
++        self.progress_detail.set_text("Waiting for the privileged writer to reach a safe cancellation point. Do not unplug the USB.")
+         if self.cancel_path:
+             try:
+                 fd = os.open(self.cancel_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+--- a/gui/rufusarm64_logic.py
++++ b/gui/rufusarm64_logic.py
+@@ -83,6 +83,38 @@
+     return "0 B"
+ 
+ 
++def human_rate(value):
++    value = float(value or 0)
++    return f"{human_bytes(value)}/s" if value > 0 else ""
++
++
++def human_duration(seconds):
++    seconds = max(0, int(round(float(seconds or 0))))
++    hours, remainder = divmod(seconds, 3600)
++    minutes, seconds = divmod(remainder, 60)
++    if hours:
++        return f"{hours:d}:{minutes:02d}:{seconds:02d}"
++    return f"{minutes:d}:{seconds:02d}"
++
++
++def progress_status(stage, done, total, rate=0):
++    stage = (stage or "Working").replace("_", " ").title()
++    done = max(0, int(done or 0))
++    total = max(0, int(total or 0))
++    rate = max(0.0, float(rate or 0))
++    if total <= 0:
++        return stage
++    done = min(done, total)
++    fraction = done / total
++    parts = [f"{stage}: {fraction * 100:.1f}%", f"{human_bytes(done)} of {human_bytes(total)}"]
++    if rate > 0:
++        parts.append(human_rate(rate))
++        remaining = max(0, total - done) / rate
++        if remaining >= 1 and done < total:
++            parts.append(f"{human_duration(remaining)} remaining")
++    return " — ".join(parts)
++
++
+ def supported_image_name(path):
+     return bool(path) and str(path).lower().endswith(SUPPORTED_IMAGE_SUFFIXES)
+ 
+--- a/gui/test_logic.py
++++ b/gui/test_logic.py
+@@ -4,6 +4,9 @@
+     build_writer_command,
+     device_label,
+     human_bytes,
++    human_duration,
++    human_rate,
++    progress_status,
+     normalize_cluster_size,
+     normalize_filesystem,
+     normalize_partition_scheme,
+@@ -21,6 +24,17 @@
+     def test_human_bytes(self):
+         self.assertEqual(human_bytes(1024), "1.0 KiB")
+ 
++    def test_progress_formatting(self):
++        self.assertEqual(human_rate(1024), "1.0 KiB/s")
++        self.assertEqual(human_duration(65), "1:05")
++        self.assertEqual(human_duration(3661), "1:01:01")
++        text = progress_status("write", 512, 1024, 256)
++        self.assertIn("Write: 50.0%", text)
++        self.assertIn("512 B of 1.0 KiB", text)
++        self.assertIn("256 B/s", text)
++        self.assertIn("0:02 remaining", text)
++        self.assertEqual(progress_status("prepare", 0, 0), "Prepare")
++
+     def test_supported_image_name(self):
+         self.assertTrue(supported_image_name("Windows.ISO"))
+         self.assertTrue(supported_image_name("archive.zip"))
