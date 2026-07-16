@@ -60,7 +60,7 @@
 
 - Rich progress and exportable diagnostics (completed)
 - Strict local signed catalog, threshold-root built-in channel, rollback-protected metadata cache, graphical acquisition workflow, and source-only offline public-metadata administration toolkit (implemented; production offline-key ceremony and publication pending)
-- Linux persistence planner, verified writable-tree copy, CLI-only experimental GPT/UEFI orchestration, and checksum-backed reboot qualification reports (implemented; physical ARM64 matrix and GUI stabilization pending)
+- Linux persistence planner, verified writable-tree copy, guarded GPT/UEFI creator, dedicated identity-bound graphical wizard, and checksum-backed reboot qualification reports (implemented; physical ARM64 qualification matrix pending)
 - FreeDOS creation
 - Windows To Go feasibility and implementation
 - Production offline-root provisioning, published signed catalog, download resumption, and mirror operations
