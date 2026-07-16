@@ -60,7 +60,7 @@
 
 - Rich progress and exportable diagnostics (completed)
 - Strict Ed25519-signed acquisition catalog and checksum-gated download core (completed foundation; remote catalog/UI pending)
-- Linux persistence partition creation
+- Linux persistence eligibility and append-only MBR/GPT planner (completed foundation; boot editing and partition creation pending)
 - FreeDOS creation
 - Windows To Go feasibility and implementation
 - Authenticated remote catalog distribution, resumption, and graphical acquisition workflow

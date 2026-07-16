@@ -21,6 +21,13 @@ rufusarm64-cli \- safely create bootable USB media on Linux
 .PP
 .B rufusarm64-cli hash
 .I FILE
+.PP
+.B rufusarm64-cli persistence plan
+.BI --image " FILE"
+.BI --media-root " DIRECTORY"
+.BI --target-size " SIZE"
+.RI [ --size " SIZE" ]
+.RI [ --json ]
 .SH DESCRIPTION
 .B rufusarm64-cli
 writes recognized GPT/MBR disk images and ISOHybrid Linux images directly, or
@@ -119,6 +126,22 @@ List entries only after the complete signed catalog has passed strict schema, UR
 Download one immutable catalog entry over HTTPS. Redirects are limited to hosts named by the signed catalog. The response must match the signed size and SHA-256. Data are written to a private temporary file, synchronized, and atomically installed only after verification. An existing file is reused only when its full size and hash match; a different regular file requires
 .BR --replace .
 Cancellation removes the temporary partial file.
+.SH LINUX PERSISTENCE PLANNING
+.TP
+.B persistence plan --image FILE --media-root DIRECTORY --target-size SIZE [--size SIZE] [--json]
+Inspect a plain raw-bootable ISOHybrid image and a read-only mounted or extracted media tree, then calculate an append-only persistence partition without modifying the image, directory, or any device. The initial scope is Ubuntu 20.04 or newer casper media and Debian live-boot media. Ubuntu plans use the
+.B persistent
+boot parameter and an ext4 partition labeled
+.BR casper-rw .
+Debian plans use the
+.B persistence
+parameter, an ext4 partition labeled
+.BR persistence ,
+and a root
+.B persistence.conf
+containing
+.BR / union .
+The command validates occupied MBR entries or both GPT headers and entry-table copies, requires a free partition entry, reserves relocated GPT backup metadata where applicable, and reports boot configurations that would need a future parameter edit. A successful result is a read-only eligibility plan; persistence creation is not yet implemented.
 .SH SAFETY
 The program refuses partitions, read-only targets, the running root disk, and an
 image stored on the selected target. It holds and hashes the selected source

@@ -25,6 +25,12 @@ The 0.9 acquisition foundation does not trust a URL merely because it uses HTTPS
 
 The initial implementation accepts local catalog/signature/public-key files. A future built-in remote catalog must establish a separately reviewed key-distribution and rotation policy.
 
+## Persistence planning trust boundary
+
+The 0.9 persistence command is unprivileged and read-only. It accepts a source image, a mounted or extracted media tree, and a caller-supplied target capacity solely to calculate eligibility and geometry. It does not treat the media tree or target-size value as authorization for a future write. Detection reads only bounded expected marker/configuration paths, and partition planning validates MBR or both GPT copies before returning an append-only proposal.
+
+A future destructive implementation must repeat detection and partition validation against identity-bound source and target descriptors, reject symbolic links during boot-file edits, use the actual block-device capacity rather than a planning value, create and verify the filesystem before activation, and preserve cancellation and pre-erasure preparation guarantees.
+
 ## Known limitations
 
 - Unusual multipath, network-block, device-mapper, or vendor-specific storage topologies may not be represented by `lsblk` as expected. The helper fails closed when it cannot identify the root disk.

@@ -15,6 +15,7 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 - Optional Windows driver staging and Windows PE auto-loading, with the normal **Load driver** button retained as a fallback.
 - Optional Microsoft Secure Boot DBX download and pre-write EFI revocation scanning.
 - Signed acquisition-catalog verification and checksum-gated, atomic image downloads through the CLI (0.9 development foundation).
+- Read-only Ubuntu casper and Debian live-boot persistence eligibility and append-only partition planning through the CLI (0.9 development foundation).
 - Full copied-file verification plus FAT32/NTFS consistency checks.
 - Optional full zero-write formatting and a one-pass zero-pattern media check.
 
@@ -130,9 +131,15 @@ This is a media-safety check. It does not write the DBX into firmware, change Se
 
 The 0.9 development line adds a strict CLI foundation for future ISO acquisition. A catalog is accepted only after detached Ed25519 verification, expiry checks, safe filename/HTTPS/redirect validation, exact-size enforcement, and final SHA-256 verification. Downloads are installed atomically and existing files are reused only after a complete hash match. See `docs/acquisition-catalog.md`. No public remote catalog or graphical picker is enabled yet.
 
+## Linux persistence planning foundation
+
+The 0.9 development line can inspect a plain ISOHybrid image plus a read-only mounted or extracted media tree and produce a non-destructive persistence plan. The initial scope is Ubuntu 20.04+ casper media (`persistent`, ext4 label `casper-rw`) and Debian live-boot media (`persistence`, ext4 label `persistence`, root `persistence.conf` containing `/ union`). MBR and GPT metadata are validated before a plan is returned, including both GPT copies and their CRCs. See `docs/persistence-planning.md`.
+
+This does **not** yet create persistence media. The privileged write path has not been connected to the planner.
+
 ## Current limitations
 
-RufusArm64 is not yet feature-equivalent to every official Rufus mode. Version 0.8.0 still does not include Windows To Go, Linux persistence, FreeDOS creation, a built-in remote ISO catalog, or FFU restoration. FFU remains explicit rather than deceptive: official Rufus uses Windows’ FFU provider, and a safe Linux-native restore provider has not been integrated.
+RufusArm64 is not yet feature-equivalent to every official Rufus mode. Version 0.8.0 still does not include Windows To Go, Linux persistence creation, FreeDOS creation, a built-in remote ISO catalog, or FFU restoration. FFU remains explicit rather than deceptive: official Rufus uses Windows’ FFU provider, and a safe Linux-native restore provider has not been integrated.
 
 Full Authenticode signer-chain construction, every Linux ISO-specific Syslinux/GRUB workaround, and broad physical-hardware qualification remain ongoing. Passing automated tests cannot prove that every firmware or storage controller will boot.
 
@@ -159,6 +166,7 @@ rufusarm64-cli dbx update --arch arm64 --json
 rufusarm64-cli dbx inspect --file ~/.cache/rufusarm64/dbx/arm64-DBXUpdate.bin
 rufusarm64-cli acquire verify --catalog catalog.json --signature catalog.json.sig --public-key catalog.pub
 rufusarm64-cli acquire list --catalog catalog.json --signature catalog.json.sig --public-key catalog.pub
+rufusarm64-cli persistence plan --image ubuntu.iso --media-root /mnt/ubuntu --target-size 64G --size 16G --json
 sudo rufusarm64-cli write \
   --image Windows.iso --device /dev/sdX \
   --partition-scheme mbr --target-system bios \
