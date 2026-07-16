@@ -1,9 +1,9 @@
 //go:build linux
 
 // Package linuxmedia plans and copies writable Linux live-media trees.
-// It is intentionally internal: partitioning and privileged orchestration stay
-// in the writer, while this package handles bounded source inspection and
-// byte-for-byte verified copying.
+// It is intentionally internal: it contains bounded source inspection, verified
+// copying, and the explicit CLI-only privileged orchestration used by the
+// experimental persistence writer.
 package linuxmedia
 
 import (

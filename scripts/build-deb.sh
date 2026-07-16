@@ -120,7 +120,7 @@ Priority: optional
 Architecture: ${ARCH}
 Maintainer: geocausa <noreply@github.com>
 Installed-Size: ${INSTALLED_SIZE}
-Depends: python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, util-linux, mount, dosfstools, ntfs-3g, udev, xz-utils, zstd, qemu-utils
+Depends: python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, util-linux, mount, dosfstools, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils
 Homepage: https://github.com/geocausa/RufusUbuntuArm64
 Description: Bootable USB creator for Ubuntu ARM64
  A graphical utility that writes Linux ISOHybrid/raw images and creates

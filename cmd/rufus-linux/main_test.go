@@ -30,6 +30,7 @@ func TestSelectWriteMode(t *testing.T) {
 		{"unknown expert force", "auto", imaging.ImageInfo{}, true, "raw", false},
 		{"plain optical explicit raw rejected", "raw", imaging.ImageInfo{HasUDF: true}, false, "", true},
 		{"plain optical expert force", "auto", imaging.ImageInfo{HasUDF: true}, true, "raw", false},
+		{"explicit persistent mode", "linux-persistent", imaging.ImageInfo{HasISO9660: true, HasMBR: true, HasMBRPartition: true}, false, "linux-persistent", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -63,6 +64,18 @@ func TestPKExecWriterRejectsExpertBypassFlags(t *testing.T) {
 		if err == nil || err.Error() != "unsafe or unsupported arguments were supplied to the graphical privileged writer" {
 			t.Fatalf("flag %s was not rejected at the privilege boundary: %v", flag, err)
 		}
+	}
+}
+
+func TestPKExecWriterRejectsExperimentalPersistenceMode(t *testing.T) {
+	t.Setenv("PKEXEC_UID", "1000")
+	err := run([]string{
+		"write", "--image", "/tmp/image.iso", "--device", "/dev/sda",
+		"--mode", "linux-persistent", "--experimental-persistence", "--yes", "--json-progress",
+		"--expected-identity", "identity", "--cancel-file", "/run/user/1000/rufusarm64-test.cancel",
+	})
+	if err == nil || err.Error() != "unsafe or unsupported arguments were supplied to the graphical privileged writer" {
+		t.Fatalf("experimental persistence crossed the graphical privilege boundary: %v", err)
 	}
 }
 

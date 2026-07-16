@@ -185,6 +185,7 @@ readelf -h "${helper}" | grep -q 'Machine:.*AArch64'
 ! readelf -l "${helper}" | grep -q 'Requesting program interpreter'
 grep -q '^Architecture: arm64$' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*mount' "${extract_dir}/DEBIAN/control"
+grep -q 'Depends:.*e2fsprogs' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*ntfs-3g' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*xz-utils' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*zstd' "${extract_dir}/DEBIAN/control"
