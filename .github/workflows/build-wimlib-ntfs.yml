@@ -25,7 +25,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
             build-essential autoconf automake libtool pkg-config ca-certificates curl \
-            libxml2-dev zlib1g-dev liblzma-dev libbz2-dev liblz4-dev libzstd-dev
+            libxml2-dev zlib1g-dev liblzma-dev libbz2-dev liblz4-dev libzstd-dev \
+            libgcrypt20-dev libgnutls28-dev
       - name: Build private libntfs-3g and wimlib 1.14.5
         shell: bash
         run: |
@@ -40,7 +41,6 @@ jobs:
             exit "$status"
           }
           trap fail ERR
-          exec 3>&1 4>&2
           prefix="$PWD/prefix"
           echo 'Downloading ntfs-3g...' | tee -a "$log"
           curl --fail --location --retry 5 --retry-all-errors \
@@ -55,7 +55,7 @@ jobs:
           make -j"$(nproc)" libntfs >>"$log" 2>&1
           make -C include install >>"$log" 2>&1
           make -C libntfs-3g install >>"$log" 2>&1
-          find "$prefix" -maxdepth 4 -type f -o -type l | sort >>"$log" 2>&1
+          find "$prefix" -maxdepth 4 \( -type f -o -type l \) | sort >>"$log" 2>&1
           test -f "$prefix/lib/pkgconfig/libntfs-3g.pc"
           test -f "$prefix/lib/libntfs-3g.a"
           cd ..
