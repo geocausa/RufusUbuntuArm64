@@ -1,6 +1,6 @@
 # Bundled WIM engine
 
-RufusArm64 0.6.0 includes a package-private AArch64 build of
+RufusArm64 includes a package-private AArch64 build of
 `wimlib-imagex` 1.14.5 at `/usr/lib/rufusarm64/wimlib-imagex`.
 
 The binary was built natively on Ubuntu 24.04 ARM64 from upstream commit

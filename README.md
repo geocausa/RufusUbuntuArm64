@@ -14,15 +14,15 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 - Optional Windows Setup customizations through a generated `autounattend.xml`.
 - Optional Windows driver staging and Windows PE auto-loading, with the normal **Load driver** button retained as a fallback.
 - Optional Microsoft Secure Boot DBX download and pre-write EFI revocation scanning.
-- Signed acquisition-catalog verification and checksum-gated, atomic image downloads through the CLI (0.9 development foundation).
-- Ubuntu casper and Debian live-boot persistence planning plus an explicit CLI-only experimental GPT/UEFI creation path with verified writable-tree copying and ext4 initialization (0.9 development).
+- Signed acquisition-catalog verification and checksum-gated, atomic image downloads through the CLI.
+- Ubuntu casper and Debian live-boot persistence planning plus an explicit CLI-only experimental GPT/UEFI creation path with verified writable-tree copying and ext4 initialization.
 - Full copied-file verification plus FAT32/NTFS consistency checks.
 - Optional full zero-write formatting and a one-pass zero-pattern media check.
 
 ## Install on Ubuntu ARM64
 
 ```bash
-sudo apt install ./RufusArm64_0.8.0_Ubuntu_ARM64.deb
+sudo apt install ./rufusarm64_0.9.0_arm64.deb
 ```
 
 The package upgrades older `rufusarm64` versions in place. Open **RufusArm64** from the application menu afterward.
@@ -125,15 +125,15 @@ The package also includes Rufus 4.15's pinned `uefi-ntfs.img` and GPL ms-sys-der
 
 The **Update** button downloads the architecture-specific `DBXUpdate.bin` from Microsoft’s public `secureboot_objects` repository into the current user’s cache. Selecting that file makes Windows-media creation scan EFI boot files before the USB is erased. RufusArm64 checks the Authenticode image hash and exact X.509 certificates embedded in the signature against DBX entries.
 
-This is a media-safety check. It does not write the DBX into firmware, change Secure Boot settings, or claim to perform online certificate revocation. The downloaded file must use the authenticated UEFI variable-update structure, but version 0.8.0 trusts Microsoft’s HTTPS/GitHub distribution channel rather than independently validating the PKCS#7 update signature.
+This is a media-safety check. It does not write the DBX into firmware, change Secure Boot settings, or claim to perform online certificate revocation. The downloaded file must use the authenticated UEFI variable-update structure, but version 0.9.0 trusts Microsoft’s HTTPS/GitHub distribution channel rather than independently validating the PKCS#7 update signature.
 
 ## Secure image acquisition foundation
 
-The 0.9 development line adds a strict CLI foundation for future ISO acquisition. A catalog is accepted only after detached Ed25519 verification, expiry checks, safe filename/HTTPS/redirect validation, exact-size enforcement, and final SHA-256 verification. Downloads are installed atomically and existing files are reused only after a complete hash match. See `docs/acquisition-catalog.md`. No public remote catalog or graphical picker is enabled yet.
+Version 0.9.0 adds a strict CLI foundation for future ISO acquisition. A catalog is accepted only after detached Ed25519 verification, expiry checks, safe filename/HTTPS/redirect validation, exact-size enforcement, and final SHA-256 verification. Downloads are installed atomically and existing files are reused only after a complete hash match. See `docs/acquisition-catalog.md`. No public remote catalog or graphical picker is enabled yet.
 
 ## Linux persistence planning foundation
 
-The 0.9 development line can inspect a plain ISOHybrid image plus a read-only mounted or extracted media tree and produce a non-destructive persistence plan. The initial scope is Ubuntu 20.04+ casper media (`persistent`, ext4 label `casper-rw`) and Debian live-boot media (`persistence`, ext4 label `persistence`, root `persistence.conf` containing `/ union`). MBR and GPT metadata are validated before a plan is returned, including both GPT copies and their CRCs. See `docs/persistence-planning.md`.
+Version 0.9.0 can inspect a plain ISOHybrid image plus a read-only mounted or extracted media tree and produce a non-destructive persistence plan. The initial scope is Ubuntu 20.04+ casper media (`persistent`, ext4 label `casper-rw`) and Debian live-boot media (`persistence`, ext4 label `persistence`, root `persistence.conf` containing `/ union`). MBR and GPT metadata are validated before a plan is returned, including both GPT copies and their CRCs. See `docs/persistence-planning.md`.
 
 The codebase also contains separately tested primitives for applying exact partition plans, atomically patching writable boot trees without following symbolic links, creating/checking ext4 persistence filesystems, and building plus copying SHA-256 manifests from read-only Linux media trees. The copy layer checks FAT32 names, case collisions, file-size limits and architecture-specific fallback UEFI loaders, and only dereferences file links that resolve beneath the source root. See `docs/linux-media-copy.md`.
 
@@ -141,7 +141,7 @@ A CLI-only experimental writer now connects these foundations for supported GPT/
 
 ## Current limitations
 
-RufusArm64 is not yet feature-equivalent to every official Rufus mode. Version 0.8.0 still does not include Windows To Go, stable GUI-supported Linux persistence, FreeDOS creation, a built-in remote ISO catalog, or FFU restoration. FFU remains explicit rather than deceptive: official Rufus uses Windows’ FFU provider, and a safe Linux-native restore provider has not been integrated.
+RufusArm64 is not yet feature-equivalent to every official Rufus mode. Version 0.9.0 still does not include Windows To Go, stable GUI-supported Linux persistence, FreeDOS creation, a built-in remote ISO catalog, or FFU restoration. FFU remains explicit rather than deceptive: official Rufus uses Windows’ FFU provider, and a safe Linux-native restore provider has not been integrated.
 
 Full Authenticode signer-chain construction, every Linux ISO-specific Syslinux/GRUB workaround, and broad physical-hardware qualification remain ongoing. Passing automated tests cannot prove that every firmware or storage controller will boot.
 
@@ -150,13 +150,13 @@ Full Authenticode signer-chain construction, every Linux ISO-specific Syslinux/G
 Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, and the verified ARM64 WIM engine in `vendor/wimlib/arm64/`.
 
 ```bash
-VERSION=0.8.0 ./scripts/test.sh
+./scripts/test.sh
 ```
 
 The installer is produced at:
 
 ```text
-dist/rufusarm64_0.8.0_arm64.deb
+dist/rufusarm64_0.9.0_arm64.deb
 ```
 
 ## Command line

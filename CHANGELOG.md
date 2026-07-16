@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.0 — 2026-07-16
+
+- Added richer graphical progress with byte counts, transfer rates, ETA, timestamped diagnostics, and copy/save/clear report controls.
+- Added strict Ed25519-signed acquisition catalogs and HTTPS-only, redirect-constrained, size-bounded, SHA-256-verified atomic image downloads through the CLI.
+- Added read-only Ubuntu casper and Debian live-boot persistence detection, boot-parameter analysis, and append-only MBR/GPT planning.
+- Added identity-bound persistence materialization primitives for exact GPT/MBR updates, symlink-resistant boot-file patching, and verified ext4 initialization.
+- Added a bounded SHA-256 media-tree manifest and FAT32-safe verified copy engine for writable Linux boot media.
+- Added an explicit CLI-only experimental GPT/UEFI persistent-Linux writer that retains the whole-disk lock, verifies source and target identities, copies and rehashes the media tree, patches approved boot configurations, and checks FAT32 and ext4 filesystems.
+- Hardened persistence creation with backup-first durable GPT installation, exact metadata readback, 4 KiB FAT32 clusters, conservative allocation sizing, inherited-descriptor formatting/checking, and exact kernel partition geometry and parent-disk validation.
+- Kept the experimental persistence writer unavailable to the graphical privileged path pending physical ARM64 boot qualification.
+- Added a canonical repository `VERSION` file and release/CI checks so runtime, package, documentation, metadata, tag, and artifact versions cannot silently drift.
+
 ## 0.8.0 — 2026-07-16
 
 - Added safe preparation of ZIP, gzip, bzip2, XZ, LZMA, and Zstandard-compressed disk images before target erasure.

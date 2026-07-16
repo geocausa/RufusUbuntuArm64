@@ -41,10 +41,19 @@ jobs:
         with:
           name: wimlib-arm64
           path: vendor/wimlib
-      - name: Derive version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - name: Verify tag matches canonical version
+        id: version
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          project_version="$(tr -d '\r\n' < VERSION)"
+          test "${tag_version}" = "${project_version}" || {
+            echo "Tag version ${tag_version} does not match repository VERSION ${project_version}" >&2
+            exit 1
+          }
+          echo "VERSION=${project_version}" >> "$GITHUB_ENV"
+          echo "version=${project_version}" >> "$GITHUB_OUTPUT"
       - name: Full test, audit, and ARM64 package pass
-        run: VERSION="$VERSION" ./scripts/test.sh
+        run: ./scripts/test.sh
       - name: Create corresponding source archives
         run: |
           zip -qr "dist/RufusArm64-${VERSION}-source.zip" . \
@@ -67,9 +76,9 @@ jobs:
           )
       - uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: docs/release-${{ steps.version.outputs.version }}.md
           files: |
-            dist/rufusarm64_${{ env.VERSION }}_arm64.deb
-            dist/rufusarm64_${{ env.VERSION }}_arm64.deb.sha256
-            dist/RufusArm64-${{ env.VERSION }}-source.zip
-            dist/RufusArm64-${{ env.VERSION }}-wimlib-1.14.5-source.tar.gz
+            dist/rufusarm64_${{ steps.version.outputs.version }}_arm64.deb
+            dist/rufusarm64_${{ steps.version.outputs.version }}_arm64.deb.sha256
+            dist/RufusArm64-${{ steps.version.outputs.version }}-source.zip
+            dist/RufusArm64-${{ steps.version.outputs.version }}-wimlib-1.14.5-source.tar.gz

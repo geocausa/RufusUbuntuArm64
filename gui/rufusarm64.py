@@ -39,7 +39,7 @@ from rufusarm64_logic import (
 
 APP_ID = "io.github.geocausa.RufusArm64"
 APP_NAME = "RufusArm64"
-VERSION = "0.8.0"
+VERSION = "0.9.0"
 INSTALLED_HELPER = os.environ.get("RUFUSARM64_HELPER", "/usr/lib/rufusarm64/rufusarm64-helper")
 BUNDLED_WIMLIB = os.environ.get("RUFUSARM64_WIMLIB", "/usr/lib/rufusarm64/wimlib-imagex")
 PKEXEC = "/usr/bin/pkexec"
