@@ -53,8 +53,10 @@ jobs:
           ./configure --prefix="$prefix" --disable-ntfs-3g \
             --disable-shared --enable-static >>"$log" 2>&1
           make -j"$(nproc)" libntfs >>"$log" 2>&1
-          make -C include install >>"$log" 2>&1
-          make -C libntfs-3g install >>"$log" 2>&1
+          mkdir -p "$prefix/include" "$prefix/lib/pkgconfig"
+          cp -a include/ntfs-3g "$prefix/include/"
+          cp libntfs-3g/.libs/libntfs-3g.a "$prefix/lib/"
+          cp libntfs-3g/libntfs-3g.pc "$prefix/lib/pkgconfig/"
           find "$prefix" -maxdepth 4 \( -type f -o -type l \) | sort >>"$log" 2>&1
           test -f "$prefix/lib/pkgconfig/libntfs-3g.pc"
           test -f "$prefix/lib/libntfs-3g.a"
