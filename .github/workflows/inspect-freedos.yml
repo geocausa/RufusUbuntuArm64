@@ -1,0 +1,37 @@
+name: Inspect FreeDOS archives
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download, verify, and list archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir artifact
+          base='https://download.freedos.org/1.4'
+          cat > expected <<'EOF'
+          cd440cd165f5a8a184870cb615f525af182660c15f9bcf1e9d198ca19cedcaff  FD14-FullUSB.zip
+          857dcd2ebf9d3d094320154db5fb5b830acba6fb98f981a95a0ca7ab3350338b  FD14-LiteUSB.zip
+          2020ff6bb681967fd6eff8f51ad2e5cd5ab4421165948cef4246e4f7fcaf6339  FD14-LiveCD.zip
+          715b01754b8f5fd24cceb32d023f46aa9456c582c594d7d5fbe34787e1c773d4  FD14-LegacyCD.zip
+          EOF
+          while read -r hash file; do
+            curl --fail --location --retry 5 --retry-all-errors "$base/$file" -o "$file"
+            echo "$hash  $file" | sha256sum -c -
+            unzip -l "$file" > "artifact/$file.txt"
+          done < expected
+      - uses: actions/upload-artifact@v4
+        with:
+          name: freedos-1.4-archive-listings
+          path: artifact
+          if-no-files-found: error
+          retention-days: 7
