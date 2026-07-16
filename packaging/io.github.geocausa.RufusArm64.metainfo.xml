@@ -10,7 +10,7 @@
     <p>It writes raw and ISOHybrid media, prepares compressed and common virtual-disk inputs, and creates Windows installation media using GPT or MBR, UEFI or x86-family BIOS/CSM, FAT32 or NTFS, WIM splitting, UEFI:NTFS, optional Windows PE drivers, and Secure Boot DBX checks.</p>
   </description>
   <launchable type="desktop-id">io.github.geocausa.RufusArm64.desktop</launchable>
-  <url type="homepage">https://github.com/geocausa/RufusArm64</url>
+  <url type="homepage">https://github.com/geocausa/RufusUbuntuArm64</url>
   <developer_name>RufusArm64 contributors</developer_name>
   <provides>
     <binary>rufusarm64</binary>

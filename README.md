@@ -14,6 +14,7 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 - Optional Windows Setup customizations through a generated `autounattend.xml`.
 - Optional Windows driver staging and Windows PE auto-loading, with the normal **Load driver** button retained as a fallback.
 - Optional Microsoft Secure Boot DBX download and pre-write EFI revocation scanning.
+- Signed acquisition-catalog verification and checksum-gated, atomic image downloads through the CLI (0.9 development foundation).
 - Full copied-file verification plus FAT32/NTFS consistency checks.
 - Optional full zero-write formatting and a one-pass zero-pattern media check.
 
@@ -125,9 +126,13 @@ The **Update** button downloads the architecture-specific `DBXUpdate.bin` from M
 
 This is a media-safety check. It does not write the DBX into firmware, change Secure Boot settings, or claim to perform online certificate revocation. The downloaded file must use the authenticated UEFI variable-update structure, but version 0.8.0 trusts Microsoft’s HTTPS/GitHub distribution channel rather than independently validating the PKCS#7 update signature.
 
+## Secure image acquisition foundation
+
+The 0.9 development line adds a strict CLI foundation for future ISO acquisition. A catalog is accepted only after detached Ed25519 verification, expiry checks, safe filename/HTTPS/redirect validation, exact-size enforcement, and final SHA-256 verification. Downloads are installed atomically and existing files are reused only after a complete hash match. See `docs/acquisition-catalog.md`. No public remote catalog or graphical picker is enabled yet.
+
 ## Current limitations
 
-RufusArm64 is not yet feature-equivalent to every official Rufus mode. Version 0.8.0 still does not include Windows To Go, Linux persistence, FreeDOS creation, ISO downloading, or FFU restoration. FFU remains explicit rather than deceptive: official Rufus uses Windows’ FFU provider, and a safe Linux-native restore provider has not been integrated.
+RufusArm64 is not yet feature-equivalent to every official Rufus mode. Version 0.8.0 still does not include Windows To Go, Linux persistence, FreeDOS creation, a built-in remote ISO catalog, or FFU restoration. FFU remains explicit rather than deceptive: official Rufus uses Windows’ FFU provider, and a safe Linux-native restore provider has not been integrated.
 
 Full Authenticode signer-chain construction, every Linux ISO-specific Syslinux/GRUB workaround, and broad physical-hardware qualification remain ongoing. Passing automated tests cannot prove that every firmware or storage controller will boot.
 
@@ -152,6 +157,8 @@ rufusarm64-cli list
 rufusarm64-cli inspect --image Windows.iso.xz --json
 rufusarm64-cli dbx update --arch arm64 --json
 rufusarm64-cli dbx inspect --file ~/.cache/rufusarm64/dbx/arm64-DBXUpdate.bin
+rufusarm64-cli acquire verify --catalog catalog.json --signature catalog.json.sig --public-key catalog.pub
+rufusarm64-cli acquire list --catalog catalog.json --signature catalog.json.sig --public-key catalog.pub
 sudo rufusarm64-cli write \
   --image Windows.iso --device /dev/sdX \
   --partition-scheme mbr --target-system bios \

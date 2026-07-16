@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/geocausa/RufusArm64/internal/acquisition"
 	"github.com/geocausa/RufusArm64/internal/device"
 	"github.com/geocausa/RufusArm64/internal/imaging"
 	"github.com/geocausa/RufusArm64/internal/safety"
@@ -75,6 +77,8 @@ func run(args []string) error {
 		return runHash(args[1:])
 	case "dbx":
 		return runDBX(args[1:])
+	case "acquire":
+		return runAcquire(args[1:])
 	case "version", "--version", "-v":
 		fmt.Println(version)
 		return nil
@@ -100,6 +104,11 @@ Usage:
   rufusarm64-cli dbx update [--arch ARCH] [--output FILE] [--json]
   rufusarm64-cli dbx check --dbx FILE --efi FILE [--json]
   rufusarm64-cli dbx scan --dbx FILE --directory DIR [--json]
+  rufusarm64-cli acquire verify --catalog FILE --signature FILE --public-key FILE [--json]
+  rufusarm64-cli acquire list --catalog FILE --signature FILE --public-key FILE [--json]
+  rufusarm64-cli acquire download --catalog FILE --signature FILE --public-key FILE --id ID [--output FILE]
+
+Acquisition catalogs are accepted only after detached Ed25519 signature, expiry, URL, size, filename, and SHA-256 validation.
 
 The automatic mode writes Linux ISOHybrid/raw images directly and creates
 standard Windows installation USBs using automatic FAT32/NTFS selection, WIM splitting, and UEFI:NTFS when required.
@@ -897,6 +906,174 @@ func loadDBX(path string, firmware bool) (*secureboot.Database, error) {
 		return secureboot.FirmwareDBX()
 	}
 	return secureboot.ParseFile(path)
+}
+
+type acquireCatalogSummary struct {
+	Schema      int    `json:"schema"`
+	Generated   string `json:"generated"`
+	Expires     string `json:"expires"`
+	Images      int    `json:"images"`
+	CatalogHash string `json:"catalog_sha256"`
+}
+
+func runAcquire(args []string) error {
+	if len(args) == 0 {
+		return errors.New("acquire requires verify, list, or download")
+	}
+	switch args[0] {
+	case "verify":
+		return runAcquireVerify(args[1:])
+	case "list":
+		return runAcquireList(args[1:])
+	case "download":
+		return runAcquireDownload(args[1:])
+	default:
+		return fmt.Errorf("unknown acquire command %q", args[0])
+	}
+}
+
+func runAcquireVerify(args []string) error {
+	fs := flag.NewFlagSet("acquire verify", flag.ContinueOnError)
+	catalogPath := fs.String("catalog", "", "signed acquisition catalog JSON")
+	signaturePath := fs.String("signature", "", "detached Ed25519 signature")
+	publicKeyPath := fs.String("public-key", "", "trusted Ed25519 public key")
+	asJSON := fs.Bool("json", false, "output JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	catalog, err := loadAcquireCatalog(*catalogPath, *signaturePath, *publicKeyPath)
+	if err != nil {
+		return err
+	}
+	summary := acquireCatalogSummary{Schema: catalog.Schema, Generated: catalog.GeneratedAt.Format(time.RFC3339), Expires: catalog.ExpiresAt.Format(time.RFC3339), Images: len(catalog.Images), CatalogHash: catalog.SHA256}
+	if *asJSON {
+		return json.NewEncoder(os.Stdout).Encode(summary)
+	}
+	fmt.Printf("Catalog signature valid\nSchema: %d\nGenerated: %s\nExpires: %s\nImages: %d\nCatalog SHA-256: %s\n", summary.Schema, summary.Generated, summary.Expires, summary.Images, summary.CatalogHash)
+	return nil
+}
+
+func runAcquireList(args []string) error {
+	fs := flag.NewFlagSet("acquire list", flag.ContinueOnError)
+	catalogPath := fs.String("catalog", "", "signed acquisition catalog JSON")
+	signaturePath := fs.String("signature", "", "detached Ed25519 signature")
+	publicKeyPath := fs.String("public-key", "", "trusted Ed25519 public key")
+	asJSON := fs.Bool("json", false, "output JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	catalog, err := loadAcquireCatalog(*catalogPath, *signaturePath, *publicKeyPath)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return json.NewEncoder(os.Stdout).Encode(catalog.Images)
+	}
+	fmt.Printf("%-28s %-10s %-10s %-12s %s\n", "ID", "ARCH", "VERSION", "SIZE", "NAME")
+	for _, image := range catalog.Images {
+		fmt.Printf("%-28s %-10s %-10s %-12s %s\n", image.ID, image.Architecture, image.Version, humanBytes(image.Size), image.Name)
+	}
+	return nil
+}
+
+func runAcquireDownload(args []string) error {
+	fs := flag.NewFlagSet("acquire download", flag.ContinueOnError)
+	catalogPath := fs.String("catalog", "", "signed acquisition catalog JSON")
+	signaturePath := fs.String("signature", "", "detached Ed25519 signature")
+	publicKeyPath := fs.String("public-key", "", "trusted Ed25519 public key")
+	imageID := fs.String("id", "", "catalog image id")
+	output := fs.String("output", "", "destination file or existing directory")
+	replace := fs.Bool("replace", false, "replace an existing different regular file")
+	asJSON := fs.Bool("json", false, "output final JSON result")
+	jsonProgress := fs.Bool("json-progress", false, "stream progress events as JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*imageID) == "" {
+		return errors.New("--id is required")
+	}
+	catalog, err := loadAcquireCatalog(*catalogPath, *signaturePath, *publicKeyPath)
+	if err != nil {
+		return err
+	}
+	image, err := catalog.Find(*imageID)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	emit := emitter{json: *jsonProgress}
+	result, err := acquisition.Download(ctx, image, acquisition.DownloadOptions{
+		Destination: *output,
+		Replace:     *replace,
+		Progress: func(progress acquisition.Progress) {
+			if *jsonProgress {
+				emit.event(jsonEvent{Event: "progress", Stage: "download", Done: progress.Done, Total: progress.Total, Rate: progress.BytesPerSec})
+				return
+			}
+			printProgress("download", imaging.Progress{Done: progress.Done, Total: progress.Total, BytesPerSec: progress.BytesPerSec})
+		},
+	})
+	if !*jsonProgress {
+		fmt.Println()
+	}
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return json.NewEncoder(os.Stdout).Encode(result)
+	}
+	status := "Downloaded"
+	if result.Reused {
+		status = "Already verified"
+	}
+	fmt.Printf("%s: %s\nSource: %s\nSize: %s\nSHA-256: %s\n", status, result.Path, result.URL, humanBytes(result.Size), result.SHA256)
+	return nil
+}
+
+func loadAcquireCatalog(catalogPath, signaturePath, publicKeyPath string) (*acquisition.VerifiedCatalog, error) {
+	if strings.TrimSpace(catalogPath) == "" || strings.TrimSpace(signaturePath) == "" || strings.TrimSpace(publicKeyPath) == "" {
+		return nil, errors.New("--catalog, --signature, and --public-key are required")
+	}
+	catalogBytes, err := readLimitedRegularFile(catalogPath, acquisition.MaxCatalogBytes)
+	if err != nil {
+		return nil, fmt.Errorf("read acquisition catalog: %w", err)
+	}
+	signatureBytes, err := readLimitedRegularFile(signaturePath, 16*1024)
+	if err != nil {
+		return nil, fmt.Errorf("read catalog signature: %w", err)
+	}
+	publicKeyBytes, err := readLimitedRegularFile(publicKeyPath, 16*1024)
+	if err != nil {
+		return nil, fmt.Errorf("read catalog public key: %w", err)
+	}
+	return acquisition.VerifyCatalog(catalogBytes, signatureBytes, publicKeyBytes, time.Now())
+}
+
+func readLimitedRegularFile(path string, limit int) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("input is not a regular file")
+	}
+	if info.Size() < 0 || info.Size() > int64(limit) {
+		return nil, fmt.Errorf("input exceeds the %d-byte limit", limit)
+	}
+	data, err := io.ReadAll(io.LimitReader(file, int64(limit)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > limit {
+		return nil, fmt.Errorf("input exceeds the %d-byte limit", limit)
+	}
+	return data, nil
 }
 
 func runHash(args []string) error {

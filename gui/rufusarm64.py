@@ -1188,7 +1188,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         dialog.set_program_name(APP_NAME)
         dialog.set_version(VERSION)
         dialog.set_comments("An unofficial Ubuntu ARM64 bootable-USB creator for Linux images and modern Windows UEFI installation media.")
-        dialog.set_website("https://github.com/geocausa/RufusArm64")
+        dialog.set_website("https://github.com/geocausa/RufusUbuntuArm64")
         dialog.set_license_type(Gtk.License.GPL_3_0)
         dialog.run()
         dialog.destroy()

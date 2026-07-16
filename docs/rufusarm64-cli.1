@@ -107,6 +107,18 @@ Calculate the PE/COFF Authenticode SHA-256 digest and inspect embedded PKCS#7 ce
 .TP
 .B dbx scan (--dbx FILE | --firmware) --directory DIR [--json]
 Scan bounded EFI boot files beneath a mounted directory.
+.SH SIGNED IMAGE ACQUISITION COMMANDS
+.TP
+.B acquire verify --catalog FILE --signature FILE --public-key FILE [--json]
+Verify the detached Ed25519 signature over the exact catalog bytes, reject expired or malformed metadata, and report the catalog digest and image count.
+.TP
+.B acquire list --catalog FILE --signature FILE --public-key FILE [--json]
+List entries only after the complete signed catalog has passed strict schema, URL, filename, size, digest, redirect-host, and expiry validation.
+.TP
+.B acquire download --catalog FILE --signature FILE --public-key FILE --id ID [--output FILE|DIR] [--replace] [--json] [--json-progress]
+Download one immutable catalog entry over HTTPS. Redirects are limited to hosts named by the signed catalog. The response must match the signed size and SHA-256. Data are written to a private temporary file, synchronized, and atomically installed only after verification. An existing file is reused only when its full size and hash match; a different regular file requires
+.BR --replace .
+Cancellation removes the temporary partial file.
 .SH SAFETY
 The program refuses partitions, read-only targets, the running root disk, and an
 image stored on the selected target. It holds and hashes the selected source
