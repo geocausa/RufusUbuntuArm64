@@ -17,7 +17,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/geocausa/RufusArm64/internal/device"
 	"github.com/geocausa/RufusArm64/internal/linuxmedia"
@@ -39,9 +41,14 @@ type jsonEvent struct {
 	Hash    string  `json:"sha256,omitempty"`
 }
 
-type emitter struct{ json bool }
+type emitter struct {
+	json bool
+	mu   sync.Mutex
+}
 
-func (e emitter) event(value jsonEvent) {
+func (e *emitter) event(value jsonEvent) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if e.json {
 		data, _ := json.Marshal(value)
 		fmt.Println(string(data))
@@ -174,8 +181,36 @@ func run(args []string) error {
 		return safety.EnsureNoMountedDescendants(resolvedTarget)
 	}
 
-	out := emitter{json: *jsonProgress}
-	out.event(jsonEvent{Event: "preflight", Stage: "preflight", Message: fmt.Sprintf("Persistent live media: %s; target: %s", filepath.Base(resolvedImage), resolvedTarget)})
+	out := &emitter{json: *jsonProgress}
+	preflightMessage := fmt.Sprintf("Persistent live media: %s; target: %s", filepath.Base(resolvedImage), resolvedTarget)
+	out.event(jsonEvent{Event: "preflight", Stage: "preflight", Message: preflightMessage})
+
+	// Byte-counted copy and hashing stages already emit frequent progress. For
+	// commands such as formatting, filesystem checks, partition refreshes, sync,
+	// and unmount, repeat the current stage periodically so the graphical progress
+	// bar continues pulsing and the operation cannot look silently frozen.
+	heartbeatCtx, stopHeartbeat := context.WithCancel(ctx)
+	defer stopHeartbeat()
+	var heartbeatMu sync.Mutex
+	heartbeat := linuxmedia.PersistentEvent{Stage: "preflight", Message: preflightMessage}
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-heartbeatCtx.Done():
+				return
+			case <-ticker.C:
+				heartbeatMu.Lock()
+				current := heartbeat
+				heartbeatMu.Unlock()
+				if current.Stage != "" && current.Total == 0 {
+					out.event(jsonEvent{Event: "stage", Stage: current.Stage, Message: current.Message})
+				}
+			}
+		}
+	}()
+
 	result, err := linuxmedia.CreatePersistent(ctx, resolvedImage, resolvedTarget, linuxmedia.PersistentCreateOptions{
 		TargetSize:        target.Size,
 		ExpectedDeviceID:  kernelDeviceID,
@@ -186,6 +221,19 @@ func run(args []string) error {
 		CreatorVersion:    "RufusArm64 " + version,
 		BeforeDestructive: targetCheck,
 	}, func(event linuxmedia.PersistentEvent) {
+		heartbeatMu.Lock()
+		heartbeat = event
+		if event.Stage == "qualification" {
+			heartbeat = linuxmedia.PersistentEvent{
+				Stage:   "sync",
+				Message: "Finalizing files and flushing the persistent USB safely. This can take several minutes on slower drives…",
+			}
+		}
+		if event.Stage == "complete" {
+			heartbeat = linuxmedia.PersistentEvent{}
+		}
+		heartbeatMu.Unlock()
+
 		eventName := "stage"
 		if event.Done > 0 || event.Total > 0 {
 			eventName = "progress"
@@ -202,6 +250,7 @@ func run(args []string) error {
 		}
 		out.event(jsonEvent{Event: eventName, Stage: event.Stage, Message: message, Done: event.Done, Total: event.Total})
 	})
+	stopHeartbeat()
 	if err != nil {
 		return err
 	}
