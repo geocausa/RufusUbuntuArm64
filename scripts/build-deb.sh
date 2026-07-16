@@ -111,6 +111,8 @@ install -Dm644 "${ROOT_DIR}/README.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/README.md"
 install -Dm644 "${ROOT_DIR}/docs/acquisition-channel.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/acquisition-channel.md"
+install -Dm644 "${ROOT_DIR}/docs/acquisition-admin.md" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/acquisition-admin.md"
 install -Dm644 "${ROOT_DIR}/NOTICE" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/NOTICE"
 install -Dm644 "${ROOT_DIR}/LICENSE" \

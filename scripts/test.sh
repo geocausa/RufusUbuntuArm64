@@ -77,8 +77,15 @@ gzip -n -c "${native_dir}/windows.iso" > "${native_dir}/windows.iso.gz"
 "${native_helper}" dbx inspect --file "${native_dir}/test.dbx" --json | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["sha256_hashes"] == 1 and d["signatures"] == 1'
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/helper-arm64" ./cmd/rufus-linux
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/helper-amd64" ./cmd/rufus-linux
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o "${native_dir}/channel-admin-arm64" ./cmd/rufus-channel-admin
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o "${native_dir}/channel-admin-amd64" ./cmd/rufus-channel-admin
 readelf -h "${native_dir}/helper-arm64" | grep -q 'Machine:.*AArch64'
 readelf -h "${native_dir}/helper-amd64" | grep -q 'Machine:.*Advanced Micro Devices X86-64'
+readelf -h "${native_dir}/channel-admin-arm64" | grep -q 'Machine:.*AArch64'
+readelf -h "${native_dir}/channel-admin-amd64" | grep -q 'Machine:.*Advanced Micro Devices X86-64'
+! grep -q -- '--private-key' cmd/rufus-channel-admin/main.go
+! grep -q 'ed25519.PrivateKey' cmd/rufus-channel-admin/main.go
+! grep -q 'ed25519.Sign(' cmd/rufus-channel-admin/main.go
 rm -rf "${native_dir}"
 for script in scripts/*.sh; do bash -n "${script}"; done
 sh -n packaging/rufusarm64
@@ -203,6 +210,9 @@ done
 [[ -L "${extract_dir}/usr/bin/rufusarm64-cli" ]]
 [[ -f "${extract_dir}/usr/share/man/man1/rufusarm64-cli.1.gz" ]]
 [[ -f "${extract_dir}/usr/share/doc/rufusarm64/acquisition-channel.md" ]]
+[[ -f "${extract_dir}/usr/share/doc/rufusarm64/acquisition-admin.md" ]]
+[[ ! -e "${extract_dir}/usr/bin/rufus-channel-admin" ]]
+[[ ! -e "${extract_dir}/usr/lib/rufusarm64/rufus-channel-admin" ]]
 channel_config="${extract_dir}/usr/share/rufusarm64/acquisition/channel.json"
 [[ -f "${channel_config}" ]]
 cmp -s packaging/acquisition/channel.json "${channel_config}"

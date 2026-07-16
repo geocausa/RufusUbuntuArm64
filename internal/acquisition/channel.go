@@ -227,53 +227,64 @@ func loadChannelConfig(path string, allowLoopback bool) (ChannelConfig, string, 
 	if err := decodeStrictJSON(data, &config, "channel configuration"); err != nil {
 		return ChannelConfig{}, "", err
 	}
+	config, err = validateChannelConfig(config, allowLoopback)
+	if err != nil {
+		return ChannelConfig{}, "", err
+	}
+	return config, filepath.Dir(absolute), nil
+}
+
+func validateChannelConfig(config ChannelConfig, allowLoopback bool) (ChannelConfig, error) {
+	config.BootstrapRoot = strings.TrimSpace(config.BootstrapRoot)
+	config.RootURL = strings.TrimSpace(config.RootURL)
+	config.CatalogURL = strings.TrimSpace(config.CatalogURL)
 	if config.Schema != ChannelConfigSchema {
-		return ChannelConfig{}, "", fmt.Errorf("unsupported channel configuration schema %d", config.Schema)
+		return ChannelConfig{}, fmt.Errorf("unsupported channel configuration schema %d", config.Schema)
 	}
 	if !config.Enabled {
-		return config, filepath.Dir(absolute), nil
+		return config, nil
 	}
-	if config.BootstrapRoot == "" || filepath.Base(config.BootstrapRoot) != config.BootstrapRoot || strings.ContainsAny(config.BootstrapRoot, `/\\`) {
-		return ChannelConfig{}, "", errors.New("bootstrap_root must be a sibling filename")
+	if config.BootstrapRoot == "" || filepath.Base(config.BootstrapRoot) != config.BootstrapRoot || strings.ContainsAny(config.BootstrapRoot, `/\`) {
+		return ChannelConfig{}, errors.New("bootstrap_root must be a sibling filename")
 	}
 	if len(config.AllowedHosts) == 0 || len(config.AllowedHosts) > 16 {
-		return ChannelConfig{}, "", errors.New("allowed_hosts must contain between 1 and 16 hosts")
+		return ChannelConfig{}, errors.New("allowed_hosts must contain between 1 and 16 hosts")
 	}
 	seen := make(map[string]struct{}, len(config.AllowedHosts))
 	previous := ""
 	for index, host := range config.AllowedHosts {
 		host = strings.ToLower(strings.TrimSpace(host))
 		if err := validateChannelHost(host, allowLoopback); err != nil {
-			return ChannelConfig{}, "", fmt.Errorf("allowed_hosts[%d]: %w", index, err)
+			return ChannelConfig{}, fmt.Errorf("allowed_hosts[%d]: %w", index, err)
 		}
 		if _, ok := seen[host]; ok {
-			return ChannelConfig{}, "", fmt.Errorf("duplicate allowed host %q", host)
+			return ChannelConfig{}, fmt.Errorf("duplicate allowed host %q", host)
 		}
 		if previous != "" && host <= previous {
-			return ChannelConfig{}, "", errors.New("allowed_hosts must be sorted")
+			return ChannelConfig{}, errors.New("allowed_hosts must be sorted")
 		}
 		previous = host
 		seen[host] = struct{}{}
 		config.AllowedHosts[index] = host
 	}
 	if strings.Count(config.RootURL, channelRootVersionToken) != 1 {
-		return ChannelConfig{}, "", errors.New("root_url must contain exactly one {version} token")
+		return ChannelConfig{}, errors.New("root_url must contain exactly one {version} token")
 	}
 	rootTemplate, err := url.Parse(config.RootURL)
 	if err != nil || !strings.Contains(rootTemplate.Path, channelRootVersionToken) || strings.Contains(rootTemplate.Host, channelRootVersionToken) || strings.Contains(rootTemplate.RawQuery, channelRootVersionToken) {
-		return ChannelConfig{}, "", errors.New("root_url {version} token must appear only in the URL path")
+		return ChannelConfig{}, errors.New("root_url {version} token must appear only in the URL path")
 	}
 	rootURL, err := channelRootMetadataURL(config.RootURL, 1)
 	if err != nil {
-		return ChannelConfig{}, "", fmt.Errorf("root_url: %w", err)
+		return ChannelConfig{}, fmt.Errorf("root_url: %w", err)
 	}
 	if err := validateChannelMetadataURL(rootURL, seen, allowLoopback); err != nil {
-		return ChannelConfig{}, "", fmt.Errorf("root_url: %w", err)
+		return ChannelConfig{}, fmt.Errorf("root_url: %w", err)
 	}
 	if err := validateChannelMetadataURL(config.CatalogURL, seen, allowLoopback); err != nil {
-		return ChannelConfig{}, "", fmt.Errorf("catalog_url: %w", err)
+		return ChannelConfig{}, fmt.Errorf("catalog_url: %w", err)
 	}
-	return config, filepath.Dir(absolute), nil
+	return config, nil
 }
 
 func channelRootMetadataURL(template string, version int) (string, error) {
