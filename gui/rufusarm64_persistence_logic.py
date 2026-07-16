@@ -100,6 +100,16 @@ def build_create_command(
     ]
 
 
+def _normalize_patch_path(value):
+    path = str(value or "").strip().replace("\\", "/")
+    if not path or path.startswith("/"):
+        raise ValueError("The persistence analyzer returned an invalid boot-file edit path.")
+    parts = path.split("/")
+    if any(part in {"", ".", ".."} for part in parts):
+        raise ValueError("The persistence analyzer returned an invalid boot-file edit path.")
+    return "/".join(parts)
+
+
 def normalize_plan(payload):
     if not isinstance(payload, dict):
         raise ValueError("The persistence analyzer returned an invalid response.")
@@ -120,8 +130,13 @@ def normalize_plan(payload):
     patch_paths = plan.get("patch_paths") or plan.get("PatchPaths") or []
     if not name or not family or filesystem != "ext4" or not label or not parameter or size < 1024**3:
         raise ValueError("The persistence analyzer did not return a complete supported contract.")
+    if target_size <= 0 or size >= target_size:
+        raise ValueError("The persistence analyzer returned an impossible target layout.")
     if not isinstance(patch_paths, list):
         raise ValueError("The persistence analyzer returned invalid boot-file edits.")
+    normalized_paths = [_normalize_patch_path(path) for path in patch_paths]
+    if len(normalized_paths) != len(set(normalized_paths)):
+        raise ValueError("The persistence analyzer returned duplicate boot-file edits.")
     return {
         "name": name,
         "family": family,
@@ -130,7 +145,7 @@ def normalize_plan(payload):
         "parameter": parameter,
         "size": size,
         "target_size": target_size,
-        "patch_paths": [str(path) for path in patch_paths],
+        "patch_paths": normalized_paths,
     }
 
 
