@@ -57,6 +57,9 @@ type PersistentCreateResult struct {
 // intentionally not called by the graphical writer. The caller must have
 // already applied whole-disk policy, confirmation, and identity selection.
 func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts PersistentCreateOptions, emit PersistentEventFunc) (result PersistentCreateResult, returnErr error) {
+	if opts.ExpectedSource == (sourcefile.Identity{}) {
+		return result, errors.New("persistent Linux creation requires an identity-bound source image")
+	}
 	isoFile, err := sourcefile.OpenRegular(isoPath, opts.ExpectedSource)
 	if err != nil {
 		return result, err
@@ -74,7 +77,7 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 		}
 	}
 
-	target, err := os.OpenFile(devicePath, os.O_RDWR, 0)
+	target, err := os.OpenFile(devicePath, os.O_RDWR|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return result, fmt.Errorf("open target for persistent Linux creation: %w", err)
 	}
@@ -86,17 +89,27 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 		return result, fmt.Errorf("another writer appears to be using %s: %w", devicePath, err)
 	}
 	defer syscall.Flock(int(target.Fd()), syscall.LOCK_UN) // best effort
+	stableTargetPath := fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), target.Fd())
 	targetInfo, err := target.Stat()
 	if err != nil {
 		return result, fmt.Errorf("stat persistent Linux target: %w", err)
 	}
 	testTarget := targetInfo.Mode().IsRegular()
+	if !testTarget && opts.ExpectedDeviceID == 0 {
+		return result, errors.New("persistent Linux creation requires an identity-bound target device")
+	}
+	if !testTarget && opts.BeforeDestructive == nil {
+		return result, errors.New("persistent Linux creation requires a final target-safety callback")
+	}
 
 	if opts.TargetSize == 0 {
 		opts.TargetSize, err = persistentBlockDeviceSize(ctx, devicePath)
 		if err != nil {
 			return result, err
 		}
+	}
+	if err := safety.VerifyOpenDevice(target, opts.ExpectedDeviceID, opts.TargetSize); err != nil {
+		return result, err
 	}
 	sectorSize, err := persistentLogicalSectorSize(ctx, devicePath, testTarget)
 	if err != nil {
@@ -191,7 +204,11 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 	if err != nil {
 		return result, err
 	}
-	layout, err := PlanPersistentLayout(opts.TargetSize, sectorSize, manifest.TotalBytes, opts.PersistenceSize, detection)
+	fat32Bytes, err := EstimateFAT32Bytes(manifest)
+	if err != nil {
+		return result, err
+	}
+	layout, err := PlanPersistentLayout(opts.TargetSize, sectorSize, fat32Bytes, opts.PersistenceSize, detection)
 	if err != nil {
 		return result, err
 	}
@@ -223,7 +240,7 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 	}
 
 	sendPersistent(emit, PersistentEvent{Stage: "partition", Message: "Creating a fresh GPT layout for writable Linux boot files and persistence…"})
-	if err := runPersistent(ctx, emit, "wipefs", "--all", "--force", "--", devicePath); err != nil {
+	if err := runPersistent(ctx, emit, "wipefs", "--all", "--force", "--", stableTargetPath); err != nil {
 		return result, err
 	}
 	if err := checkTarget(); err != nil {
@@ -232,7 +249,7 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 	if err := WritePersistentGPT(target, layout); err != nil {
 		return result, fmt.Errorf("write persistent Linux GPT: %w", err)
 	}
-	if err := persistentRereadPartitionTable(ctx, devicePath, emit); err != nil {
+	if err := persistentRereadPartitionTable(ctx, stableTargetPath, emit); err != nil {
 		sendPersistent(emit, PersistentEvent{Stage: "partition", Message: fmt.Sprintf("Warning: could not force an immediate partition-table reread: %v", err)})
 	}
 	if err := checkTarget(); err != nil {
@@ -253,8 +270,20 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 	if err := checkTarget(); err != nil {
 		return result, err
 	}
+	bootFile, err := openPersistentPartition(bootPartition, layout.Boot, opts.ExpectedDeviceID, testTarget)
+	if err != nil {
+		return result, fmt.Errorf("identity-bind writable boot partition: %w", err)
+	}
+	defer func() {
+		_ = syscall.Flock(int(bootFile.Fd()), syscall.LOCK_UN)
+		if err := bootFile.Close(); err != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("close writable boot partition: %w", err))
+		}
+	}()
+	bootFDPath := "/proc/self/fd/3"
 	sendPersistent(emit, PersistentEvent{Stage: "format", Message: fmt.Sprintf("Formatting the writable UEFI boot partition as FAT32 (%s)…", label)})
-	if err := runPersistent(ctx, emit, "mkfs.vfat", "-F", "32", "-n", label, bootPartition); err != nil {
+	clusterSectors := fat32ClusterBytes / sectorSize
+	if err := runPersistentFile(ctx, emit, bootFile, "mkfs.vfat", "-F", "32", "-s", strconv.FormatUint(clusterSectors, 10), "-n", label, bootFDPath); err != nil {
 		return result, fmt.Errorf("format writable boot partition: %w", err)
 	}
 	if err := unmountPersistentDeviceMounts(ctx, bootPartition); err != nil {
@@ -268,7 +297,7 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 			return result, err
 		}
 	} else {
-		if err := runPersistent(ctx, emit, "mount", "-t", "vfat", "-o", "rw,nosuid,nodev,noexec,umask=0077", "--", bootPartition, bootMount); err != nil {
+		if err := runPersistentFile(ctx, emit, bootFile, "mount", "-t", "vfat", "-o", "rw,nosuid,nodev,noexec,umask=0077", "--", bootFDPath, bootMount); err != nil {
 			return result, fmt.Errorf("mount writable boot partition: %w", err)
 		}
 		mountedBoot = true
@@ -304,12 +333,18 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 		}
 		mountedBoot = false
 	}
-	if err := runPersistent(ctx, emit, "blockdev", "--flushbufs", bootPartition); err != nil && !testTarget {
+	if err := bootFile.Sync(); err != nil {
+		return result, fmt.Errorf("sync writable boot partition: %w", err)
+	}
+	if err := runPersistentFile(ctx, emit, bootFile, "blockdev", "--flushbufs", bootFDPath); err != nil && !testTarget {
 		return result, fmt.Errorf("flush writable boot partition: %w", err)
 	}
 	sendPersistent(emit, PersistentEvent{Stage: "check", Message: "Checking the FAT32 boot filesystem…"})
-	if err := runPersistent(ctx, emit, "fsck.vfat", "-n", bootPartition); err != nil {
+	if err := runPersistentFile(ctx, emit, bootFile, "fsck.vfat", "-n", bootFDPath); err != nil {
 		return result, fmt.Errorf("FAT32 boot filesystem check failed: %w", err)
+	}
+	if err := verifyPersistentPartitionFile(bootFile, layout.Boot, opts.ExpectedDeviceID, testTarget); err != nil {
+		return result, fmt.Errorf("revalidate writable boot partition: %w", err)
 	}
 
 	if err := checkTarget(); err != nil {
@@ -320,6 +355,9 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 		persistenceID, err = safety.KernelDeviceID(persistencePartition)
 		if err != nil {
 			return result, fmt.Errorf("bind persistence partition identity: %w", err)
+		}
+		if err := verifyPersistentPartitionGeometry(persistenceID, layout.Persistence, opts.ExpectedDeviceID); err != nil {
+			return result, fmt.Errorf("verify persistence partition geometry: %w", err)
 		}
 	}
 	if err := persistence.CreateFilesystem(ctx, persistencePartition, layout.Plan, persistence.FilesystemOptions{
@@ -346,7 +384,7 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 	if err := checkTarget(); err != nil {
 		return result, err
 	}
-	if err := runPersistent(ctx, emit, "blockdev", "--flushbufs", devicePath); err != nil && !testTarget {
+	if err := runPersistent(ctx, emit, "blockdev", "--flushbufs", stableTargetPath); err != nil && !testTarget {
 		return result, fmt.Errorf("flush persistent Linux USB buffers: %w", err)
 	}
 	if mountedISO {
@@ -416,10 +454,126 @@ func persistentLogicalSectorSize(ctx context.Context, path string, testTarget bo
 		return 0, fmt.Errorf("read target logical sector size: %w", err)
 	}
 	value, err := strconv.ParseUint(strings.TrimSpace(string(output)), 10, 64)
-	if err != nil || value < 512 || value > 64*1024 || value&(value-1) != 0 {
+	if err != nil || value < 512 || value > fat32ClusterBytes || value&(value-1) != 0 {
 		return 0, fmt.Errorf("unsupported target logical sector size %q", strings.TrimSpace(string(output)))
 	}
 	return value, nil
+}
+
+func openPersistentPartition(path string, layout PartitionLayout, expectedParentID uint64, testTarget bool) (*os.File, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, errors.New("partition path is a symbolic link")
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil, errors.New("partition identity is unavailable")
+	}
+	if testTarget {
+		if !info.Mode().IsRegular() || uint64(info.Size()) != layout.SizeBytes {
+			return nil, errors.New("test partition does not match the planned size")
+		}
+	} else if stat.Mode&syscall.S_IFMT != syscall.S_IFBLK {
+		return nil, safety.ErrNotBlockDevice
+	}
+	file, err := os.OpenFile(path, os.O_RDWR|syscall.O_EXCL|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		file.Close()
+		return nil, fmt.Errorf("lock partition: %w", err)
+	}
+	if testTarget {
+		if err := verifyPersistentPartitionFile(file, layout, expectedParentID, true); err != nil {
+			_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+			file.Close()
+			return nil, err
+		}
+		return file, nil
+	}
+	if err := safety.VerifyOpenDevice(file, uint64(stat.Rdev), layout.SizeBytes); err != nil {
+		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		file.Close()
+		return nil, err
+	}
+	if err := verifyPersistentPartitionGeometry(uint64(stat.Rdev), layout, expectedParentID); err != nil {
+		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		file.Close()
+		return nil, err
+	}
+	return file, nil
+}
+
+func verifyPersistentPartitionFile(file *os.File, layout PartitionLayout, expectedParentID uint64, testTarget bool) error {
+	if file == nil {
+		return errors.New("partition file is nil")
+	}
+	if testTarget {
+		info, err := file.Stat()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() || uint64(info.Size()) != layout.SizeBytes {
+			return errors.New("test partition identity or size changed")
+		}
+		return nil
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Mode&syscall.S_IFMT != syscall.S_IFBLK {
+		return safety.ErrNotBlockDevice
+	}
+	if err := safety.VerifyOpenDevice(file, uint64(stat.Rdev), layout.SizeBytes); err != nil {
+		return err
+	}
+	return verifyPersistentPartitionGeometry(uint64(stat.Rdev), layout, expectedParentID)
+}
+
+func verifyPersistentPartitionGeometry(deviceID uint64, layout PartitionLayout, expectedParentID uint64) error {
+	major, minor := linuxDeviceMajorMinor(deviceID)
+	link := filepath.Join("/sys/dev/block", fmt.Sprintf("%d:%d", major, minor))
+	resolved, err := filepath.EvalSymlinks(link)
+	if err != nil {
+		return fmt.Errorf("resolve partition sysfs identity: %w", err)
+	}
+	if _, err := os.Stat(filepath.Join(resolved, "partition")); err != nil {
+		return errors.New("opened target component is not a kernel partition")
+	}
+	start, err := readPersistentSysfsSectors(filepath.Join(resolved, "start"))
+	if err != nil {
+		return fmt.Errorf("read partition start: %w", err)
+	}
+	size, err := readPersistentSysfsSectors(filepath.Join(resolved, "size"))
+	if err != nil {
+		return fmt.Errorf("read partition size: %w", err)
+	}
+	if start > ^uint64(0)/512 || size > ^uint64(0)/512 || start*512 != layout.StartBytes || size*512 != layout.SizeBytes {
+		return errors.New("kernel partition geometry does not match the planned extent")
+	}
+	if expectedParentID != 0 {
+		parentDev, err := os.ReadFile(filepath.Join(filepath.Dir(resolved), "dev"))
+		if err != nil {
+			return fmt.Errorf("read parent block-device identity: %w", err)
+		}
+		parentMajor, parentMinor := linuxDeviceMajorMinor(expectedParentID)
+		if strings.TrimSpace(string(parentDev)) != fmt.Sprintf("%d:%d", parentMajor, parentMinor) {
+			return errors.New("partition is not a child of the selected target disk")
+		}
+	}
+	return nil
+}
+
+func linuxDeviceMajorMinor(deviceID uint64) (uint64, uint64) {
+	major := (deviceID >> 8 & 0xfff) | (deviceID >> 32 & ^uint64(0xfff))
+	minor := (deviceID & 0xff) | (deviceID >> 12 & ^uint64(0xff))
+	return major, minor
 }
 
 func persistentPartitionPaths(ctx context.Context, devicePath string, layout PersistentLayout, testTarget bool) (string, string, error) {
@@ -579,6 +733,29 @@ func resolveEmptyTestRoot(path string) (string, error) {
 
 func runPersistent(ctx context.Context, emit PersistentEventFunc, name string, args ...string) error {
 	command := exec.CommandContext(ctx, name, args...)
+	var output bytes.Buffer
+	command.Stdout = &output
+	command.Stderr = &output
+	if err := command.Run(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("%s: %w: %s", name, err, strings.TrimSpace(output.String()))
+	}
+	if text := strings.TrimSpace(output.String()); text != "" {
+		for _, line := range strings.Split(text, "\n") {
+			sendPersistent(emit, PersistentEvent{Stage: "log", Message: line})
+		}
+	}
+	return nil
+}
+
+func runPersistentFile(ctx context.Context, emit PersistentEventFunc, file *os.File, name string, args ...string) error {
+	if file == nil {
+		return errors.New("command partition file is nil")
+	}
+	command := exec.CommandContext(ctx, name, args...)
+	command.ExtraFiles = []*os.File{file}
 	var output bytes.Buffer
 	command.Stdout = &output
 	command.Stderr = &output

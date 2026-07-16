@@ -90,8 +90,26 @@ func TestCreatePersistentOrchestratesVerifiedUbuntuMedia(t *testing.T) {
 			t.Fatalf("missing %s command in log:\n%s", command, logText)
 		}
 	}
+	if !strings.Contains(logText, "mkfs.vfat -F 32 -s 8") || !strings.Contains(logText, "/proc/self/fd/3") {
+		t.Fatalf("FAT32 tools were not bound to the inherited partition descriptor:\n%s", logText)
+	}
 	if !containsLinuxStage(stages, "complete") {
 		t.Fatalf("completion event missing: %v", stages)
+	}
+}
+
+func TestOpenPersistentPartitionRejectsSymlinkAndWrongSize(t *testing.T) {
+	realPath := filepath.Join(t.TempDir(), "partition.img")
+	truncateLinuxTestFile(t, realPath, 1024*1024)
+	symlinkPath := filepath.Join(t.TempDir(), "partition-link")
+	if err := os.Symlink(realPath, symlinkPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := openPersistentPartition(symlinkPath, PartitionLayout{SizeBytes: 1024 * 1024}, 0, true); err == nil {
+		t.Fatal("accepted a symbolic-link partition path")
+	}
+	if _, err := openPersistentPartition(realPath, PartitionLayout{SizeBytes: 2 * 1024 * 1024}, 0, true); err == nil {
+		t.Fatal("accepted a test partition with the wrong size")
 	}
 }
 
