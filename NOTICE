@@ -1,0 +1,17 @@
+RufusArm64
+Copyright (C) 2026 geocausa and contributors
+
+This is an independent, unofficial Linux implementation. Rufus is a separate
+GPL project by Pete Batard and contributors. No endorsement is implied.
+
+Project code: GPL-3.0-or-later.
+
+The package includes a checksum-pinned copy of Rufus 4.15's uefi-ntfs.img so
+manual NTFS media can use the same architecture-aware UEFI:NTFS boot path. The
+associated upstream readme and component licensing information are installed in
+/usr/share/doc/rufusarm64/uefi-ntfs/.
+
+The helper also embeds byte arrays derived from Rufus 4.15's GPL ms-sys Windows
+7 MBR, NTFS PBR, and FAT32 Windows PE PBR source. The exact upstream source
+fragments, commit pin, and SHA-256 manifest are installed in
+/usr/share/doc/rufusarm64/ms-sys/ and included in the source release.

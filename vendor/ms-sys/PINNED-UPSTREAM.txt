@@ -1,0 +1,4 @@
+Upstream: https://github.com/pbatard/rufus
+Commit: 6d8fbf98305ff37eb531c45cbd6ff44563c53917 (Rufus 4.15 build 2396)
+Assets: res/uefi/uefi-ntfs.img and GPL ms-sys Windows 7 MBR/NTFS/FAT32 PE boot code arrays
+Licensing: each pinned ms-sys source file carries its GPLv2-or-later notice; Rufus is GPLv3-or-later.

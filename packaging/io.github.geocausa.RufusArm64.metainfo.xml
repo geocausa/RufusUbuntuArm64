@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.geocausa.RufusArm64</id>
+  <name>RufusArm64</name>
+  <summary>Create bootable USB drives on Ubuntu ARM64</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>RufusArm64 is an unofficial bootable-USB creator designed for Ubuntu on ARM64 computers.</p>
+    <p>It writes raw and ISOHybrid media, prepares compressed and common virtual-disk inputs, and creates Windows installation media using GPT or MBR, UEFI or x86-family BIOS/CSM, FAT32 or NTFS, WIM splitting, UEFI:NTFS, optional Windows PE drivers, and Secure Boot DBX checks.</p>
+  </description>
+  <launchable type="desktop-id">io.github.geocausa.RufusArm64.desktop</launchable>
+  <url type="homepage">https://github.com/geocausa/RufusArm64</url>
+  <developer_name>RufusArm64 contributors</developer_name>
+  <provides>
+    <binary>rufusarm64</binary>
+  </provides>
+  <releases>
+    <release version="0.8.0" date="2026-07-16">
+      <description>
+        <p>Adds compressed and virtual-disk preparation, Microsoft DBX updates, PE/COFF revocation checks, and target-sized expansion limits.</p>
+      </description>
+    </release>
+    <release version="0.7.0" date="2026-07-15">
+      <description>
+        <p>Adds true x86/x86-64 Windows BIOS/CSM media, Windows PE driver auto-loading, source hashing, strict symlink-safe driver copies, and pinned legacy boot-code verification.</p>
+      </description>
+    </release>
+    <release version="0.6.0" date="2026-07-15">
+      <description>
+        <p>Adds manual FAT32/NTFS selection, verified Rufus UEFI:NTFS media, NTFS checks, and optional Windows driver-folder staging.</p>
+      </description>
+    </release>
+    <release version="0.5.2" date="2026-07-15">
+      <description>
+        <p>Adds GPT/MBR UEFI selection, FAT32 cluster-size controls, full formatting, a one-pass media check, and clearer From-image behavior.</p>
+      </description>
+    </release>
+    <release version="0.4.0" date="2026-07-15">
+      <description>
+        <p>Responsive graphical ARM64 release with Windows Setup options, compact WIM progress, direct partition detection, a bundled WIM engine, and expanded safety tests.</p>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>

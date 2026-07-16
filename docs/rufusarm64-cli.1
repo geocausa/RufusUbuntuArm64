@@ -1,0 +1,121 @@
+.TH RUFUSARM64-CLI 1 "16 July 2026" "RufusArm64 0.8.0" "User Commands"
+.SH NAME
+rufusarm64-cli \- safely create bootable USB media on Linux
+.SH SYNOPSIS
+.B rufusarm64-cli list
+.RI [ --all ]
+.RI [ --json ]
+.PP
+.B rufusarm64-cli inspect
+.BI --image " FILE"
+.RI [ --json ]
+.PP
+.B sudo rufusarm64-cli write
+.BI --image " FILE"
+.BI --device " /dev/DEVICE"
+.RI [ options ]
+.PP
+.B sudo rufusarm64-cli verify
+.BI --image " FILE"
+.BI --device " /dev/DEVICE"
+.PP
+.B rufusarm64-cli hash
+.I FILE
+.SH DESCRIPTION
+.B rufusarm64-cli
+writes recognized GPT/MBR disk images and ISOHybrid Linux images directly, or
+creates extracted Windows installation media. Windows media support GPT or MBR,
+UEFI or x86-family BIOS/CSM, and Automatic, FAT32, or NTFS selection.
+FAT32 media split oversized WIM/ESD files. NTFS/UEFI media add a pinned
+UEFI:NTFS partition. BIOS/CSM media install an active MBR partition and
+BOOTMGR-compatible MBR/PBR boot code. Compressed images are expanded privately before erasure; VHD, VHDX, QCOW2, and VMDK inputs are flattened with qemu-img.
+.SH WRITE OPTIONS
+.TP
+.B --verify
+Flush block buffers and compare copied data after writing. Recommended.
+.TP
+.BI --partition-scheme " gpt|mbr"
+Choose the partition table for extracted Windows media. GPT is the default.
+BIOS/CSM requires MBR.
+.TP
+.BI --target-system " uefi|bios"
+Choose UEFI (non-CSM) or legacy BIOS/UEFI-CSM. BIOS is accepted only for MBR
+media made from a compatible x86 or x86-64 Windows ISO containing root
+.BR bootmgr .
+Windows ARM64 is UEFI-only.
+.TP
+.BI --filesystem " auto|fat32|ntfs"
+Choose the Windows-media filesystem. Automatic prefers FAT32 when every path and
+file can be represented safely and otherwise selects NTFS. FAT32 splits an
+oversized Windows installation image. NTFS/UEFI uses the bundled UEFI:NTFS
+loader; NTFS/BIOS uses the Windows BOOTMGR partition boot record.
+.TP
+.BI --cluster-size " auto|4096|8192|16384|32768"
+Choose the allocation-unit size for extracted Windows media.
+.TP
+.BI --dbx-file " FILE"
+Parse a Microsoft DBXUpdate.bin or raw EFI signature database and reject Windows EFI boot files whose Authenticode hash or embedded X.509 certificate is revoked. This does not modify firmware.
+.TP
+.BI --driver-folder " DIRECTORY"
+Validate a directory containing complete Windows driver packages and copy it to
+.BR USB\\drivers .
+The generated windowsPE answer file attempts to load each .inf package before
+disk selection. The same folder remains available through Windows Setup's
+.B Load driver
+button. Drivers are not injected into boot.wim.
+.TP
+.B --full-format
+Zero-write the complete new Windows data partition before formatting.
+.TP
+.B --bad-block-check
+Zero-write and read back the complete new Windows data partition before formatting.
+This is one destructive zero-pattern pass and can take a long time.
+.TP
+.B --yes
+Skip the interactive destructive-operation confirmation.
+.TP
+.B --allow-fixed
+Permit a non-removable whole disk after all other safety checks pass.
+.TP
+.B --allow-foreign-windows-architecture
+Allow UEFI Windows media whose architecture does not match the ARM64 host. BIOS
+media are architecture-gated separately and require x86-family Windows boot files.
+.TP
+.B --force-raw
+Expert override that forces raw writing of a deliberately unrecognized or plain optical image.
+.TP
+.B --no-unmount
+Do not issue initial unmount commands. The operation is still refused if a
+filesystem is mounted at the final safety check.
+.TP
+.B --dry-run
+Perform discovery, signature, size, source-identity, and target-safety checks without writing.
+.TP
+.BI --expected-identity " TOKEN"
+Require the selected device to match a token returned by the JSON list command.
+The graphical application always supplies this fail-closed check.
+.SH SECURE BOOT DBX COMMANDS
+.TP
+.B dbx inspect (--file FILE | --firmware) [--json]
+Parse and summarize an authenticated-update-format or firmware EFI DBX.
+.TP
+.B dbx update [--arch ARCH] [--output FILE] [--json]
+Download the architecture-specific DBXUpdate.bin from Microsoft’s secureboot_objects repository and cache it with mode 0600.
+.TP
+.B dbx check (--dbx FILE | --firmware) --efi FILE [--json]
+Calculate the PE/COFF Authenticode SHA-256 digest and inspect embedded PKCS#7 certificates. Exit non-zero when the image or an exact embedded certificate is revoked.
+.TP
+.B dbx scan (--dbx FILE | --firmware) --directory DIR [--json]
+Scan bounded EFI boot files beneath a mounted directory.
+.SH SAFETY
+The program refuses partitions, read-only targets, the running root disk, and an
+image stored on the selected target. It holds and hashes the selected source
+through an open descriptor, refreshes target identity immediately before
+destructive work, locks the target, verifies bundled boot assets, removes stale
+signatures, flushes block buffers, and verifies copied files and filesystems.
+.SH EXIT STATUS
+Zero indicates success. A non-zero status indicates refusal, cancellation,
+validation failure, I/O failure, filesystem failure, or verification mismatch.
+.SH COPYRIGHT
+GPL-3.0-or-later. Rufus is a separate project by Pete Batard and contributors.
+No endorsement is implied.

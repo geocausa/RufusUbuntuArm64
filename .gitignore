@@ -1,0 +1,10 @@
+/dist/*
+!/dist/.gitkeep
+__pycache__/
+*.pyc
+*.test
+*.out
+/vendor/wimlib/arm64/wimlib-imagex
+/vendor/wimlib/arm64/wimlib-imagex.sha256
+/vendor/wimlib/source/wimlib-1.14.5-source.tar.gz
+/vendor/wimlib/source/wimlib-1.14.5-source.tar.gz.sha256
