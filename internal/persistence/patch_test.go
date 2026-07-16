@@ -11,8 +11,6 @@ import (
 
 func TestPatchBootConfigPreservesLineEndingsAndInsertionPoint(t *testing.T) {
 	detection := readyDetection()
-	detection.Family = FamilyUbuntuCasper
-	detection.BootParameter = "persistent"
 	input := "menuentry Ubuntu {\r\n\tlinux /casper/vmlinuz boot=casper quiet splash ---\r\n}\r\n"
 	got, changes, err := PatchBootConfig(input, detection)
 	if err != nil {
@@ -27,10 +25,37 @@ func TestPatchBootConfigPreservesLineEndingsAndInsertionPoint(t *testing.T) {
 	}
 }
 
+func TestPatchBootConfigSupportsResoluteCmdlineLayout(t *testing.T) {
+	detection := readyDetection()
+	input := "linux  /casper/vmlinuz $cmdline  --- quiet splash console=tty0\ninitrd /casper/initrd\n"
+	got, changes, err := PatchBootConfig(input, detection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "linux  /casper/vmlinuz $cmdline  persistent --- quiet splash console=tty0\n"
+	if changes != 1 || !strings.Contains(got, want) {
+		t.Fatalf("changes=%d content=%q", changes, got)
+	}
+}
+
+func TestPatchBootConfigSupportsPrefixedCasperPath(t *testing.T) {
+	detection := readyDetection()
+	input := "linuxefi ($root)/casper/vmlinuz $cmdline ---\n"
+	got, changes, err := PatchBootConfig(input, detection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changes != 1 || got != "linuxefi ($root)/casper/vmlinuz $cmdline persistent ---\n" {
+		t.Fatalf("changes=%d content=%q", changes, got)
+	}
+}
+
 func TestPatchBootConfigLeavesUnrelatedAndEnabledLines(t *testing.T) {
 	detection := readyDetection()
 	detection.Family = FamilyDebianLive
 	detection.BootParameter = "persistence"
+	detection.FilesystemLabel = "persistence"
+	detection.PersistenceConfig = "/ union\n"
 	input := "append boot=live components persistence\nlinux /vmlinuz root=/dev/sda1\n# append boot=live\n"
 	got, changes, err := PatchBootConfig(input, detection)
 	if err != nil {
@@ -41,13 +66,25 @@ func TestPatchBootConfigLeavesUnrelatedAndEnabledLines(t *testing.T) {
 	}
 }
 
+func TestPatchBootConfigRefusesUnrelatedCmdlineKernel(t *testing.T) {
+	detection := readyDetection()
+	input := "linux /other/vmlinuz $cmdline --- quiet\n"
+	got, changes, err := PatchBootConfig(input, detection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changes != 0 || got != input {
+		t.Fatalf("unrelated kernel was patched: changes=%d content=%q", changes, got)
+	}
+}
+
 func TestPatchBootTreeAtomicallyPatchesDetectedPath(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, "boot", "grub", "grub.cfg")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(configPath, []byte("linux /casper/vmlinuz boot=casper quiet ---\n"), 0o640); err != nil {
+	if err := os.WriteFile(configPath, []byte("linux /casper/vmlinuz $cmdline --- quiet\n"), 0o640); err != nil {
 		t.Fatal(err)
 	}
 	detection := Detection{
@@ -68,7 +105,7 @@ func TestPatchBootTreeAtomicallyPatchesDetectedPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(content) != "linux /casper/vmlinuz boot=casper quiet persistent ---\n" {
+	if string(content) != "linux /casper/vmlinuz $cmdline persistent --- quiet\n" {
 		t.Fatalf("content=%q", content)
 	}
 	info, err := os.Stat(configPath)
