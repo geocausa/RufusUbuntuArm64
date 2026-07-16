@@ -21,33 +21,48 @@ jobs:
           ref: recovery/import-0.8.0
           fetch-depth: 0
 
-      - name: Reconstruct and verify recovered source
+      - name: Verify recovered archive
         shell: bash
         run: |
           set -euo pipefail
-
           cat .recovery/chunk-* > /tmp/rufusarm64-source.tar.xz.b64
           base64 --decode /tmp/rufusarm64-source.tar.xz.b64 > /tmp/rufusarm64-source.tar.xz
           echo '2f9c26685049c93bead03e52924187f0ae5469f0a95df3e3f96326a1a9531cdf  /tmp/rufusarm64-source.tar.xz' | sha256sum --check --strict
-
           mkdir /tmp/rufusarm64-recovered
           tar -xJf /tmp/rufusarm64-source.tar.xz -C /tmp/rufusarm64-recovered
 
+      - name: Materialize exact source tree
+        shell: bash
+        run: |
+          set -euo pipefail
           find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
           cp -a /tmp/rufusarm64-recovered/. .
-
           mkdir -p vendor/uefi-ntfs
           curl --fail --location --retry 5 --retry-all-errors \
             'https://raw.githubusercontent.com/pbatard/rufus/6d8fbf98305ff37eb531c45cbd6ff44563c53917/res/uefi/uefi-ntfs.img' \
             --output vendor/uefi-ntfs/uefi-ntfs.img
           echo '72683fa1250eeea772d3399277b434d4e55ba8dd0dc926e52d817e701fc2eb9e  vendor/uefi-ntfs/uefi-ntfs.img' | sha256sum --check --strict
+          grep -q '0.8.0' CHANGELOG.md
 
-          go test ./...
-          python3 -m unittest discover -s gui -p 'test*.py'
+      - name: Run Go tests
+        run: go test ./...
 
+      - name: Run Python GUI tests
+        run: python3 -m unittest discover -s gui -p 'test*.py'
+
+      - name: Verify deterministic Git tree
+        shell: bash
+        run: |
+          set -euo pipefail
           git add --all
-          test "$(git write-tree)" = '6f93fb6e78f47e3637d24d99f012001db6ffdb2d'
+          actual_tree="$(git write-tree)"
+          echo "Recovered Git tree: ${actual_tree}"
+          test "${actual_tree}" = '6f93fb6e78f47e3637d24d99f012001db6ffdb2d'
 
+      - name: Commit recovered source
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'Release RufusArm64 0.8.0 parity tranche'
