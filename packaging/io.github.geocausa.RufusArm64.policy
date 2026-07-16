@@ -16,4 +16,14 @@
     </defaults>
     <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/rufusarm64/rufusarm64-helper</annotate>
   </action>
+  <action id="io.github.geocausa.RufusArm64.persistence">
+    <description>Create a persistent live Linux USB drive</description>
+    <message>Administrator authentication is required to erase the selected USB and create persistent live media.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/rufusarm64/rufusarm64-persistence-helper</annotate>
+  </action>
 </policyconfig>
