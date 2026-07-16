@@ -19,6 +19,12 @@ The current release:
 - flushes pending writes before verification and completion, then verifies copied Windows files by SHA-256 and checks the FAT32 filesystem;
 - refuses expert bypass flags when launched through the GUI, and requires both a graphical erase confirmation and a fresh Polkit administrator authentication for every operation.
 
+## Image acquisition trust boundary
+
+The 0.9 acquisition foundation does not trust a URL merely because it uses HTTPS. Before any network request, it requires an unexpired Ed25519-signed catalog and validates each immutable entry. Downloads are limited to the signed byte count, redirects are restricted to signed hostnames, data are hashed while streaming, and the destination is installed atomically only after the complete SHA-256 matches. Unsigned catalogs, HTTP URLs, path-bearing filenames, private/loopback redirect hosts, and unknown JSON fields are refused.
+
+The initial implementation accepts local catalog/signature/public-key files. A future built-in remote catalog must establish a separately reviewed key-distribution and rotation policy.
+
 ## Known limitations
 
 - Unusual multipath, network-block, device-mapper, or vendor-specific storage topologies may not be represented by `lsblk` as expected. The helper fails closed when it cannot identify the root disk.

@@ -56,12 +56,14 @@
 - Microsoft DBX cache updates and EFI direct-hash/certificate checks
 - Target-sized preparation limits and compressed-image previews
 
-## 0.9 — remaining creation modes
+## 0.9 — parity and product-quality programme (in progress)
 
+- Rich progress and exportable diagnostics (completed)
+- Strict Ed25519-signed acquisition catalog and checksum-gated download core (completed foundation; remote catalog/UI pending)
 - Linux persistence partition creation
 - FreeDOS creation
 - Windows To Go feasibility and implementation
-- ISO download catalog and authenticated metadata
+- Authenticated remote catalog distribution, resumption, and graphical acquisition workflow
 - Broader Syslinux/GRUB compatibility workarounds
 
 ## 1.0 — supportable stable release

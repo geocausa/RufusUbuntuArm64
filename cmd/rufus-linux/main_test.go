@@ -1,8 +1,16 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/geocausa/RufusArm64/internal/acquisition"
 	"github.com/geocausa/RufusArm64/internal/imaging"
 )
 
@@ -69,5 +77,62 @@ func TestParseClusterSize(t *testing.T) {
 		if _, err := parseClusterSize(input); err == nil {
 			t.Fatalf("invalid cluster size %q accepted", input)
 		}
+	}
+}
+
+func TestAcquireCatalogCommands(t *testing.T) {
+	seed := make([]byte, ed25519.SeedSize)
+	for i := range seed {
+		seed[i] = byte(100 + i)
+	}
+	privateKey := ed25519.NewKeyFromSeed(seed)
+	publicKey := privateKey.Public().(ed25519.PublicKey)
+	now := time.Now().UTC()
+	catalog := acquisition.Catalog{
+		Schema:    acquisition.SchemaVersion,
+		Generated: now.Add(-time.Hour).Format(time.RFC3339),
+		Expires:   now.Add(24 * time.Hour).Format(time.RFC3339),
+		Images: []acquisition.Image{{
+			ID: "test-arm64", Name: "Test", Version: "1", Architecture: "arm64",
+			Filename: "test.iso", URL: "https://downloads.example.com/test.iso",
+			SHA256: strings.Repeat("ab", 32), Size: 1024,
+		}},
+	}
+	catalogBytes, err := json.Marshal(catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := t.TempDir()
+	catalogPath := filepath.Join(directory, "catalog.json")
+	signaturePath := filepath.Join(directory, "catalog.sig")
+	keyPath := filepath.Join(directory, "catalog.pub")
+	if err := os.WriteFile(catalogPath, catalogBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(signaturePath, []byte(base64.StdEncoding.EncodeToString(ed25519.Sign(privateKey, catalogBytes))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, []byte(base64.StdEncoding.EncodeToString(publicKey)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	flags := []string{"--catalog", catalogPath, "--signature", signaturePath, "--public-key", keyPath, "--json"}
+	if err := runAcquireVerify(flags); err != nil {
+		t.Fatalf("verify catalog: %v", err)
+	}
+	if err := runAcquireList(flags); err != nil {
+		t.Fatalf("list catalog: %v", err)
+	}
+	catalogBytes[0] ^= 1
+	if err := os.WriteFile(catalogPath, catalogBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := runAcquireVerify(flags); err == nil || !strings.Contains(err.Error(), "signature") {
+		t.Fatalf("tampered catalog error = %v", err)
+	}
+}
+
+func TestReadLimitedRegularFileRejectsDirectory(t *testing.T) {
+	if _, err := readLimitedRegularFile(t.TempDir(), 1024); err == nil || !strings.Contains(err.Error(), "regular file") {
+		t.Fatalf("directory error = %v", err)
 	}
 }

@@ -4,7 +4,7 @@
  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 <policyconfig>
   <vendor>RufusArm64</vendor>
-  <vendor_url>https://github.com/geocausa/RufusArm64</vendor_url>
+  <vendor_url>https://github.com/geocausa/RufusUbuntuArm64</vendor_url>
   <icon_name>io.github.geocausa.RufusArm64</icon_name>
   <action id="io.github.geocausa.RufusArm64.write">
     <description>Create a bootable USB drive</description>
