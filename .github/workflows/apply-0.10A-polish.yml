@@ -1,0 +1,48 @@
+name: Apply 0.10A GUI polish
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'develop/0.10.0-gui-acquisition-planning'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/0.10.0-gui-acquisition-planning
+          fetch-depth: 0
+
+      - name: Verify and apply reviewed polish patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'fa96841dd625ebd066240bb60978fce4b7487cae11cdf857edda79e013a341d1  .changes/0.10A-polish.patch' | sha256sum --check --strict
+          git apply --check .changes/0.10A-polish.patch
+          git apply .changes/0.10A-polish.patch
+          rm -rf .changes
+
+      - name: Revalidate GUI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_logic.py gui/test_logic.py
+          (cd gui && python3 -m unittest test_logic.py)
+          grep -Fq 'Copy the current diagnostic log to the clipboard' gui/rufusarm64.py
+          grep -Fq 'Save a diagnostic report for troubleshooting' gui/rufusarm64.py
+          grep -Fq 'Clear the diagnostic log' gui/rufusarm64.py
+
+      - name: Commit validated polish
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git commit -m 'Preserve diagnostics tooltips in 0.10A GUI'
+          git push origin HEAD:develop/0.10.0-gui-acquisition-planning
