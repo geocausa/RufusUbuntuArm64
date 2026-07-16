@@ -43,13 +43,7 @@ func PatchBootConfig(content string, detection Detection) (string, int, error) {
 	if strings.IndexByte(content, 0) >= 0 || !utf8.ValidString(content) {
 		return "", 0, errors.New("boot configuration is not valid UTF-8 text")
 	}
-	marker := ""
-	switch detection.Family {
-	case FamilyUbuntuCasper:
-		marker = "boot=casper"
-	case FamilyDebianLive:
-		marker = "boot=live"
-	default:
+	if _, ok := familyBootMarker(detection.Family); !ok {
 		return "", 0, fmt.Errorf("unsupported persistence family %q", detection.Family)
 	}
 
@@ -59,7 +53,7 @@ func PatchBootConfig(content string, detection Detection) (string, int, error) {
 	changes := 0
 	for _, part := range parts {
 		body, ending := splitLineEnding(part)
-		patched, changed := patchKernelLine(body, marker, detection.BootParameter)
+		patched, changed := patchKernelLine(body, detection.Family, detection.BootParameter)
 		if changed {
 			changes++
 		}
@@ -85,12 +79,12 @@ type tokenSpan struct {
 	value string
 }
 
-func patchKernelLine(line, marker, parameter string) (string, bool) {
+func patchKernelLine(line string, family Family, parameter string) (string, bool) {
 	spans := scanTokenSpans(line)
 	if len(spans) < 2 || strings.HasPrefix(strings.TrimSpace(line), "#") || !isKernelArgumentCommand(spans[0].value) {
 		return line, false
 	}
-	hasMarker := false
+	arguments := make([]string, 0, len(spans)-1)
 	insertAt := -1
 	for _, span := range spans[1:] {
 		if strings.HasPrefix(span.value, "#") {
@@ -99,18 +93,16 @@ func patchKernelLine(line, marker, parameter string) (string, bool) {
 			}
 			break
 		}
-		token := strings.Trim(span.value, "\"' ,;[]()")
-		if token == marker || strings.HasPrefix(token, marker+"=") {
-			hasMarker = true
-		}
-		if token == parameter || strings.HasPrefix(token, parameter+"=") {
+		arguments = append(arguments, span.value)
+		token := normalizeKernelToken(span.value)
+		if kernelTokenMatches(token, parameter) {
 			return line, false
 		}
 		if token == "---" && insertAt < 0 {
 			insertAt = span.start
 		}
 	}
-	if !hasMarker {
+	if !kernelArgumentsSelectFamily(arguments, family) {
 		return line, false
 	}
 	if insertAt >= 0 {
