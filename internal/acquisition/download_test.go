@@ -107,7 +107,9 @@ func bytesOf(value string, repeats int) []byte {
 
 func TestDownloadCancellationRemovesPartialFile(t *testing.T) {
 	chunk := bytesOf("cancel-me", 1024)
-	data := bytesOf(string(chunk), 128)
+	data := bytesOf(string(chunk), 1024)
+	started := make(chan struct{})
+	var once sync.Once
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 		flusher, _ := writer.(http.Flusher)
@@ -119,6 +121,7 @@ func TestDownloadCancellationRemovesPartialFile(t *testing.T) {
 			if _, err := writer.Write(data[offset:end]); err != nil {
 				return
 			}
+			once.Do(func() { close(started) })
 			if flusher != nil {
 				flusher.Flush()
 			}
@@ -129,16 +132,15 @@ func TestDownloadCancellationRemovesPartialFile(t *testing.T) {
 	image := testImage(server.URL, data)
 	directory := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
-	var once sync.Once
-	_, err := Download(ctx, image, DownloadOptions{
-		Destination: directory,
-		AllowHTTP:   true,
-		Progress: func(progress Progress) {
-			if progress.Done > 0 {
-				once.Do(cancel)
-			}
-		},
-	})
+	go func() {
+		select {
+		case <-started:
+			cancel()
+		case <-time.After(2 * time.Second):
+			cancel()
+		}
+	}()
+	_, err := Download(ctx, image, DownloadOptions{Destination: directory, AllowHTTP: true})
 	cancel()
 	if err == nil || !strings.Contains(err.Error(), "context canceled") {
 		t.Fatalf("cancellation error = %v", err)

@@ -20,6 +20,7 @@ import (
 	"github.com/geocausa/RufusArm64/internal/acquisition"
 	"github.com/geocausa/RufusArm64/internal/device"
 	"github.com/geocausa/RufusArm64/internal/imaging"
+	"github.com/geocausa/RufusArm64/internal/persistence"
 	"github.com/geocausa/RufusArm64/internal/safety"
 	"github.com/geocausa/RufusArm64/internal/secureboot"
 	"github.com/geocausa/RufusArm64/internal/sourcefile"
@@ -79,6 +80,8 @@ func run(args []string) error {
 		return runDBX(args[1:])
 	case "acquire":
 		return runAcquire(args[1:])
+	case "persistence":
+		return runPersistence(args[1:])
 	case "version", "--version", "-v":
 		fmt.Println(version)
 		return nil
@@ -107,8 +110,10 @@ Usage:
   rufusarm64-cli acquire verify --catalog FILE --signature FILE --public-key FILE [--json]
   rufusarm64-cli acquire list --catalog FILE --signature FILE --public-key FILE [--json]
   rufusarm64-cli acquire download --catalog FILE --signature FILE --public-key FILE --id ID [--output FILE]
+  rufusarm64-cli persistence plan --image FILE --media-root DIR --target-size SIZE [--size SIZE] [--json]
 
 Acquisition catalogs are accepted only after detached Ed25519 signature, expiry, URL, size, filename, and SHA-256 validation.
+Persistence planning is read-only and currently accepts mounted or extracted Ubuntu 20.04+ casper and Debian live-boot media trees.
 
 The automatic mode writes Linux ISOHybrid/raw images directly and creates
 standard Windows installation USBs using automatic FAT32/NTFS selection, WIM splitting, and UEFI:NTFS when required.
@@ -681,6 +686,118 @@ func selectWriteMode(requested string, inspection imaging.ImageInfo, forceRaw bo
 		return "", errors.New("this optical ISO is not raw-bootable; use automatic Windows mode or select a bootable disk image")
 	}
 	return selected, nil
+}
+
+type persistencePlanOutput struct {
+	Detection  persistence.Detection `json:"detection"`
+	Plan       persistence.Plan      `json:"plan"`
+	ImageSize  uint64                `json:"image_size"`
+	TargetSize uint64                `json:"target_size"`
+}
+
+func runPersistence(args []string) error {
+	if len(args) == 0 {
+		return errors.New("persistence requires plan")
+	}
+	switch args[0] {
+	case "plan":
+		return runPersistencePlan(args[1:])
+	default:
+		return fmt.Errorf("unknown persistence command %q", args[0])
+	}
+}
+
+func runPersistencePlan(args []string) error {
+	fsFlags := flag.NewFlagSet("persistence plan", flag.ContinueOnError)
+	imagePath := fsFlags.String("image", "", "plain ISOHybrid image")
+	mediaRoot := fsFlags.String("media-root", "", "read-only mounted or extracted media root")
+	targetSizeText := fsFlags.String("target-size", "", "planned target size in bytes or K/M/G/T units")
+	requestedSizeText := fsFlags.String("size", "0", "requested persistence size; zero uses all available space")
+	asJSON := fsFlags.Bool("json", false, "output JSON")
+	if err := fsFlags.Parse(args); err != nil {
+		return err
+	}
+	if *imagePath == "" || *mediaRoot == "" || *targetSizeText == "" {
+		return errors.New("--image, --media-root, and --target-size are required")
+	}
+	targetSize, err := persistence.ParseSize(*targetSizeText)
+	if err != nil || targetSize == 0 {
+		if err == nil {
+			err = errors.New("target size must be greater than zero")
+		}
+		return fmt.Errorf("parse --target-size: %w", err)
+	}
+	requestedSize, err := persistence.ParseSize(*requestedSizeText)
+	if err != nil {
+		return fmt.Errorf("parse --size: %w", err)
+	}
+	resolvedImage, identity, err := sourcefile.Inspect(*imagePath)
+	if err != nil {
+		return err
+	}
+	image, err := sourcefile.OpenRegular(resolvedImage, identity)
+	if err != nil {
+		return err
+	}
+	defer image.Close()
+	probe, err := imaging.ProbeInput(resolvedImage, image)
+	if err != nil {
+		return err
+	}
+	if probe.Kind != imaging.InputPlain {
+		return errors.New("the initial persistence planner requires a plain ISOHybrid image; compressed and virtual-disk inputs are not yet accepted")
+	}
+	inspection, err := imaging.InspectOpenFile(image)
+	if err != nil {
+		return err
+	}
+	if !inspection.HasOpticalFilesystem() || !inspection.LooksLikeRawBootMedia() {
+		return errors.New("persistence planning requires a recognized raw-bootable ISOHybrid image")
+	}
+	root, err := filepath.Abs(*mediaRoot)
+	if err != nil {
+		return fmt.Errorf("resolve media root: %w", err)
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return fmt.Errorf("resolve media root symlinks: %w", err)
+	}
+	rootInfo, err := os.Stat(root)
+	if err != nil {
+		return fmt.Errorf("stat media root: %w", err)
+	}
+	if !rootInfo.IsDir() {
+		return errors.New("--media-root must be a directory")
+	}
+	detection, err := persistence.Detect(os.DirFS(root))
+	if err != nil {
+		return err
+	}
+	if !detection.Ready() {
+		return fmt.Errorf("detected %s but its persistence contract is outside the initial supported scope", detection.DisplayName)
+	}
+	plan, err := persistence.BuildPlan(image, uint64(identity.Size), targetSize, requestedSize, detection)
+	if err != nil {
+		return err
+	}
+	result := persistencePlanOutput{Detection: detection, Plan: plan, ImageSize: uint64(identity.Size), TargetSize: targetSize}
+	if *asJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(result)
+	}
+	fmt.Printf("Persistence plan for %s\n", detection.DisplayName)
+	fmt.Printf("  Family: %s\n", detection.Family)
+	fmt.Printf("  Partition: %s #%d, start %s, size %s\n", plan.PartitionTable, plan.PartitionNumber, humanBytes(plan.StartBytes), humanBytes(plan.SizeBytes))
+	fmt.Printf("  Filesystem: %s, label %q\n", plan.Filesystem, plan.FilesystemLabel)
+	fmt.Printf("  Boot parameter: %s\n", plan.BootParameter)
+	if plan.RequiresGPTRelocation {
+		fmt.Println("  GPT: backup header and entry table must be relocated to the target end")
+	}
+	if len(plan.PatchPaths) > 0 {
+		fmt.Printf("  Boot configurations requiring an edit: %s\n", strings.Join(plan.PatchPaths, ", "))
+	}
+	return nil
 }
 
 func runVerify(args []string) error {

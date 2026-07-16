@@ -136,3 +136,48 @@ func TestReadLimitedRegularFileRejectsDirectory(t *testing.T) {
 		t.Fatalf("directory error = %v", err)
 	}
 }
+
+func TestPersistencePlanCommand(t *testing.T) {
+	imagePath := filepath.Join(t.TempDir(), "ubuntu.iso")
+	image := make([]byte, 64*1024*1024)
+	image[510], image[511] = 0x55, 0xaa
+	image[446+4] = 0x17
+	image[446+8] = 64
+	image[446+12] = 1
+	image[16*2048] = 1
+	copy(image[16*2048+1:], "CD001")
+	image[16*2048+6] = 1
+	if err := os.WriteFile(imagePath, image, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	for name, data := range map[string]string{
+		".disk/info":         "Ubuntu 24.04.2 LTS arm64\n",
+		"casper/vmlinuz":     "kernel",
+		"casper/initrd":      "initrd",
+		"boot/grub/grub.cfg": "linux /casper/vmlinuz boot=casper quiet\n",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := runPersistencePlan([]string{"--image", imagePath, "--media-root", root, "--target-size", "4G", "--size", "1G", "--json"}); err != nil {
+		t.Fatalf("plan persistence: %v", err)
+	}
+}
+
+func TestPersistencePlanRejectsCompressedInput(t *testing.T) {
+	imagePath := filepath.Join(t.TempDir(), "image.gz")
+	if err := os.WriteFile(imagePath, []byte{0x1f, 0x8b, 0, 0}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	err := runPersistencePlan([]string{"--image", imagePath, "--media-root", root, "--target-size", "4G"})
+	if err == nil || !strings.Contains(err.Error(), "plain ISOHybrid") {
+		t.Fatalf("compressed input error = %v", err)
+	}
+}
