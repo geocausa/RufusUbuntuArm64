@@ -117,3 +117,29 @@ func TestCatalogRejectsUnknownFields(t *testing.T) {
 		t.Fatalf("unknown field error = %v", err)
 	}
 }
+
+func TestCatalogRejectsDuplicateJSONKeys(t *testing.T) {
+	publicKey, privateKey := testSigningKey()
+	data := []byte(`{"schema":1,"schema":1,"generated":"2026-07-16T10:00:00Z","expires":"2026-08-16T10:00:00Z","images":[{"id":"test","name":"Test","version":"1","architecture":"arm64","filename":"test.iso","url":"https://downloads.example.com/test.iso","sha256":"abababababababababababababababababababababababababababababababab","size":1}]}`)
+	signature := ed25519.Sign(privateKey, data)
+	if _, err := VerifyCatalog(data, signature, publicKey, time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)); err == nil || !strings.Contains(err.Error(), "duplicate key") {
+		t.Fatalf("duplicate key error = %v", err)
+	}
+}
+
+func TestCatalogRejectsNonDefaultHTTPSPort(t *testing.T) {
+	publicKey, privateKey := testSigningKey()
+	var catalog Catalog
+	if err := json.Unmarshal(validCatalogBytes(t), &catalog); err != nil {
+		t.Fatal(err)
+	}
+	catalog.Images[0].URL = "https://downloads.example.com:8443/test.iso"
+	data, err := json.Marshal(catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signature := ed25519.Sign(privateKey, data)
+	if _, err := VerifyCatalog(data, signature, publicKey, time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)); err == nil || !strings.Contains(err.Error(), "default port") {
+		t.Fatalf("port error = %v", err)
+	}
+}

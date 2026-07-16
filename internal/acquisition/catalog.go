@@ -106,10 +106,10 @@ func DecodeSignature(data []byte) ([]byte, error) {
 }
 
 func decodeFixed(data []byte, size int, label string) ([]byte, error) {
-	trimmed := bytes.TrimSpace(data)
-	if len(trimmed) == size {
-		return append([]byte(nil), trimmed...), nil
+	if len(data) == size {
+		return append([]byte(nil), data...), nil
 	}
+	trimmed := bytes.TrimSpace(data)
 	for _, decode := range []func(string) ([]byte, error){
 		func(value string) ([]byte, error) { return hex.DecodeString(value) },
 		func(value string) ([]byte, error) { return base64.StdEncoding.DecodeString(value) },
@@ -124,6 +124,9 @@ func decodeFixed(data []byte, size int, label string) ([]byte, error) {
 }
 
 func parseCatalog(data []byte, now time.Time) (Catalog, time.Time, time.Time, error) {
+	if err := rejectDuplicateJSONKeys(data); err != nil {
+		return Catalog{}, time.Time{}, time.Time{}, err
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var catalog Catalog
@@ -234,6 +237,75 @@ func (image *Image) validateWithPolicy(allowHTTP bool) error {
 	return nil
 }
 
+func rejectDuplicateJSONKeys(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := checkJSONValue(decoder, "$", 0); err != nil {
+		return err
+	}
+	if token, err := decoder.Token(); err != io.EOF {
+		if err != nil {
+			return fmt.Errorf("parse catalog JSON: %w", err)
+		}
+		return fmt.Errorf("catalog contains trailing JSON token %v", token)
+	}
+	return nil
+}
+
+func checkJSONValue(decoder *json.Decoder, path string, depth int) error {
+	if depth > 64 {
+		return errors.New("catalog JSON nesting exceeds 64 levels")
+	}
+	token, err := decoder.Token()
+	if err != nil {
+		return fmt.Errorf("parse catalog JSON at %s: %w", path, err)
+	}
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	switch delim {
+	case '{':
+		keys := make(map[string]struct{})
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return fmt.Errorf("parse catalog object at %s: %w", path, err)
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return fmt.Errorf("catalog object at %s contains a non-string key", path)
+			}
+			if _, exists := keys[key]; exists {
+				return fmt.Errorf("catalog contains duplicate key %q at %s", key, path)
+			}
+			keys[key] = struct{}{}
+			if err := checkJSONValue(decoder, path+"."+key, depth+1); err != nil {
+				return err
+			}
+		}
+		end, err := decoder.Token()
+		if err != nil || end != json.Delim('}') {
+			return fmt.Errorf("catalog object at %s is not closed", path)
+		}
+	case '[':
+		index := 0
+		for decoder.More() {
+			if err := checkJSONValue(decoder, fmt.Sprintf("%s[%d]", path, index), depth+1); err != nil {
+				return err
+			}
+			index++
+		}
+		end, err := decoder.Token()
+		if err != nil || end != json.Delim(']') {
+			return fmt.Errorf("catalog array at %s is not closed", path)
+		}
+	default:
+		return fmt.Errorf("unexpected JSON delimiter %q at %s", delim, path)
+	}
+	return nil
+}
+
 func validateFilename(name string) error {
 	if name == "" || name == "." || name == ".." || len(name) > 255 || hasControl(name) {
 		return errors.New("filename is empty, unsafe, or too long")
@@ -255,6 +327,9 @@ func validateImageURL(value string, allowHTTP bool) (*url.URL, error) {
 	}
 	if parsed.User != nil || parsed.Fragment != "" {
 		return nil, errors.New("URL user information and fragments are not allowed")
+	}
+	if parsed.Scheme == "https" && parsed.Port() != "" && parsed.Port() != "443" {
+		return nil, errors.New("HTTPS image URLs must use the default port")
 	}
 	if parsed.Scheme == "https" {
 		if err := validateHostname(host); err != nil {

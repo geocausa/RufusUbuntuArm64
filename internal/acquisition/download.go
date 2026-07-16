@@ -3,6 +3,7 @@ package acquisition
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -61,6 +62,7 @@ func Download(ctx context.Context, image Image, options DownloadOptions) (Downlo
 	}
 	request.Header.Set("User-Agent", "RufusUbuntuArm64-acquisition/1")
 	request.Header.Set("Accept", "application/octet-stream")
+	request.Header.Set("Accept-Encoding", "identity")
 	response, err := client.Do(request)
 	if err != nil {
 		return DownloadResult{}, fmt.Errorf("download %s: %w", image.ID, err)
@@ -185,6 +187,9 @@ func secureHTTPClient(image Image, allowHTTP bool) *http.Client {
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = http.ProxyFromEnvironment
+	transport.DisableCompression = true
+	transport.TLSClientConfig = transport.TLSClientConfig.Clone()
+	transport.TLSClientConfig.MinVersion = tls.VersionTLS12
 	transport.DialContext = (&net.Dialer{Timeout: 20 * time.Second, KeepAlive: 30 * time.Second}).DialContext
 	transport.ResponseHeaderTimeout = 30 * time.Second
 	transport.IdleConnTimeout = 90 * time.Second
@@ -196,6 +201,9 @@ func secureHTTPClient(image Image, allowHTTP bool) *http.Client {
 			}
 			if request.URL.Scheme != "https" && !allowHTTP {
 				return errors.New("refusing image redirect to a non-HTTPS URL")
+			}
+			if request.URL.Scheme == "https" && request.URL.Port() != "" && request.URL.Port() != "443" {
+				return errors.New("refusing image redirect to a non-default HTTPS port")
 			}
 			host := strings.ToLower(request.URL.Hostname())
 			if _, ok := allowed[host]; !ok {

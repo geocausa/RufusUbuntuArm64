@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func testImage(serverURL string, data []byte) Image {
@@ -100,4 +103,51 @@ func TestDownloadRejectsUnsignedRedirectHost(t *testing.T) {
 
 func bytesOf(value string, repeats int) []byte {
 	return []byte(strings.Repeat(value, repeats))
+}
+
+func TestDownloadCancellationRemovesPartialFile(t *testing.T) {
+	chunk := bytesOf("cancel-me", 1024)
+	data := bytesOf(string(chunk), 128)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+		flusher, _ := writer.(http.Flusher)
+		for offset := 0; offset < len(data); offset += len(chunk) {
+			end := offset + len(chunk)
+			if end > len(data) {
+				end = len(data)
+			}
+			if _, err := writer.Write(data[offset:end]); err != nil {
+				return
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+			time.Sleep(2 * time.Millisecond)
+		}
+	}))
+	defer server.Close()
+	image := testImage(server.URL, data)
+	directory := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	var once sync.Once
+	_, err := Download(ctx, image, DownloadOptions{
+		Destination: directory,
+		AllowHTTP:   true,
+		Progress: func(progress Progress) {
+			if progress.Done > 0 {
+				once.Do(cancel)
+			}
+		},
+	})
+	cancel()
+	if err == nil || !strings.Contains(err.Error(), "context canceled") {
+		t.Fatalf("cancellation error = %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(directory, image.Filename)); !os.IsNotExist(statErr) {
+		t.Fatalf("destination exists after cancellation: %v", statErr)
+	}
+	partials, globErr := filepath.Glob(filepath.Join(directory, ".rufus-download-*.part"))
+	if globErr != nil || len(partials) != 0 {
+		t.Fatalf("partial files remain: %v, %v", partials, globErr)
+	}
 }
