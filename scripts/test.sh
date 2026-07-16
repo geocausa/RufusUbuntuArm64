@@ -10,8 +10,6 @@ fi
 export VERSION
 PACKAGE="dist/rufusarm64_${VERSION}_arm64.deb"
 
-grep -Fxq "var version = \"${VERSION}\"" cmd/rufus-linux/main.go
-grep -Fxq "VERSION = \"${VERSION}\"" gui/rufusarm64.py
 grep -Fq "RufusArm64 ${VERSION}" docs/rufusarm64-cli.1
 grep -Fq "## ${VERSION} —" CHANGELOG.md
 grep -Fq "release version=\"${VERSION}\"" packaging/io.github.geocausa.RufusArm64.metainfo.xml
@@ -28,12 +26,16 @@ go test -race ./...
 go test -shuffle=on -count=3 ./...
 go vet ./...
 go test -cover ./...
-python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_logic.py
+python3 -m py_compile \
+  gui/rufusarm64.py gui/rufusarm64_logic.py \
+  gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py
 PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
 
 native_dir="$(mktemp -d)"
 native_helper="${native_dir}/rufusarm64-helper"
+native_persistence_helper="${native_dir}/rufusarm64-persistence-helper"
 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_helper}" ./cmd/rufus-linux
+go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_persistence_helper}" ./cmd/rufus-persistence-helper
 [[ "$("${native_helper}" version)" == "${VERSION}" ]]
 printf 'rufusarm64-smoke' > "${native_dir}/sample.img"
 expected_hash="$(sha256sum "${native_dir}/sample.img" | awk '{print $1}')"
@@ -77,10 +79,14 @@ gzip -n -c "${native_dir}/windows.iso" > "${native_dir}/windows.iso.gz"
 "${native_helper}" dbx inspect --file "${native_dir}/test.dbx" --json | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["sha256_hashes"] == 1 and d["signatures"] == 1'
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/helper-arm64" ./cmd/rufus-linux
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/helper-amd64" ./cmd/rufus-linux
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/persistence-helper-arm64" ./cmd/rufus-persistence-helper
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/persistence-helper-amd64" ./cmd/rufus-persistence-helper
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o "${native_dir}/channel-admin-arm64" ./cmd/rufus-channel-admin
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o "${native_dir}/channel-admin-amd64" ./cmd/rufus-channel-admin
 readelf -h "${native_dir}/helper-arm64" | grep -q 'Machine:.*AArch64'
 readelf -h "${native_dir}/helper-amd64" | grep -q 'Machine:.*Advanced Micro Devices X86-64'
+readelf -h "${native_dir}/persistence-helper-arm64" | grep -q 'Machine:.*AArch64'
+readelf -h "${native_dir}/persistence-helper-amd64" | grep -q 'Machine:.*Advanced Micro Devices X86-64'
 readelf -h "${native_dir}/channel-admin-arm64" | grep -q 'Machine:.*AArch64'
 readelf -h "${native_dir}/channel-admin-amd64" | grep -q 'Machine:.*Advanced Micro Devices X86-64'
 ! grep -q -- '--private-key' cmd/rufus-channel-admin/main.go
@@ -145,13 +151,18 @@ if any(channel[name] for name in ("bootstrap_root", "root_url", "catalog_url", "
 if "PRIVATE KEY" in channel_path.read_text(encoding="utf-8"):
     raise SystemExit("private acquisition key material must never be packaged")
 parser = configparser.ConfigParser(interpolation=None)
-parser.read("packaging/io.github.geocausa.RufusArm64.desktop")
-entry = parser["Desktop Entry"]
-for key in ("Name", "Exec", "Type", "Icon"):
-    if not entry.get(key):
-        raise SystemExit(f"desktop file is missing {key}")
-if entry["Type"] != "Application":
-    raise SystemExit("desktop Type must be Application")
+for desktop in (
+    "packaging/io.github.geocausa.RufusArm64.desktop",
+    "packaging/io.github.geocausa.RufusArm64.Persistence.desktop",
+):
+    parser.clear()
+    parser.read(desktop)
+    entry = parser["Desktop Entry"]
+    for key in ("Name", "Exec", "Type", "Icon"):
+        if not entry.get(key):
+            raise SystemExit(f"{desktop} is missing {key}")
+    if entry["Type"] != "Application":
+        raise SystemExit(f"{desktop} Type must be Application")
 PY
 
 VERSION="${VERSION}" scripts/build-deb.sh
@@ -163,9 +174,16 @@ trap 'rm -rf "${extract_dir}" gui/__pycache__' EXIT
 dpkg-deb -x "${PACKAGE}" "${extract_dir}"
 dpkg-deb -e "${PACKAGE}" "${extract_dir}/DEBIAN"
 helper="${extract_dir}/usr/lib/rufusarm64/rufusarm64-helper"
+persistence_helper="${extract_dir}/usr/lib/rufusarm64/rufusarm64-persistence-helper"
+installed_gui="${extract_dir}/usr/lib/rufusarm64/rufusarm64.py"
 [[ -x "${helper}" ]]
-[[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64.py" ]]
+[[ -x "${persistence_helper}" ]]
+[[ -f "${installed_gui}" ]]
 [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_logic.py" ]]
+[[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_persistence.py" ]]
+[[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_persistence_logic.py" ]]
+grep -Fxq "VERSION = \"${VERSION}\"" "${installed_gui}"
+grep -Fxq "Version: ${VERSION}" "${extract_dir}/DEBIAN/control"
 wim_engine="${extract_dir}/usr/lib/rufusarm64/wimlib-imagex"
 [[ -x "${wim_engine}" ]]
 file "${wim_engine}" | grep -Eq 'ARM aarch64|AArch64'
@@ -208,9 +226,13 @@ done
   tar -tzf wimlib-1.14.5-source.tar.gz >/dev/null
 )
 [[ -L "${extract_dir}/usr/bin/rufusarm64-cli" ]]
+[[ -x "${extract_dir}/usr/bin/rufusarm64-persistence" ]]
+[[ -f "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.Persistence.desktop" ]]
 [[ -f "${extract_dir}/usr/share/man/man1/rufusarm64-cli.1.gz" ]]
 [[ -f "${extract_dir}/usr/share/doc/rufusarm64/acquisition-channel.md" ]]
 [[ -f "${extract_dir}/usr/share/doc/rufusarm64/acquisition-admin.md" ]]
+[[ -f "${extract_dir}/usr/share/doc/rufusarm64/persistence-user-guide.md" ]]
+[[ -f "${extract_dir}/usr/share/doc/rufusarm64/persistence-qualification.md" ]]
 [[ ! -e "${extract_dir}/usr/bin/rufus-channel-admin" ]]
 [[ ! -e "${extract_dir}/usr/lib/rufusarm64/rufus-channel-admin" ]]
 channel_config="${extract_dir}/usr/share/rufusarm64/acquisition/channel.json"
@@ -224,8 +246,12 @@ assert not value["bootstrap_root"] and not value["root_url"] and not value["cata
 PYCHANNEL
 file "${helper}" | grep -q 'ARM aarch64'
 file "${helper}" | grep -q 'statically linked'
+file "${persistence_helper}" | grep -q 'ARM aarch64'
+file "${persistence_helper}" | grep -q 'statically linked'
 readelf -h "${helper}" | grep -q 'Machine:.*AArch64'
+readelf -h "${persistence_helper}" | grep -q 'Machine:.*AArch64'
 ! readelf -l "${helper}" | grep -q 'Requesting program interpreter'
+! readelf -l "${persistence_helper}" | grep -q 'Requesting program interpreter'
 grep -q '^Architecture: arm64$' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*mount' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*e2fsprogs' "${extract_dir}/DEBIAN/control"
