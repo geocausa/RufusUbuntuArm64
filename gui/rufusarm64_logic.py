@@ -10,6 +10,7 @@ SUPPORTED_IMAGE_SUFFIXES = (
     ".vhd", ".vhdx", ".qcow", ".qcow2", ".vmdk", ".ffu",
 )
 LOCALE_PATTERN = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
+RFC3339_UTC_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 WINDOWS_TIME_ZONES = {
     "UTC": "UTC",
     "Etc/UTC": "UTC",
@@ -237,6 +238,76 @@ def normalize_cluster_size(value):
     if value not in {"4096", "8192", "16384", "32768"}:
         raise ValueError("Cluster size must be Automatic, 4 KiB, 8 KiB, 16 KiB, or 32 KiB.")
     return value
+
+
+def build_acquisition_channel_list_command(helper, config):
+    helper = str(helper or "").strip()
+    config = str(config or "").strip()
+    if not helper or not config:
+        raise ValueError("The built-in acquisition channel is not installed correctly.")
+    return [helper, "acquire", "channel", "list", "--config", config, "--json"]
+
+
+def build_acquisition_channel_download_command(helper, config, image_id, output_directory):
+    helper = str(helper or "").strip()
+    config = str(config or "").strip()
+    image_id = str(image_id or "").strip()
+    output_directory = str(output_directory or "").strip()
+    if not helper or not config:
+        raise ValueError("The built-in acquisition channel is not installed correctly.")
+    if not image_id:
+        raise ValueError("Choose an image from the verified built-in catalog.")
+    if not output_directory:
+        raise ValueError("Choose a download folder.")
+    return [
+        helper, "acquire", "channel", "download",
+        "--config", config,
+        "--id", image_id,
+        "--output", output_directory,
+        "--json", "--json-progress",
+    ]
+
+
+def normalize_acquisition_channel(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("The built-in channel returned an invalid response.")
+    images = normalize_acquisition_images(payload.get("images"))
+    try:
+        root_version = int(payload.get("root_version") or 0)
+        catalog_version = int(payload.get("catalog_version") or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("The built-in channel returned invalid metadata versions.") from exc
+    generated = str(payload.get("catalog_generated") or "").strip()
+    expires = str(payload.get("catalog_expires") or "").strip()
+    key_ids = payload.get("signing_key_ids") or []
+    if root_version <= 0 or catalog_version <= 0 or not generated or not expires:
+        raise ValueError("The built-in channel response is incomplete.")
+    digest_pattern = re.compile(r"^[0-9a-f]{64}$")
+    if not isinstance(key_ids, list) or not key_ids or any(not isinstance(value, str) or not digest_pattern.fullmatch(value) for value in key_ids):
+        raise ValueError("The built-in channel returned invalid signing key identifiers.")
+    catalog_sha256 = str(payload.get("catalog_sha256") or "").strip()
+    root_sha256 = str(payload.get("root_sha256") or "").strip()
+    root_expires = str(payload.get("root_expires") or "").strip()
+    if (
+        not digest_pattern.fullmatch(catalog_sha256)
+        or not digest_pattern.fullmatch(root_sha256)
+        or not RFC3339_UTC_PATTERN.fullmatch(generated)
+        or not RFC3339_UTC_PATTERN.fullmatch(expires)
+        or not RFC3339_UTC_PATTERN.fullmatch(root_expires)
+    ):
+        raise ValueError("The built-in channel returned incomplete trust metadata.")
+    return {
+        "root_version": root_version,
+        "root_expires": root_expires,
+        "root_sha256": root_sha256,
+        "catalog_version": catalog_version,
+        "catalog_generated": generated,
+        "catalog_expires": expires,
+        "catalog_sha256": catalog_sha256,
+        "signing_key_ids": key_ids,
+        "from_cache": bool(payload.get("from_cache")),
+        "images": images,
+    }
 
 
 def build_acquisition_list_command(helper, catalog, signature, public_key):

@@ -14,6 +14,7 @@ import signal
 import subprocess
 import tempfile
 import threading
+import time
 
 import gi
 
@@ -22,6 +23,8 @@ from gi.repository import GLib, Gtk
 
 from rufusarm64_logic import (
     acquisition_image_label,
+    build_acquisition_channel_download_command,
+    build_acquisition_channel_list_command,
     build_acquisition_download_command,
     build_acquisition_list_command,
     build_persistence_analyze_command,
@@ -30,6 +33,7 @@ from rufusarm64_logic import (
     human_bytes,
     human_duration,
     inspect_source_identity,
+    normalize_acquisition_channel,
     normalize_acquisition_images,
     persistence_plan_summary,
     progress_status,
@@ -51,6 +55,9 @@ VERSION = "0.9.0"
 INSTALLED_HELPER = os.environ.get("RUFUSARM64_HELPER", "/usr/lib/rufusarm64/rufusarm64-helper")
 BUNDLED_WIMLIB = os.environ.get("RUFUSARM64_WIMLIB", "/usr/lib/rufusarm64/wimlib-imagex")
 PKEXEC = "/usr/bin/pkexec"
+ACQUISITION_CHANNEL_CONFIG = os.environ.get(
+    "RUFUSARM64_CHANNEL_CONFIG", "/usr/share/rufusarm64/acquisition/channel.json"
+)
 
 
 def helper_path():
@@ -226,15 +233,23 @@ class WindowsOptionsDialog(Gtk.Dialog):
 
 
 class AcquisitionDialog(Gtk.Dialog):
-    """Select and verify a local signed acquisition catalog."""
+    """Select an image from the built-in channel or a local recovery catalog."""
 
     def __init__(self, parent, settings):
         super().__init__(title="Download a verified image", transient_for=parent, modal=True)
         self.add_button("Cancel", Gtk.ResponseType.CANCEL)
         self.add_button("Download", Gtk.ResponseType.OK)
         self.set_default_response(Gtk.ResponseType.OK)
-        self.set_default_size(720, 470)
+        self.set_default_size(760, 560)
         self.images = []
+        self.mode = ""
+        self.channel_metadata = {}
+        self.channel_refreshing = False
+        self.channel_process = None
+        self.channel_started = 0.0
+        self.channel_timer_id = 0
+        self.closed = False
+        self.connect("destroy", self._destroyed)
         self.get_widget_for_response(Gtk.ResponseType.OK).set_sensitive(False)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -242,31 +257,61 @@ class AcquisitionDialog(Gtk.Dialog):
         self.get_content_area().pack_start(box, True, True, 0)
 
         intro = Gtk.Label(label=(
-            "RufusArm64 accepts images only from a catalog whose detached Ed25519 signature verifies with the selected trusted public key. "
-            "This first graphical workflow uses local catalog files; a built-in online catalog will be added after a reviewed key-rotation policy."
+            "The built-in channel verifies threshold-signed root and catalog metadata, rejects version rollback, "
+            "and checksum-verifies every image. No unsigned bypass is offered."
         ))
         intro.set_xalign(0)
         intro.set_line_wrap(True)
         box.pack_start(intro, False, False, 0)
 
+        channel_frame = Gtk.Frame(label="Built-in verified catalog")
+        channel_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        channel_box.set_border_width(12)
+        channel_frame.add(channel_box)
+        box.pack_start(channel_frame, False, False, 0)
+        channel_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.channel_button = Gtk.Button(label="Refresh catalog")
+        self.channel_button.connect("clicked", self.refresh_channel)
+        channel_row.pack_start(self.channel_button, False, False, 0)
+        self.channel_spinner = Gtk.Spinner()
+        channel_row.pack_start(self.channel_spinner, False, False, 0)
+        self.channel_status = Gtk.Label(label="Checking the package-owned trust channel…")
+        self.channel_status.set_xalign(0)
+        self.channel_status.set_line_wrap(True)
+        channel_row.pack_start(self.channel_status, True, True, 0)
+        channel_box.pack_start(channel_row, False, False, 0)
+
+        advanced = Gtk.Expander(label="Advanced recovery: local signed catalog")
+        advanced_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        advanced_box.set_margin_top(8)
+        recovery_note = Gtk.Label(label=(
+            "Use this only with catalog, detached-signature, and public-key files obtained through a separately trusted path."
+        ))
+        recovery_note.set_xalign(0)
+        recovery_note.set_line_wrap(True)
+        advanced_box.pack_start(recovery_note, False, False, 0)
         grid = Gtk.Grid(column_spacing=12, row_spacing=10)
-        box.pack_start(grid, False, False, 0)
+        advanced_box.pack_start(grid, False, False, 0)
         self.catalog = self._chooser(grid, "Catalog", 0, Gtk.FileChooserAction.OPEN, settings.get("acquisition_catalog", ""))
         self.signature = self._chooser(grid, "Signature", 1, Gtk.FileChooserAction.OPEN, settings.get("acquisition_signature", ""))
         self.public_key = self._chooser(grid, "Public key", 2, Gtk.FileChooserAction.OPEN, settings.get("acquisition_public_key", ""))
-        default_downloads = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD) or os.path.join(os.path.expanduser("~"), "Downloads")
-        self.output = self._chooser(grid, "Download folder", 3, Gtk.FileChooserAction.SELECT_FOLDER, settings.get("acquisition_output", default_downloads))
-        self.output.connect("file-set", self.image_selected)
-
         verify_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        self.verify_button = Gtk.Button(label="Verify catalog")
+        self.verify_button = Gtk.Button(label="Verify local catalog")
         self.verify_button.connect("clicked", self.verify_catalog)
         verify_row.pack_start(self.verify_button, False, False, 0)
-        self.catalog_status = Gtk.Label(label="Choose all three trust files, then verify the catalog.")
+        self.catalog_status = Gtk.Label(label="Choose all three local trust files, then verify.")
         self.catalog_status.set_xalign(0)
         self.catalog_status.set_line_wrap(True)
         verify_row.pack_start(self.catalog_status, True, True, 0)
-        box.pack_start(verify_row, False, False, 0)
+        advanced_box.pack_start(verify_row, False, False, 0)
+        advanced.add(advanced_box)
+        box.pack_start(advanced, False, False, 0)
+
+        output_grid = Gtk.Grid(column_spacing=12, row_spacing=10)
+        box.pack_start(output_grid, False, False, 0)
+        default_downloads = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD) or os.path.join(os.path.expanduser("~"), "Downloads")
+        self.output = self._chooser(output_grid, "Download folder", 0, Gtk.FileChooserAction.SELECT_FOLDER, settings.get("acquisition_output", default_downloads))
+        self.output.connect("file-set", self.image_selected)
 
         self.image_combo = Gtk.ComboBoxText()
         self.image_combo.set_hexpand(True)
@@ -275,9 +320,20 @@ class AcquisitionDialog(Gtk.Dialog):
         self.image_detail = Gtk.Label(label="No verified image selected.")
         self.image_detail.set_xalign(0)
         self.image_detail.set_line_wrap(True)
+        self.image_detail.set_selectable(True)
         self.image_detail.get_style_context().add_class("dim-label")
         box.pack_start(self.image_detail, False, False, 0)
         self.show_all()
+        GLib.idle_add(self.refresh_channel)
+
+    def _destroyed(self, *_):
+        self.closed = True
+        process = self.channel_process
+        if process and process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
 
     @staticmethod
     def _chooser(grid, label_text, row, action, saved):
@@ -291,7 +347,92 @@ class AcquisitionDialog(Gtk.Dialog):
         grid.attach(chooser, 1, row, 1, 1)
         return chooser
 
+    def refresh_channel(self, *_):
+        if self.channel_refreshing or self.closed:
+            return False
+        try:
+            command = build_acquisition_channel_list_command(helper_path(), ACQUISITION_CHANNEL_CONFIG)
+        except ValueError as exc:
+            self.channel_status.set_text(str(exc))
+            return False
+        self.channel_refreshing = True
+        self.channel_button.set_sensitive(False)
+        self.verify_button.set_sensitive(False)
+        self.get_widget_for_response(Gtk.ResponseType.OK).set_sensitive(False)
+        self.channel_spinner.start()
+        self.channel_started = time.monotonic()
+        self.channel_status.set_text("Refreshing threshold-signed root and catalog metadata… 0:00 elapsed")
+        self.channel_timer_id = GLib.timeout_add(1000, self._update_channel_elapsed)
+        threading.Thread(target=self._run_channel_refresh, args=(command,), daemon=True).start()
+        return False
+
+    def _update_channel_elapsed(self):
+        if self.closed or not self.channel_refreshing:
+            self.channel_timer_id = 0
+            return False
+        elapsed = max(0, int(time.monotonic() - self.channel_started))
+        self.channel_status.set_text(
+            f"Refreshing threshold-signed root and catalog metadata… {elapsed // 60}:{elapsed % 60:02d} elapsed"
+        )
+        return True
+
+    def _run_channel_refresh(self, command):
+        process = None
+        try:
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+            self.channel_process = process
+            if self.closed:
+                os.killpg(process.pid, signal.SIGTERM)
+            stdout, stderr = process.communicate()
+            if process.returncode != 0:
+                raise RuntimeError(stderr.strip() or stdout.strip() or "Built-in catalog refresh failed")
+            metadata = normalize_acquisition_channel(json.loads(stdout))
+            GLib.idle_add(self._finish_channel_refresh, metadata, "")
+        except Exception as exc:
+            if not self.closed:
+                GLib.idle_add(self._finish_channel_refresh, {}, str(exc))
+        finally:
+            if self.channel_process is process:
+                self.channel_process = None
+
+    def _finish_channel_refresh(self, metadata, error):
+        if self.closed:
+            return False
+        self.channel_refreshing = False
+        if self.channel_timer_id:
+            GLib.source_remove(self.channel_timer_id)
+            self.channel_timer_id = 0
+        self.channel_button.set_sensitive(True)
+        self.verify_button.set_sensitive(True)
+        self.channel_spinner.stop()
+        if error:
+            self.channel_status.set_text(
+                "Built-in catalog unavailable: " + error + "\nThe advanced local signed-catalog recovery path remains available."
+            )
+            if self.mode == "channel":
+                self._populate_images([], "", {})
+            else:
+                self.image_selected()
+            return False
+        source = "verified cache" if metadata.get("from_cache") else "verified network refresh"
+        keys = ", ".join(value[:12] + "…" for value in metadata["signing_key_ids"])
+        self.channel_status.set_text(
+            f"Root v{metadata['root_version']} expires {metadata['root_expires']}; "
+            f"catalog v{metadata['catalog_version']} from {source}, generated {metadata['catalog_generated']}, "
+            f"expires {metadata['catalog_expires']}; signing key(s) {keys}."
+        )
+        self._populate_images(metadata["images"], "channel", metadata)
+        return False
+
     def verify_catalog(self, *_):
+        if self.channel_refreshing:
+            return
         try:
             command = build_acquisition_list_command(
                 helper_path(), self.catalog.get_filename(), self.signature.get_filename(), self.public_key.get_filename()
@@ -299,33 +440,52 @@ class AcquisitionDialog(Gtk.Dialog):
             result = subprocess.run(command, check=False, text=True, capture_output=True, timeout=20)
             if result.returncode != 0:
                 raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Catalog verification failed")
-            self.images = normalize_acquisition_images(json.loads(result.stdout))
+            images = normalize_acquisition_images(json.loads(result.stdout))
         except Exception as exc:
-            self.images = []
-            self.image_combo.remove_all()
-            self.catalog_status.set_text(f"Catalog rejected: {exc}")
-            self.get_widget_for_response(Gtk.ResponseType.OK).set_sensitive(False)
+            self.catalog_status.set_text(f"Local catalog rejected: {exc}")
+            if self.mode == "manual":
+                self._populate_images([], "", {})
             return
+        self.catalog_status.set_text(f"Local signature valid. {len(images)} downloadable image(s) are available.")
+        self._populate_images(images, "manual", {})
+
+    def _populate_images(self, images, mode, metadata):
+        self.images = list(images)
+        self.mode = mode
+        self.channel_metadata = dict(metadata)
         self.image_combo.remove_all()
         for image in self.images:
             self.image_combo.append(image["id"], acquisition_image_label(image))
-        self.image_combo.set_active(0)
-        self.catalog_status.set_text(f"Signature valid. {len(self.images)} downloadable image(s) are available.")
+        if self.images:
+            self.image_combo.set_active(0)
+        else:
+            self.image_detail.set_text("No verified image selected.")
+            self.get_widget_for_response(Gtk.ResponseType.OK).set_sensitive(False)
 
     def image_selected(self, *_):
         image_id = self.image_combo.get_active_id()
         image = next((item for item in self.images if item["id"] == image_id), None)
-        self.get_widget_for_response(Gtk.ResponseType.OK).set_sensitive(bool(image and self.output.get_filename()))
+        self.get_widget_for_response(Gtk.ResponseType.OK).set_sensitive(bool(image and self.output.get_filename() and not self.channel_refreshing))
         if image:
-            digest = f"\nSHA-256: {image['sha256']}" if image.get("sha256") else ""
-            self.image_detail.set_text(f"File: {image['filename']}\nSize: {human_bytes(image['size'])}{digest}")
+            lines = [f"File: {image['filename']}", f"Size: {human_bytes(image['size'])}"]
+            if image.get("sha256"):
+                lines.append(f"SHA-256: {image['sha256']}")
+            if self.mode == "channel" and self.channel_metadata:
+                lines.append(
+                    f"Built-in catalog v{self.channel_metadata['catalog_version']} expires {self.channel_metadata['catalog_expires']}"
+                )
+            self.image_detail.set_text("\n".join(lines))
 
     def values(self):
+        if self.channel_refreshing:
+            raise ValueError("Wait for the built-in catalog refresh to finish.")
         image_id = self.image_combo.get_active_id()
         image = next((item for item in self.images if item["id"] == image_id), None)
-        if not image:
-            raise ValueError("Verify the catalog and choose an image first.")
+        if not image or self.mode not in {"channel", "manual"}:
+            raise ValueError("Verify a catalog and choose an image first.")
         return {
+            "mode": self.mode,
+            "channel_config": ACQUISITION_CHANNEL_CONFIG,
             "catalog": self.catalog.get_filename() or "",
             "signature": self.signature.get_filename() or "",
             "public_key": self.public_key.get_filename() or "",
@@ -1038,13 +1198,20 @@ class RufusWindow(Gtk.ApplicationWindow):
         dialog.destroy()
         if not values:
             return
-        for key in ("catalog", "signature", "public_key", "output"):
-            self.settings[f"acquisition_{key}"] = values[key]
+        self.settings["acquisition_output"] = values["output"]
+        if values["mode"] == "manual":
+            for key in ("catalog", "signature", "public_key"):
+                self.settings[f"acquisition_{key}"] = values[key]
         self.save_settings()
         try:
-            command = build_acquisition_download_command(
-                helper_path(), values["catalog"], values["signature"], values["public_key"], values["image"]["id"], values["output"]
-            )
+            if values["mode"] == "channel":
+                command = build_acquisition_channel_download_command(
+                    helper_path(), values["channel_config"], values["image"]["id"], values["output"]
+                )
+            else:
+                command = build_acquisition_download_command(
+                    helper_path(), values["catalog"], values["signature"], values["public_key"], values["image"]["id"], values["output"]
+                )
         except ValueError as exc:
             self.message(str(exc), Gtk.MessageType.ERROR)
             return
@@ -1053,7 +1220,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.active_job = "download"
         self.cancel_requested = False
         self.download_result = {}
-        self.append_log("Verified catalog image: " + acquisition_image_label(values["image"]))
+        self.append_log(f"Verified {values['mode']} catalog image: " + acquisition_image_label(values["image"]))
         self.set_busy(True)
         self.progress.set_fraction(0)
         self.progress.set_text("Starting verified download…")

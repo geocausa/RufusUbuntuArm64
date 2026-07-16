@@ -32,6 +32,8 @@ import (
 
 var version = "0.9.0"
 
+const defaultAcquisitionChannelConfig = "/usr/share/rufusarm64/acquisition/channel.json"
+
 type jsonEvent struct {
 	Event   string  `json:"event"`
 	Stage   string  `json:"stage,omitempty"`
@@ -115,12 +117,15 @@ Usage:
   rufusarm64-cli acquire verify --catalog FILE --signature FILE --public-key FILE [--json]
   rufusarm64-cli acquire list --catalog FILE --signature FILE --public-key FILE [--json]
   rufusarm64-cli acquire download --catalog FILE --signature FILE --public-key FILE --id ID [--output FILE]
+  rufusarm64-cli acquire channel list [--offline] [--json]
+  rufusarm64-cli acquire channel download --id ID [--output FILE] [--offline]
   rufusarm64-cli persistence plan --image FILE --media-root DIR --target-size SIZE [--size SIZE] [--json]
   sudo rufusarm64-cli persistence analyze --image FILE --expected-source-identity ID --target-size SIZE [--size SIZE] [--json]
   sudo rufusarm64-cli qualify start --record FILE --output FILE [--state-dir DIR] [--json]
   sudo rufusarm64-cli qualify verify --record FILE --output FILE [--state-dir DIR] [--json]
 
 Acquisition catalogs are accepted only after detached Ed25519 signature, expiry, URL, size, filename, and SHA-256 validation.
+The built-in channel additionally enforces threshold root/catalog signatures, key rotation, version rollback protection, and owner-only atomic trust state.
 Persistence planning accepts mounted or extracted Ubuntu 20.04+ casper and Debian live-boot media trees.
 Automatic analysis mounts the selected plain ISOHybrid image privately and read-only; it never opens a target device.
 The experimental persistent writer is CLI-only, GPT/UEFI-only, and is never accepted by the graphical privileged path.
@@ -1211,7 +1216,7 @@ type acquireCatalogSummary struct {
 
 func runAcquire(args []string) error {
 	if len(args) == 0 {
-		return errors.New("acquire requires verify, list, or download")
+		return errors.New("acquire requires verify, list, download, or channel")
 	}
 	switch args[0] {
 	case "verify":
@@ -1220,9 +1225,151 @@ func runAcquire(args []string) error {
 		return runAcquireList(args[1:])
 	case "download":
 		return runAcquireDownload(args[1:])
+	case "channel":
+		return runAcquireChannel(args[1:])
 	default:
 		return fmt.Errorf("unknown acquire command %q", args[0])
 	}
+}
+
+func runAcquireChannel(args []string) error {
+	if len(args) == 0 {
+		return errors.New("acquire channel requires verify, list, or download")
+	}
+	switch args[0] {
+	case "verify":
+		return runAcquireChannelVerify(args[1:])
+	case "list":
+		return runAcquireChannelList(args[1:])
+	case "download":
+		return runAcquireChannelDownload(args[1:])
+	default:
+		return fmt.Errorf("unknown acquire channel command %q", args[0])
+	}
+}
+
+func channelFlags(name string) (*flag.FlagSet, *string, *string, *bool) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	config := fs.String("config", defaultAcquisitionChannelConfig, "package-owned acquisition channel configuration")
+	cacheDir := fs.String("cache-dir", "", "override owner-only acquisition metadata cache")
+	offline := fs.Bool("offline", false, "use only already verified, unexpired cached metadata")
+	return fs, config, cacheDir, offline
+}
+
+func refreshAcquireChannel(config, cacheDir string, offline bool) (*acquisition.ChannelResult, error) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	return acquisition.RefreshChannel(ctx, config, acquisition.ChannelOptions{
+		CacheDir:                  cacheDir,
+		Offline:                   offline,
+		AllowCachedOnNetworkError: true,
+	})
+}
+
+func runAcquireChannelVerify(args []string) error {
+	fs, config, cacheDir, offline := channelFlags("acquire channel verify")
+	asJSON := fs.Bool("json", false, "output JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("acquire channel verify does not accept positional arguments")
+	}
+	result, err := refreshAcquireChannel(*config, *cacheDir, *offline)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return json.NewEncoder(os.Stdout).Encode(result)
+	}
+	fmt.Printf("Built-in channel verified\nRoot: version %d, expires %s\nCatalog: version %d, generated %s, expires %s\nImages: %d\nSource: %s\n", result.RootVersion, result.RootExpires, result.CatalogVersion, result.CatalogGenerated, result.CatalogExpires, len(result.Images), channelSource(result.FromCache))
+	return nil
+}
+
+func runAcquireChannelList(args []string) error {
+	fs, config, cacheDir, offline := channelFlags("acquire channel list")
+	asJSON := fs.Bool("json", false, "output JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("acquire channel list does not accept positional arguments")
+	}
+	result, err := refreshAcquireChannel(*config, *cacheDir, *offline)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return json.NewEncoder(os.Stdout).Encode(result)
+	}
+	fmt.Printf("Verified catalog version %d (%s; expires %s)\n", result.CatalogVersion, channelSource(result.FromCache), result.CatalogExpires)
+	fmt.Printf("%-28s %-10s %-10s %-12s %s\n", "ID", "ARCH", "VERSION", "SIZE", "NAME")
+	for _, image := range result.Images {
+		fmt.Printf("%-28s %-10s %-10s %-12s %s\n", image.ID, image.Architecture, image.Version, humanBytes(image.Size), image.Name)
+	}
+	return nil
+}
+
+func runAcquireChannelDownload(args []string) error {
+	fs, config, cacheDir, offline := channelFlags("acquire channel download")
+	imageID := fs.String("id", "", "built-in catalog image id")
+	output := fs.String("output", "", "destination file or existing directory")
+	replace := fs.Bool("replace", false, "replace an existing different regular file")
+	asJSON := fs.Bool("json", false, "output final JSON result")
+	jsonProgress := fs.Bool("json-progress", false, "stream progress events as JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("acquire channel download does not accept positional arguments")
+	}
+	if strings.TrimSpace(*imageID) == "" {
+		return errors.New("--id is required")
+	}
+	channel, err := refreshAcquireChannel(*config, *cacheDir, *offline)
+	if err != nil {
+		return err
+	}
+	image, err := channel.Find(*imageID)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	emit := emitter{json: *jsonProgress}
+	result, err := acquisition.Download(ctx, image, acquisition.DownloadOptions{
+		Destination: *output,
+		Replace:     *replace,
+		Progress: func(progress acquisition.Progress) {
+			if *jsonProgress {
+				emit.event(jsonEvent{Event: "progress", Stage: "download", Done: progress.Done, Total: progress.Total, Rate: progress.BytesPerSec})
+				return
+			}
+			printProgress("download", imaging.Progress{Done: progress.Done, Total: progress.Total, BytesPerSec: progress.BytesPerSec})
+		},
+	})
+	if !*jsonProgress {
+		fmt.Println()
+	}
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return json.NewEncoder(os.Stdout).Encode(result)
+	}
+	status := "Downloaded"
+	if result.Reused {
+		status = "Already verified"
+	}
+	fmt.Printf("%s: %s\nSource: %s\nSize: %s\nSHA-256: %s\n", status, result.Path, result.URL, humanBytes(result.Size), result.SHA256)
+	return nil
+}
+
+func channelSource(fromCache bool) string {
+	if fromCache {
+		return "verified cache"
+	}
+	return "network refresh"
 }
 
 func runAcquireVerify(args []string) error {

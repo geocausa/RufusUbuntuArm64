@@ -127,6 +127,16 @@ import xml.etree.ElementTree as ET
 ET.parse("packaging/io.github.geocausa.RufusArm64.metainfo.xml")
 ET.parse("packaging/io.github.geocausa.RufusArm64.policy")
 ET.parse("packaging/io.github.geocausa.RufusArm64.svg")
+import json
+channel_path = pathlib.Path("packaging/acquisition/channel.json")
+channel = json.loads(channel_path.read_text(encoding="utf-8"))
+expected_keys = {"schema", "enabled", "bootstrap_root", "root_url", "catalog_url", "allowed_hosts"}
+if set(channel) != expected_keys or channel["schema"] != 1 or channel["enabled"] is not False:
+    raise SystemExit("packaged acquisition channel must remain an explicit disabled schema-1 configuration")
+if any(channel[name] for name in ("bootstrap_root", "root_url", "catalog_url", "allowed_hosts")):
+    raise SystemExit("disabled acquisition channel must not contain placeholder trust material or URLs")
+if "PRIVATE KEY" in channel_path.read_text(encoding="utf-8"):
+    raise SystemExit("private acquisition key material must never be packaged")
 parser = configparser.ConfigParser(interpolation=None)
 parser.read("packaging/io.github.geocausa.RufusArm64.desktop")
 entry = parser["Desktop Entry"]
@@ -192,6 +202,16 @@ done
 )
 [[ -L "${extract_dir}/usr/bin/rufusarm64-cli" ]]
 [[ -f "${extract_dir}/usr/share/man/man1/rufusarm64-cli.1.gz" ]]
+[[ -f "${extract_dir}/usr/share/doc/rufusarm64/acquisition-channel.md" ]]
+channel_config="${extract_dir}/usr/share/rufusarm64/acquisition/channel.json"
+[[ -f "${channel_config}" ]]
+cmp -s packaging/acquisition/channel.json "${channel_config}"
+python3 - "${channel_config}" <<'PYCHANNEL'
+import json, pathlib, sys
+value = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert value["schema"] == 1 and value["enabled"] is False
+assert not value["bootstrap_root"] and not value["root_url"] and not value["catalog_url"] and not value["allowed_hosts"]
+PYCHANNEL
 file "${helper}" | grep -q 'ARM aarch64'
 file "${helper}" | grep -q 'statically linked'
 readelf -h "${helper}" | grep -q 'Machine:.*AArch64'

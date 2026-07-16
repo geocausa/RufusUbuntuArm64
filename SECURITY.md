@@ -23,7 +23,9 @@ The current release:
 
 The 0.9 acquisition foundation does not trust a URL merely because it uses HTTPS. Before any network request, it requires an unexpired Ed25519-signed catalog and validates each immutable entry. Downloads are limited to the signed byte count, redirects are restricted to signed hostnames, data are hashed while streaming, and the destination is installed atomically only after the complete SHA-256 matches. Unsigned catalogs, HTTP URLs, path-bearing filenames, private/loopback redirect hosts, and unknown JSON fields are refused.
 
-The initial implementation accepts local catalog/signature/public-key files. A future built-in remote catalog must establish a separately reviewed key-distribution and rotation policy.
+The local recovery implementation accepts catalog/signature/public-key files supplied through a separately trusted path. The built-in 0.10 channel adds canonical threshold-signed root and catalog metadata, SHA-256-derived key IDs, dual authorization for root rotation, one-version-at-a-time catch-up through versioned root URLs, sequential root history, monotonic root/catalog versions, digest pinning for already accepted versions, expiry/freeze limits, clock-rollback detection, and owner-only atomic trust state. HTTPS metadata redirects are restricted to package-owned allowlisted hosts, while an unexpired cached catalog is reverified before offline use.
+
+The installed channel configuration remains disabled until offline root keys are generated, separated, and used to sign a reviewed bootstrap root and first catalog. No private key may enter the repository, CI secrets used for routine builds, packages, or release artifacts. Expired roots have no unsafe bypass; recovery requires a reviewed package/bootstrap-root update or the advanced local signed-catalog path.
 
 ## Persistence planning trust boundary
 

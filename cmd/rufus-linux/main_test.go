@@ -274,3 +274,27 @@ func TestQualifyCommandValidation(t *testing.T) {
 		t.Fatalf("missing verify output error = %v", err)
 	}
 }
+
+func TestAcquireChannelCommandValidation(t *testing.T) {
+	if err := runAcquireChannel(nil); err == nil || !strings.Contains(err.Error(), "requires verify, list, or download") {
+		t.Fatalf("missing channel subcommand error = %v", err)
+	}
+	if err := runAcquireChannelList([]string{"unexpected"}); err == nil || !strings.Contains(err.Error(), "does not accept positional") {
+		t.Fatalf("channel list positional error = %v", err)
+	}
+	if err := runAcquireChannelDownload(nil); err == nil || !strings.Contains(err.Error(), "--id is required") {
+		t.Fatalf("missing channel image id error = %v", err)
+	}
+}
+
+func TestAcquireChannelDisabledPackageConfiguration(t *testing.T) {
+	directory := t.TempDir()
+	config := filepath.Join(directory, "channel.json")
+	if err := os.WriteFile(config, []byte(`{"schema":1,"enabled":false,"bootstrap_root":"","root_url":"","catalog_url":"","allowed_hosts":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := runAcquireChannelList([]string{"--config", config, "--cache-dir", filepath.Join(directory, "cache"), "--json"})
+	if err == nil || !strings.Contains(err.Error(), "not provisioned") {
+		t.Fatalf("disabled package channel error = %v", err)
+	}
+}
