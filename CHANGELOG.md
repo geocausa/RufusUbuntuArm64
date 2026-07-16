@@ -4,6 +4,7 @@
 
 - Added a graphical verified-image downloader and read-only Linux persistence compatibility planner.
 - Added automatic identity-bound, private read-only ISO mounting for graphical persistence analysis, with visible elapsed-time progress and complete cleanup.
+- Added a dedicated persistent-live-media wizard with mandatory read-only analysis, pre-authentication source and target identity binding, a separate strict Polkit helper, safe cancellation, and post-creation reboot qualification instructions.
 - Added a built-in acquisition-channel trust core with canonical metadata, threshold Ed25519 root and catalog roles, dual-authorized root rotation, monotonic rollback protection, expiry/freeze checks, versioned multi-root catch-up, sequential cached root history, clock-rollback detection, and owner-only atomic state.
 - Made the graphical downloader prefer the built-in verified channel while preserving local signed-catalog files as an advanced recovery path.
 - Kept production channel activation disabled until offline root keys and the first reviewed catalog are provisioned; no private signing key is included in source, CI, packages, or artifacts.
