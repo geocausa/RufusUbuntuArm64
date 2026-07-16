@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=RufusArm64 Persistent Live USB
+Comment=Create a persistent Ubuntu or Debian live USB
+Exec=rufusarm64-persistence
+Icon=io.github.geocausa.RufusArm64
+Terminal=false
+Type=Application
+Categories=System;Utility;
+Keywords=USB;ISO;Ubuntu;Debian;Live;Persistence;
+StartupNotify=true
