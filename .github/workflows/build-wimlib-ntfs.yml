@@ -57,7 +57,6 @@ jobs:
           cp -a include/ntfs-3g "$prefix/include/"
           cp libntfs-3g/.libs/libntfs-3g.a "$prefix/lib/"
           cp libntfs-3g/libntfs-3g.pc "$prefix/lib/pkgconfig/"
-          find "$prefix" -maxdepth 4 \( -type f -o -type l \) | sort >>"$log" 2>&1
           test -f "$prefix/lib/pkgconfig/libntfs-3g.pc"
           test -f "$prefix/lib/libntfs-3g.a"
           cd ..
@@ -71,6 +70,7 @@ jobs:
             LDFLAGS="-L$prefix/lib" ./configure --with-ntfs-3g --without-fuse \
             --disable-shared --enable-static >>"$log" 2>&1
           make -j"$(nproc)" >>"$log" 2>&1
+          strip --strip-unneeded wimlib-imagex
           cp wimlib-imagex ../artifact/wimlib-imagex
           cp COPYING COPYING.GPLv3 COPYING.LGPL ../artifact/
           ../artifact/wimlib-imagex --version | tee -a "$log"
