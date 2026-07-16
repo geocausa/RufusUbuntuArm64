@@ -28,6 +28,30 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
 
 install -Dm755 "${ROOT_DIR}/gui/rufusarm64.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64.py"
+# The source-tree constant is a development fallback. Stamp the canonical
+# repository version into the installed GUI and fail closed if the expected
+# assignment cannot be found exactly once.
+GUI_TARGET="${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64.py"
+python3 - "${GUI_TARGET}" "${VERSION}" <<'PYVERSION'
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+version = sys.argv[2]
+text = path.read_text(encoding="utf-8")
+text, count = re.subn(
+    r'^VERSION = "[^"]*"$',
+    f'VERSION = "{version}"',
+    text,
+    count=1,
+    flags=re.MULTILINE,
+)
+if count != 1:
+    raise SystemExit("could not stamp the canonical version into the installed GUI")
+path.write_text(text, encoding="utf-8")
+PYVERSION
+grep -Fxq "VERSION = \"${VERSION}\"" "${GUI_TARGET}"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_logic.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_logic.py"
 install -Dm755 "${ROOT_DIR}/gui/rufusarm64_persistence.py" \
