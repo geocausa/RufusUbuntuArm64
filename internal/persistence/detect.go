@@ -75,45 +75,61 @@ func Detect(root fs.FS) (Detection, error) {
 	liveKernel := hasPrefixedRegular(root, "live", "vmlinuz")
 	liveInitrd := hasPrefixedRegular(root, "live", "initrd")
 
-	casperConfigs := matchingConfigs(configs, "boot=casper")
-	debianConfigs := matchingConfigs(configs, "boot=live")
+	casperConfigs := matchingFamilyConfigs(configs, FamilyUbuntuCasper)
+	debianConfigs := matchingFamilyConfigs(configs, FamilyDebianLive)
 	casper := casperKernel && casperInitrd && len(casperConfigs) > 0
 	debian := liveKernel && liveInitrd && len(debianConfigs) > 0
 	if casper && debian {
 		return Detection{}, errors.New("media contains both casper and Debian live-boot layouts; persistence mode is ambiguous")
 	}
 	if casper {
-		return detectUbuntu(info, casperConfigs), nil
+		modernMetadata := hasRegular(root, "casper/install-sources.yaml")
+		return detectUbuntu(info, casperConfigs, modernMetadata), nil
 	}
 	if debian {
 		return detectDebian(info, debianConfigs), nil
 	}
+	if casperKernel && casperInitrd {
+		return Detection{}, errors.New("Ubuntu casper kernel and initrd were found, but no supported kernel command selects /casper/vmlinuz or boot=casper")
+	}
+	if liveKernel && liveInitrd {
+		return Detection{}, errors.New("Debian live kernel and initrd were found, but no supported kernel command contains boot=live")
+	}
 	return Detection{}, errors.New("media is not a supported Ubuntu casper or Debian live-boot layout")
 }
 
-func detectUbuntu(info string, configs map[string]string) Detection {
-	match := ubuntuVersionPattern.FindStringSubmatch(info)
-	if len(match) != 3 {
-		return Detection{Family: FamilyUbuntuCasper, DisplayName: "Ubuntu casper", Evidence: []string{"casper kernel/initrd and boot=casper configuration"}}
+func detectUbuntu(info string, configs map[string]string, modernMetadata bool) Detection {
+	name := strings.TrimSpace(info)
+	if name == "" {
+		name = "Ubuntu casper"
 	}
-	major, _ := strconv.Atoi(match[1])
-	minor, _ := strconv.Atoi(match[2])
-	version := match[1] + "." + match[2]
 	detection := Detection{
 		Family:          FamilyUbuntuCasper,
-		DisplayName:     strings.TrimSpace(info),
-		Version:         version,
+		DisplayName:     name,
 		BootParameter:   "persistent",
 		Filesystem:      "ext4",
 		FilesystemLabel: "casper-rw",
-		Evidence:        []string{"casper kernel/initrd", "boot=casper configuration", ".disk/info Ubuntu release " + version},
+		Evidence:        []string{"casper kernel/initrd", "casper kernel command"},
 	}
-	if major < minimumUbuntuMajor || (major == minimumUbuntuMajor && minor < minimumUbuntuMinor) {
+	match := ubuntuVersionPattern.FindStringSubmatch(info)
+	if len(match) == 3 {
+		major, _ := strconv.Atoi(match[1])
+		minor, _ := strconv.Atoi(match[2])
+		detection.Version = match[1] + "." + match[2]
+		detection.Evidence = append(detection.Evidence, ".disk/info Ubuntu release "+detection.Version)
+		if major < minimumUbuntuMajor || (major == minimumUbuntuMajor && minor < minimumUbuntuMinor) {
+			detection.FilesystemLabel = ""
+			detection.Evidence = append(detection.Evidence, "Ubuntu releases older than 20.04 are outside the initial casper persistence compatibility scope")
+			return detection
+		}
+	} else if modernMetadata {
+		detection.Evidence = append(detection.Evidence, "casper/install-sources.yaml modern live-media metadata")
+	} else {
 		detection.FilesystemLabel = ""
-		detection.Evidence = append(detection.Evidence, "Ubuntu releases older than 20.04 are outside the initial casper persistence compatibility scope")
+		detection.Evidence = append(detection.Evidence, "could not establish Ubuntu 20.04+ compatibility from .disk/info or modern casper metadata")
 		return detection
 	}
-	detection.PatchPaths, detection.AlreadyEnabledPaths = classifyConfigs(configs, detection.BootParameter)
+	detection.PatchPaths, detection.AlreadyEnabledPaths = classifyConfigs(configs, detection.Family, detection.BootParameter)
 	return detection
 }
 
@@ -131,7 +147,7 @@ func detectDebian(info string, configs map[string]string) Detection {
 		PersistenceConfig: "/ union\n",
 		Evidence:          []string{"live kernel/initrd", "boot=live configuration"},
 	}
-	detection.PatchPaths, detection.AlreadyEnabledPaths = classifyConfigs(configs, detection.BootParameter)
+	detection.PatchPaths, detection.AlreadyEnabledPaths = classifyConfigs(configs, detection.Family, detection.BootParameter)
 	return detection
 }
 
@@ -202,6 +218,16 @@ func readSmallRegular(root fs.FS, name string, limit int64) (string, error) {
 	return string(data), nil
 }
 
+func hasRegular(root fs.FS, name string) bool {
+	file, err := root.Open(name)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	return err == nil && info.Mode().IsRegular()
+}
+
 func hasPrefixedRegular(root fs.FS, directory, prefix string) bool {
 	entries, err := fs.ReadDir(root, directory)
 	if err != nil || len(entries) > 128 {
@@ -216,27 +242,131 @@ func hasPrefixedRegular(root fs.FS, directory, prefix string) bool {
 	return false
 }
 
-func matchingConfigs(configs map[string]string, bootMarker string) map[string]string {
+func matchingFamilyConfigs(configs map[string]string, family Family) map[string]string {
 	matched := make(map[string]string)
 	for name, content := range configs {
-		if containsKernelToken(content, bootMarker) {
+		familyLines, _, _ := inspectFamilyKernelLines(content, family, "")
+		if familyLines > 0 {
 			matched[name] = content
 		}
 	}
 	return matched
 }
 
-func classifyConfigs(configs map[string]string, parameter string) (patch, enabled []string) {
+func classifyConfigs(configs map[string]string, family Family, parameter string) (patch, enabled []string) {
 	for name, content := range configs {
-		if containsKernelToken(content, parameter) {
-			enabled = append(enabled, name)
-		} else {
+		familyLines, missing, present := inspectFamilyKernelLines(content, family, parameter)
+		if familyLines == 0 {
+			continue
+		}
+		if missing > 0 {
 			patch = append(patch, name)
+		} else if present > 0 {
+			enabled = append(enabled, name)
 		}
 	}
 	sort.Strings(patch)
 	sort.Strings(enabled)
 	return patch, enabled
+}
+
+func inspectFamilyKernelLines(content string, family Family, parameter string) (familyLines, missing, present int) {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		fields := strings.Fields(trimmed)
+		if len(fields) < 2 || !isKernelArgumentCommand(fields[0]) {
+			continue
+		}
+		arguments := fields[1:]
+		if !kernelArgumentsSelectFamily(arguments, family) {
+			continue
+		}
+		familyLines++
+		if parameter != "" && kernelArgumentsContain(arguments, parameter) {
+			present++
+		} else {
+			missing++
+		}
+	}
+	return familyLines, missing, present
+}
+
+func kernelArgumentsSelectFamily(arguments []string, family Family) bool {
+	marker, ok := familyBootMarker(family)
+	if !ok {
+		return false
+	}
+	for _, raw := range arguments {
+		if strings.HasPrefix(raw, "#") {
+			break
+		}
+		token := normalizeKernelToken(raw)
+		if kernelTokenMatches(token, marker) {
+			return true
+		}
+		if family == FamilyUbuntuCasper && kernelPathMatchesFamily(token, family) {
+			return true
+		}
+	}
+	return false
+}
+
+func kernelArgumentsContain(arguments []string, expected string) bool {
+	for _, raw := range arguments {
+		if strings.HasPrefix(raw, "#") {
+			break
+		}
+		if kernelTokenMatches(normalizeKernelToken(raw), expected) {
+			return true
+		}
+	}
+	return false
+}
+
+func familyBootMarker(family Family) (string, bool) {
+	switch family {
+	case FamilyUbuntuCasper:
+		return "boot=casper", true
+	case FamilyDebianLive:
+		return "boot=live", true
+	default:
+		return "", false
+	}
+}
+
+func normalizeKernelToken(token string) string {
+	return strings.Trim(token, "\"' ,;[]()")
+}
+
+func kernelTokenMatches(token, expected string) bool {
+	return token == expected || strings.HasPrefix(token, expected+"=")
+}
+
+func kernelPathMatchesFamily(token string, family Family) bool {
+	lower := strings.ToLower(strings.ReplaceAll(token, "\\", "/"))
+	directory := ""
+	switch family {
+	case FamilyUbuntuCasper:
+		directory = "casper"
+	case FamilyDebianLive:
+		directory = "live"
+	default:
+		return false
+	}
+	marker := "/" + directory + "/"
+	remainder := ""
+	if index := strings.Index(lower, marker); index >= 0 {
+		remainder = lower[index+len(marker):]
+	} else if strings.HasPrefix(lower, directory+"/") {
+		remainder = strings.TrimPrefix(lower, directory+"/")
+	} else {
+		return false
+	}
+	name := strings.SplitN(remainder, "/", 2)[0]
+	return strings.HasPrefix(name, "vmlinuz")
 }
 
 func containsKernelToken(content, token string) bool {
@@ -249,11 +379,8 @@ func containsKernelToken(content, token string) bool {
 		if len(fields) < 2 || !isKernelArgumentCommand(fields[0]) {
 			continue
 		}
-		for _, field := range fields[1:] {
-			field = strings.Trim(field, "\"' ,;[]()")
-			if field == token || strings.HasPrefix(field, token+"=") {
-				return true
-			}
+		if kernelArgumentsContain(fields[1:], token) {
+			return true
 		}
 	}
 	return false
