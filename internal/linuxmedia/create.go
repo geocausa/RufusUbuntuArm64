@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/geocausa/RufusArm64/internal/persistence"
+	"github.com/geocausa/RufusArm64/internal/qualification"
 	"github.com/geocausa/RufusArm64/internal/safety"
 	"github.com/geocausa/RufusArm64/internal/sourcefile"
 )
@@ -44,13 +46,16 @@ type PersistentCreateOptions struct {
 	BeforeDestructive  func(source *os.File) error
 	ManifestMaxEntries int
 	ManifestMaxBytes   uint64
+	CreatorVersion     string
 }
 
 type PersistentCreateResult struct {
-	Layout       PersistentLayout      `json:"layout"`
-	Detection    persistence.Detection `json:"detection"`
-	Manifest     Manifest              `json:"manifest"`
-	PatchedPaths []string              `json:"patched_paths"`
+	Layout                    PersistentLayout      `json:"layout"`
+	Detection                 persistence.Detection `json:"detection"`
+	Manifest                  Manifest              `json:"manifest"`
+	PatchedPaths              []string              `json:"patched_paths"`
+	QualificationRecordPath   string                `json:"qualification_record_path"`
+	QualificationRecordSHA256 string                `json:"qualification_record_sha256"`
 }
 
 // CreatePersistent creates a fresh GPT/FAT32/ext4 persistent Linux USB. It is
@@ -324,6 +329,42 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 	for _, path := range patched {
 		sendPersistent(emit, PersistentEvent{Stage: "boot", Message: "Enabled persistence in boot configuration", Path: path})
 	}
+	creator := strings.TrimSpace(opts.CreatorVersion)
+	if creator == "" {
+		creator = "RufusArm64"
+	}
+	record, err := qualification.WriteRecord(destinationRoot, qualification.CreationRecord{
+		Creator:       creator,
+		CreatedAt:     time.Now().UTC(),
+		SourceSHA256:  hex.EncodeToString(sourceDigest[:]),
+		SourceSize:    uint64(opts.ExpectedSource.Size),
+		Architecture:  opts.Architecture,
+		Family:        string(detection.Family),
+		DisplayName:   detection.DisplayName,
+		TargetSize:    layout.TargetSize,
+		LogicalSector: layout.SectorSize,
+		Boot: qualification.PartitionRecord{
+			Number: layout.Boot.Number, StartBytes: layout.Boot.StartBytes, SizeBytes: layout.Boot.SizeBytes,
+			Filesystem: "fat32", Label: label,
+		},
+		Persistence: qualification.PartitionRecord{
+			Number: layout.Persistence.Number, StartBytes: layout.Persistence.StartBytes, SizeBytes: layout.Persistence.SizeBytes,
+			Filesystem: layout.Plan.Filesystem, Label: layout.Plan.FilesystemLabel,
+		},
+		BootParameter:   detection.BootParameter,
+		ManifestEntries: len(manifest.Entries),
+		ManifestBytes:   manifest.TotalBytes,
+		PatchedPaths:    append([]string(nil), patched...),
+		Properties: map[string]string{
+			"qualification_contract": "start-reboot-verify",
+		},
+	})
+	if err != nil {
+		return result, fmt.Errorf("write persistence qualification record: %w", err)
+	}
+	result.QualificationRecordPath = record.Path
+	result.QualificationRecordSHA256 = record.SHA256
+	sendPersistent(emit, PersistentEvent{Stage: "qualification", Message: "Stored the persistence qualification record", Path: record.Path})
 	if err := runPersistent(ctx, emit, "sync", "-f", destinationRoot); err != nil {
 		return result, fmt.Errorf("sync writable boot files: %w", err)
 	}

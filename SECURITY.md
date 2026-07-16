@@ -35,7 +35,9 @@ The writable-tree copy primitive builds a bounded SHA-256 manifest from the read
 
 The experimental CLI orchestration layer now creates the writable GPT/FAT32/ext4 layout while retaining the whole-disk lock. It hashes the pinned source before inspection, immediately before erasure, and after creation; invokes the caller target-safety callback at destructive boundaries; writes and verifies backup GPT metadata before primary metadata; requires exact kernel partition geometry; copies into a private mount; re-runs persistence detection after boot patching; checks both filesystems; and flushes target buffers before success.
 
-The graphical privileged path rejects the experimental mode. Physical ARM64 boot qualification remains a separate release gate, and a failure after erasure must be treated as incomplete media rather than recoverable success.
+The graphical privileged path rejects the experimental mode. The creator stores a canonical creation record and SHA-256 sidecar on the writable boot partition. The qualification commands verify that record, require UEFI, the expected family and persistence kernel parameters, and an overlay root, then use a private marker to demonstrate survival across a later Linux boot ID. Reports hash boot IDs and marker tokens and do not collect hostnames, MAC addresses, serial numbers, product UUIDs, or the raw kernel command line.
+
+The creation-record checksum detects accidental or unsophisticated modification but is not an authenticated signature: an attacker able to rewrite both files can replace both. Qualification evidence proves only the observed media and one reboot sequence; physical ARM64 boot qualification remains a separate release gate. A failure after erasure must be treated as incomplete media rather than recoverable success.
 
 ## Known limitations
 

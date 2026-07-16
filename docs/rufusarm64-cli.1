@@ -35,6 +35,18 @@ rufusarm64-cli \- safely create bootable USB media on Linux
 .BI --target-size " SIZE"
 .RI [ --size " SIZE" ]
 .RI [ --json ]
+.PP
+.B sudo rufusarm64-cli qualify start
+.BI --record " FILE"
+.BI --output " FILE"
+.RI [ --state-dir " DIRECTORY" ]
+.RI [ --json ]
+.PP
+.B sudo rufusarm64-cli qualify verify
+.BI --record " FILE"
+.BI --output " FILE"
+.RI [ --state-dir " DIRECTORY" ]
+.RI [ --json ]
 .SH DESCRIPTION
 .B rufusarm64-cli
 writes recognized GPT/MBR disk images and ISOHybrid Linux images directly, or
@@ -159,6 +171,16 @@ containing
 The command validates occupied MBR entries or both GPT headers and entry-table copies, requires a free partition entry, reserves relocated GPT backup metadata where applicable, and reports boot configurations that require a parameter edit.
 .PP
 The separate experimental writer uses a fresh GPT layout with a FAT32 EFI System Partition and ext4 persistence partition. It is UEFI-only, requires an architecture-matching fallback bootloader, verifies both GPT copies, copies and rehashes a bounded FAT32-compatible media manifest, atomically enables the persistence boot parameter, re-detects the activated contract, and checks both filesystems. It remains CLI-only pending physical ARM64 qualification.
+.SH PERSISTENCE QUALIFICATION
+.TP
+.B qualify start --record FILE --output FILE [--state-dir DIRECTORY] [--json]
+Verify the canonical creation record and its SHA-256 sidecar, confirm that the current live system uses the expected architecture, UEFI, live-media family parameter, persistence parameter, and overlay root, then create a private persistent reboot marker. Write an initial JSON report and checksum sidecar. The default marker directory is
+.BR /var/lib/rufusarm64/qualification .
+.TP
+.B qualify verify --record FILE --output FILE [--state-dir DIRECTORY] [--json]
+Repeat the environment checks after a reboot, require a different Linux boot ID, and require the private marker to have survived. Write a verified JSON report and checksum sidecar. A successful result demonstrates persistence across that reboot only; it does not qualify every ARM64 system or firmware.
+.PP
+Reports contain hashed boot IDs and marker tokens, but omit hostnames, network addresses, storage serial numbers, product UUIDs, and the raw kernel command line. The creation-record checksum is tamper-evident rather than authenticated: a party able to replace both the record and its checksum can forge them.
 .SH SAFETY
 The program refuses partitions, read-only targets, the running root disk, and an
 image stored on the selected target. It holds and hashes the selected source

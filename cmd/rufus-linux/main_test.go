@@ -194,3 +194,18 @@ func TestPersistencePlanRejectsCompressedInput(t *testing.T) {
 		t.Fatalf("compressed input error = %v", err)
 	}
 }
+
+func TestQualifyCommandValidation(t *testing.T) {
+	if err := run([]string{"qualify"}); err == nil || err.Error() != "qualify requires start or verify" {
+		t.Fatalf("missing phase error = %v", err)
+	}
+	if err := run([]string{"qualify", "unknown"}); err == nil || err.Error() != "unknown qualify command \"unknown\"" {
+		t.Fatalf("unknown phase error = %v", err)
+	}
+	if err := run([]string{"qualify", "start"}); err == nil || err.Error() != "--record and --output are required" {
+		t.Fatalf("missing start flags error = %v", err)
+	}
+	if err := run([]string{"qualify", "verify", "--record", "/tmp/creation.json"}); err == nil || err.Error() != "--record and --output are required" {
+		t.Fatalf("missing verify output error = %v", err)
+	}
+}

@@ -137,7 +137,7 @@ The 0.9 development line can inspect a plain ISOHybrid image plus a read-only mo
 
 The codebase also contains separately tested primitives for applying exact partition plans, atomically patching writable boot trees without following symbolic links, creating/checking ext4 persistence filesystems, and building plus copying SHA-256 manifests from read-only Linux media trees. The copy layer checks FAT32 names, case collisions, file-size limits and architecture-specific fallback UEFI loaders, and only dereferences file links that resolve beneath the source root. See `docs/linux-media-copy.md`.
 
-A CLI-only experimental writer now connects these foundations for supported GPT/UEFI media. It creates a fresh FAT32 EFI System Partition and ext4 persistence partition under one target lock, verifies both GPT copies, copies and rehashes the media tree, patches only approved boot configurations, re-detects the activated contract, and checks both filesystems. The graphical path rejects this mode. See `docs/persistence-create.md`. Physical ARM64 boot qualification is still required before this can be considered stable.
+A CLI-only experimental writer now connects these foundations for supported GPT/UEFI media. It creates a fresh FAT32 EFI System Partition and ext4 persistence partition under one target lock, verifies both GPT copies, copies and rehashes the media tree, patches only approved boot configurations, re-detects the activated contract, and checks both filesystems. The graphical path rejects this mode. See `docs/persistence-create.md`. Each created USB also receives a canonical creation record and checksum for the two-stage `qualify start` / reboot / `qualify verify` workflow described in `docs/persistence-qualification.md`. This evidence confirms one successful persistent reboot; it does not replace a published physical-hardware matrix.
 
 ## Current limitations
 
@@ -170,6 +170,9 @@ rufusarm64-cli acquire verify --catalog catalog.json --signature catalog.json.si
 rufusarm64-cli acquire list --catalog catalog.json --signature catalog.json.sig --public-key catalog.pub
 rufusarm64-cli persistence plan --image ubuntu.iso --media-root /mnt/ubuntu --target-size 64G --size 16G --json
 sudo rufusarm64-cli write --mode linux-persistent --experimental-persistence --image ubuntu.iso --device /dev/sdX --persistence-size 16G
+sudo rufusarm64-cli qualify start --record /cdrom/.rufusarm64/creation.json --output ~/rufusarm64-initial.json
+# Reboot the same persistent USB, then:
+sudo rufusarm64-cli qualify verify --record /cdrom/.rufusarm64/creation.json --output ~/rufusarm64-verified.json
 sudo rufusarm64-cli write \
   --image Windows.iso --device /dev/sdX \
   --partition-scheme mbr --target-system bios \
