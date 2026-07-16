@@ -21,11 +21,19 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
   go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
   -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-helper" \
   "${ROOT_DIR}/cmd/rufus-linux"
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+  go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
+  -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-persistence-helper" \
+  "${ROOT_DIR}/cmd/rufus-persistence-helper"
 
 install -Dm755 "${ROOT_DIR}/gui/rufusarm64.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_logic.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_logic.py"
+install -Dm755 "${ROOT_DIR}/gui/rufusarm64_persistence.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_persistence.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_persistence_logic.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_persistence_logic.py"
 
 # Include the verified package-private ARM64 WIM engine. It is deliberately
 # built without FUSE or NTFS-3G support and may depend only on the standard C
@@ -95,10 +103,14 @@ for file in PINNED-UPSTREAM.txt UPSTREAM-SHA256SUMS br.c ntfs.c fat32.c \
 done
 install -Dm755 "${ROOT_DIR}/packaging/rufusarm64" \
   "${PACKAGE_DIR}/usr/bin/rufusarm64"
+install -Dm755 "${ROOT_DIR}/packaging/rufusarm64-persistence" \
+  "${PACKAGE_DIR}/usr/bin/rufusarm64-persistence"
 ln -s ../lib/rufusarm64/rufusarm64-helper \
   "${PACKAGE_DIR}/usr/bin/rufusarm64-cli"
 install -Dm644 "${ROOT_DIR}/packaging/io.github.geocausa.RufusArm64.desktop" \
   "${PACKAGE_DIR}/usr/share/applications/io.github.geocausa.RufusArm64.desktop"
+install -Dm644 "${ROOT_DIR}/packaging/io.github.geocausa.RufusArm64.Persistence.desktop" \
+  "${PACKAGE_DIR}/usr/share/applications/io.github.geocausa.RufusArm64.Persistence.desktop"
 install -Dm644 "${ROOT_DIR}/packaging/io.github.geocausa.RufusArm64.svg" \
   "${PACKAGE_DIR}/usr/share/icons/hicolor/scalable/apps/io.github.geocausa.RufusArm64.svg"
 install -Dm644 "${ROOT_DIR}/packaging/io.github.geocausa.RufusArm64.metainfo.xml" \
@@ -113,6 +125,10 @@ install -Dm644 "${ROOT_DIR}/docs/acquisition-channel.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/acquisition-channel.md"
 install -Dm644 "${ROOT_DIR}/docs/acquisition-admin.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/acquisition-admin.md"
+install -Dm644 "${ROOT_DIR}/docs/persistence-user-guide.md" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/persistence-user-guide.md"
+install -Dm644 "${ROOT_DIR}/docs/persistence-qualification.md" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/persistence-qualification.md"
 install -Dm644 "${ROOT_DIR}/NOTICE" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/NOTICE"
 install -Dm644 "${ROOT_DIR}/LICENSE" \
@@ -134,10 +150,11 @@ Installed-Size: ${INSTALLED_SIZE}
 Depends: python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, util-linux, mount, dosfstools, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils
 Homepage: https://github.com/geocausa/RufusUbuntuArm64
 Description: Bootable USB creator for Ubuntu ARM64
- A graphical utility that writes Linux ISOHybrid/raw images and creates
- Windows installation USB media using GPT or MBR, UEFI or x86-family BIOS/CSM,
- FAT32 or NTFS, compressed and virtual-disk inputs, Secure Boot DBX checks,
- verified boot assets, WIM splitting, and optional drivers.
+ A graphical utility that writes Linux ISOHybrid/raw images, creates verified
+ persistent Ubuntu/Debian live media, and creates Windows installation USB media
+ using GPT or MBR, UEFI or x86-family BIOS/CSM, FAT32 or NTFS, compressed and
+ virtual-disk inputs, Secure Boot DBX checks, verified boot assets, WIM splitting,
+ and optional drivers.
 CONTROL
 
 cat > "${PACKAGE_DIR}/DEBIAN/postinst" <<'POSTINST'
