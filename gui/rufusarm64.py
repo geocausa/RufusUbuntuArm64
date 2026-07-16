@@ -21,9 +21,15 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import GLib, Gtk
 
 from rufusarm64_logic import (
+    acquisition_image_label,
+    build_acquisition_download_command,
+    build_acquisition_list_command,
+    build_persistence_plan_command,
     build_writer_command,
     device_label,
     human_bytes,
+    normalize_acquisition_images,
+    persistence_plan_summary,
     progress_status,
     normalize_cluster_size,
     normalize_filesystem,
@@ -217,6 +223,167 @@ class WindowsOptionsDialog(Gtk.Dialog):
         }
 
 
+class AcquisitionDialog(Gtk.Dialog):
+    """Select and verify a local signed acquisition catalog."""
+
+    def __init__(self, parent, settings):
+        super().__init__(title="Download a verified image", transient_for=parent, modal=True)
+        self.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        self.add_button("Download", Gtk.ResponseType.OK)
+        self.set_default_response(Gtk.ResponseType.OK)
+        self.set_default_size(720, 470)
+        self.images = []
+        self.get_widget_for_response(Gtk.ResponseType.OK).set_sensitive(False)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_border_width(18)
+        self.get_content_area().pack_start(box, True, True, 0)
+
+        intro = Gtk.Label(label=(
+            "RufusArm64 accepts images only from a catalog whose detached Ed25519 signature verifies with the selected trusted public key. "
+            "This first graphical workflow uses local catalog files; a built-in online catalog will be added after a reviewed key-rotation policy."
+        ))
+        intro.set_xalign(0)
+        intro.set_line_wrap(True)
+        box.pack_start(intro, False, False, 0)
+
+        grid = Gtk.Grid(column_spacing=12, row_spacing=10)
+        box.pack_start(grid, False, False, 0)
+        self.catalog = self._chooser(grid, "Catalog", 0, Gtk.FileChooserAction.OPEN, settings.get("acquisition_catalog", ""))
+        self.signature = self._chooser(grid, "Signature", 1, Gtk.FileChooserAction.OPEN, settings.get("acquisition_signature", ""))
+        self.public_key = self._chooser(grid, "Public key", 2, Gtk.FileChooserAction.OPEN, settings.get("acquisition_public_key", ""))
+        default_downloads = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD) or os.path.join(os.path.expanduser("~"), "Downloads")
+        self.output = self._chooser(grid, "Download folder", 3, Gtk.FileChooserAction.SELECT_FOLDER, settings.get("acquisition_output", default_downloads))
+        self.output.connect("file-set", self.image_selected)
+
+        verify_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.verify_button = Gtk.Button(label="Verify catalog")
+        self.verify_button.connect("clicked", self.verify_catalog)
+        verify_row.pack_start(self.verify_button, False, False, 0)
+        self.catalog_status = Gtk.Label(label="Choose all three trust files, then verify the catalog.")
+        self.catalog_status.set_xalign(0)
+        self.catalog_status.set_line_wrap(True)
+        verify_row.pack_start(self.catalog_status, True, True, 0)
+        box.pack_start(verify_row, False, False, 0)
+
+        self.image_combo = Gtk.ComboBoxText()
+        self.image_combo.set_hexpand(True)
+        self.image_combo.connect("changed", self.image_selected)
+        box.pack_start(self.image_combo, False, False, 0)
+        self.image_detail = Gtk.Label(label="No verified image selected.")
+        self.image_detail.set_xalign(0)
+        self.image_detail.set_line_wrap(True)
+        self.image_detail.get_style_context().add_class("dim-label")
+        box.pack_start(self.image_detail, False, False, 0)
+        self.show_all()
+
+    @staticmethod
+    def _chooser(grid, label_text, row, action, saved):
+        label = Gtk.Label(label=label_text)
+        label.set_xalign(0)
+        chooser = Gtk.FileChooserButton(title=f"Choose {label_text.lower()}", action=action)
+        chooser.set_hexpand(True)
+        if saved and (os.path.isfile(saved) if action == Gtk.FileChooserAction.OPEN else os.path.isdir(saved)):
+            chooser.set_filename(saved)
+        grid.attach(label, 0, row, 1, 1)
+        grid.attach(chooser, 1, row, 1, 1)
+        return chooser
+
+    def verify_catalog(self, *_):
+        try:
+            command = build_acquisition_list_command(
+                helper_path(), self.catalog.get_filename(), self.signature.get_filename(), self.public_key.get_filename()
+            )
+            result = subprocess.run(command, check=False, text=True, capture_output=True, timeout=20)
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Catalog verification failed")
+            self.images = normalize_acquisition_images(json.loads(result.stdout))
+        except Exception as exc:
+            self.images = []
+            self.image_combo.remove_all()
+            self.catalog_status.set_text(f"Catalog rejected: {exc}")
+            self.get_widget_for_response(Gtk.ResponseType.OK).set_sensitive(False)
+            return
+        self.image_combo.remove_all()
+        for image in self.images:
+            self.image_combo.append(image["id"], acquisition_image_label(image))
+        self.image_combo.set_active(0)
+        self.catalog_status.set_text(f"Signature valid. {len(self.images)} downloadable image(s) are available.")
+
+    def image_selected(self, *_):
+        image_id = self.image_combo.get_active_id()
+        image = next((item for item in self.images if item["id"] == image_id), None)
+        self.get_widget_for_response(Gtk.ResponseType.OK).set_sensitive(bool(image and self.output.get_filename()))
+        if image:
+            digest = f"\nSHA-256: {image['sha256']}" if image.get("sha256") else ""
+            self.image_detail.set_text(f"File: {image['filename']}\nSize: {human_bytes(image['size'])}{digest}")
+
+    def values(self):
+        image_id = self.image_combo.get_active_id()
+        image = next((item for item in self.images if item["id"] == image_id), None)
+        if not image:
+            raise ValueError("Verify the catalog and choose an image first.")
+        return {
+            "catalog": self.catalog.get_filename() or "",
+            "signature": self.signature.get_filename() or "",
+            "public_key": self.public_key.get_filename() or "",
+            "output": self.output.get_filename() or "",
+            "image": image,
+        }
+
+
+class PersistencePlanDialog(Gtk.Dialog):
+    """Collect the read-only inputs required by the persistence planner."""
+
+    def __init__(self, parent, settings):
+        super().__init__(title="Analyze Linux persistence compatibility", transient_for=parent, modal=True)
+        self.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        self.add_button("Analyze", Gtk.ResponseType.OK)
+        self.set_default_response(Gtk.ResponseType.OK)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_border_width(18)
+        self.get_content_area().pack_start(box, True, True, 0)
+        intro = Gtk.Label(label=(
+            "Choose the read-only mounted or extracted root of the selected Ubuntu or Debian image. "
+            "Analysis does not modify the image or USB drive."
+        ))
+        intro.set_xalign(0)
+        intro.set_line_wrap(True)
+        box.pack_start(intro, False, False, 0)
+        grid = Gtk.Grid(column_spacing=12, row_spacing=10)
+        box.pack_start(grid, False, False, 0)
+        label = Gtk.Label(label="Mounted media folder")
+        label.set_xalign(0)
+        self.media_root = Gtk.FileChooserButton(title="Choose mounted Linux media", action=Gtk.FileChooserAction.SELECT_FOLDER)
+        saved = settings.get("persistence_media_root", "")
+        if saved and os.path.isdir(saved):
+            self.media_root.set_filename(saved)
+        grid.attach(label, 0, 0, 1, 1)
+        grid.attach(self.media_root, 1, 0, 1, 1)
+        size_label = Gtk.Label(label="Persistence size")
+        size_label.set_xalign(0)
+        self.size = Gtk.SpinButton.new_with_range(0, 1024, 1)
+        self.size.set_value(int(settings.get("persistence_size_gib", 16)))
+        self.size.set_tooltip_text("GiB. Zero asks the planner to use all suitable remaining capacity.")
+        size_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        size_box.pack_start(self.size, False, False, 0)
+        size_box.pack_start(Gtk.Label(label="GiB (0 = remaining space)"), False, False, 0)
+        grid.attach(size_label, 0, 1, 1, 1)
+        grid.attach(size_box, 1, 1, 1, 1)
+        note = Gtk.Label(label="Persistent USB creation remains experimental and command-line only; this screen only explains compatibility and sizing.")
+        note.set_xalign(0)
+        note.set_line_wrap(True)
+        note.get_style_context().add_class("dim-label")
+        box.pack_start(note, False, False, 0)
+        self.show_all()
+
+    def values(self):
+        root = self.media_root.get_filename() or ""
+        if not root:
+            raise ValueError("Choose the mounted or extracted Linux media folder.")
+        return root, int(self.size.get_value())
+
+
 class RufusWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app)
@@ -233,7 +400,9 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.active_verify_requested = False
         self.active_mode = ""
         self.active_filesystem = "auto"
+        self.active_job = ""
         self.operation_started_at = None
+        self.download_result = {}
         self.settings = self.load_settings()
         width = max(600, int(self.settings.get("width", 820)))
         height = max(430, int(self.settings.get("height", 700)))
@@ -287,7 +456,13 @@ class RufusWindow(Gtk.ApplicationWindow):
             image_filter.add_pattern(f"*.{suffix}")
             image_filter.add_pattern(f"*.{suffix.upper()}")
         self.image_chooser.add_filter(image_filter)
-        grid.attach(self.image_chooser, 1, 0, 2, 1)
+        image_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        image_row.pack_start(self.image_chooser, True, True, 0)
+        self.download_button = Gtk.Button(label="Download…")
+        self.download_button.set_tooltip_text("Choose an image from a locally supplied, Ed25519-signed catalog")
+        self.download_button.connect("clicked", self.open_acquisition)
+        image_row.pack_start(self.download_button, False, False, 0)
+        grid.attach(image_row, 1, 0, 2, 1)
 
         self.attach_label(grid, "USB drive", 1)
         self.target_combo = Gtk.ComboBoxText()
@@ -321,6 +496,29 @@ class RufusWindow(Gtk.ApplicationWindow):
         adv_grid.set_margin_top(10)
         advanced.add(adv_grid)
         outer.pack_start(advanced, False, False, 0)
+
+        persistence = Gtk.Expander(label="Linux persistence compatibility (experimental)")
+        persistence_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        persistence_box.set_margin_top(8)
+        persistence_intro = Gtk.Label(label=(
+            "Analyze supported Ubuntu casper or Debian live-boot media before using the experimental command-line creator. "
+            "This analysis is read-only."
+        ))
+        persistence_intro.set_xalign(0)
+        persistence_intro.set_line_wrap(True)
+        persistence_box.pack_start(persistence_intro, False, False, 0)
+        self.persistence_button = Gtk.Button(label="Analyze selected image…")
+        self.persistence_button.set_halign(Gtk.Align.START)
+        self.persistence_button.connect("clicked", self.analyze_persistence)
+        persistence_box.pack_start(self.persistence_button, False, False, 0)
+        self.persistence_summary = Gtk.Label(label="Select a recognized Linux ISOHybrid image and USB drive.")
+        self.persistence_summary.set_xalign(0)
+        self.persistence_summary.set_line_wrap(True)
+        self.persistence_summary.set_selectable(True)
+        self.persistence_summary.get_style_context().add_class("dim-label")
+        persistence_box.pack_start(self.persistence_summary, False, False, 0)
+        persistence.add(persistence_box)
+        outer.pack_start(persistence, False, False, 0)
 
         self.attach_label(adv_grid, "Partition scheme", 0)
         self.partition_combo = Gtk.ComboBoxText()
@@ -642,19 +840,25 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.busy = bool(busy)
         usable = not busy and bool(self.devices) and bool(self.inspection.get("recognized"))
         self.start_button.set_sensitive(usable)
-        for widget in (self.image_chooser, self.target_combo, self.refresh_button, self.verify):
+        for widget in (self.image_chooser, self.download_button, self.target_combo, self.refresh_button, self.verify):
             widget.set_sensitive(not busy)
+        self.persistence_button.set_sensitive(
+            not busy
+            and bool(self.devices)
+            and bool(self.inspection.get("recognized"))
+            and self.inspection.get("mode") == "raw"
+        )
         windows_controls = not busy and self.inspection.get("mode") == "windows"
         for widget in (self.partition_combo, self.target_system_combo, self.filesystem_combo, self.cluster_combo, self.volume_label, self.driver_chooser, self.dbx_chooser, self.dbx_update_button, self.quick_format, self.bad_block_check):
             widget.set_sensitive(windows_controls)
         if not busy:
             self.bad_block_toggled()
-        self.cancel_button.set_sensitive(busy)
+        self.cancel_button.set_sensitive(busy and self.active_job in {"writer", "download", "persistence-plan"})
 
     def on_delete_event(self, *_):
         if self.busy:
             self.message(
-                "A USB operation is still running. Click Cancel and wait until writing has stopped before closing RufusArm64.",
+                "An operation is still running. Click Cancel and wait for RufusArm64 to confirm it has stopped before closing the window.",
                 Gtk.MessageType.WARNING,
             )
             return True
@@ -739,6 +943,9 @@ class RufusWindow(Gtk.ApplicationWindow):
         else:
             self.layout_note.set_text(info.get("description") or "Settings will be selected after the image is inspected.")
         self.start_button.set_sensitive(not self.busy and bool(self.devices) and bool(info.get("recognized")))
+        self.persistence_button.set_sensitive(not self.busy and bool(self.devices) and bool(info.get("recognized")) and info.get("mode") == "raw")
+        if info.get("mode") != "raw":
+            self.persistence_summary.set_text("Select a recognized Linux ISOHybrid image and USB drive.")
         self.update_verify_warning()
 
     def verify_changed(self, *_):
@@ -824,6 +1031,169 @@ class RufusWindow(Gtk.ApplicationWindow):
                 fs_note = "Automatic prefers native FAT32 and switches to NTFS only when the ISO is not FAT32-safe."
         self.layout_note.set_text(scheme_note + " " + fs_note)
 
+    def open_acquisition(self, *_):
+        if self.busy:
+            return
+        dialog = AcquisitionDialog(self, self.settings)
+        response = dialog.run()
+        try:
+            values = dialog.values() if response == Gtk.ResponseType.OK else None
+        except ValueError as exc:
+            values = None
+            self.message(str(exc), Gtk.MessageType.ERROR)
+        dialog.destroy()
+        if not values:
+            return
+        for key in ("catalog", "signature", "public_key", "output"):
+            self.settings[f"acquisition_{key}"] = values[key]
+        self.save_settings()
+        try:
+            command = build_acquisition_download_command(
+                helper_path(), values["catalog"], values["signature"], values["public_key"], values["image"]["id"], values["output"]
+            )
+        except ValueError as exc:
+            self.message(str(exc), Gtk.MessageType.ERROR)
+            return
+        self.log.get_buffer().set_text("")
+        self.operation_started_at = datetime.now(timezone.utc)
+        self.active_job = "download"
+        self.cancel_requested = False
+        self.download_result = {}
+        self.append_log("Verified catalog image: " + acquisition_image_label(values["image"]))
+        self.set_busy(True)
+        self.progress.set_fraction(0)
+        self.progress.set_text("Starting verified download…")
+        self.progress_detail.set_text("The final file will be installed only after its signed size and SHA-256 match.")
+        threading.Thread(target=self.run_download, args=(command,), daemon=True).start()
+
+    def run_download(self, command):
+        result_payload = {}
+        try:
+            self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True)
+            assert self.process.stdout is not None
+            for raw in self.process.stdout:
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    GLib.idle_add(self.append_log, line)
+                    continue
+                if isinstance(payload, dict) and payload.get("event"):
+                    GLib.idle_add(self.handle_event, payload)
+                elif isinstance(payload, dict) and payload.get("path"):
+                    result_payload = payload
+            return_code = self.process.wait()
+            GLib.idle_add(self.finish_download, return_code, result_payload)
+        except Exception as exc:
+            GLib.idle_add(self.append_log, f"Verified download failed: {exc}")
+            GLib.idle_add(self.finish_download, 1, {})
+        finally:
+            self.process = None
+
+    def finish_download(self, return_code, payload):
+        was_cancelled = self.cancel_requested
+        self.set_busy(False)
+        self.active_job = ""
+        self.cancel_requested = False
+        path = payload.get("path", "") if isinstance(payload, dict) else ""
+        if return_code == 0 and path and os.path.isfile(path):
+            self.progress.set_fraction(1.0)
+            self.progress.set_text("Image downloaded and verified")
+            self.progress_detail.set_text(f"Verified image saved to {path}")
+            self.append_log(f"Verified image: {path}")
+            if payload.get("sha256"):
+                self.append_log(f"SHA-256: {payload['sha256']}")
+            self.image_chooser.set_filename(path)
+            self.image_changed()
+            self.message("The image was downloaded, checksum-verified, and selected as the boot image.", Gtk.MessageType.INFO)
+        elif was_cancelled:
+            self.progress.set_text("Download cancelled")
+            self.progress_detail.set_text("No unverified partial image was installed.")
+        else:
+            self.progress.set_text("Download failed — see Details")
+            self.progress_detail.set_text("No unverified image was installed.")
+            self.message("The image could not be downloaded or verified. No unverified file was installed.", Gtk.MessageType.ERROR)
+        return False
+
+    def analyze_persistence(self, *_):
+        image = self.image_chooser.get_filename()
+        index = self.target_combo.get_active()
+        if not image or self.inspection.get("mode") != "raw" or not (0 <= index < len(self.devices)):
+            self.message("Choose a recognized Linux ISOHybrid image and a USB drive first.", Gtk.MessageType.INFO)
+            return
+        dialog = PersistencePlanDialog(self, self.settings)
+        response = dialog.run()
+        try:
+            values = dialog.values() if response == Gtk.ResponseType.OK else None
+        except ValueError as exc:
+            values = None
+            self.message(str(exc), Gtk.MessageType.ERROR)
+        dialog.destroy()
+        if not values:
+            return
+        media_root, size_gib = values
+        self.settings["persistence_media_root"] = media_root
+        self.settings["persistence_size_gib"] = size_gib
+        self.save_settings()
+        try:
+            command = build_persistence_plan_command(helper_path(), image, media_root, self.devices[index].get("size"), size_gib)
+        except ValueError as exc:
+            self.message(str(exc), Gtk.MessageType.ERROR)
+            return
+        self.active_job = "persistence-plan"
+        self.cancel_requested = False
+        self.operation_started_at = datetime.now(timezone.utc)
+        self.set_busy(True)
+        self.progress.set_fraction(0)
+        self.progress.pulse()
+        self.progress.set_text("Analyzing persistence compatibility…")
+        self.progress_detail.set_text("Reading image metadata and approved boot configuration paths. Nothing is being modified.")
+        threading.Thread(target=self.run_persistence_plan, args=(command,), daemon=True).start()
+
+    def run_persistence_plan(self, command):
+        try:
+            self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+            stdout, stderr = self.process.communicate(timeout=90)
+            return_code = self.process.returncode
+            payload = json.loads(stdout) if return_code == 0 else {}
+            error = stderr.strip() or stdout.strip() if return_code != 0 else ""
+            GLib.idle_add(self.finish_persistence_plan, return_code, payload, error)
+        except subprocess.TimeoutExpired:
+            if self.process:
+                self.process.kill()
+            GLib.idle_add(self.finish_persistence_plan, 1, {}, "Persistence analysis timed out.")
+        except Exception as exc:
+            GLib.idle_add(self.finish_persistence_plan, 1, {}, str(exc))
+        finally:
+            self.process = None
+
+    def finish_persistence_plan(self, return_code, payload, error):
+        was_cancelled = self.cancel_requested
+        self.set_busy(False)
+        self.active_job = ""
+        self.cancel_requested = False
+        if return_code == 0:
+            try:
+                summary = persistence_plan_summary(payload)
+            except ValueError as exc:
+                error = str(exc)
+            else:
+                self.persistence_summary.set_text(summary)
+                self.progress.set_text("Persistence compatibility confirmed")
+                self.progress_detail.set_text("The result is read-only. Creation remains experimental and command-line only.")
+                self.append_log(summary)
+                return False
+        if was_cancelled:
+            self.progress.set_text("Persistence analysis cancelled")
+            self.progress_detail.set_text("Nothing was modified.")
+        else:
+            self.persistence_summary.set_text("Not compatible with the current experimental persistence scope.\n" + (error or "Unknown planner error"))
+            self.progress.set_text("Persistence analysis unavailable")
+            self.progress_detail.set_text("The image and USB were not modified.")
+        return False
+
     def update_dbx(self, *_):
         if self.busy:
             return
@@ -891,6 +1261,7 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.append_log(f"Could not list USB drives: {exc}")
             self.progress.set_text("Drive detection failed")
         self.start_button.set_sensitive(not self.busy and bool(self.devices) and bool(self.inspection.get("recognized")))
+        self.persistence_button.set_sensitive(not self.busy and bool(self.devices) and self.inspection.get("mode") == "raw" and bool(self.inspection.get("recognized")))
 
     def choose_windows_options(self):
         dialog = WindowsOptionsDialog(self, self.windows_options)
@@ -1001,6 +1372,7 @@ class RufusWindow(Gtk.ApplicationWindow):
 
         self.log.get_buffer().set_text("")
         self.operation_started_at = datetime.now(timezone.utc)
+        self.active_job = "writer"
         self.cancel_requested = False
         self.last_status_key = None
         self.active_verify_requested = verify_requested
@@ -1024,12 +1396,14 @@ class RufusWindow(Gtk.ApplicationWindow):
             os.close(fd)
             os.unlink(self.cancel_path)
         except OSError as exc:
+            self.active_job = ""
             self.set_busy(False)
             self.message(f"Could not create a safe cancellation channel: {exc}", Gtk.MessageType.ERROR)
             return
 
         if not os.path.isfile(PKEXEC) or not os.access(PKEXEC, os.X_OK):
             self.cancel_path = None
+            self.active_job = ""
             self.set_busy(False)
             self.message("Ubuntu administrator authentication (pkexec) is not installed.", Gtk.MessageType.ERROR)
             return
@@ -1054,6 +1428,7 @@ class RufusWindow(Gtk.ApplicationWindow):
                 bad_block_check,
             )
         except ValueError as exc:
+            self.active_job = ""
             self.set_busy(False)
             self.message(str(exc), Gtk.MessageType.ERROR)
             return
@@ -1132,6 +1507,7 @@ class RufusWindow(Gtk.ApplicationWindow):
     def finish(self, return_code):
         was_cancelled = self.cancel_requested
         self.set_busy(False)
+        self.active_job = ""
         self.cancel_requested = False
         if self.cancel_path:
             try:
@@ -1160,9 +1536,14 @@ class RufusWindow(Gtk.ApplicationWindow):
             return
         self.cancel_requested = True
         self.cancel_button.set_sensitive(False)
-        self.append_log("Cancellation requested. Do not remove the USB until RufusArm64 confirms that writing has stopped.")
-        self.progress.set_text("Cancelling safely…")
-        self.progress_detail.set_text("Waiting for the privileged writer to reach a safe cancellation point. Do not unplug the USB.")
+        if self.active_job == "writer":
+            self.append_log("Cancellation requested. Do not remove the USB until RufusArm64 confirms that writing has stopped.")
+            self.progress.set_text("Cancelling safely…")
+            self.progress_detail.set_text("Waiting for the privileged writer to reach a safe cancellation point. Do not unplug the USB.")
+        else:
+            self.append_log("Cancellation requested.")
+            self.progress.set_text("Cancelling…")
+            self.progress_detail.set_text("Stopping the read-only operation. No unverified download will be installed.")
         if self.cancel_path:
             try:
                 fd = os.open(self.cancel_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)

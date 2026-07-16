@@ -1,11 +1,17 @@
 import unittest
 
 from rufusarm64_logic import (
+    acquisition_image_label,
+    build_acquisition_download_command,
+    build_acquisition_list_command,
+    build_persistence_plan_command,
     build_writer_command,
     device_label,
     human_bytes,
     human_duration,
     human_rate,
+    normalize_acquisition_images,
+    persistence_plan_summary,
     progress_status,
     normalize_cluster_size,
     normalize_filesystem,
@@ -34,6 +40,54 @@ class LogicTests(unittest.TestCase):
         self.assertIn("256 B/s", text)
         self.assertIn("0:02 remaining", text)
         self.assertEqual(progress_status("prepare", 0, 0), "Prepare")
+
+    def test_acquisition_commands_and_catalog_normalization(self):
+        command = build_acquisition_list_command("/helper", "catalog.json", "catalog.sig", "catalog.pub")
+        self.assertEqual(command[-1], "--json")
+        images = normalize_acquisition_images([{
+            "id": "ubuntu-24.04-arm64",
+            "name": "Ubuntu Desktop",
+            "architecture": "arm64",
+            "version": "24.04.2",
+            "filename": "ubuntu.iso",
+            "size": 4 * 1024**3,
+            "sha256": "a" * 64,
+        }])
+        self.assertIn("Ubuntu Desktop 24.04.2", acquisition_image_label(images[0]))
+        download = build_acquisition_download_command(
+            "/helper", "catalog.json", "catalog.sig", "catalog.pub", images[0]["id"], "/downloads"
+        )
+        self.assertEqual(download[1:3], ["acquire", "download"])
+        self.assertNotIn("pkexec", download)
+        self.assertIn("--json-progress", download)
+        with self.assertRaises(ValueError):
+            normalize_acquisition_images([{
+                "id": "duplicate", "name": "One", "filename": "one.iso", "size": 1
+            }, {
+                "id": "duplicate", "name": "Two", "filename": "two.iso", "size": 2
+            }])
+
+    def test_persistence_plan_command_and_summary(self):
+        command = build_persistence_plan_command(
+            "/helper", "/images/ubuntu.iso", "/mnt/ubuntu", 64 * 1024**3, 16
+        )
+        self.assertEqual(command[1:3], ["persistence", "plan"])
+        self.assertNotIn("write", command)
+        self.assertNotIn("--experimental-persistence", command)
+        self.assertEqual(command[command.index("--size") + 1], "16G")
+        summary = persistence_plan_summary({
+            "detection": {"display_name": "Ubuntu 24.04 ARM64", "family": "ubuntu-casper"},
+            "plan": {
+                "filesystem": "ext4",
+                "filesystem_label": "casper-rw",
+                "size_bytes": 16 * 1024**3,
+                "boot_parameter": "persistent",
+                "patch_paths": ["boot/grub/grub.cfg"],
+            },
+        })
+        self.assertIn("Compatible media", summary)
+        self.assertIn("16.0 GiB", summary)
+        self.assertIn("command-line only", summary)
 
     def test_supported_image_name(self):
         self.assertTrue(supported_image_name("Windows.ISO"))

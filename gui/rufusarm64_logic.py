@@ -236,6 +236,131 @@ def normalize_cluster_size(value):
         raise ValueError("Cluster size must be Automatic, 4 KiB, 8 KiB, 16 KiB, or 32 KiB.")
     return value
 
+
+def build_acquisition_list_command(helper, catalog, signature, public_key):
+    values = [str(value or "").strip() for value in (helper, catalog, signature, public_key)]
+    if not all(values):
+        raise ValueError("Choose a catalog, detached signature, and trusted public key.")
+    return [
+        values[0], "acquire", "list",
+        "--catalog", values[1],
+        "--signature", values[2],
+        "--public-key", values[3],
+        "--json",
+    ]
+
+
+def normalize_acquisition_images(payload):
+    if not isinstance(payload, list):
+        raise ValueError("The verified catalog did not return an image list.")
+    images = []
+    seen = set()
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("The verified catalog contains an invalid image entry.")
+        image_id = str(item.get("id") or "").strip()
+        name = str(item.get("name") or "").strip()
+        architecture = str(item.get("architecture") or "unknown").strip()
+        version = str(item.get("version") or "").strip()
+        filename = str(item.get("filename") or "").strip()
+        try:
+            size = int(item.get("size") or 0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("The verified catalog contains an invalid image size.") from exc
+        if not image_id or not name or not filename or size <= 0:
+            raise ValueError("The verified catalog contains an incomplete image entry.")
+        if image_id in seen:
+            raise ValueError(f'The verified catalog contains duplicate image id "{image_id}".')
+        seen.add(image_id)
+        images.append({
+            "id": image_id,
+            "name": name,
+            "architecture": architecture,
+            "version": version,
+            "filename": filename,
+            "size": size,
+            "sha256": str(item.get("sha256") or "").strip(),
+        })
+    if not images:
+        raise ValueError("The verified catalog contains no downloadable images.")
+    return images
+
+
+def acquisition_image_label(image):
+    version = f" {image.get('version')}" if image.get("version") else ""
+    return f"{image.get('name')}{version} — {image.get('architecture', 'unknown')} — {human_bytes(image.get('size'))}"
+
+
+def build_acquisition_download_command(helper, catalog, signature, public_key, image_id, output_directory):
+    command = build_acquisition_list_command(helper, catalog, signature, public_key)[:-1]
+    image_id = str(image_id or "").strip()
+    output_directory = str(output_directory or "").strip()
+    if not image_id:
+        raise ValueError("Choose an image from the verified catalog.")
+    if not output_directory:
+        raise ValueError("Choose a download folder.")
+    return [
+        command[0], "acquire", "download",
+        *command[3:],
+        "--id", image_id,
+        "--output", output_directory,
+        "--json", "--json-progress",
+    ]
+
+
+def build_persistence_plan_command(helper, image, media_root, target_size, persistence_gib=0):
+    helper = str(helper or "").strip()
+    image = str(image or "").strip()
+    media_root = str(media_root or "").strip()
+    try:
+        target_size = int(target_size or 0)
+        persistence_gib = int(persistence_gib or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Persistence and target sizes must be whole numbers.") from exc
+    if not helper or not image or not media_root:
+        raise ValueError("Choose an image, its mounted media folder, and a USB drive.")
+    if target_size <= 0:
+        raise ValueError("The selected USB drive does not report a usable capacity.")
+    if persistence_gib < 0:
+        raise ValueError("Persistence size cannot be negative.")
+    return [
+        helper, "persistence", "plan",
+        "--image", image,
+        "--media-root", media_root,
+        "--target-size", str(target_size),
+        "--size", f"{persistence_gib}G" if persistence_gib else "0",
+        "--json",
+    ]
+
+
+def persistence_plan_summary(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("The persistence planner returned an invalid response.")
+    detection = payload.get("detection")
+    plan = payload.get("plan")
+    if not isinstance(detection, dict) or not isinstance(plan, dict):
+        raise ValueError("The persistence planner response is incomplete.")
+    name = str(detection.get("display_name") or detection.get("DisplayName") or detection.get("family") or "Linux media")
+    family = str(detection.get("family") or detection.get("Family") or "unknown")
+    filesystem = str(plan.get("filesystem") or plan.get("Filesystem") or "ext4")
+    label = str(plan.get("filesystem_label") or plan.get("FilesystemLabel") or "")
+    parameter = str(plan.get("boot_parameter") or plan.get("BootParameter") or "")
+    size = int(plan.get("size_bytes") or plan.get("SizeBytes") or 0)
+    patch_paths = plan.get("patch_paths") or plan.get("PatchPaths") or []
+    if not isinstance(patch_paths, list):
+        patch_paths = []
+    lines = [
+        f"Compatible media: {name}",
+        f"Persistence family: {family}",
+        f"Planned partition: {filesystem} {human_bytes(size)}" + (f' labelled "{label}"' if label else ""),
+    ]
+    if parameter:
+        lines.append(f"Boot parameter: {parameter}")
+    if patch_paths:
+        lines.append("Boot files to update: " + ", ".join(str(path) for path in patch_paths))
+    lines.append("Planning is read-only. Persistent USB creation remains experimental and command-line only.")
+    return "\n".join(lines)
+
 def build_writer_command(
     pkexec,
     helper,
