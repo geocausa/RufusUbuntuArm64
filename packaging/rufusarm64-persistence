@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/bin/python3 /usr/lib/rufusarm64/rufusarm64_persistence.py "$@"
