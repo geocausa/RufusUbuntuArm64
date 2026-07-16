@@ -133,6 +133,8 @@ Version 0.9.0 added strict local signed-catalog verification and checksum-gated 
 
 The package channel intentionally remains disabled until real offline root keys and the first reviewed catalog are provisioned. The GUI reports that boundary clearly and keeps the local catalog/signature/public-key workflow as an advanced recovery path. No private signing key is included in source, CI, packages, or artifacts.
 
+The source tree also contains `cmd/rufus-channel-admin`, an offline-safe public-metadata administration tool. It derives public key IDs, exports exact canonical signing payloads and manifests, assembles externally generated detached signatures, verifies root/catalog chains, validates the public channel configuration, and creates deterministic publication directories. It has no private-key option or signing implementation and is not installed as an application binary. See `docs/acquisition-admin.md`.
+
 ## Linux persistence planning foundation
 
 Version 0.9.0 can inspect a plain ISOHybrid image plus a read-only mounted or extracted media tree and produce a non-destructive persistence plan. The 0.10 graphical path can instead ask the privileged helper to mount the identity-bound ISO privately with read-only, no-suid, no-device, and no-exec restrictions; only target capacity is supplied and no target device is opened. The initial scope is Ubuntu 20.04+ casper media (`persistent`, ext4 label `casper-rw`) and Debian live-boot media (`persistence`, ext4 label `persistence`, root `persistence.conf` containing `/ union`). MBR and GPT metadata are validated before a plan is returned, including both GPT copies and their CRCs. See `docs/persistence-planning.md`.

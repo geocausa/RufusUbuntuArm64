@@ -27,6 +27,8 @@ The local recovery implementation accepts catalog/signature/public-key files sup
 
 The installed channel configuration remains disabled until offline root keys are generated, separated, and used to sign a reviewed bootstrap root and first catalog. No private key may enter the repository, CI secrets used for routine builds, packages, or release artifacts. Expired roots have no unsafe bypass; recovery requires a reviewed package/bootstrap-root update or the advanced local signed-catalog path.
 
+The source-only `rufus-channel-admin` executable enforces this separation: it accepts public keys and detached signatures but has no private-key argument and contains no signing path. Its output is deterministic and it creates publication directories only after verifying the complete root chain, catalog role, expiry, public URLs, and checksums. The normal Debian package does not install this operator executable.
+
 ## Persistence planning trust boundary
 
 The 0.9 persistence command is unprivileged and read-only. It accepts a source image, a mounted or extracted media tree, and a caller-supplied target capacity solely to calculate eligibility and geometry. It does not treat the media tree or target-size value as authorization for a future write. Detection reads only bounded expected marker/configuration paths, and partition planning validates MBR or both GPT copies before returning an append-only proposal.

@@ -177,6 +177,19 @@ func VerifyChannelCatalog(root *VerifiedRoot, data []byte, now time.Time) (*Veri
 	if err := decodeStrictJSON(canonical, &metadata, "catalog metadata"); err != nil {
 		return nil, err
 	}
+	verified, err := prepareCatalogPayload(metadata, canonical, now)
+	if err != nil {
+		return nil, err
+	}
+	keyIDs, err := verifyRoleSignatures(root.Metadata.Roles.Catalog, root.keys, canonical, envelope.Signatures)
+	if err != nil {
+		return nil, fmt.Errorf("verify catalog signatures: %w", err)
+	}
+	verified.SigningKeyIDs = keyIDs
+	return verified, nil
+}
+
+func prepareCatalogPayload(metadata CatalogMetadata, canonical []byte, now time.Time) (*VerifiedChannelCatalog, error) {
 	generated, expires, err := validateMetadataTimes(metadata.Generated, metadata.Expires, now, maxCatalogMetadataLife, "catalog", true)
 	if err != nil {
 		return nil, err
@@ -202,22 +215,29 @@ func VerifyChannelCatalog(root *VerifiedRoot, data []byte, now time.Time) (*Veri
 		previous = metadata.Images[i].ID
 		seen[metadata.Images[i].ID] = struct{}{}
 	}
-	keyIDs, err := verifyRoleSignatures(root.Metadata.Roles.Catalog, root.keys, canonical, envelope.Signatures)
-	if err != nil {
-		return nil, fmt.Errorf("verify catalog signatures: %w", err)
-	}
 	digest := sha256.Sum256(canonical)
 	return &VerifiedChannelCatalog{
-		Metadata:      metadata,
-		GeneratedAt:   generated,
-		ExpiresAt:     expires,
-		SHA256:        hex.EncodeToString(digest[:]),
-		SignedBytes:   append([]byte(nil), canonical...),
-		SigningKeyIDs: keyIDs,
+		Metadata:    metadata,
+		GeneratedAt: generated,
+		ExpiresAt:   expires,
+		SHA256:      hex.EncodeToString(digest[:]),
+		SignedBytes: append([]byte(nil), canonical...),
 	}, nil
 }
 
 func prepareRoot(metadata RootMetadata, canonical []byte, signatures []MetadataSignature, now time.Time) (*VerifiedRoot, error) {
+	verified, err := prepareRootPayload(metadata, canonical, now)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateMetadataSignatures(signatures); err != nil {
+		return nil, err
+	}
+	verified.Signatures = append([]MetadataSignature(nil), signatures...)
+	return verified, nil
+}
+
+func prepareRootPayload(metadata RootMetadata, canonical []byte, now time.Time) (*VerifiedRoot, error) {
 	generated, expires, err := validateMetadataTimes(metadata.Generated, metadata.Expires, now, maxRootMetadataLifetime, "root", false)
 	if err != nil {
 		return nil, err
@@ -259,9 +279,6 @@ func prepareRoot(metadata RootMetadata, canonical []byte, signatures []MetadataS
 	if err := validateRole("catalog", metadata.Roles.Catalog, keys, 1); err != nil {
 		return nil, err
 	}
-	if err := validateMetadataSignatures(signatures); err != nil {
-		return nil, err
-	}
 	digest := sha256.Sum256(canonical)
 	return &VerifiedRoot{
 		Metadata:    metadata,
@@ -269,7 +286,6 @@ func prepareRoot(metadata RootMetadata, canonical []byte, signatures []MetadataS
 		ExpiresAt:   expires,
 		SHA256:      hex.EncodeToString(digest[:]),
 		SignedBytes: append([]byte(nil), canonical...),
-		Signatures:  append([]MetadataSignature(nil), signatures...),
 		keys:        keys,
 	}, nil
 }
