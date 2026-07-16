@@ -15,6 +15,13 @@ rufusarm64-cli \- safely create bootable USB media on Linux
 .BI --device " /dev/DEVICE"
 .RI [ options ]
 .PP
+.B sudo rufusarm64-cli write
+.B --mode linux-persistent
+.B --experimental-persistence
+.BI --image " FILE"
+.BI --device " /dev/DEVICE"
+.RI [ --persistence-size " SIZE" ]
+.PP
 .B sudo rufusarm64-cli verify
 .BI --image " FILE"
 .BI --device " /dev/DEVICE"
@@ -40,6 +47,14 @@ BOOTMGR-compatible MBR/PBR boot code. Compressed images are expanded privately b
 .TP
 .B --verify
 Flush block buffers and compare copied data after writing. Recommended.
+.TP
+.B --experimental-persistence
+Enable the CLI-only experimental GPT/UEFI persistent Linux writer. This flag is accepted only with
+.BR --mode " linux-persistent"
+and is rejected by the graphical privileged path.
+.TP
+.BI --persistence-size " SIZE"
+Set the ext4 persistence partition size using bytes or K/M/G/T units. Zero uses all aligned space remaining after the writable FAT32 boot partition. The initial implementation requires at least 1 GiB.
 .TP
 .BI --partition-scheme " gpt|mbr"
 Choose the partition table for extracted Windows media. GPT is the default.
@@ -141,7 +156,9 @@ and a root
 .B persistence.conf
 containing
 .BR / union .
-The command validates occupied MBR entries or both GPT headers and entry-table copies, requires a free partition entry, reserves relocated GPT backup metadata where applicable, and reports boot configurations that would need a future parameter edit. A successful result is a read-only eligibility plan; persistence creation is not yet implemented.
+The command validates occupied MBR entries or both GPT headers and entry-table copies, requires a free partition entry, reserves relocated GPT backup metadata where applicable, and reports boot configurations that require a parameter edit.
+.PP
+The separate experimental writer uses a fresh GPT layout with a FAT32 EFI System Partition and ext4 persistence partition. It is UEFI-only, requires an architecture-matching fallback bootloader, verifies both GPT copies, copies and rehashes a bounded FAT32-compatible media manifest, atomically enables the persistence boot parameter, re-detects the activated contract, and checks both filesystems. It remains CLI-only pending physical ARM64 qualification.
 .SH SAFETY
 The program refuses partitions, read-only targets, the running root disk, and an
 image stored on the selected target. It holds and hashes the selected source

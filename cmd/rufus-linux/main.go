@@ -20,6 +20,7 @@ import (
 	"github.com/geocausa/RufusArm64/internal/acquisition"
 	"github.com/geocausa/RufusArm64/internal/device"
 	"github.com/geocausa/RufusArm64/internal/imaging"
+	"github.com/geocausa/RufusArm64/internal/linuxmedia"
 	"github.com/geocausa/RufusArm64/internal/persistence"
 	"github.com/geocausa/RufusArm64/internal/safety"
 	"github.com/geocausa/RufusArm64/internal/secureboot"
@@ -101,6 +102,7 @@ Usage:
   rufusarm64-cli list [--all] [--json]
   rufusarm64-cli inspect --image FILE [--json]
   sudo rufusarm64-cli write --image FILE --device /dev/DEVICE [--verify]
+  sudo rufusarm64-cli write --mode linux-persistent --experimental-persistence --image FILE --device /dev/DEVICE [--persistence-size SIZE]
   sudo rufusarm64-cli verify --image FILE --device /dev/DEVICE
   rufusarm64-cli hash FILE
   rufusarm64-cli dbx inspect (--file FILE | --firmware) [--json]
@@ -113,7 +115,8 @@ Usage:
   rufusarm64-cli persistence plan --image FILE --media-root DIR --target-size SIZE [--size SIZE] [--json]
 
 Acquisition catalogs are accepted only after detached Ed25519 signature, expiry, URL, size, filename, and SHA-256 validation.
-Persistence planning is read-only and currently accepts mounted or extracted Ubuntu 20.04+ casper and Debian live-boot media trees.
+Persistence planning accepts mounted or extracted Ubuntu 20.04+ casper and Debian live-boot media trees.
+The experimental persistent writer is CLI-only, GPT/UEFI-only, and is never accepted by the graphical privileged path.
 
 The automatic mode writes Linux ISOHybrid/raw images directly and creates
 standard Windows installation USBs using automatic FAT32/NTFS selection, WIM splitting, and UEFI:NTFS when required.
@@ -291,7 +294,7 @@ func runWrite(args []string) error {
 	fs := flag.NewFlagSet("write", flag.ContinueOnError)
 	imagePath := fs.String("image", "", "image or ISO file")
 	devicePath := fs.String("device", "", "whole target disk")
-	mode := fs.String("mode", "auto", "auto, raw, or windows")
+	mode := fs.String("mode", "auto", "auto, raw, windows, or linux-persistent")
 	verify := fs.Bool("verify", false, "verify data after writing")
 	yes := fs.Bool("yes", false, "skip interactive confirmation")
 	allowFixed := fs.Bool("allow-fixed", false, "allow a non-removable disk")
@@ -302,7 +305,7 @@ func runWrite(args []string) error {
 	expectedIdentity := fs.String("expected-identity", "", "expected device identity from the list command")
 	cancelFile := fs.String("cancel-file", "", "per-user cancellation marker used by the graphical app")
 	allowForeignArchitecture := fs.Bool("allow-foreign-windows-architecture", false, "allow x86-64-only Windows media on an ARM64 host")
-	volumeLabel := fs.String("volume-label", "RUFUSARM64", "volume label for Windows media")
+	volumeLabel := fs.String("volume-label", "RUFUSARM64", "volume label for extracted Windows or experimental Linux boot media")
 	partitionScheme := fs.String("partition-scheme", "gpt", "Windows media partition scheme: gpt or mbr")
 	targetSystem := fs.String("target-system", "uefi", "Windows target system: uefi or bios")
 	filesystem := fs.String("filesystem", "auto", "Windows media filesystem: auto, fat32, or ntfs")
@@ -318,6 +321,8 @@ func runWrite(args []string) error {
 	winDisableBitLocker := fs.Bool("win-disable-bitlocker", false, "disable automatic Windows device encryption provisioning")
 	winLocale := fs.String("win-locale", "", "apply a Windows regional locale, such as en-GB")
 	winTimeZone := fs.String("win-timezone", "", "apply a Windows time-zone name")
+	experimentalPersistence := fs.Bool("experimental-persistence", false, "enable the experimental CLI-only Linux persistence writer")
+	persistenceSizeText := fs.String("persistence-size", "0", "persistent ext4 size in bytes or K/M/G/T units; zero uses remaining space")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -329,9 +334,9 @@ func runWrite(args []string) error {
 		return errors.New("the graphical writer requires an expected device identity; refresh the drive list and try again")
 	}
 	switch *mode {
-	case "auto", "raw", "windows":
+	case "auto", "raw", "windows", "linux-persistent":
 	default:
-		return errors.New("--mode must be auto, raw, or windows")
+		return errors.New("--mode must be auto, raw, windows, or linux-persistent")
 	}
 	if os.Getenv("PKEXEC_UID") != "" {
 		if !*jsonProgress || !*yes || *expectedIdentity == "" || *cancelFile == "" || *mode != "auto" || *allowFixed || *noUnmount || *forceRaw || *allowForeignArchitecture {
@@ -428,6 +433,10 @@ func runWrite(args []string) error {
 	if err != nil {
 		return err
 	}
+	persistenceSize, err := persistence.ParseSize(*persistenceSizeText)
+	if err != nil {
+		return fmt.Errorf("parse --persistence-size: %w", err)
+	}
 	scheme := strings.ToLower(strings.TrimSpace(*partitionScheme))
 	if scheme != "gpt" && scheme != "mbr" {
 		return errors.New("--partition-scheme must be gpt or mbr")
@@ -462,6 +471,22 @@ func runWrite(args []string) error {
 	}
 	if selectedMode != "windows" && (winOptions.Enabled() || scheme != "gpt" || targetSystemChoice != "uefi" || filesystemChoice != "auto" || clusterSize != 0 || *driverFolder != "" || *dbxFile != "" || *fullFormat || *badBlockCheck) {
 		return errors.New("Windows partition and setup options can only be used with a supported Windows installation ISO")
+	}
+	if selectedMode == "linux-persistent" {
+		if !*experimentalPersistence {
+			return errors.New("experimental Linux persistence requires --experimental-persistence")
+		}
+		if !inspection.HasOpticalFilesystem() || !inspection.LooksLikeRawBootMedia() {
+			return errors.New("experimental Linux persistence requires a recognized bootable Linux ISOHybrid image")
+		}
+		if *forceRaw || *allowForeignArchitecture {
+			return errors.New("raw-image and foreign-Windows architecture overrides are incompatible with Linux persistence")
+		}
+		if scheme != "gpt" || targetSystemChoice != "uefi" || filesystemChoice != "auto" || clusterSize != 0 {
+			return errors.New("experimental Linux persistence currently requires GPT, UEFI, and automatic filesystem settings")
+		}
+	} else if *experimentalPersistence || persistenceSize != 0 {
+		return errors.New("--experimental-persistence and --persistence-size require --mode linux-persistent")
 	}
 	if err := windowsconfig.Validate(winOptions); err != nil {
 		return err
@@ -535,6 +560,43 @@ func runWrite(args []string) error {
 	}
 	postWriteTargetCheck := func(source *os.File) error {
 		return targetCheck(source, "")
+	}
+
+	if selectedMode == "linux-persistent" {
+		out.event(jsonEvent{Event: "stage", Stage: "linux_persistence", Message: "Creating experimental persistent Linux media…"})
+		_, err := linuxmedia.CreatePersistent(ctx, *imagePath, resolved, linuxmedia.PersistentCreateOptions{
+			TargetSize:        dev.Size,
+			ExpectedDeviceID:  kernelDeviceID,
+			ExpectedSource:    sourceIdentity,
+			Architecture:      runtime.GOARCH,
+			PersistenceSize:   persistenceSize,
+			VolumeLabel:       *volumeLabel,
+			BeforeDestructive: postWriteTargetCheck,
+		}, func(event linuxmedia.PersistentEvent) {
+			eventName := "stage"
+			if event.Done > 0 || event.Total > 0 {
+				eventName = "progress"
+			}
+			if event.Stage == "log" {
+				eventName = "log"
+			}
+			if event.Stage == "complete" {
+				eventName = "complete"
+			}
+			message := event.Message
+			if event.Path != "" {
+				message = strings.TrimSpace(message + " " + event.Path)
+			}
+			out.event(jsonEvent{Event: eventName, Stage: event.Stage, Message: message, Done: event.Done, Total: event.Total})
+		})
+		if err != nil {
+			return err
+		}
+		if err := safety.RereadPartitionTable(resolved); err != nil {
+			out.event(jsonEvent{Event: "log", Stage: "warning", Message: fmt.Sprintf("Warning: %v", err)})
+		}
+		out.event(jsonEvent{Event: "complete", Stage: "complete", Message: "Experimental persistent Linux USB created and verified."})
+		return nil
 	}
 
 	if selectedMode == "windows" {
@@ -666,8 +728,8 @@ func runWrite(args []string) error {
 }
 
 func selectWriteMode(requested string, inspection imaging.ImageInfo, forceRaw bool) (string, error) {
-	if requested != "auto" && requested != "raw" && requested != "windows" {
-		return "", errors.New("mode must be auto, raw, or windows")
+	if requested != "auto" && requested != "raw" && requested != "windows" && requested != "linux-persistent" {
+		return "", errors.New("mode must be auto, raw, windows, or linux-persistent")
 	}
 	if !inspection.Recognized() && !forceRaw {
 		return "", errors.New("the selected file is not a recognized ISOHybrid, GPT, or MBR disk image; refusing to write an arbitrary or damaged file")

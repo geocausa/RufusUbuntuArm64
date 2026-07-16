@@ -33,7 +33,9 @@ The materialization primitives repeat the plan against the already-open target b
 
 The writable-tree copy primitive builds a bounded SHA-256 manifest from the read-only media mount, rejects FAT32 collisions and unsafe names, refuses external or directory symbolic links, materializes only in-tree regular-file links, copies through same-directory temporary files, fsyncs around rename, and rehashes the destination. Its destination must be a private mount held under the future whole-disk orchestration lock.
 
-These functions are not a public persistence writer. A future orchestration layer must still create the writable boot-partition layout, keep the whole-disk lock across copy, table refresh and filesystem creation, repeat source/target checks, and preserve cancellation and pre-erasure preparation guarantees.
+The experimental CLI orchestration layer now creates the writable GPT/FAT32/ext4 layout while retaining the whole-disk lock. It hashes the pinned source before inspection, immediately before erasure, and after creation; invokes the caller target-safety callback at destructive boundaries; writes and verifies backup GPT metadata before primary metadata; requires exact kernel partition geometry; copies into a private mount; re-runs persistence detection after boot patching; checks both filesystems; and flushes target buffers before success.
+
+The graphical privileged path rejects the experimental mode. Physical ARM64 boot qualification remains a separate release gate, and a failure after erasure must be treated as incomplete media rather than recoverable success.
 
 ## Known limitations
 

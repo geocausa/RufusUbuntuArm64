@@ -15,7 +15,7 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 - Optional Windows driver staging and Windows PE auto-loading, with the normal **Load driver** button retained as a fallback.
 - Optional Microsoft Secure Boot DBX download and pre-write EFI revocation scanning.
 - Signed acquisition-catalog verification and checksum-gated, atomic image downloads through the CLI (0.9 development foundation).
-- Read-only Ubuntu casper and Debian live-boot persistence planning through the CLI, plus internal identity-bound table, filesystem, boot-patching, and verified writable-tree copy primitives (0.9 development foundation).
+- Ubuntu casper and Debian live-boot persistence planning plus an explicit CLI-only experimental GPT/UEFI creation path with verified writable-tree copying and ext4 initialization (0.9 development).
 - Full copied-file verification plus FAT32/NTFS consistency checks.
 - Optional full zero-write formatting and a one-pass zero-pattern media check.
 
@@ -135,11 +135,13 @@ The 0.9 development line adds a strict CLI foundation for future ISO acquisition
 
 The 0.9 development line can inspect a plain ISOHybrid image plus a read-only mounted or extracted media tree and produce a non-destructive persistence plan. The initial scope is Ubuntu 20.04+ casper media (`persistent`, ext4 label `casper-rw`) and Debian live-boot media (`persistence`, ext4 label `persistence`, root `persistence.conf` containing `/ union`). MBR and GPT metadata are validated before a plan is returned, including both GPT copies and their CRCs. See `docs/persistence-planning.md`.
 
-The codebase now also contains separately tested primitives for applying an exact plan to MBR/GPT metadata, relocating GPT backup data, atomically patching a writable boot tree without following symbolic links, creating/checking the ext4 persistence filesystem, and building plus copying a SHA-256 manifest from a read-only Linux media tree. The copy layer checks FAT32 names, case collisions, file-size limits and architecture-specific fallback UEFI loaders, and only dereferences file links that resolve beneath the source root. See `docs/linux-media-copy.md`. These primitives are **not yet connected to the public writer** because layout orchestration and physical boot qualification are still required.
+The codebase also contains separately tested primitives for applying exact partition plans, atomically patching writable boot trees without following symbolic links, creating/checking ext4 persistence filesystems, and building plus copying SHA-256 manifests from read-only Linux media trees. The copy layer checks FAT32 names, case collisions, file-size limits and architecture-specific fallback UEFI loaders, and only dereferences file links that resolve beneath the source root. See `docs/linux-media-copy.md`.
+
+A CLI-only experimental writer now connects these foundations for supported GPT/UEFI media. It creates a fresh FAT32 EFI System Partition and ext4 persistence partition under one target lock, verifies both GPT copies, copies and rehashes the media tree, patches only approved boot configurations, re-detects the activated contract, and checks both filesystems. The graphical path rejects this mode. See `docs/persistence-create.md`. Physical ARM64 boot qualification is still required before this can be considered stable.
 
 ## Current limitations
 
-RufusArm64 is not yet feature-equivalent to every official Rufus mode. Version 0.8.0 still does not include Windows To Go, Linux persistence creation, FreeDOS creation, a built-in remote ISO catalog, or FFU restoration. FFU remains explicit rather than deceptive: official Rufus uses Windows’ FFU provider, and a safe Linux-native restore provider has not been integrated.
+RufusArm64 is not yet feature-equivalent to every official Rufus mode. Version 0.8.0 still does not include Windows To Go, stable GUI-supported Linux persistence, FreeDOS creation, a built-in remote ISO catalog, or FFU restoration. FFU remains explicit rather than deceptive: official Rufus uses Windows’ FFU provider, and a safe Linux-native restore provider has not been integrated.
 
 Full Authenticode signer-chain construction, every Linux ISO-specific Syslinux/GRUB workaround, and broad physical-hardware qualification remain ongoing. Passing automated tests cannot prove that every firmware or storage controller will boot.
 
@@ -167,6 +169,7 @@ rufusarm64-cli dbx inspect --file ~/.cache/rufusarm64/dbx/arm64-DBXUpdate.bin
 rufusarm64-cli acquire verify --catalog catalog.json --signature catalog.json.sig --public-key catalog.pub
 rufusarm64-cli acquire list --catalog catalog.json --signature catalog.json.sig --public-key catalog.pub
 rufusarm64-cli persistence plan --image ubuntu.iso --media-root /mnt/ubuntu --target-size 64G --size 16G --json
+sudo rufusarm64-cli write --mode linux-persistent --experimental-persistence --image ubuntu.iso --device /dev/sdX --persistence-size 16G
 sudo rufusarm64-cli write \
   --image Windows.iso --device /dev/sdX \
   --partition-scheme mbr --target-system bios \
