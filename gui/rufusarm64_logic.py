@@ -83,6 +83,38 @@ def human_bytes(value):
     return "0 B"
 
 
+def human_rate(value):
+    value = float(value or 0)
+    return f"{human_bytes(value)}/s" if value > 0 else ""
+
+
+def human_duration(seconds):
+    seconds = max(0, int(round(float(seconds or 0))))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours:d}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:d}:{seconds:02d}"
+
+
+def progress_status(stage, done, total, rate=0):
+    stage = (stage or "Working").replace("_", " ").title()
+    done = max(0, int(done or 0))
+    total = max(0, int(total or 0))
+    rate = max(0.0, float(rate or 0))
+    if total <= 0:
+        return stage
+    done = min(done, total)
+    fraction = done / total
+    parts = [f"{stage}: {fraction * 100:.1f}%", f"{human_bytes(done)} of {human_bytes(total)}"]
+    if rate > 0:
+        parts.append(human_rate(rate))
+        remaining = max(0, total - done) / rate
+        if remaining >= 1 and done < total:
+            parts.append(f"{human_duration(remaining)} remaining")
+    return " — ".join(parts)
+
+
 def supported_image_name(path):
     return bool(path) and str(path).lower().endswith(SUPPORTED_IMAGE_SUFFIXES)
 
