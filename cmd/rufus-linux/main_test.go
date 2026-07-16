@@ -150,6 +150,43 @@ func TestReadLimitedRegularFileRejectsDirectory(t *testing.T) {
 	}
 }
 
+func TestPKExecPersistenceAnalyzeRequiresJSONAndCancellationChannel(t *testing.T) {
+	t.Setenv("PKEXEC_UID", "1000")
+	base := []string{
+		"--image", "/tmp/linux.iso",
+		"--expected-source-identity", "1:2:3:4:5",
+		"--target-size", "4G",
+	}
+	if err := runPersistenceAnalyze(base); err == nil || !strings.Contains(err.Error(), "requires --json and a trusted --cancel-file") {
+		t.Fatalf("missing graphical boundary flags error = %v", err)
+	}
+	withJSON := append(append([]string{}, base...), "--json")
+	if err := runPersistenceAnalyze(withJSON); err == nil || !strings.Contains(err.Error(), "requires --json and a trusted --cancel-file") {
+		t.Fatalf("missing cancellation channel error = %v", err)
+	}
+}
+
+func TestPersistenceAnalyzeRejectsPositionalArguments(t *testing.T) {
+	err := runPersistenceAnalyze([]string{"unexpected"})
+	if err == nil || !strings.Contains(err.Error(), "does not accept positional arguments") {
+		t.Fatalf("positional argument error = %v", err)
+	}
+}
+
+func TestPersistenceAnalyzeRejectsMalformedSourceIdentityBeforePrivilege(t *testing.T) {
+	t.Setenv("PKEXEC_UID", "1000")
+	err := runPersistenceAnalyze([]string{
+		"--image", "/tmp/linux.iso",
+		"--expected-source-identity", "not-an-identity",
+		"--target-size", "4G",
+		"--cancel-file", "/run/user/1000/rufusarm64-test.cancel",
+		"--json",
+	})
+	if err == nil || !strings.Contains(err.Error(), "parse --expected-source-identity") {
+		t.Fatalf("malformed source identity error = %v", err)
+	}
+}
+
 func TestPersistencePlanCommand(t *testing.T) {
 	imagePath := filepath.Join(t.TempDir(), "ubuntu.iso")
 	image := make([]byte, 64*1024*1024)

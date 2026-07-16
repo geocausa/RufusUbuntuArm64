@@ -133,7 +133,7 @@ Version 0.9.0 adds a strict CLI foundation for future ISO acquisition. A catalog
 
 ## Linux persistence planning foundation
 
-Version 0.9.0 can inspect a plain ISOHybrid image plus a read-only mounted or extracted media tree and produce a non-destructive persistence plan. The initial scope is Ubuntu 20.04+ casper media (`persistent`, ext4 label `casper-rw`) and Debian live-boot media (`persistence`, ext4 label `persistence`, root `persistence.conf` containing `/ union`). MBR and GPT metadata are validated before a plan is returned, including both GPT copies and their CRCs. See `docs/persistence-planning.md`.
+Version 0.9.0 can inspect a plain ISOHybrid image plus a read-only mounted or extracted media tree and produce a non-destructive persistence plan. The 0.10 graphical path can instead ask the privileged helper to mount the identity-bound ISO privately with read-only, no-suid, no-device, and no-exec restrictions; only target capacity is supplied and no target device is opened. The initial scope is Ubuntu 20.04+ casper media (`persistent`, ext4 label `casper-rw`) and Debian live-boot media (`persistence`, ext4 label `persistence`, root `persistence.conf` containing `/ union`). MBR and GPT metadata are validated before a plan is returned, including both GPT copies and their CRCs. See `docs/persistence-planning.md`.
 
 The codebase also contains separately tested primitives for applying exact partition plans, atomically patching writable boot trees without following symbolic links, creating/checking ext4 persistence filesystems, and building plus copying SHA-256 manifests from read-only Linux media trees. The copy layer checks FAT32 names, case collisions, file-size limits and architecture-specific fallback UEFI loaders, and only dereferences file links that resolve beneath the source root. See `docs/linux-media-copy.md`.
 
@@ -169,6 +169,8 @@ rufusarm64-cli dbx inspect --file ~/.cache/rufusarm64/dbx/arm64-DBXUpdate.bin
 rufusarm64-cli acquire verify --catalog catalog.json --signature catalog.json.sig --public-key catalog.pub
 rufusarm64-cli acquire list --catalog catalog.json --signature catalog.json.sig --public-key catalog.pub
 rufusarm64-cli persistence plan --image ubuntu.iso --media-root /mnt/ubuntu --target-size 64G --size 16G --json
+# The GTK app uses the identity-bound, private read-only form after authentication:
+sudo rufusarm64-cli persistence analyze --image ubuntu.iso --expected-source-identity DEV:INO:SIZE:MTIME:CTIME --target-size 64G --size 16G --json
 sudo rufusarm64-cli write --mode linux-persistent --experimental-persistence --image ubuntu.iso --device /dev/sdX --persistence-size 16G
 sudo rufusarm64-cli qualify start --record /cdrom/.rufusarm64/creation.json --output ~/rufusarm64-initial.json
 # Reboot the same persistent USB, then:

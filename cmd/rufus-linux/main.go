@@ -116,11 +116,13 @@ Usage:
   rufusarm64-cli acquire list --catalog FILE --signature FILE --public-key FILE [--json]
   rufusarm64-cli acquire download --catalog FILE --signature FILE --public-key FILE --id ID [--output FILE]
   rufusarm64-cli persistence plan --image FILE --media-root DIR --target-size SIZE [--size SIZE] [--json]
+  sudo rufusarm64-cli persistence analyze --image FILE --expected-source-identity ID --target-size SIZE [--size SIZE] [--json]
   sudo rufusarm64-cli qualify start --record FILE --output FILE [--state-dir DIR] [--json]
   sudo rufusarm64-cli qualify verify --record FILE --output FILE [--state-dir DIR] [--json]
 
 Acquisition catalogs are accepted only after detached Ed25519 signature, expiry, URL, size, filename, and SHA-256 validation.
 Persistence planning accepts mounted or extracted Ubuntu 20.04+ casper and Debian live-boot media trees.
+Automatic analysis mounts the selected plain ISOHybrid image privately and read-only; it never opens a target device.
 The experimental persistent writer is CLI-only, GPT/UEFI-only, and is never accepted by the graphical privileged path.
 Qualification start records the first successful persistent boot; qualification verify requires a later reboot and surviving state.
 
@@ -357,7 +359,9 @@ func runWrite(args []string) error {
 	}
 	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	ctx, cancelCleanup, err := safety.CancellationContext(signalCtx, *cancelFile)
+	timeoutCtx, timeoutCancel := context.WithTimeout(signalCtx, 2*time.Minute)
+	defer timeoutCancel()
+	ctx, cancelCleanup, err := safety.CancellationContext(timeoutCtx, *cancelFile)
 	if err != nil {
 		return err
 	}
@@ -772,11 +776,13 @@ type persistencePlanOutput struct {
 
 func runPersistence(args []string) error {
 	if len(args) == 0 {
-		return errors.New("persistence requires plan")
+		return errors.New("persistence requires plan or analyze")
 	}
 	switch args[0] {
 	case "plan":
 		return runPersistencePlan(args[1:])
+	case "analyze":
+		return runPersistenceAnalyze(args[1:])
 	default:
 		return fmt.Errorf("unknown persistence command %q", args[0])
 	}
@@ -872,6 +878,87 @@ func runPersistencePlan(args []string) error {
 	if len(plan.PatchPaths) > 0 {
 		fmt.Printf("  Boot configurations requiring an edit: %s\n", strings.Join(plan.PatchPaths, ", "))
 	}
+	return nil
+}
+
+func runPersistenceAnalyze(args []string) error {
+	fsFlags := flag.NewFlagSet("persistence analyze", flag.ContinueOnError)
+	imagePath := fsFlags.String("image", "", "plain ISOHybrid image")
+	expectedSourceText := fsFlags.String("expected-source-identity", "", "identity recorded by the unprivileged graphical application")
+	targetSizeText := fsFlags.String("target-size", "", "planned target size in bytes or K/M/G/T units")
+	requestedSizeText := fsFlags.String("size", "0", "requested persistence size; zero uses all available space")
+	cancelFile := fsFlags.String("cancel-file", "", "per-user cancellation marker used by the graphical app")
+	asJSON := fsFlags.Bool("json", false, "output JSON")
+	if err := fsFlags.Parse(args); err != nil {
+		return err
+	}
+	if fsFlags.NArg() != 0 {
+		return errors.New("persistence analyze does not accept positional arguments")
+	}
+	if *imagePath == "" || *expectedSourceText == "" || *targetSizeText == "" {
+		return errors.New("--image, --expected-source-identity, and --target-size are required")
+	}
+	if os.Getenv("PKEXEC_UID") != "" && (!*asJSON || *cancelFile == "") {
+		return errors.New("graphical automatic persistence analysis requires --json and a trusted --cancel-file")
+	}
+	targetSize, err := persistence.ParseSize(*targetSizeText)
+	if err != nil || targetSize == 0 {
+		if err == nil {
+			err = errors.New("target size must be greater than zero")
+		}
+		return fmt.Errorf("parse --target-size: %w", err)
+	}
+	requestedSize, err := persistence.ParseSize(*requestedSizeText)
+	if err != nil {
+		return fmt.Errorf("parse --size: %w", err)
+	}
+	expectedSource, err := sourcefile.ParseIdentity(*expectedSourceText)
+	if err != nil {
+		return fmt.Errorf("parse --expected-source-identity: %w", err)
+	}
+	absoluteImage, err := filepath.Abs(*imagePath)
+	if err != nil {
+		return fmt.Errorf("make image path absolute: %w", err)
+	}
+	resolvedImage, err := filepath.EvalSymlinks(absoluteImage)
+	if err != nil {
+		return fmt.Errorf("resolve image path: %w", err)
+	}
+	if err := safety.RequireRoot(); err != nil {
+		return err
+	}
+	setTrustedSystemPath()
+	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	timeoutCtx, timeoutCancel := context.WithTimeout(signalCtx, 2*time.Minute)
+	defer timeoutCancel()
+	ctx, cancelCleanup, err := safety.CancellationContext(timeoutCtx, *cancelFile)
+	if err != nil {
+		return err
+	}
+	defer cancelCleanup()
+	result, err := linuxmedia.AnalyzePersistent(ctx, resolvedImage, linuxmedia.PersistentAnalysisOptions{
+		ExpectedSource:  expectedSource,
+		TargetSize:      targetSize,
+		PersistenceSize: requestedSize,
+	}, nil)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(result)
+	}
+	fmt.Printf("Persistence analysis for %s\n", result.Detection.DisplayName)
+	fmt.Printf("  Family: %s\n", result.Detection.Family)
+	fmt.Printf("  Partition: %s #%d, start %s, size %s\n", result.Plan.PartitionTable, result.Plan.PartitionNumber, humanBytes(result.Plan.StartBytes), humanBytes(result.Plan.SizeBytes))
+	fmt.Printf("  Filesystem: %s, label %q\n", result.Plan.Filesystem, result.Plan.FilesystemLabel)
+	fmt.Printf("  Boot parameter: %s\n", result.Plan.BootParameter)
+	if len(result.Plan.PatchPaths) > 0 {
+		fmt.Printf("  Boot configurations requiring an edit: %s\n", strings.Join(result.Plan.PatchPaths, ", "))
+	}
+	fmt.Println("  Read-only analysis completed; no target device was opened.")
 	return nil
 }
 
