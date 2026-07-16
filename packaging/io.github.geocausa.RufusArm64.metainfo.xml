@@ -7,15 +7,21 @@
   <project_license>GPL-3.0-or-later</project_license>
   <description>
     <p>RufusArm64 is an unofficial bootable-USB creator designed for Ubuntu on ARM64 computers.</p>
-    <p>It writes raw and ISOHybrid media, prepares compressed and common virtual-disk inputs, creates Windows installation media, verifies signed acquisition catalogs, and provides an explicitly experimental CLI-only persistent-Linux workflow.</p>
+    <p>It writes raw and ISOHybrid media, prepares compressed and common virtual-disk inputs, creates Windows installation media, verifies signed acquisition catalogs, and provides a guarded graphical persistent-live USB workflow for supported Ubuntu casper and Debian live-boot media.</p>
   </description>
   <launchable type="desktop-id">io.github.geocausa.RufusArm64.desktop</launchable>
   <url type="homepage">https://github.com/geocausa/RufusUbuntuArm64</url>
   <developer_name>RufusArm64 contributors</developer_name>
   <provides>
     <binary>rufusarm64</binary>
+    <binary>rufusarm64-persistence</binary>
   </provides>
   <releases>
+    <release version="0.10.0" date="2026-07-16">
+      <description>
+        <p>Adds the guarded graphical persistent-live USB wizard, identity-bound read-only analysis and creation, modern Ubuntu casper cmdline support, reboot qualification records, and the threshold-signed built-in acquisition-channel foundation.</p>
+      </description>
+    </release>
     <release version="0.9.0" date="2026-07-16">
       <description>
         <p>Adds signed image acquisition, richer diagnostics, and a guarded CLI-only experimental Linux persistence workflow with verified GPT, FAT32, ext4, boot-file, and media-copy operations.</p>
