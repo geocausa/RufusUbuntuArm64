@@ -16,7 +16,7 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 ## Install on Ubuntu ARM64
 
 ```bash
-sudo apt install ./rufusarm64_0.10.0_arm64.deb
+sudo apt install ./rufusarm64_0.10.1_arm64.deb
 ```
 
 The package upgrades older `rufusarm64` installations in place. Open **RufusArm64** or **RufusArm64 Persistent Live USB** from the application menu afterward.
@@ -34,7 +34,7 @@ Everything on the selected USB is permanently erased.
 
 ## Persistent Linux media
 
-Version 0.10.0 adds a separate graphical **Persistent Live USB** wizard. It currently supports a deliberately narrow contract:
+Version 0.10.1 includes a separate graphical **Persistent Live USB** wizard. It currently supports a deliberately narrow contract:
 
 - plain raw-bootable ISOHybrid media;
 - Ubuntu 20.04+ casper or Debian live-boot;
@@ -60,10 +60,12 @@ For the structural form, the analyzer also requires modern casper metadata such 
 
 1. Select the Linux ISO and exact removable USB.
 2. Choose a persistence size; zero uses the suitable remaining space.
-3. Run **Analyze selected image**. This identity-bound step is read-only and never opens the USB device.
-4. Review the detected family, filesystem label, boot parameter, layout, and boot files to be changed.
+3. Run **Analyze selected image**. This identity-bound step mounts only the ISO read-only and never opens the USB device.
+4. Review the detected family, filesystem label, boot parameter, fresh GPT layout, required FAT32 capacity, and boot files to be changed.
 5. Confirm **Erase and create persistent USB**.
 6. Keep the drive connected while data are copied, flushed, and checked. Slow flash drives may spend several minutes committing cached writes.
+
+Persistence analysis and creation intentionally ignore the ISO's embedded hybrid MBR geometry. Like upstream Rufus, the creator builds a fresh target GPT containing a writable FAT32 boot partition and a separate ext4 persistence partition, then copies and verifies the approved live-media tree.
 
 Creation is not final qualification. Boot the USB and run:
 
@@ -126,7 +128,7 @@ Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, and the
 The installer is produced at:
 
 ```text
-dist/rufusarm64_0.10.0_arm64.deb
+dist/rufusarm64_0.10.1_arm64.deb
 ```
 
 ## Command-line examples
