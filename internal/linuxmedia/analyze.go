@@ -38,14 +38,14 @@ type PersistentAnalysisOptions struct {
 // is the persistence partition within Layout, not an extension of the ISO's
 // embedded hybrid partition table.
 type PersistentAnalysisResult struct {
-	Detection         persistence.Detection `json:"detection"`
-	Plan              persistence.Plan      `json:"plan"`
-	Layout            PersistentLayout      `json:"layout"`
-	ImageSize         uint64                `json:"image_size"`
-	TargetSize        uint64                `json:"target_size"`
-	ManifestEntries   int                   `json:"manifest_entries"`
-	ManifestBytes     uint64                `json:"manifest_bytes"`
-	FAT32RequiredBytes uint64               `json:"fat32_required_bytes"`
+	Detection          persistence.Detection `json:"detection"`
+	Plan               persistence.Plan      `json:"plan"`
+	Layout             PersistentLayout      `json:"layout"`
+	ImageSize          uint64                `json:"image_size"`
+	TargetSize         uint64                `json:"target_size"`
+	ManifestEntries    int                   `json:"manifest_entries"`
+	ManifestBytes      uint64                `json:"manifest_bytes"`
+	FAT32RequiredBytes uint64                `json:"fat32_required_bytes"`
 }
 
 type persistentAnalysisRunner func(context.Context, string, ...string) error
