@@ -18,6 +18,10 @@ const (
 	defaultAlignment     = uint64(1024 * 1024)
 	minimumPartitionSize = uint64(1024 * 1024 * 1024)
 	maxGPTEntriesBytes   = uint64(64 * 1024 * 1024)
+
+	isoDescriptorSize  = uint64(2048)
+	isoDescriptorStart = uint64(16) * isoDescriptorSize
+	isoDescriptorLimit = 32
 )
 
 type TableKind string
@@ -136,10 +140,13 @@ func inspectTable(reader io.ReaderAt, imageSize uint64) (tableLayout, error) {
 	if header[510] != 0x55 || header[511] != 0xaa {
 		return tableLayout{}, errors.New("persistence requires an MBR or GPT ISOHybrid image")
 	}
+
+	isoHybrid := hasISO9660PrimaryVolumeDescriptor(reader, imageSize)
 	protective := false
 	freeMBR := -1
 	imageSectors := imageSize / sectorSize
 	mbrExtents := make([]gptExtent, 0, 4)
+
 	for index := 0; index < 4; index++ {
 		entry := header[446+index*16 : 446+(index+1)*16]
 		if allZero(entry) {
@@ -151,6 +158,7 @@ func inspectTable(reader io.ReaderAt, imageSize uint64) (tableLayout, error) {
 		if entry[0] != 0 && entry[0] != 0x80 {
 			return tableLayout{}, fmt.Errorf("MBR partition %d has an invalid boot flag", index+1)
 		}
+
 		partitionType := entry[4]
 		start := uint64(binary.LittleEndian.Uint32(entry[8:12]))
 		count := uint64(binary.LittleEndian.Uint32(entry[12:16]))
@@ -164,17 +172,34 @@ func inspectTable(reader io.ReaderAt, imageSize uint64) (tableLayout, error) {
 			protective = true
 			continue
 		}
-		if partitionType == 0 || start == 0 || count == 0 || start+count < start || start+count > imageSectors {
-			return tableLayout{}, fmt.Errorf("MBR partition %d has an invalid extent", index+1)
+
+		// ISOHybrid producers such as xorriso may use occupied type-0 entries,
+		// an ISO-covering extent beginning at LBA 0, and overlapping mappings for
+		// embedded EFI/boot images. Those are metadata views of bytes inside the
+		// ISO, not free partition slots. Permit them only when a real ISO9660 PVD
+		// is present and every claimed sector remains inside the source image.
+		if count == 0 || start+count < start || start+count > imageSectors || (!isoHybrid && (partitionType == 0 || start == 0)) {
+			return tableLayout{}, fmt.Errorf(
+				"MBR partition %d has an invalid extent (type=0x%02x start=%d sectors=%d image_sectors=%d)",
+				index+1, partitionType, start, count, imageSectors,
+			)
 		}
 		mbrExtents = append(mbrExtents, gptExtent{first: start, last: start + count - 1, index: index})
 	}
-	sort.Slice(mbrExtents, func(i, j int) bool { return mbrExtents[i].first < mbrExtents[j].first })
-	for index := 1; index < len(mbrExtents); index++ {
-		if mbrExtents[index].first <= mbrExtents[index-1].last {
-			return tableLayout{}, fmt.Errorf("MBR partitions %d and %d overlap", mbrExtents[index-1].index+1, mbrExtents[index].index+1)
+
+	// Ordinary raw MBR images must remain non-overlapping. ISOHybrid tables are
+	// intentionally allowed to contain overlapping views, but all of them were
+	// already proven above to be bounded by the immutable source image. The new
+	// persistence partition starts after that image, so it cannot overlap them.
+	if !isoHybrid {
+		sort.Slice(mbrExtents, func(i, j int) bool { return mbrExtents[i].first < mbrExtents[j].first })
+		for index := 1; index < len(mbrExtents); index++ {
+			if mbrExtents[index].first <= mbrExtents[index-1].last {
+				return tableLayout{}, fmt.Errorf("MBR partitions %d and %d overlap", mbrExtents[index-1].index+1, mbrExtents[index].index+1)
+			}
 		}
 	}
+
 	gptSignature := string(header[512:520]) == "EFI PART"
 	if protective != gptSignature {
 		return tableLayout{}, errors.New("protective MBR and primary GPT header are inconsistent")
@@ -186,6 +211,32 @@ func inspectTable(reader io.ReaderAt, imageSize uint64) (tableLayout, error) {
 		return tableLayout{}, errors.New("MBR has no free primary partition entry for persistence")
 	}
 	return tableLayout{Kind: TableMBR, FreeIndex: freeMBR}, nil
+}
+
+func hasISO9660PrimaryVolumeDescriptor(reader io.ReaderAt, imageSize uint64) bool {
+	if reader == nil || imageSize < isoDescriptorStart+isoDescriptorSize {
+		return false
+	}
+	descriptor := make([]byte, isoDescriptorSize)
+	for index := 0; index < isoDescriptorLimit; index++ {
+		offset := isoDescriptorStart + uint64(index)*isoDescriptorSize
+		if offset+isoDescriptorSize > imageSize {
+			return false
+		}
+		if _, err := reader.ReadAt(descriptor, int64(offset)); err != nil {
+			return false
+		}
+		if string(descriptor[1:6]) != "CD001" || descriptor[6] != 1 {
+			continue
+		}
+		switch descriptor[0] {
+		case 1:
+			return true
+		case 255:
+			return false
+		}
+	}
+	return false
 }
 
 type gptHeader struct {
