@@ -16,7 +16,7 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 ## Install on Ubuntu ARM64
 
 ```bash
-sudo apt install ./rufusarm64_0.10.3_arm64.deb
+sudo apt install ./rufusarm64_0.10.4_arm64.deb
 ```
 
 The package upgrades older `rufusarm64` installations in place. One visible **RufusArm64** application entry is installed. Its normal launch opens the ordinary writer, and its **Create Persistent Live USB** desktop action opens the guarded persistence wizard.
@@ -37,7 +37,7 @@ The **Create USB** button in the ordinary writer always performs the normal imag
 
 ## Persistent Linux media
 
-Version 0.10.3 retains the separate guarded persistence wizard internally while presenting only one desktop application icon. Open it from the same RufusArm64 application entry using the **Create Persistent Live USB** action. The direct command remains available for troubleshooting:
+Version 0.10.4 retains the separate guarded persistence wizard internally while presenting only one desktop application icon. Open it from the same RufusArm64 application entry using the **Create Persistent Live USB** action. The direct command remains available for troubleshooting:
 
 ```text
 rufusarm64 --persistence
@@ -51,6 +51,7 @@ The wizard currently supports a deliberately narrow contract:
 - an architecture-matching fallback loader in `EFI/BOOT`;
 - a FAT32-compatible live-media tree;
 - bounded in-tree file and directory symbolic links that can be safely materialized as ordinary FAT32 entries;
+- harmless direct root-self aliases such as the official Ubuntu 26.04 `ubuntu -> .` link, which are omitted rather than recursively copied;
 - a writable FAT32 boot partition and separate ext4 persistence partition;
 - at least 1 GiB of persistence capacity.
 
@@ -78,7 +79,7 @@ For the structural form, the analyzer also requires modern casper metadata such 
 
 Persistence analysis and creation intentionally ignore the ISO's embedded hybrid MBR geometry. Like upstream Rufus, the creator builds a fresh target GPT containing a writable FAT32 boot partition and a separate ext4 persistence partition, then copies and verifies the approved live-media tree.
 
-Relative directory links used by Debian/Ubuntu repository metadata, such as `dists/stable`, are copied as real directories because FAT32 has no symbolic-link representation. Their files are hashed, counted again for capacity planning, copied through the same verified path, and rehashed on the destination. Absolute links, links outside the ISO, cycles, device nodes, and unbounded expansions remain refused.
+Relative directory links used by Debian/Ubuntu repository metadata, such as `dists/stable`, are copied as real directories because FAT32 has no symbolic-link representation. Their files are hashed, counted again for capacity planning, copied through the same verified path, and rehashed on the destination. A direct root-self alias such as `ubuntu -> .` is omitted because reproducing it on FAT32 would require recursively duplicating the complete image. Nested links back to the media root, links outside the ISO, cycles, device nodes, and unbounded expansions remain refused.
 
 Creation is not final qualification. Boot the USB and run:
 
@@ -119,12 +120,12 @@ x86 and x86-64 media may additionally use MBR/BIOS when the ISO contains compati
 The privileged helpers:
 
 - accept only whole block devices beneath `/dev`;
-- refuse partitions, read-only devices, and the disk backing the running system;
+- refuse partitions, read-only targets, and the disk backing the running system;
 - hide internal MMC/eMMC and normal fixed disks from the default list;
 - bind the selected source and target to refreshed identities;
 - hash the already-open source before destructive work and recheck it later;
 - revalidate the target immediately before destructive phases;
-- reject unsafe symbolic-link traversal while allowing only bounded in-tree materialization for FAT32 live-media copying;
+- reject unsafe symbolic-link traversal while allowing only bounded in-tree materialization and the explicit omission of a direct root-self alias for FAT32 live-media copying;
 - hold target locks, flush block buffers, verify copied files, and check filesystems;
 - require fresh Polkit authorization and support protected cancellation.
 
@@ -141,7 +142,7 @@ Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, and the
 The installer is produced at:
 
 ```text
-dist/rufusarm64_0.10.3_arm64.deb
+dist/rufusarm64_0.10.4_arm64.deb
 ```
 
 ## Command-line examples
