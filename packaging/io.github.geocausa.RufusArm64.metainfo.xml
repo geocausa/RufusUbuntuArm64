@@ -17,6 +17,11 @@
     <binary>rufusarm64-persistence</binary>
   </provides>
   <releases>
+    <release version="0.10.4" date="2026-07-17">
+      <description>
+        <p>Fixes persistence analysis for the official Ubuntu 26.04 ARM64 desktop image's harmless root-self alias while preserving strict escape, nested-root, and cycle rejection.</p>
+      </description>
+    </release>
     <release version="0.10.3" date="2026-07-17">
       <description>
         <p>Consolidates the desktop experience to one visible RufusArm64 application entry with a Create Persistent Live USB action, while retaining the separate guarded persistence helper internally.</p>
