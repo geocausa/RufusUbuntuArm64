@@ -53,13 +53,19 @@ jobs:
         run: |
           set -euo pipefail
           git apply --check --verbose "${PATCH_PATH}"
-      - name: Apply and format reviewed patch
+      - name: Apply reviewed patch
         env:
           PATCH_PATH: .github/patches/persistence-formatter-reopen.patch
         run: |
           set -euo pipefail
-          git apply "${PATCH_PATH}"
+          git apply --verbose "${PATCH_PATH}"
+      - name: Format added Go files
+        run: |
+          set -euo pipefail
           gofmt -w internal/safety/reopenable_linux.go internal/safety/reopenable_linux_test.go
+      - name: Validate patched diff whitespace
+        run: |
+          set -euo pipefail
           git diff --check
       - name: Run focused and complete Go tests
         run: |
