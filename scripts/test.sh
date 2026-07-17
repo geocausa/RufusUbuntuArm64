@@ -95,6 +95,9 @@ readelf -h "${native_dir}/channel-admin-amd64" | grep -q 'Machine:.*Advanced Mic
 rm -rf "${native_dir}"
 for script in scripts/*.sh; do bash -n "${script}"; done
 sh -n packaging/rufusarm64
+if command -v shellcheck >/dev/null 2>&1; then
+  shellcheck -x scripts/*.sh packaging/rufusarm64
+fi
 test "$(stat -c %s vendor/uefi-ntfs/uefi-ntfs.img)" -eq 1048576
 (
   cd vendor/uefi-ntfs
@@ -165,9 +168,20 @@ for desktop in (
         raise SystemExit(f"{desktop} Type must be Application")
 PY
 
+if command -v desktop-file-validate >/dev/null 2>&1; then
+  desktop-file-validate packaging/io.github.geocausa.RufusArm64.desktop
+  desktop-file-validate packaging/io.github.geocausa.RufusArm64.Persistence.desktop
+fi
+if command -v appstreamcli >/dev/null 2>&1; then
+  appstreamcli validate --no-net packaging/io.github.geocausa.RufusArm64.metainfo.xml
+fi
+
 VERSION="${VERSION}" scripts/build-deb.sh
 dpkg-deb --info "${PACKAGE}" >/dev/null
 dpkg-deb --contents "${PACKAGE}" >/dev/null
+if command -v lintian >/dev/null 2>&1; then
+  lintian --fail-on error "${PACKAGE}"
+fi
 
 extract_dir="$(mktemp -d)"
 trap 'rm -rf "${extract_dir}" gui/__pycache__' EXIT
@@ -183,6 +197,15 @@ installed_gui="${extract_dir}/usr/lib/rufusarm64/rufusarm64.py"
 [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_persistence.py" ]]
 [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_persistence_logic.py" ]]
 grep -Fxq "VERSION = \"${VERSION}\"" "${installed_gui}"
+python3 - "gui/rufusarm64.py" "${installed_gui}" "${VERSION}" <<'PYGUI'
+import pathlib, re, sys
+source_path, installed_path, version = sys.argv[1:]
+source = pathlib.Path(source_path).read_text(encoding="utf-8")
+installed = pathlib.Path(installed_path).read_text(encoding="utf-8")
+expected, count = re.subn(r'^VERSION = "[^"]+"$', f'VERSION = "{version}"', source, count=1, flags=re.MULTILINE)
+if count != 1 or expected != installed:
+    raise SystemExit("installed GUI differs from the tested source beyond canonical version stamping")
+PYGUI
 grep -Fxq "Version: ${VERSION}" "${extract_dir}/DEBIAN/control"
 wim_engine="${extract_dir}/usr/lib/rufusarm64/wimlib-imagex"
 [[ -x "${wim_engine}" ]]
@@ -228,6 +251,9 @@ done
 [[ -L "${extract_dir}/usr/bin/rufusarm64-cli" ]]
 [[ -x "${extract_dir}/usr/bin/rufusarm64-persistence" ]]
 [[ -f "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.Persistence.desktop" ]]
+grep -q '^NoDisplay=true$' "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.Persistence.desktop"
+grep -q '^Actions=.*Persistence' "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.desktop"
+grep -q 'Open Persistent USB Creator' "${installed_gui}"
 [[ -f "${extract_dir}/usr/share/man/man1/rufusarm64-cli.1.gz" ]]
 [[ -f "${extract_dir}/usr/share/doc/rufusarm64/acquisition-channel.md" ]]
 [[ -f "${extract_dir}/usr/share/doc/rufusarm64/acquisition-admin.md" ]]
@@ -263,6 +289,8 @@ grep -q 'Depends:.*qemu-utils' "${extract_dir}/DEBIAN/control"
 ! grep -q 'Depends:.*parted' "${extract_dir}/DEBIAN/control"
 [[ "$(readlink "${extract_dir}/usr/bin/rufusarm64-cli")" == "../lib/rufusarm64/rufusarm64-helper" ]]
 grep -q '<allow_active>auth_admin</allow_active>' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"
+grep -q '<allow_any>no</allow_any>' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"
+grep -q '<allow_inactive>no</allow_inactive>' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"
 ! grep -q 'auth_admin_keep' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"
 gzip -t "${extract_dir}/usr/share/man/man1/rufusarm64-cli.1.gz"
 grep -q 'GNU GENERAL PUBLIC LICENSE' "${extract_dir}/usr/share/doc/rufusarm64/copyright"
