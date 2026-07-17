@@ -1,20 +1,20 @@
 diff --git a/internal/linuxmedia/layout.go b/internal/linuxmedia/layout.go
 --- a/internal/linuxmedia/layout.go
 +++ b/internal/linuxmedia/layout.go
-@@ -28,6 +28,7 @@ const (
+@@ -28,4 +28,5 @@ const (
  	layoutGPTHeaderSize   = 92
  	layoutGPTEntrySize    = 128
  	layoutGPTEntryCount   = 128
 +	layoutGPTNoAutomount  = uint64(1) << 63
  )
-@@ -343,6 +344,7 @@ func writeLayoutEntry(entry []byte, partitionType, unique [16]byte, layout Partit
+@@ -337,5 +337,6 @@ func writeLayoutEntry(entry []byte, partitionType, unique [16]byte, layout Partit
  	copy(entry[16:32], unique[:])
  	binary.LittleEndian.PutUint64(entry[32:40], layout.StartBytes/sectorSize)
  	binary.LittleEndian.PutUint64(entry[40:48], (layout.StartBytes+layout.SizeBytes)/sectorSize-1)
 +	binary.LittleEndian.PutUint64(entry[48:56], layoutGPTNoAutomount)
  	writeLayoutName(entry[56:128], name)
  }
-@@ -351,7 +353,8 @@ func verifyLayoutEntry(entry []byte, partitionType, unique [16]byte, layout Parti
+@@ -346,6 +347,7 @@ func verifyLayoutEntry(entry []byte, partitionType, unique [16]byte, layout Parti
  	if !bytes.Equal(entry[:16], partitionType[:]) || !bytes.Equal(entry[16:32], unique[:]) ||
  		binary.LittleEndian.Uint64(entry[32:40]) != layout.StartBytes/sectorSize ||
 -		binary.LittleEndian.Uint64(entry[40:48]) != (layout.StartBytes+layout.SizeBytes)/sectorSize-1 {
