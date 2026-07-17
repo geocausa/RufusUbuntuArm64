@@ -75,24 +75,6 @@ def persistence_launcher_path():
     raise FileNotFoundError("The guarded persistence creator is not installed.")
 
 
-def persistence_launcher_path():
-    if os.path.isfile(PERSISTENCE_LAUNCHER) and os.access(PERSISTENCE_LAUNCHER, os.X_OK):
-        return PERSISTENCE_LAUNCHER
-    development = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rufusarm64_persistence.py")
-    if os.path.isfile(development) and os.access(development, os.X_OK):
-        return development
-    raise FileNotFoundError("The guarded persistence creator is not installed.")
-
-
-def persistence_launcher_path():
-    if os.path.isfile(PERSISTENCE_LAUNCHER) and os.access(PERSISTENCE_LAUNCHER, os.X_OK):
-        return PERSISTENCE_LAUNCHER
-    development = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rufusarm64_persistence.py")
-    if os.path.isfile(development) and os.access(development, os.X_OK):
-        return development
-    raise FileNotFoundError("The guarded persistence creator is not installed.")
-
-
 def config_path():
     directory = os.path.join(GLib.get_user_config_dir(), "rufusarm64")
     return directory, os.path.join(directory, "settings.json")
@@ -1305,22 +1287,6 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.progress_detail.set_text("No unverified image was installed.")
             self.message("The image could not be downloaded or verified. No unverified file was installed.", Gtk.MessageType.ERROR)
         return False
-
-    def open_persistence_creator(self, *_):
-        if self.busy:
-            return
-        try:
-            subprocess.Popen([persistence_launcher_path()], start_new_session=True)
-        except OSError as exc:
-            self.message(f"Could not open the persistent USB creator: {exc}", Gtk.MessageType.ERROR)
-
-    def open_persistence_creator(self, *_):
-        if self.busy:
-            return
-        try:
-            subprocess.Popen([persistence_launcher_path()], start_new_session=True)
-        except OSError as exc:
-            self.message(f"Could not open the persistent USB creator: {exc}", Gtk.MessageType.ERROR)
 
     def open_persistence_creator(self, *_):
         if self.busy:
