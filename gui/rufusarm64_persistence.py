@@ -450,8 +450,8 @@ class Window(Gtk.ApplicationWindow):
         self.create_button.set_sensitive(False)
         if code == 0:
             self.progress.set_fraction(1)
-            self.progress.set_text("Persistent live USB created and verified")
-            self.detail.set_text("Boot the USB, then qualify persistence across one reboot.")
+            self.progress.set_text("Persistent live USB creation completed")
+            self.detail.set_text("Internal checks passed. Boot the USB, then qualify persistence across one reboot.")
             self.message(
                 "Persistent live media was created and checked.\n\nBoot it and run:\n\n"
                 "sudo rufusarm64-cli qualify start --record /cdrom/.rufusarm64/creation.json --output ~/rufusarm64-initial.json\n\n"

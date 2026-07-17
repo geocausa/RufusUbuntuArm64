@@ -1862,8 +1862,8 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.cancel_path = None
         if return_code == 0:
             self.progress.set_fraction(1.0)
-            self.progress.set_text("USB created successfully")
-            self.progress_detail.set_text("The operation completed successfully. A diagnostic report can be saved from Details.")
+            self.progress.set_text("USB media creation completed")
+            self.progress_detail.set_text("Software checks completed. Firmware boot still requires testing on the intended computer.")
             self.message(success_message(self.active_mode, self.active_verify_requested, self.active_filesystem), Gtk.MessageType.INFO)
         elif was_cancelled:
             self.progress.set_text("Cancelled safely")

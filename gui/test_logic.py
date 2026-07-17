@@ -198,12 +198,15 @@ class LogicTests(unittest.TestCase):
 
 
     def test_success_message_matches_verification_mode(self):
-        self.assertIn("verified successfully", success_message("windows", True))
-        windows_skipped = success_message("windows", False)
-        self.assertIn("filesystem check passed", windows_skipped)
-        self.assertIn("verification was skipped", windows_skipped)
+        verified = success_message("windows", True)
+        self.assertIn("Copied-data verification passed", verified)
+        self.assertIn("does not prove firmware boot", verified)
+        windows_skipped = success_message("windows", False, "ntfs")
+        self.assertIn("NTFS filesystem consistency check passed", windows_skipped)
+        self.assertIn("copied-file verification was skipped", windows_skipped)
         raw_skipped = success_message("raw", False)
-        self.assertIn("Verification was skipped", raw_skipped)
+        self.assertIn("Copied-data verification was skipped", raw_skipped)
+        self.assertIn("Secure Boot acceptance", raw_skipped)
 
     def test_writer_command_carries_windows_options(self):
         command = build_writer_command(

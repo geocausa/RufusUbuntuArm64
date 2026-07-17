@@ -173,16 +173,20 @@ def device_label(device):
 
 
 def success_message(mode, verify_requested, filesystem="auto"):
-    """Return an accurate GUI completion message for the selected job."""
+    """Describe completed software checks without implying a firmware boot guarantee."""
+    qualification = (
+        "This does not prove firmware boot or Secure Boot acceptance; test the media on the intended computer. "
+        "Remove it safely before unplugging it."
+    )
     if verify_requested:
-        return "The bootable USB was created and verified successfully. Remove it safely before unplugging it."
+        return "USB media creation completed. Copied-data verification passed. " + qualification
     if mode == "windows":
         filesystem_name = "NTFS" if filesystem == "ntfs" else "FAT32" if filesystem == "fat32" else "selected"
         return (
-            f"The bootable USB was created successfully. The {filesystem_name} filesystem check passed, "
-            "but copied-file verification was skipped. Remove it safely before unplugging it."
+            f"USB media creation completed. The {filesystem_name} filesystem consistency check passed, "
+            "but copied-file verification was skipped. " + qualification
         )
-    return "The bootable USB was created successfully. Verification was skipped. Remove it safely before unplugging it."
+    return "USB media creation completed. Copied-data verification was skipped. " + qualification
 
 
 def validate_local_username(value):
