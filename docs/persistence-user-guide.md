@@ -2,23 +2,23 @@
 
 RufusArm64 can create a persistent live USB for a deliberately narrow set of Ubuntu and Debian images.
 
-## Use the persistent-media application
+## Use the persistent-media workflow
 
-The **Create USB** button in the main RufusArm64 window performs an ordinary image write. For a Linux ISOHybrid image, it preserves the image byte-for-byte and therefore creates a normal non-persistent live USB.
+The **Create USB** button in the ordinary RufusArm64 writer performs a normal image write. For a Linux ISOHybrid image, it preserves the image byte-for-byte and therefore creates a non-persistent live USB.
 
-To create persistent media, open **RufusArm64 Persistent Live USB** from the application menu, or run:
+RufusArm64 installs one visible desktop application entry. Open its **Create Persistent Live USB** action to start the guarded persistence wizard, or run:
 
 ```text
 rufusarm64 --persistence
 ```
 
-The dedicated entry point is also available as:
+The implementation-only command remains available as:
 
 ```text
 rufusarm64-persistence
 ```
 
-Only the dedicated persistent-media application presents **Erase and create persistent USB** and invokes the restricted persistence helper.
+Only the guarded persistence wizard presents **Erase and create persistent USB** and invokes the restricted persistence helper. Keeping that helper separate internally prevents the ordinary writer from silently gaining persistence privileges.
 
 ## What persistence means
 
@@ -49,7 +49,7 @@ Compressed images, virtual disks, MBR persistence, BIOS-only media, files too la
 
 ## Creation workflow
 
-1. Open **RufusArm64 Persistent Live USB**.
+1. Open the **Create Persistent Live USB** action from the RufusArm64 application entry, or run `rufusarm64 --persistence`.
 2. Select the plain Linux ISO and the exact removable USB drive.
 3. Choose the persistence size. Zero uses all suitable capacity remaining after the live-media partition.
 4. Run **Analyze selected image**. This step is mandatory and read-only: it mounts only the identity-bound ISO in a private workspace and supplies only the USB's reported capacity. It does not open the USB device.
