@@ -62,6 +62,10 @@ jobs:
       - name: Format added source and documentation
         run: |
           set -euo pipefail
+          sed -i \
+            -e 's/runCommand(t, "umount"/runFormatterTestCommand(t, "umount"/g' \
+            -e 's/^func runCommand(/func runFormatterTestCommand(/' \
+            internal/safety/reopenable_linux_test.go
           gofmt -w internal/safety/reopenable_linux.go internal/safety/reopenable_linux_test.go
           sed -i 's/^\(\*\*Severity:\*\* high destructive-path correctness\)  $/\1/' docs/pre-0.11-code-audit.md
       - name: Validate patched diff whitespace
