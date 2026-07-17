@@ -1,0 +1,127 @@
+name: Audit package policy fix
+
+on:
+  push:
+    branches:
+      - audit/pre-0.11-hardening
+
+permissions:
+  contents: write
+
+concurrency:
+  group: audit-package-policy-fix
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    if: github.repository == 'geocausa/RufusUbuntuArm64'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: audit/pre-0.11-hardening
+      - name: Apply exact reviewed packaging edits
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              text = path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count == 1:
+                  path.write_text(text.replace(old, new, 1), encoding="utf-8")
+                  return
+              if count == 0 and new in text:
+                  return
+              raise SystemExit(f"{path}: expected one exact block, found {count}")
+
+          build = Path("scripts/build-deb.sh")
+          replace_once(
+              build,
+              '''install -Dm644 "${ROOT_DIR}/LICENSE" \\
+            "${PACKAGE_DIR}/usr/share/doc/rufusarm64/copyright"
+          install -Dm644 "${ROOT_DIR}/docs/rufusarm64-cli.1" \\
+            "${PACKAGE_DIR}/usr/share/man/man1/rufusarm64-cli.1"
+          gzip -9n "${PACKAGE_DIR}/usr/share/man/man1/rufusarm64-cli.1"
+          ''',
+              '''install -Dm644 "${ROOT_DIR}/LICENSE" \\
+            "${PACKAGE_DIR}/usr/share/doc/rufusarm64/LICENSE"
+          install -Dm644 "${ROOT_DIR}/packaging/copyright" \\
+            "${PACKAGE_DIR}/usr/share/doc/rufusarm64/copyright"
+          install -Dm644 "${ROOT_DIR}/CHANGELOG.md" \\
+            "${PACKAGE_DIR}/usr/share/doc/rufusarm64/changelog"
+          gzip -9n "${PACKAGE_DIR}/usr/share/doc/rufusarm64/changelog"
+          for page in rufusarm64 rufusarm64-cli rufusarm64-persistence; do
+            install -Dm644 "${ROOT_DIR}/docs/${page}.1" \\
+              "${PACKAGE_DIR}/usr/share/man/man1/${page}.1"
+            gzip -9n "${PACKAGE_DIR}/usr/share/man/man1/${page}.1"
+          done
+          install -Dm644 "${ROOT_DIR}/packaging/rufusarm64.lintian-overrides" \\
+            "${PACKAGE_DIR}/usr/share/lintian/overrides/rufusarm64"
+          ''',
+          )
+          replace_once(
+              build,
+              'Depends: python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, util-linux, mount, dosfstools, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils',
+              'Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, mount, dosfstools, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils',
+          )
+          replace_once(
+              build,
+              ''' using GPT or MBR, UEFI or x86-family BIOS/CSM, FAT32 or NTFS, compressed and
+           virtual-disk inputs, Secure Boot DBX checks, verified boot assets, WIM splitting,
+           and optional drivers.
+          ''',
+              ''' using GPT or MBR, UEFI or x86-family BIOS/CSM, FAT32 or NTFS, and
+           compressed or virtual-disk inputs. It includes Secure Boot DBX checks,
+           verified boot assets, WIM splitting, and optional drivers.
+          ''',
+          )
+
+          test = Path("scripts/test.sh")
+          replace_once(
+              test,
+              '[[ -f "${extract_dir}/usr/share/man/man1/rufusarm64-cli.1.gz" ]]',
+              '''for page in rufusarm64 rufusarm64-cli rufusarm64-persistence; do
+            [[ -f "${extract_dir}/usr/share/man/man1/${page}.1.gz" ]]
+            gzip -t "${extract_dir}/usr/share/man/man1/${page}.1.gz"
+          done
+          [[ -f "${extract_dir}/usr/share/doc/rufusarm64/changelog.gz" ]]
+          gzip -t "${extract_dir}/usr/share/doc/rufusarm64/changelog.gz"
+          [[ -f "${extract_dir}/usr/share/lintian/overrides/rufusarm64" ]]''',
+          )
+          replace_once(
+              test,
+              'grep -q \'^Architecture: arm64$\' "${extract_dir}/DEBIAN/control"\ngrep -q \'Depends:.*mount\' "${extract_dir}/DEBIAN/control"',
+              '''grep -q '^Architecture: arm64$' "${extract_dir}/DEBIAN/control"
+          grep -q 'Depends:.*libc6 (>= 2.38)' "${extract_dir}/DEBIAN/control"
+          grep -q 'Depends:.*mount' "${extract_dir}/DEBIAN/control"
+          if grep -q 'Depends:.*util-linux' "${extract_dir}/DEBIAN/control"; then echo 'package must not depend explicitly on Essential util-linux' >&2; exit 1; fi''',
+          )
+          replace_once(
+              test,
+              '''gzip -t "${extract_dir}/usr/share/man/man1/rufusarm64-cli.1.gz"
+          grep -q 'GNU GENERAL PUBLIC LICENSE' "${extract_dir}/usr/share/doc/rufusarm64/copyright"
+          (cd dist && sha256sum -c "rufusarm64_${VERSION}_arm64.deb.sha256")
+          ''',
+              '''grep -q '^Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/$' "${extract_dir}/usr/share/doc/rufusarm64/copyright"
+          grep -q '/usr/share/common-licenses/GPL-3' "${extract_dir}/usr/share/doc/rufusarm64/copyright"
+          [[ -f "${extract_dir}/usr/share/doc/rufusarm64/LICENSE" ]]
+          (cd dist && sha256sum -c "rufusarm64_${VERSION}_arm64.deb.sha256")
+          bash ./scripts/reproducible-package.sh
+          ''',
+          )
+          PY
+          bash -n scripts/build-deb.sh scripts/test.sh scripts/reproducible-package.sh
+          python3 gui/test_source_structure.py
+      - name: Commit the focused packaging repair
+        run: |
+          if git diff --quiet; then
+            echo "Packaging policy edits already present."
+            exit 0
+          fi
+          git config user.name 'RufusArm64 audit'
+          git config user.email 'actions@users.noreply.github.com'
+          git add scripts/build-deb.sh scripts/test.sh
+          git commit -m 'audit: satisfy Debian package policy gates'
+          git push origin HEAD:audit/pre-0.11-hardening
