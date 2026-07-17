@@ -49,7 +49,8 @@ text, count = re.subn(
 )
 if count != 1:
     raise SystemExit("could not stamp the canonical version into the installed GUI")
-
+path.write_text(text, encoding="utf-8")
+PYVERSION
 grep -Fxq "VERSION = \"${VERSION}\"" "${GUI_TARGET}"
 grep -Fq "Persistent Linux media (guarded creator)" "${GUI_TARGET}"
 grep -Fq "Open Persistent USB Creator" "${GUI_TARGET}"
