@@ -6,7 +6,7 @@ Baseline: `7b10e134b83fca3c82f5dc354f844cee4ed2c557` (`0.10.4`)
 
 Audit disposition at the current branch head:
 
-- **23 fixed findings** with code, regression coverage, or permanent CI/package gates;
+- **24 fixed findings** with code, regression coverage, or permanent CI/package gates;
 - **3 cleared findings** where the original concern did not represent a defect;
 - **4 explicit architectural or trust deferrals** that do not weaken the current documented release contract;
 - **2 planned parity items** that remain outside this corrective branch.
@@ -159,6 +159,22 @@ Implemented correction:
 - add a permanent root-only loop-device CI regression that formats, checks, mounts, writes, and unmounts FAT32 and ext4 through inherited `/proc/self/fd/3` handles.
 
 The resulting failure mode remains explicit: media interrupted before filesystem creation is incomplete and must be recreated. No software-only test changes the separate physical boot and persistence qualification requirement.
+
+### A-033 — persistent GPT partitions permit a desktop automount race
+
+**Severity:** high destructive-path correctness
+**Status:** fixed
+
+A physical Surface Pro 11 and USB retest still reached `mkfs.vfat` with `EBUSY` after A-032 removed the creator's kernel-exclusive partition open. A partitioned-loop diagnostic then proved that the long-held, flocked parent-disk descriptor does not block a formatter reopening the child partition. The remaining host race was that both newly published GPT entries had all attribute bits clear, allowing desktop storage services to automount a stale or newly recognized filesystem between RufusArm64's explicit unmount verification and the formatter's exclusive open.
+
+Implemented correction:
+
+- set GPT attribute bit 63 (do not automount) on both the FAT32 boot partition and ext4 persistence partition before the kernel partition-table reread;
+- include the attribute in exact primary and backup GPT entry-table readback verification;
+- retain the whole-disk lock, partition `flock`, no-follow descriptors, device identity and capacity checks, exact geometry verification, and parent-device binding;
+- release the correction as 0.10.6 so an installed 0.10.5 package is upgraded normally rather than ambiguously reinstalled.
+
+The do-not-automount attribute prevents host desktop policy from claiming the partitions during creation. It does not change their firmware boot type, filesystem format, or normal mountability after the USB is complete.
 
 ## GUI, semantics, and concurrency
 
