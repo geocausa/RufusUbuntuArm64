@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"io"
+	"math"
 	"os"
 	"os/exec"
 	"strconv"
@@ -86,6 +88,9 @@ func writeUEFINTFSGPT(target *os.File, targetSize, sectorSize uint64, label stri
 func writeGPT(target *os.File, targetSize, sectorSize uint64, label string, uefiNTFS bool, bootImageSize uint64) (diskLayout, error) {
 	if target == nil {
 		return diskLayout{}, errors.New("nil GPT target")
+	}
+	if targetSize > uint64(math.MaxInt64) {
+		return diskLayout{}, errors.New("target exceeds the supported signed file-offset range")
 	}
 	if targetSize < minimumGPTDiskBytes {
 		return diskLayout{}, fmt.Errorf("target is too small for a GPT Windows installer: %s", humanBytes(targetSize))
@@ -196,7 +201,7 @@ func writeGPT(target *os.File, targetSize, sectorSize uint64, label string, uefi
 		{0, protectiveMBR, "protective MBR"},
 	}
 	for _, write := range writes {
-		if _, err := target.WriteAt(write.data, int64(write.offset)); err != nil {
+		if _, err := writeGPTMetadataAt(target, write.data, write.offset); err != nil {
 			return diskLayout{}, fmt.Errorf("write %s: %w", write.name, err)
 		}
 	}
@@ -204,6 +209,24 @@ func writeGPT(target *os.File, targetSize, sectorSize uint64, label string, uefi
 		return diskLayout{}, fmt.Errorf("sync GPT metadata: %w", err)
 	}
 	return layout, nil
+}
+
+type gptMetadataWriter interface {
+	WriteAt([]byte, int64) (int, error)
+}
+
+func writeGPTMetadataAt(target gptMetadataWriter, data []byte, offset uint64) (int, error) {
+	if offset > uint64(math.MaxInt64) || uint64(len(data)) > uint64(math.MaxInt64)-offset {
+		return 0, errors.New("GPT metadata write exceeds the supported signed file-offset range")
+	}
+	written, err := target.WriteAt(data, int64(offset))
+	if err != nil {
+		return written, err
+	}
+	if written != len(data) {
+		return written, io.ErrShortWrite
+	}
+	return written, nil
 }
 
 func alignUp(value, alignment uint64) uint64 {

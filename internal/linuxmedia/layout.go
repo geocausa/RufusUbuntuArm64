@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"math"
 	"unicode/utf16"
 
 	"github.com/geocausa/RufusArm64/internal/persistence"
@@ -63,6 +64,9 @@ type layoutTarget interface {
 func PlanPersistentLayout(targetSize, sectorSize, copiedBytes, requestedPersistence uint64, detection persistence.Detection) (PersistentLayout, error) {
 	if !detection.Ready() {
 		return PersistentLayout{}, errors.New("media does not have a complete supported persistence contract")
+	}
+	if targetSize > uint64(math.MaxInt64) {
+		return PersistentLayout{}, errors.New("target exceeds the supported signed file-offset range")
 	}
 	if targetSize < minimumLayoutDiskSize {
 		return PersistentLayout{}, fmt.Errorf("target is too small for persistent Linux media: need at least %d bytes", minimumLayoutDiskSize)
@@ -242,6 +246,9 @@ func WritePersistentGPT(target layoutTarget, layout PersistentLayout) error {
 }
 
 func validatePersistentLayout(layout PersistentLayout) error {
+	if layout.TargetSize > uint64(math.MaxInt64) {
+		return errors.New("persistent layout exceeds the supported signed file-offset range")
+	}
 	if layout.SectorSize < 512 || layout.SectorSize > fat32ClusterBytes || layout.SectorSize&(layout.SectorSize-1) != 0 ||
 		layout.TargetSize < minimumLayoutDiskSize || layout.TargetSize%layout.SectorSize != 0 {
 		return errors.New("persistent layout has invalid target geometry")
@@ -414,6 +421,9 @@ func writeLayoutName(destination []byte, value string) {
 }
 
 func writeLayoutAt(target io.WriterAt, data []byte, offset uint64) error {
+	if offset > uint64(math.MaxInt64) || uint64(len(data)) > uint64(math.MaxInt64)-offset {
+		return errors.New("GPT metadata write exceeds the supported signed file-offset range")
+	}
 	for len(data) > 0 {
 		n, err := target.WriteAt(data, int64(offset))
 		if err != nil {

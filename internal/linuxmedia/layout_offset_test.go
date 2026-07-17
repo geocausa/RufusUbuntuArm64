@@ -29,4 +29,4 @@ type memoryLayoutTarget struct{}
 
 func (*memoryLayoutTarget) WriteAt(data []byte, offset int64) (int, error) { return len(data), nil }
 func (*memoryLayoutTarget) ReadAt(data []byte, offset int64) (int, error)  { return len(data), nil }
-func (*memoryLayoutTarget) Sync() error                                  { return nil }
+func (*memoryLayoutTarget) Sync() error                                    { return nil }
