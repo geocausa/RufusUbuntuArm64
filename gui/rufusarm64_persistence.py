@@ -26,10 +26,8 @@ from rufusarm64_persistence_logic import (
 )
 
 APP_ID = "io.github.geocausa.RufusArm64.Persistence"
-HELPER = os.environ.get("RUFUSARM64_HELPER", "/usr/lib/rufusarm64/rufusarm64-helper")
-PERSISTENCE_HELPER = os.environ.get(
-    "RUFUSARM64_PERSISTENCE_HELPER", "/usr/lib/rufusarm64/rufusarm64-persistence-helper"
-)
+HELPER = "/usr/lib/rufusarm64/rufusarm64-helper"
+PERSISTENCE_HELPER = "/usr/lib/rufusarm64/rufusarm64-persistence-helper"
 PKEXEC = "/usr/bin/pkexec"
 
 

@@ -1276,10 +1276,7 @@ func openFileSHA256(file *os.File) ([sha256.Size]byte, error) {
 }
 
 func wimlibExecutable() (string, error) {
-	candidates := make([]string, 0, 4)
-	if envPath := strings.TrimSpace(os.Getenv("RUFUSARM64_WIMLIB")); envPath != "" {
-		candidates = append(candidates, envPath)
-	}
+	candidates := make([]string, 0, 3)
 	if executable, err := os.Executable(); err == nil {
 		candidates = append(candidates, filepath.Join(filepath.Dir(executable), "wimlib-imagex"))
 	}

@@ -473,7 +473,7 @@ def persistence_plan_summary(payload):
         lines.append(f"Boot parameter: {parameter}")
     if patch_paths:
         lines.append("Boot files to update: " + ", ".join(str(path) for path in patch_paths))
-    lines.append("Planning is read-only. Persistent USB creation remains experimental and command-line only.")
+    lines.append("Planning is read-only. Use the guarded persistent USB creator for the destructive creation step.")
     return "\n".join(lines)
 
 def build_writer_command(

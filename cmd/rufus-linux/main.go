@@ -30,7 +30,7 @@ import (
 	"github.com/geocausa/RufusArm64/internal/windowsmedia"
 )
 
-var version = "0.9.0"
+var version = "development"
 
 const defaultAcquisitionChannelConfig = "/usr/share/rufusarm64/acquisition/channel.json"
 
@@ -572,7 +572,7 @@ func runWrite(args []string) error {
 		return targetCheck(source, selectedIdentity)
 	}
 	postWriteTargetCheck := func(source *os.File) error {
-		return targetCheck(source, "")
+		return targetCheck(source, selectedIdentity)
 	}
 
 	if selectedMode == "linux-persistent" {

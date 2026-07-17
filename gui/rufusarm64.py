@@ -51,9 +51,10 @@ from rufusarm64_logic import (
 
 APP_ID = "io.github.geocausa.RufusArm64"
 APP_NAME = "RufusArm64"
-VERSION = "0.9.0"
-INSTALLED_HELPER = os.environ.get("RUFUSARM64_HELPER", "/usr/lib/rufusarm64/rufusarm64-helper")
-BUNDLED_WIMLIB = os.environ.get("RUFUSARM64_WIMLIB", "/usr/lib/rufusarm64/wimlib-imagex")
+VERSION = "development"
+INSTALLED_HELPER = "/usr/lib/rufusarm64/rufusarm64-helper"
+BUNDLED_WIMLIB = "/usr/lib/rufusarm64/wimlib-imagex"
+PERSISTENCE_LAUNCHER = "/usr/bin/rufusarm64-persistence"
 PKEXEC = "/usr/bin/pkexec"
 ACQUISITION_CHANNEL_CONFIG = os.environ.get(
     "RUFUSARM64_CHANNEL_CONFIG", "/usr/share/rufusarm64/acquisition/channel.json"
@@ -62,6 +63,15 @@ ACQUISITION_CHANNEL_CONFIG = os.environ.get(
 
 def helper_path():
     return INSTALLED_HELPER
+
+
+def persistence_launcher_path():
+    if os.path.isfile(PERSISTENCE_LAUNCHER) and os.access(PERSISTENCE_LAUNCHER, os.X_OK):
+        return PERSISTENCE_LAUNCHER
+    development = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rufusarm64_persistence.py")
+    if os.path.isfile(development) and os.access(development, os.X_OK):
+        return development
+    raise FileNotFoundError("The guarded persistence creator is not installed.")
 
 
 def config_path():
@@ -526,7 +536,7 @@ class PersistencePlanDialog(Gtk.Dialog):
         grid.attach(size_box, 1, 0, 1, 1)
         note = Gtk.Label(label=(
             "Only the image is mounted, with read-only, no-suid, no-device and no-exec restrictions. "
-            "Persistent USB creation remains experimental and command-line only."
+            "After analysis, return to the main window and open the guarded persistent USB creator."
         ))
         note.set_xalign(0)
         note.set_line_wrap(True)
@@ -651,20 +661,24 @@ class RufusWindow(Gtk.ApplicationWindow):
         advanced.add(adv_grid)
         outer.pack_start(advanced, False, False, 0)
 
-        persistence = Gtk.Expander(label="Linux persistence compatibility (experimental)")
+        persistence = Gtk.Expander(label="Persistent Linux media (guarded creator)")
         persistence_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         persistence_box.set_margin_top(8)
         persistence_intro = Gtk.Label(label=(
-            "Analyze supported Ubuntu casper or Debian live-boot media before using the experimental command-line creator. "
-            "This analysis is read-only."
+            "The ordinary Create USB button preserves Linux images byte-for-byte and does not add persistence. "
+            "Check compatibility here, then open the guarded creator to build a writable FAT32 plus ext4 persistent USB."
         ))
         persistence_intro.set_xalign(0)
         persistence_intro.set_line_wrap(True)
         persistence_box.pack_start(persistence_intro, False, False, 0)
-        self.persistence_button = Gtk.Button(label="Analyze selected image…")
-        self.persistence_button.set_halign(Gtk.Align.START)
+        persistence_actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.persistence_button = Gtk.Button(label="Check persistence compatibility…")
         self.persistence_button.connect("clicked", self.analyze_persistence)
-        persistence_box.pack_start(self.persistence_button, False, False, 0)
+        persistence_actions.pack_start(self.persistence_button, False, False, 0)
+        self.open_persistence_button = Gtk.Button(label="Open Persistent USB Creator…")
+        self.open_persistence_button.connect("clicked", self.open_persistence_creator)
+        persistence_actions.pack_start(self.open_persistence_button, False, False, 0)
+        persistence_box.pack_start(persistence_actions, False, False, 0)
         self.persistence_summary = Gtk.Label(label="Select a recognized Linux ISOHybrid image and USB drive.")
         self.persistence_summary.set_xalign(0)
         self.persistence_summary.set_line_wrap(True)
@@ -994,7 +1008,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.busy = bool(busy)
         usable = not busy and bool(self.devices) and bool(self.inspection.get("recognized"))
         self.start_button.set_sensitive(usable)
-        for widget in (self.image_chooser, self.download_button, self.target_combo, self.refresh_button, self.verify):
+        for widget in (self.image_chooser, self.download_button, self.target_combo, self.refresh_button, self.verify, self.open_persistence_button):
             widget.set_sensitive(not busy)
         self.persistence_button.set_sensitive(
             not busy
@@ -1278,6 +1292,14 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.message("The image could not be downloaded or verified. No unverified file was installed.", Gtk.MessageType.ERROR)
         return False
 
+    def open_persistence_creator(self, *_):
+        if self.busy:
+            return
+        try:
+            subprocess.Popen([persistence_launcher_path()], start_new_session=True)
+        except OSError as exc:
+            self.message(f"Could not open the persistent USB creator: {exc}", Gtk.MessageType.ERROR)
+
     def analyze_persistence(self, *_):
         image = self.image_chooser.get_filename()
         index = self.target_combo.get_active()
@@ -1381,7 +1403,7 @@ class RufusWindow(Gtk.ApplicationWindow):
                 self.persistence_summary.set_text(summary)
                 self.progress.set_fraction(1.0)
                 self.progress.set_text("Persistence compatibility confirmed")
-                self.progress_detail.set_text("The private read-only ISO mount was removed. Creation remains experimental and command-line only.")
+                self.progress_detail.set_text("The private read-only ISO mount was removed. Open the guarded persistent USB creator to continue.")
                 self.append_log(summary)
                 return False
         if was_cancelled:
