@@ -29,8 +29,10 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
 install -Dm755 "${ROOT_DIR}/gui/rufusarm64.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64.py"
 # The source-tree constant is a development fallback. Stamp the canonical
-# repository version into the installed GUI and fail closed if the expected
-# assignment cannot be found exactly once.
+# repository version into the installed GUI. Also make the boundary between the
+# ordinary writer and the dedicated persistence creator explicit in the shipped
+# interface so a successful analysis cannot be mistaken for a changed write mode.
+# Fail closed if any expected source string has drifted.
 GUI_TARGET="${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64.py"
 python3 - "${GUI_TARGET}" "${VERSION}" <<'PYVERSION'
 import pathlib
@@ -49,9 +51,38 @@ text, count = re.subn(
 )
 if count != 1:
     raise SystemExit("could not stamp the canonical version into the installed GUI")
+
+replacements = (
+    (
+        'Gtk.Expander(label="Linux persistence compatibility (experimental)")',
+        'Gtk.Expander(label="Persistent Linux media (separate creator)")',
+    ),
+    (
+        '"Analyze supported Ubuntu casper or Debian live-boot media before using the experimental command-line creator. "\n'
+        '            "This analysis is read-only."',
+        '"The Create USB button below performs an ordinary image write and does not create persistence. "\n'
+        '            "Check compatibility here, then use RufusArm64 Persistent Live USB to create persistent media."',
+    ),
+    (
+        'Gtk.Button(label="Analyze selected image…")',
+        'Gtk.Button(label="Check persistence compatibility…")',
+    ),
+    (
+        '"The private read-only ISO mount was removed. Creation remains experimental and command-line only."',
+        '"Compatibility confirmed. Open RufusArm64 Persistent Live USB to create persistent media; the main Create USB button remains an ordinary image write."',
+    ),
+)
+for old, new in replacements:
+    occurrences = text.count(old)
+    if occurrences != 1:
+        raise SystemExit(f"expected exactly one packaged GUI persistence string, found {occurrences}: {old!r}")
+    text = text.replace(old, new, 1)
+
 path.write_text(text, encoding="utf-8")
 PYVERSION
 grep -Fxq "VERSION = \"${VERSION}\"" "${GUI_TARGET}"
+grep -Fq "Persistent Linux media (separate creator)" "${GUI_TARGET}"
+grep -Fq "the main Create USB button remains an ordinary image write" "${GUI_TARGET}"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_logic.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_logic.py"
 install -Dm755 "${ROOT_DIR}/gui/rufusarm64_persistence.py" \
