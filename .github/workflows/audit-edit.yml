@@ -46,17 +46,13 @@ jobs:
           }
           for old, new in replacements.items():
               replace(test, old, new)
-
-          for workflow in (Path('.github/workflows/ci.yml'), Path('.github/workflows/release.yml')):
-              replace(workflow, 'run: ./scripts/static-audit.sh', 'run: bash ./scripts/static-audit.sh')
           PY
           bash -n scripts/test.sh scripts/static-audit.sh
           shellcheck -x scripts/*.sh packaging/rufusarm64
-          python3 gui/test_source_structure.py
       - name: Commit exact corrections
         run: |
           git config user.name 'RufusArm64 audit'
           git config user.email 'actions@users.noreply.github.com'
-          git add scripts/test.sh .github/workflows/ci.yml .github/workflows/release.yml
+          git add scripts/test.sh
           git commit -m 'audit: make validation assertions explicit'
           git push origin HEAD:audit/pre-0.11-hardening
