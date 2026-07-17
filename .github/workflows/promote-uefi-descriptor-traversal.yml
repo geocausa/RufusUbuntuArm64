@@ -43,6 +43,7 @@ jobs:
           )
           PY
           python3 /tmp/apply-uefi-descriptor-traversal.py
+          python3 .github/scripts/fix-uefi-descriptor-traversal.py
           gofmt -w internal/secureboot/uefi.go internal/secureboot/uefi_descriptor_linux.go internal/secureboot/uefi_test.go
           git diff --check
       - name: Run focused UEFI race tests
