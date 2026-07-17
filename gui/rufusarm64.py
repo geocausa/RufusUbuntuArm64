@@ -259,6 +259,8 @@ class AcquisitionDialog(Gtk.Dialog):
         self.channel_process = None
         self.channel_started = 0.0
         self.channel_timer_id = 0
+        self.catalog_verifying = False
+        self.catalog_generation = 0
         self.closed = False
         self.connect("destroy", self._destroyed)
         self.get_widget_for_response(Gtk.ResponseType.OK).set_sensitive(False)
@@ -359,7 +361,7 @@ class AcquisitionDialog(Gtk.Dialog):
         return chooser
 
     def refresh_channel(self, *_):
-        if self.channel_refreshing or self.closed:
+        if self.channel_refreshing or self.catalog_verifying or self.closed:
             return False
         try:
             command = build_acquisition_channel_list_command(helper_path(), ACQUISITION_CHANNEL_CONFIG)
@@ -442,23 +444,69 @@ class AcquisitionDialog(Gtk.Dialog):
         return False
 
     def verify_catalog(self, *_):
-        if self.channel_refreshing:
+        if self.channel_refreshing or self.catalog_verifying or self.closed:
             return
+        selection = (
+            self.catalog.get_filename(),
+            self.signature.get_filename(),
+            self.public_key.get_filename(),
+        )
         try:
-            command = build_acquisition_list_command(
-                helper_path(), self.catalog.get_filename(), self.signature.get_filename(), self.public_key.get_filename()
-            )
-            result = subprocess.run(command, check=False, text=True, capture_output=True, timeout=20)
-            if result.returncode != 0:
-                raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Catalog verification failed")
-            images = normalize_acquisition_images(json.loads(result.stdout))
+            command = build_acquisition_list_command(helper_path(), *selection)
         except Exception as exc:
             self.catalog_status.set_text(f"Local catalog rejected: {exc}")
             if self.mode == "manual":
                 self._populate_images([], "", {})
             return
+        self.catalog_generation += 1
+        generation = self.catalog_generation
+        self.catalog_verifying = True
+        self.verify_button.set_sensitive(False)
+        self.channel_button.set_sensitive(False)
+        self.get_widget_for_response(Gtk.ResponseType.OK).set_sensitive(False)
+        self.catalog_status.set_text("Verifying the local signed catalog…")
+        threading.Thread(
+            target=self._run_catalog_verify,
+            args=(command, selection, generation),
+            daemon=True,
+        ).start()
+
+    def _run_catalog_verify(self, command, selection, generation):
+        images = []
+        error = ""
+        try:
+            result = subprocess.run(command, check=False, text=True, capture_output=True, timeout=20)
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Catalog verification failed")
+            images = normalize_acquisition_images(json.loads(result.stdout))
+        except Exception as exc:
+            error = str(exc)
+        GLib.idle_add(self._finish_catalog_verify, images, error, selection, generation)
+
+    def _finish_catalog_verify(self, images, error, selection, generation):
+        if self.closed or generation != self.catalog_generation:
+            return False
+        self.catalog_verifying = False
+        self.verify_button.set_sensitive(not self.channel_refreshing)
+        self.channel_button.set_sensitive(not self.channel_refreshing)
+        current = (
+            self.catalog.get_filename(),
+            self.signature.get_filename(),
+            self.public_key.get_filename(),
+        )
+        if current != selection:
+            self.catalog_status.set_text("Local trust files changed while verification was running. Verify them again.")
+            if self.mode == "manual":
+                self._populate_images([], "", {})
+            return False
+        if error:
+            self.catalog_status.set_text(f"Local catalog rejected: {error}")
+            if self.mode == "manual":
+                self._populate_images([], "", {})
+            return False
         self.catalog_status.set_text(f"Local signature valid. {len(images)} downloadable image(s) are available.")
         self._populate_images(images, "manual", {})
+        return False
 
     def _populate_images(self, images, mode, metadata):
         self.images = list(images)
@@ -476,7 +524,9 @@ class AcquisitionDialog(Gtk.Dialog):
     def image_selected(self, *_):
         image_id = self.image_combo.get_active_id()
         image = next((item for item in self.images if item["id"] == image_id), None)
-        self.get_widget_for_response(Gtk.ResponseType.OK).set_sensitive(bool(image and self.output.get_filename() and not self.channel_refreshing))
+        self.get_widget_for_response(Gtk.ResponseType.OK).set_sensitive(
+            bool(image and self.output.get_filename() and not self.channel_refreshing and not self.catalog_verifying)
+        )
         if image:
             lines = [f"File: {image['filename']}", f"Size: {human_bytes(image['size'])}"]
             if image.get("sha256"):
@@ -557,6 +607,11 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.devices = []
         self.process = None
         self.busy = False
+        self.closed = False
+        self.inspection_generation = 0
+        self.inspection_running = False
+        self.device_generation = 0
+        self.device_refreshing = False
         self.cancel_requested = False
         self.cancel_path = None
         self.inspection = {}
@@ -1002,12 +1057,15 @@ class RufusWindow(Gtk.ApplicationWindow):
 
     def set_busy(self, busy):
         self.busy = bool(busy)
-        usable = not busy and bool(self.devices) and bool(self.inspection.get("recognized"))
+        background_idle = not self.inspection_running and not self.device_refreshing
+        usable = not busy and background_idle and bool(self.devices) and bool(self.inspection.get("recognized"))
         self.start_button.set_sensitive(usable)
-        for widget in (self.image_chooser, self.download_button, self.target_combo, self.refresh_button, self.verify, self.open_persistence_button):
+        for widget in (self.image_chooser, self.download_button, self.target_combo, self.verify, self.open_persistence_button):
             widget.set_sensitive(not busy)
+        self.refresh_button.set_sensitive(not busy and not self.device_refreshing)
         self.persistence_button.set_sensitive(
             not busy
+            and background_idle
             and bool(self.devices)
             and bool(self.inspection.get("recognized"))
             and self.inspection.get("mode") == "raw"
@@ -1026,19 +1084,34 @@ class RufusWindow(Gtk.ApplicationWindow):
                 Gtk.MessageType.WARNING,
             )
             return True
+        self.closed = True
+        self.inspection_generation += 1
+        self.device_generation += 1
         self.save_settings()
         return False
 
     def image_changed(self, *_):
         path = self.image_chooser.get_filename()
+        self.inspection_generation += 1
+        generation = self.inspection_generation
+        self.inspection_running = False
         self.inspection = {}
         self.windows_options = {}
         if not path:
             self.update_layout({})
+            self.set_busy(self.busy)
             return
         if not supported_image_name(path):
             self.update_layout({"description": "Unsupported filename", "recognized": False})
+            self.set_busy(self.busy)
             return
+        self.inspection_running = True
+        self.update_layout({"description": "Inspecting image…", "recognized": False})
+        self.set_busy(self.busy)
+        threading.Thread(target=self._run_image_inspection, args=(path, generation), daemon=True).start()
+
+    def _run_image_inspection(self, path, generation):
+        inspection = {}
         try:
             result = subprocess.run(
                 [helper_path(), "inspect", "--image", path, "--json"],
@@ -1048,12 +1121,21 @@ class RufusWindow(Gtk.ApplicationWindow):
                 timeout=20,
             )
             if result.stdout.strip():
-                self.inspection = json.loads(result.stdout)
-            if result.returncode != 0 and not self.inspection:
+                inspection = json.loads(result.stdout)
+            if result.returncode != 0 and not inspection:
                 raise RuntimeError(result.stderr.strip() or "Image inspection failed")
         except Exception as exc:
-            self.inspection = {"recognized": False, "description": str(exc)}
-        self.update_layout(self.inspection)
+            inspection = {"recognized": False, "description": str(exc)}
+        GLib.idle_add(self._finish_image_inspection, path, generation, inspection)
+
+    def _finish_image_inspection(self, path, generation, inspection):
+        if self.closed or generation != self.inspection_generation or self.image_chooser.get_filename() != path:
+            return False
+        self.inspection_running = False
+        self.inspection = inspection
+        self.update_layout(inspection)
+        self.set_busy(self.busy)
+        return False
 
     def update_layout(self, info):
         description = info.get("description") or "Choose an image"
@@ -1481,23 +1563,47 @@ class RufusWindow(Gtk.ApplicationWindow):
         return False
 
     def refresh_devices(self):
+        if self.busy or self.device_refreshing or self.closed:
+            return
+        self.device_generation += 1
+        generation = self.device_generation
+        self.device_refreshing = True
         self.target_combo.remove_all()
         self.devices = []
+        self.progress.set_text("Scanning removable drives…")
+        self.set_busy(self.busy)
+        threading.Thread(target=self._run_device_refresh, args=(generation,), daemon=True).start()
+
+    def _run_device_refresh(self, generation):
+        devices = []
+        error = ""
         try:
             result = subprocess.run([helper_path(), "list", "--json"], check=True, text=True, capture_output=True, timeout=15)
-            self.devices = json.loads(result.stdout)
-            for device in self.devices:
-                self.target_combo.append_text(device_label(device))
-            if self.devices:
-                self.target_combo.set_active(0)
-                self.progress.set_text("Ready")
-            else:
-                self.progress.set_text("No removable USB drive found")
+            devices = json.loads(result.stdout)
+            if not isinstance(devices, list):
+                raise ValueError("Drive enumeration returned invalid data.")
         except Exception as exc:
-            self.append_log(f"Could not list USB drives: {exc}")
+            error = str(exc)
+        GLib.idle_add(self._finish_device_refresh, generation, devices, error)
+
+    def _finish_device_refresh(self, generation, devices, error):
+        if self.closed or generation != self.device_generation:
+            return False
+        self.device_refreshing = False
+        self.devices = devices if not error else []
+        self.target_combo.remove_all()
+        for device in self.devices:
+            self.target_combo.append_text(device_label(device))
+        if error:
+            self.append_log(f"Could not list USB drives: {error}")
             self.progress.set_text("Drive detection failed")
-        self.start_button.set_sensitive(not self.busy and bool(self.devices) and bool(self.inspection.get("recognized")))
-        self.persistence_button.set_sensitive(not self.busy and bool(self.devices) and self.inspection.get("mode") == "raw" and bool(self.inspection.get("recognized")))
+        elif self.devices:
+            self.target_combo.set_active(0)
+            self.progress.set_text("Ready")
+        else:
+            self.progress.set_text("No removable USB drive found")
+        self.set_busy(self.busy)
+        return False
 
     def choose_windows_options(self):
         dialog = WindowsOptionsDialog(self, self.windows_options)

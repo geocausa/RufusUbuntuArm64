@@ -97,6 +97,58 @@ class SourceStructureTests(unittest.TestCase):
             failures.append("rufusarm64.py:run_download does not honor early cancellation")
         self.assertEqual(failures, [], "\n" + "\n".join(failures))
 
+    def test_slow_gui_subprocesses_use_workers_and_generation_guards(self):
+        expected = {
+            "rufusarm64.py": {
+                "AcquisitionDialog": {
+                    "verify_catalog": ("threading.Thread(",),
+                    "_run_catalog_verify": ("subprocess.run(",),
+                    "_finish_catalog_verify": ("generation != self.catalog_generation", "self.closed"),
+                },
+                "RufusWindow": {
+                    "image_changed": ("threading.Thread(",),
+                    "_run_image_inspection": ("subprocess.run(",),
+                    "_finish_image_inspection": ("generation != self.inspection_generation", "self.closed"),
+                    "refresh_devices": ("threading.Thread(",),
+                    "_run_device_refresh": ("subprocess.run(",),
+                    "_finish_device_refresh": ("generation != self.device_generation", "self.closed"),
+                },
+            },
+            "rufusarm64_persistence.py": {
+                "Window": {
+                    "refresh_devices": ("threading.Thread(",),
+                    "_run_device_refresh": ("subprocess.run(",),
+                    "_finish_device_refresh": ("generation != self.device_generation", "self.closed"),
+                },
+            },
+        }
+        failures = []
+        for filename, classes in expected.items():
+            path = GUI_ROOT / filename
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(path))
+            class_methods = {
+                class_node.name: {
+                    node.name: ast.get_source_segment(source, node) or ""
+                    for node in class_node.body
+                    if isinstance(node, ast.FunctionDef)
+                }
+                for class_node in tree.body
+                if isinstance(class_node, ast.ClassDef)
+            }
+            for class_name, methods_ in classes.items():
+                for method_name, required_fragments in methods_.items():
+                    body = class_methods.get(class_name, {}).get(method_name, "")
+                    if not body:
+                        failures.append(f"{filename}:{class_name}.{method_name} is missing")
+                        continue
+                    if method_name in {"verify_catalog", "image_changed", "refresh_devices"} and "subprocess.run(" in body:
+                        failures.append(f"{filename}:{class_name}.{method_name} blocks the GTK thread")
+                    for fragment in required_fragments:
+                        if fragment not in body:
+                            failures.append(f"{filename}:{class_name}.{method_name} lacks {fragment!r}")
+        self.assertEqual(failures, [], "\n" + "\n".join(failures))
+
     def test_audit_commands_and_package_assertions_are_not_duplicated(self):
         test_script = (REPOSITORY_ROOT / "scripts" / "test.sh").read_text(encoding="utf-8")
         unique_lines = (
