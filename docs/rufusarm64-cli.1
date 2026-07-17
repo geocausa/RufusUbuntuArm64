@@ -1,4 +1,4 @@
-.TH RUFUSARM64-CLI 1 "17 July 2026" "RufusArm64 0.10.2" "User Commands"
+.TH RUFUSARM64-CLI 1 "17 July 2026" "RufusArm64 0.10.3" "User Commands"
 .SH NAME
 rufusarm64-cli \- safely create bootable USB media on Linux
 .SH SYNOPSIS
@@ -55,10 +55,12 @@ creates extracted Windows installation media. Windows media support GPT or MBR,
 UEFI or x86-family BIOS/CSM, and Automatic, FAT32, or NTFS selection.
 Compressed and common virtual-disk inputs are prepared before target erasure.
 .PP
-Version 0.10.2 supplies the engine used by the dedicated graphical
-persistent-live USB wizard. The graphical path performs identity-bound read-only
-analysis, exact target confirmation, fresh Polkit authorization, destructive
-creation through a separate narrow helper, and post-creation qualification.
+Version 0.10.3 supplies the engine used by the guarded graphical
+persistent-live USB wizard. The single visible RufusArm64 application entry
+opens the ordinary writer normally and exposes a Create Persistent Live USB
+desktop action. The persistence path performs identity-bound read-only analysis,
+exact target confirmation, fresh Polkit authorization, destructive creation
+through a separate narrow helper, and post-creation qualification.
 .SH COMMON WRITE OPTIONS
 .TP
 .B --verify
@@ -96,15 +98,17 @@ Permit a non-removable whole disk after all other safety checks pass.
 .TP
 .BI --expected-identity " TOKEN"
 Require the target to match a refreshed token returned by the JSON list command.
-The graphical applications always supply this check.
+The graphical workflows always supply this check.
 .SH LINUX PERSISTENCE
 .TP
 .B --experimental-persistence
 Enable the command-line GPT/UEFI persistent Linux writer. This flag is accepted
 only with
 .BR --mode " linux-persistent" .
-The normal graphical writer still rejects this mode; the separate persistence
-wizard invokes its own package-owned helper.
+The normal graphical writer still rejects this mode; the guarded persistence
+wizard invokes its own package-owned helper. The wizard is opened from the
+single RufusArm64 application entry or with
+.BR "rufusarm64 --persistence" .
 .TP
 .BI --persistence-size " SIZE"
 Set the ext4 persistence size using bytes or K/M/G/T units. Zero uses all suitable
