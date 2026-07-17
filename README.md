@@ -16,7 +16,7 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 ## Install on Ubuntu ARM64
 
 ```bash
-sudo apt install ./rufusarm64_0.10.4_arm64.deb
+sudo apt install ./rufusarm64_0.10.5_arm64.deb
 ```
 
 The package upgrades older `rufusarm64` installations in place. One visible **RufusArm64** application entry is installed. Its normal launch opens the ordinary writer, and its **Create Persistent Live USB** desktop action opens the guarded persistence wizard.
@@ -37,7 +37,7 @@ The **Create USB** button in the ordinary writer always performs the normal imag
 
 ## Persistent Linux media
 
-Version 0.10.4 retains the separate guarded persistence wizard internally while presenting only one desktop application icon. Open it from the same RufusArm64 application entry using the **Create Persistent Live USB** action. The direct command remains available for troubleshooting:
+Version 0.10.5 retains the separate guarded persistence wizard internally while presenting only one desktop application icon. Open it from the same RufusArm64 application entry using the **Create Persistent Live USB** action. The direct command remains available for troubleshooting:
 
 ```text
 rufusarm64 --persistence
@@ -142,7 +142,7 @@ Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, and the
 The installer is produced at:
 
 ```text
-dist/rufusarm64_0.10.4_arm64.deb
+dist/rufusarm64_0.10.5_arm64.deb
 ```
 
 ## Command-line examples

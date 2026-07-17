@@ -19,6 +19,11 @@
     <binary>rufusarm64-persistence</binary>
   </provides>
   <releases>
+    <release version="0.10.5" date="2026-07-17">
+      <description>
+        <p>Completes the pre-parity safety and correctness audit with stronger identity, arithmetic, GPT durability, acquisition, GUI concurrency, static-analysis, Debian-policy, and reproducible-package gates.</p>
+      </description>
+    </release>
     <release version="0.10.4" date="2026-07-17">
       <description>
         <p>Fixes persistence analysis for the official Ubuntu 26.04 ARM64 desktop image's harmless root-self alias while preserving strict escape, nested-root, and cycle rejection.</p>
