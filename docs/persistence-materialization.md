@@ -51,9 +51,10 @@ This design avoids path traversal and symlink-following attacks. The future orch
 It:
 
 - rejects symlinks and non-block devices;
-- opens and locks the partition before invoking external tools;
+- opens the partition with `O_NOFOLLOW`, takes an advisory exclusive `flock`, and keeps the parent whole-disk lock for the complete operation;
 - verifies the open device identity and exact planned capacity;
 - passes the partition to tools through an inherited `/proc/self/fd/3` descriptor instead of reopening the user-supplied path;
+- deliberately does not hold the partition with kernel `O_EXCL`, because `mkfs`, `mount`, and filesystem checkers must reopen the inherited descriptor path and would otherwise fail with `EBUSY`;
 - runs `mkfs.ext4` with the exact `casper-rw` or `persistence` label and eager metadata initialization;
 - mounts with `nosuid,nodev,noexec`;
 - creates Debian's root `persistence.conf` as `/ union` using no-follow exclusive creation;
