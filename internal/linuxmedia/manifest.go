@@ -52,6 +52,7 @@ type Manifest struct {
 	Files                int     `json:"files"`
 	Directories          int     `json:"directories"`
 	DereferencedSymlinks int     `json:"dereferenced_symlinks"`
+	OmittedRootAliases   int     `json:"omitted_root_aliases,omitempty"`
 	TotalBytes           uint64  `json:"total_bytes"`
 	UEFIBootPath         string  `json:"uefi_boot_path,omitempty"`
 }
@@ -164,9 +165,18 @@ func (builder *manifestBuilder) inspectPath(sourcePath, logicalPath string, ance
 		builder.manifest.Entries = append(builder.manifest.Entries, entry)
 		return builder.descendDirectory(sourcePath, logicalPath, ancestors, false)
 	case info.Mode()&os.ModeSymlink != 0:
-		resolved, resolvedInfo, err := resolveMediaSymlink(builder.root, sourcePath)
+		resolved, resolvedInfo, rootAlias, err := resolveMediaSymlink(builder.root, sourcePath)
 		if err != nil {
 			return fmt.Errorf("inspect symbolic link %s: %w", entry.Path, err)
+		}
+		if rootAlias {
+			// Official Ubuntu media can contain a root-level convenience alias such
+			// as "ubuntu -> .". FAT32 cannot represent it and materializing it would
+			// recursively duplicate the entire image. It is not boot payload, so omit
+			// only this exact, direct-child alias while retaining strict rejection of
+			// nested root links and all links outside the mounted media tree.
+			builder.manifest.OmittedRootAliases++
+			return nil
 		}
 		entry.Mode = uint32(resolvedInfo.Mode().Perm())
 		entry.DereferencedSymlink = true
@@ -277,23 +287,32 @@ func resolveRoot(root string) (string, error) {
 	return resolved, nil
 }
 
-func resolveMediaSymlink(root, path string) (string, os.FileInfo, error) {
+func resolveMediaSymlink(root, path string) (string, os.FileInfo, bool, error) {
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		return "", nil, err
+		return "", nil, false, err
 	}
+	resolved = filepath.Clean(resolved)
+	root = filepath.Clean(root)
 	relative, err := filepath.Rel(root, resolved)
-	if err != nil || !filepath.IsLocal(relative) || relative == "." {
-		return "", nil, errors.New("symbolic link escapes the media root")
+	if err != nil || !filepath.IsLocal(relative) {
+		return "", nil, false, errors.New("symbolic link escapes the media root")
 	}
 	info, err := os.Stat(resolved)
 	if err != nil {
-		return "", nil, err
+		return "", nil, false, err
+	}
+	if relative == "." {
+		parent, parentErr := filepath.EvalSymlinks(filepath.Dir(path))
+		if parentErr != nil || filepath.Clean(parent) != root || !info.IsDir() {
+			return "", nil, false, errors.New("symbolic link creates an unsafe media-root traversal")
+		}
+		return resolved, info, true, nil
 	}
 	if !info.Mode().IsRegular() && !info.IsDir() {
-		return "", nil, errors.New("symbolic link target is neither a regular file nor a directory")
+		return "", nil, false, errors.New("symbolic link target is neither a regular file nor a directory")
 	}
-	return resolved, info, nil
+	return resolved, info, false, nil
 }
 
 func hashStableFile(ctx context.Context, path string, expectedSize uint64) ([sha256.Size]byte, error) {
