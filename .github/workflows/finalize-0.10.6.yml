@@ -1,6 +1,6 @@
 name: Finalize RufusArm64 0.10.6
 
-# One-shot release gate for the persistence automount-race hotfix.
+# One-shot metadata and source-validation gate. Standard CI performs packaging.
 on:
   push:
     branches:
@@ -23,7 +23,7 @@ jobs:
       (github.event_name == 'push' ||
        github.event.pull_request.head.ref == 'hotfix/0.10.6-persistence-no-automount')
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -33,11 +33,6 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26.5'
-      - name: Install release validators
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs
       - name: Stamp complete 0.10.6 metadata
         run: |
           python3 - <<'PY'
@@ -88,15 +83,16 @@ jobs:
           audit.write_text(text, encoding="utf-8")
           PY
           git diff --check
-      - name: Run focused GPT regression
-        run: go test ./internal/linuxmedia -run 'TestWritePersistentGPT|TestPlanPersistentLayout' -count=1
-      - name: Run complete release and package gate
-        run: ./scripts/test.sh
-      - name: Confirm package version and checksum
+      - name: Validate source and release metadata
         run: |
           set -euo pipefail
-          dpkg-deb -f dist/rufusarm64_0.10.6_arm64.deb Version | grep -Fx 0.10.6
-          sha256sum -c dist/rufusarm64_0.10.6_arm64.deb.sha256
+          go test ./internal/linuxmedia -run 'TestWritePersistentGPT|TestPlanPersistentLayout' -count=1
+          go test ./...
+          grep -Fq 'RufusArm64 0.10.6' docs/rufusarm64-cli.1
+          grep -Fq '## 0.10.6 —' CHANGELOG.md
+          grep -Fq 'release version="0.10.6"' packaging/io.github.geocausa.RufusArm64.metainfo.xml
+          grep -Fq 'rufusarm64_0.10.6_arm64.deb' README.md
+          grep -Fq '### A-033 — persistent GPT partitions permit a desktop automount race' docs/pre-0.11-code-audit.md
       - name: Commit finalized release
         run: |
           set -euo pipefail
