@@ -113,7 +113,7 @@ jobs:
         env:
           BASE_SHA: c3bf92e78fd4f1fde7933765c0165011c72904f0
         run: |
-          set -euo pipefail
+          set -o pipefail
           cat >"${RUNNER_TEMP}/expected-files" <<'EOF'
           .github/workflows/ci.yml
           CHANGELOG.md
@@ -125,9 +125,22 @@ jobs:
           internal/safety/reopenable_linux_test.go
           EOF
           git diff --name-only "${BASE_SHA}" | LC_ALL=C sort >"${RUNNER_TEMP}/actual-files"
-          cat "${RUNNER_TEMP}/actual-files"
-          diff -u "${RUNNER_TEMP}/expected-files" "${RUNNER_TEMP}/actual-files"
+          {
+            echo '=== expected ==='
+            cat "${RUNNER_TEMP}/expected-files"
+            echo '=== actual ==='
+            cat "${RUNNER_TEMP}/actual-files"
+            echo '=== diff ==='
+            diff -u "${RUNNER_TEMP}/expected-files" "${RUNNER_TEMP}/actual-files"
+          } 2>&1 | tee "${RUNNER_TEMP}/formatter-fix-manifest.log"
           git diff --check
+      - name: Upload production-diff diagnostic
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: formatter-fix-manifest-${{ github.run_id }}
+          path: ${{ runner.temp }}/formatter-fix-manifest.log
+          if-no-files-found: error
       - name: Commit validated production changes
         run: |
           set -euo pipefail
