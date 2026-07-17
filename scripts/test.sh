@@ -98,6 +98,9 @@ sh -n packaging/rufusarm64
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck -x scripts/*.sh packaging/rufusarm64
 fi
+if command -v shellcheck >/dev/null 2>&1; then
+  shellcheck -x scripts/*.sh packaging/rufusarm64
+fi
 test "$(stat -c %s vendor/uefi-ntfs/uefi-ntfs.img)" -eq 1048576
 (
   cd vendor/uefi-ntfs
@@ -182,6 +185,9 @@ dpkg-deb --contents "${PACKAGE}" >/dev/null
 if command -v lintian >/dev/null 2>&1; then
   lintian --fail-on error "${PACKAGE}"
 fi
+if command -v lintian >/dev/null 2>&1; then
+  lintian --fail-on error "${PACKAGE}"
+fi
 
 extract_dir="$(mktemp -d)"
 trap 'rm -rf "${extract_dir}" gui/__pycache__' EXIT
@@ -251,6 +257,9 @@ done
 [[ -L "${extract_dir}/usr/bin/rufusarm64-cli" ]]
 [[ -x "${extract_dir}/usr/bin/rufusarm64-persistence" ]]
 [[ -f "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.Persistence.desktop" ]]
+grep -q '^NoDisplay=true$' "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.Persistence.desktop"
+grep -q '^Actions=.*Persistence' "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.desktop"
+grep -q 'Open Persistent USB Creator' "${installed_gui}"
 grep -q '^NoDisplay=true$' "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.Persistence.desktop"
 grep -q '^Actions=.*Persistence' "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.desktop"
 grep -q 'Open Persistent USB Creator' "${installed_gui}"
