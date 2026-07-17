@@ -24,7 +24,9 @@ jobs:
           ref: audit/pre-0.11-hardening
           fetch-depth: 0
       - name: Apply fail-closed reviewed replacements
-        run: python3 scripts/pre011_autopatch.py
+        run: |
+          python3 scripts/pre011_autopatch.py
+          python3 scripts/repair_pre011_build.py
       - name: Commit the audited cross-file patch
         run: |
           if git diff --quiet; then
