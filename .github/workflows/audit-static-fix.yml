@@ -1,0 +1,134 @@
+name: Audit static fix
+
+on:
+  push:
+    branches:
+      - audit/pre-0.11-hardening
+
+permissions:
+  contents: write
+
+concurrency:
+  group: audit-static-fix
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    if: github.repository == 'geocausa/RufusUbuntuArm64'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: audit/pre-0.11-hardening
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - name: Apply exact reviewed edits
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          replacements = {
+              "cmd/rufus-linux/main.go": {
+                  "Windows partition and setup options can only be used with a supported Windows installation ISO": "windows partition and setup options can only be used with a supported Windows installation ISO",
+                  "Windows driver folder is on the selected target: %w": "windows driver folder is on the selected target: %w",
+                  "Secure Boot DBX file is on the selected target: %w": "secure boot DBX file is on the selected target: %w",
+              },
+              "internal/linuxmedia/copy.go": {
+                  '"syscall"\n': "",
+                  "Linux media manifest is empty": "linux media manifest is empty",
+              },
+              "internal/linuxmedia/layout.go": {
+                  "Linux media tree is empty": "linux media tree is empty",
+                  "Linux media size overflows the boot partition calculation": "linux media size overflows the boot partition calculation",
+                  "Linux media manifest is empty": "linux media manifest is empty",
+                  "Linux media entry count overflows FAT32 sizing": "linux media entry count overflows FAT32 sizing",
+                  "Linux media size overflows FAT32 sizing": "linux media size overflows FAT32 sizing",
+              },
+              "internal/persistence/detect.go": {
+                  "Ubuntu casper kernel and initrd were found, but no supported kernel command selects /casper/vmlinuz or boot=casper": "ubuntu casper kernel and initrd were found, but no supported kernel command selects /casper/vmlinuz or boot=casper",
+                  "Debian live kernel and initrd were found, but no supported kernel command contains boot=live": "debian live kernel and initrd were found, but no supported kernel command contains boot=live",
+              },
+              "internal/secureboot/dbx.go": {
+                  "Microsoft DBX response is unexpectedly large": "downloaded DBX response is unexpectedly large",
+              },
+              "internal/windowsmedia/legacy_boot.go": {
+                  "write Windows MBR bootstrap: %w": "write windows MBR bootstrap: %w",
+                  "read back Windows MBR: %w": "read back windows MBR: %w",
+                  "Windows MBR bootstrap verification found an invalid active partition table": "windows MBR bootstrap verification found an invalid active partition table",
+              },
+              "internal/windowsmedia/windowsmedia.go": {
+                  "Secure Boot DBX file is unsafe: %w": "secure boot DBX file is unsafe: %w",
+                  "Windows boot file %s is revoked by the selected Secure Boot DBX; no USB data was changed": "windows boot file %s is revoked by the selected Secure Boot DBX; no USB data was changed",
+                  "Windows driver folder is unsafe: %w": "windows driver folder is unsafe: %w",
+                  "Windows media plan is nil": "windows media plan is nil",
+              },
+              "internal/sourcefile/digest_test.go": {
+                  "\tif _, err := SHA256Open(nil, file, nil); err == nil || !strings.Contains(err.Error(), \"context\") {": "\t//lint:ignore SA1012 This regression test deliberately verifies that nil contexts fail closed.\n\tif _, err := SHA256Open(nil, file, nil); err == nil || !strings.Contains(err.Error(), \"context\") {",
+              },
+          }
+          removals = {
+              "internal/linuxmedia/copy.go": r"\nfunc openDirectoryNoFollow\(path string\) \(\*os\.File, error\) \{.*?\n\}\n?$",
+              "internal/linuxmedia/layout.go": r"\nfunc verifyLayoutHeader\(.*?\n\}\n\n(?=func makeLayoutProtectiveMBR)",
+              "internal/persistence/detect.go": r"\nfunc containsKernelToken\(.*?\n\}\n\n(?=func isKernelArgumentCommand)",
+              "internal/windowsmedia/windowsmedia.go": r"\nfunc verifySplitImage\(.*?\n\}\n\n(?=func findExistingSplitFiles)",
+          }
+
+          changed = False
+          for name, pairs in replacements.items():
+              path = Path(name)
+              text = path.read_text(encoding="utf-8")
+              for old, new in pairs.items():
+                  count = text.count(old)
+                  if count == 1:
+                      text = text.replace(old, new, 1)
+                      changed = True
+                  elif count == 0 and new in text:
+                      pass
+                  else:
+                      raise SystemExit(f"{name}: unexpected replacement count {count}: {old!r}")
+              path.write_text(text, encoding="utf-8")
+
+          for name, pattern in removals.items():
+              path = Path(name)
+              text = path.read_text(encoding="utf-8")
+              text, count = re.subn(pattern, "\n", text, count=1, flags=re.S)
+              if count == 1:
+                  changed = True
+              elif count == 0:
+                  marker = {
+                      "internal/linuxmedia/copy.go": "func openDirectoryNoFollow",
+                      "internal/linuxmedia/layout.go": "func verifyLayoutHeader",
+                      "internal/persistence/detect.go": "func containsKernelToken",
+                      "internal/windowsmedia/windowsmedia.go": "func verifySplitImage",
+                  }[name]
+                  if marker in text:
+                      raise SystemExit(f"{name}: could not remove {marker}")
+              path.write_text(text, encoding="utf-8")
+
+          print("changed" if changed else "already fixed")
+          PY
+          gofmt -w cmd/rufus-linux/main.go internal/linuxmedia/copy.go internal/linuxmedia/layout.go internal/persistence/detect.go internal/secureboot/dbx.go internal/windowsmedia/legacy_boot.go internal/windowsmedia/windowsmedia.go internal/sourcefile/digest_test.go
+      - name: Validate repaired tree
+        run: |
+          audit_bin="${RUNNER_TEMP}/audit-bin"
+          mkdir -p "${audit_bin}"
+          GOBIN="${audit_bin}" go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          GOBIN="${audit_bin}" go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          "${audit_bin}/staticcheck" ./...
+          "${audit_bin}/govulncheck" ./...
+          go test ./...
+          test -z "$(gofmt -l cmd internal)"
+      - name: Commit exact cleanup
+        run: |
+          if git diff --quiet; then
+            echo "Static findings already cleared."
+            exit 0
+          fi
+          git config user.name 'RufusArm64 audit'
+          git config user.email 'actions@users.noreply.github.com'
+          git add cmd/rufus-linux/main.go internal/linuxmedia/copy.go internal/linuxmedia/layout.go internal/persistence/detect.go internal/secureboot/dbx.go internal/windowsmedia/legacy_boot.go internal/windowsmedia/windowsmedia.go internal/sourcefile/digest_test.go
+          git commit -m 'audit: clear static-analysis findings'
+          git push origin HEAD:audit/pre-0.11-hardening
