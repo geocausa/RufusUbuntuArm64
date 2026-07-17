@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.3 — 2026-07-17
+
+- Consolidated the desktop experience to one visible **RufusArm64** application entry.
+- Added a **Create Persistent Live USB** desktop action to that single launcher.
+- Kept the persistence wizard and its narrow privileged helper installed internally while hiding the implementation-only secondary menu entry.
+- Preserved the ordinary writer and persistent writer as distinct guarded workflows without presenting them as duplicate applications.
+
 ## 0.10.2 — 2026-07-17
 
 - Fixed persistence analysis for official Canonical live images that contain in-tree directory symbolic links such as `dists/stable`.
