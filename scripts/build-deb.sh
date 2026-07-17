@@ -183,10 +183,19 @@ install -Dm644 "${ROOT_DIR}/docs/persistence-qualification.md" \
 install -Dm644 "${ROOT_DIR}/NOTICE" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/NOTICE"
 install -Dm644 "${ROOT_DIR}/LICENSE" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/LICENSE"
+install -Dm644 "${ROOT_DIR}/packaging/copyright" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/copyright"
-install -Dm644 "${ROOT_DIR}/docs/rufusarm64-cli.1" \
-  "${PACKAGE_DIR}/usr/share/man/man1/rufusarm64-cli.1"
-gzip -9n "${PACKAGE_DIR}/usr/share/man/man1/rufusarm64-cli.1"
+install -Dm644 "${ROOT_DIR}/CHANGELOG.md" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/changelog"
+gzip -9n "${PACKAGE_DIR}/usr/share/doc/rufusarm64/changelog"
+for page in rufusarm64 rufusarm64-cli rufusarm64-persistence; do
+  install -Dm644 "${ROOT_DIR}/docs/${page}.1" \
+    "${PACKAGE_DIR}/usr/share/man/man1/${page}.1"
+  gzip -9n "${PACKAGE_DIR}/usr/share/man/man1/${page}.1"
+done
+install -Dm644 "${ROOT_DIR}/packaging/rufusarm64.lintian-overrides" \
+  "${PACKAGE_DIR}/usr/share/lintian/overrides/rufusarm64"
 
 mkdir -p "${PACKAGE_DIR}/DEBIAN"
 INSTALLED_SIZE="$(du -sk "${PACKAGE_DIR}/usr" | awk '{print $1}')"
@@ -198,14 +207,14 @@ Priority: optional
 Architecture: ${ARCH}
 Maintainer: geocausa <noreply@github.com>
 Installed-Size: ${INSTALLED_SIZE}
-Depends: python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, util-linux, mount, dosfstools, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils
+Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, mount, dosfstools, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils
 Homepage: https://github.com/geocausa/RufusUbuntuArm64
 Description: Bootable USB creator for Ubuntu ARM64
  A graphical utility that writes Linux ISOHybrid/raw images, creates verified
  persistent Ubuntu/Debian live media, and creates Windows installation USB media
- using GPT or MBR, UEFI or x86-family BIOS/CSM, FAT32 or NTFS, compressed and
- virtual-disk inputs, Secure Boot DBX checks, verified boot assets, WIM splitting,
- and optional drivers.
+ using GPT or MBR, UEFI or x86-family BIOS/CSM, FAT32 or NTFS, and
+ compressed or virtual-disk inputs. It includes Secure Boot DBX checks,
+ verified boot assets, WIM splitting, and optional drivers.
 CONTROL
 
 cat > "${PACKAGE_DIR}/DEBIAN/postinst" <<'POSTINST'

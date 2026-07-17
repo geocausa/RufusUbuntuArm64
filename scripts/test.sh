@@ -257,7 +257,13 @@ if ! grep -q '^Actions=.*PersistentLiveUSB' "${extract_dir}/usr/share/applicatio
   exit 1
 fi
 grep -q 'Open Persistent USB Creator' "${installed_gui}"
-[[ -f "${extract_dir}/usr/share/man/man1/rufusarm64-cli.1.gz" ]]
+for page in rufusarm64 rufusarm64-cli rufusarm64-persistence; do
+  [[ -f "${extract_dir}/usr/share/man/man1/${page}.1.gz" ]]
+  gzip -t "${extract_dir}/usr/share/man/man1/${page}.1.gz"
+done
+[[ -f "${extract_dir}/usr/share/doc/rufusarm64/changelog.gz" ]]
+gzip -t "${extract_dir}/usr/share/doc/rufusarm64/changelog.gz"
+[[ -f "${extract_dir}/usr/share/lintian/overrides/rufusarm64" ]]
 [[ -f "${extract_dir}/usr/share/doc/rufusarm64/acquisition-channel.md" ]]
 [[ -f "${extract_dir}/usr/share/doc/rufusarm64/acquisition-admin.md" ]]
 [[ -f "${extract_dir}/usr/share/doc/rufusarm64/persistence-user-guide.md" ]]
@@ -282,7 +288,9 @@ readelf -h "${persistence_helper}" | grep -q 'Machine:.*AArch64'
 if readelf -l "${helper}" | grep -q 'Requesting program interpreter'; then echo 'main helper must be static' >&2; exit 1; fi
 if readelf -l "${persistence_helper}" | grep -q 'Requesting program interpreter'; then echo 'persistence helper must be static' >&2; exit 1; fi
 grep -q '^Architecture: arm64$' "${extract_dir}/DEBIAN/control"
+grep -q 'Depends:.*libc6 (>= 2.38)' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*mount' "${extract_dir}/DEBIAN/control"
+if grep -q 'Depends:.*util-linux' "${extract_dir}/DEBIAN/control"; then echo 'package must not depend explicitly on Essential util-linux' >&2; exit 1; fi
 grep -q 'Depends:.*e2fsprogs' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*ntfs-3g' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*xz-utils' "${extract_dir}/DEBIAN/control"
@@ -295,6 +303,8 @@ grep -q '<allow_active>auth_admin</allow_active>' "${extract_dir}/usr/share/polk
 grep -q '<allow_any>no</allow_any>' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"
 grep -q '<allow_inactive>no</allow_inactive>' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"
 if grep -q 'auth_admin_keep' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"; then echo 'Polkit authorization must not be retained' >&2; exit 1; fi
-gzip -t "${extract_dir}/usr/share/man/man1/rufusarm64-cli.1.gz"
-grep -q 'GNU GENERAL PUBLIC LICENSE' "${extract_dir}/usr/share/doc/rufusarm64/copyright"
+grep -q '^Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/$' "${extract_dir}/usr/share/doc/rufusarm64/copyright"
+grep -q '/usr/share/common-licenses/GPL-3' "${extract_dir}/usr/share/doc/rufusarm64/copyright"
+[[ -f "${extract_dir}/usr/share/doc/rufusarm64/LICENSE" ]]
 (cd dist && sha256sum -c "rufusarm64_${VERSION}_arm64.deb.sha256")
+bash ./scripts/reproducible-package.sh
