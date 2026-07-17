@@ -102,14 +102,18 @@ jobs:
             "${RUNNER_TEMP}/safety-loop.test" \
             -test.run '^TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop$' \
             -test.v
-      - name: Commit only the validated production changes
+      - name: Remove one-shot staging files
         env:
-          BASE_SHA: c3bf92e78fd4f1fde7933765c0165011c72904f0
           PATCH_PATH: .github/patches/persistence-formatter-reopen.patch
           WORKFLOW_PATH: .github/workflows/apply-persistence-formatter-reopen.yml
         run: |
           set -euo pipefail
           git rm -- "${PATCH_PATH}" "${WORKFLOW_PATH}"
+      - name: Verify exact production diff
+        env:
+          BASE_SHA: c3bf92e78fd4f1fde7933765c0165011c72904f0
+        run: |
+          set -euo pipefail
           cat >"${RUNNER_TEMP}/expected-files" <<'EOF'
           .github/workflows/ci.yml
           CHANGELOG.md
@@ -121,11 +125,16 @@ jobs:
           internal/safety/reopenable_linux_test.go
           EOF
           git diff --name-only "${BASE_SHA}" | LC_ALL=C sort >"${RUNNER_TEMP}/actual-files"
+          cat "${RUNNER_TEMP}/actual-files"
           diff -u "${RUNNER_TEMP}/expected-files" "${RUNNER_TEMP}/actual-files"
           git diff --check
+      - name: Commit validated production changes
+        run: |
+          set -euo pipefail
           git add -A
           git diff --cached --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m '0.10.5: allow inherited filesystem-tool descriptor reopen'
-          git push origin 'HEAD:fix/persistence-formatter-reopen'
+      - name: Push validated production changes
+        run: git push origin 'HEAD:fix/persistence-formatter-reopen'
