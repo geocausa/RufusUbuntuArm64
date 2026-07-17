@@ -48,11 +48,13 @@ class SourceStructureTests(unittest.TestCase):
         forbidden = []
         workflows = REPOSITORY_ROOT / ".github" / "workflows"
         scripts = REPOSITORY_ROOT / "scripts"
-        for pattern in ("*cleanup*.yml", "*cleanup*.yaml", "*autopatch*.yml", "*autopatch*.yaml"):
-            forbidden.extend(workflows.glob(pattern))
+        for marker in ("cleanup", "autopatch", "repair", "rewrite"):
+            forbidden.extend(workflows.glob(f"*{marker}*.yml"))
+            forbidden.extend(workflows.glob(f"*{marker}*.yaml"))
         forbidden.extend(scripts.glob("*_patch.py"))
+        forbidden.extend(scripts.glob("*_rewrite.py"))
         self.assertEqual(
-            [str(path.relative_to(REPOSITORY_ROOT)) for path in sorted(forbidden)],
+            [str(path.relative_to(REPOSITORY_ROOT)) for path in sorted(set(forbidden))],
             [],
             "temporary source-rewrite machinery must not be part of a release branch",
         )
