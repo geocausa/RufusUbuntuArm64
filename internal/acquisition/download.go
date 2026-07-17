@@ -79,6 +79,9 @@ func Download(ctx context.Context, image Image, options DownloadOptions) (Downlo
 		return DownloadResult{}, fmt.Errorf("create temporary download: %w", err)
 	}
 	tempName := temp.Name()
+	// This also removes the second hard-link name used by the no-replace install
+	// path. os.Rename removes the temporary name itself on the replacement path.
+	defer os.Remove(tempName) // best effort
 	cleanup := func() {
 		_ = temp.Close()
 		_ = os.Remove(tempName)
@@ -119,11 +122,9 @@ func Download(ctx context.Context, image Image, options DownloadOptions) (Downlo
 		return DownloadResult{}, fmt.Errorf("set downloaded image permissions: %w", err)
 	}
 	if err := temp.Close(); err != nil {
-		_ = os.Remove(tempName)
 		return DownloadResult{}, fmt.Errorf("close temporary download: %w", err)
 	}
-	if err := os.Rename(tempName, destination); err != nil {
-		_ = os.Remove(tempName)
+	if err := installDownloadedFile(tempName, destination, options.Replace); err != nil {
 		return DownloadResult{}, fmt.Errorf("install downloaded image: %w", err)
 	}
 	if err := syncDirectory(filepath.Dir(destination)); err != nil {
@@ -175,6 +176,23 @@ func existingDownload(path string, image Image, replace bool) (DownloadResult, b
 		return DownloadResult{}, true, errors.New("download destination already exists with different content; use --replace to overwrite it")
 	}
 	return DownloadResult{}, false, nil
+}
+
+// installDownloadedFile preserves the no-replace contract at the final atomic
+// boundary. The temporary file is created in the destination directory, so a
+// hard link installs the verified inode without a cross-filesystem copy and
+// fails atomically if another process created the destination during transfer.
+func installDownloadedFile(tempName, destination string, replace bool) error {
+	if replace {
+		return os.Rename(tempName, destination)
+	}
+	if err := os.Link(tempName, destination); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return errors.New("download destination was created while the image was downloading; refusing to replace it")
+		}
+		return err
+	}
+	return nil
 }
 
 func secureHTTPClient(image Image, allowHTTP bool) *http.Client {
