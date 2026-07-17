@@ -9,7 +9,26 @@ if [[ "${VERSION}" != "${PROJECT_VERSION}" ]]; then
   exit 1
 fi
 ARCH="arm64"
-OUTPUT_DIR="${ROOT_DIR}/dist"
+OUTPUT_DIR="${OUTPUT_DIR:-${ROOT_DIR}/dist}"
+SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(python3 - "${ROOT_DIR}/CHANGELOG.md" "${VERSION}" <<'PYDATE'
+import datetime
+import pathlib
+import re
+import sys
+
+changelog = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+version = re.escape(sys.argv[2])
+match = re.search(rf"^## {version} — (\d{{4}}-\d{{2}}-\d{{2}})$", changelog, re.MULTILINE)
+if match is None:
+    raise SystemExit("canonical release date is missing from CHANGELOG.md")
+date = datetime.date.fromisoformat(match.group(1))
+moment = datetime.datetime.combine(date, datetime.time(), datetime.timezone.utc)
+print(int(moment.timestamp()))
+PYDATE
+)}"
+export SOURCE_DATE_EPOCH
+export LC_ALL=C
+export TZ=UTC
 PACKAGE_DIR="$(mktemp -d)"
 trap 'rm -rf "${PACKAGE_DIR}"' EXIT
 
@@ -18,11 +37,11 @@ rm -f "${OUTPUT_DIR}/rufusarm64_${VERSION}_${ARCH}.deb" \
       "${OUTPUT_DIR}/rufusarm64_${VERSION}_${ARCH}.deb.sha256"
 
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
-  go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
+  go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \
   -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-helper" \
   "${ROOT_DIR}/cmd/rufus-linux"
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
-  go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
+  go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \
   -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-persistence-helper" \
   "${ROOT_DIR}/cmd/rufus-persistence-helper"
 
@@ -70,6 +89,12 @@ if [[ ! -f "${WIMLIB_SOURCE}" ]]; then
   echo "Missing verified ARM64 WIM engine: ${WIMLIB_SOURCE}" >&2
   exit 1
 fi
+expected_wim_hash="$(awk 'NF {print $1; exit}' "${ROOT_DIR}/vendor/wimlib/arm64/wimlib-imagex.sha256")"
+actual_wim_hash="$(sha256sum "${WIMLIB_SOURCE}" | awk '{print $1}')"
+[[ -n "${expected_wim_hash}" && "${actual_wim_hash}" == "${expected_wim_hash}" ]] || {
+  echo "Refusing unpinned ARM64 WIM engine: ${actual_wim_hash}" >&2
+  exit 1
+}
 file "${WIMLIB_SOURCE}" | grep -Eq 'ARM aarch64|AArch64' || {
   echo "Refusing to bundle a non-AArch64 WIM engine: ${WIMLIB_SOURCE}" >&2
   exit 1
@@ -210,6 +235,7 @@ POSTRM
 chmod 0755 "${PACKAGE_DIR}/DEBIAN/postrm"
 
 find "${PACKAGE_DIR}" -type d -exec chmod 0755 {} +
+find "${PACKAGE_DIR}" -exec touch --no-dereference --date="@${SOURCE_DATE_EPOCH}" {} +
 dpkg-deb --root-owner-group -Zgzip -z9 --build "${PACKAGE_DIR}" \
   "${OUTPUT_DIR}/rufusarm64_${VERSION}_${ARCH}.deb"
 (
