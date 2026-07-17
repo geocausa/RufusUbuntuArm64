@@ -89,9 +89,9 @@ readelf -h "${native_dir}/persistence-helper-arm64" | grep -q 'Machine:.*AArch64
 readelf -h "${native_dir}/persistence-helper-amd64" | grep -q 'Machine:.*Advanced Micro Devices X86-64'
 readelf -h "${native_dir}/channel-admin-arm64" | grep -q 'Machine:.*AArch64'
 readelf -h "${native_dir}/channel-admin-amd64" | grep -q 'Machine:.*Advanced Micro Devices X86-64'
-! grep -q -- '--private-key' cmd/rufus-channel-admin/main.go
-! grep -q 'ed25519.PrivateKey' cmd/rufus-channel-admin/main.go
-! grep -q 'ed25519.Sign(' cmd/rufus-channel-admin/main.go
+if grep -q -- '--private-key' cmd/rufus-channel-admin/main.go; then echo 'private-key option must not exist' >&2; exit 1; fi
+if grep -q 'ed25519.PrivateKey' cmd/rufus-channel-admin/main.go; then echo 'private Ed25519 keys must not exist' >&2; exit 1; fi
+if grep -q 'ed25519.Sign(' cmd/rufus-channel-admin/main.go; then echo 'signing code must not exist' >&2; exit 1; fi
 rm -rf "${native_dir}"
 for script in scripts/*.sh; do bash -n "${script}"; done
 sh -n packaging/rufusarm64
@@ -276,8 +276,8 @@ file "${persistence_helper}" | grep -q 'ARM aarch64'
 file "${persistence_helper}" | grep -q 'statically linked'
 readelf -h "${helper}" | grep -q 'Machine:.*AArch64'
 readelf -h "${persistence_helper}" | grep -q 'Machine:.*AArch64'
-! readelf -l "${helper}" | grep -q 'Requesting program interpreter'
-! readelf -l "${persistence_helper}" | grep -q 'Requesting program interpreter'
+if readelf -l "${helper}" | grep -q 'Requesting program interpreter'; then echo 'main helper must be static' >&2; exit 1; fi
+if readelf -l "${persistence_helper}" | grep -q 'Requesting program interpreter'; then echo 'persistence helper must be static' >&2; exit 1; fi
 grep -q '^Architecture: arm64$' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*mount' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*e2fsprogs' "${extract_dir}/DEBIAN/control"
@@ -285,13 +285,13 @@ grep -q 'Depends:.*ntfs-3g' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*xz-utils' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*zstd' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*qemu-utils' "${extract_dir}/DEBIAN/control"
-! grep -q '^Suggests:.*wimtools' "${extract_dir}/DEBIAN/control"
-! grep -q 'Depends:.*parted' "${extract_dir}/DEBIAN/control"
+if grep -q '^Suggests:.*wimtools' "${extract_dir}/DEBIAN/control"; then echo 'package must not suggest external wimtools' >&2; exit 1; fi
+if grep -q 'Depends:.*parted' "${extract_dir}/DEBIAN/control"; then echo 'package must not depend on parted' >&2; exit 1; fi
 [[ "$(readlink "${extract_dir}/usr/bin/rufusarm64-cli")" == "../lib/rufusarm64/rufusarm64-helper" ]]
 grep -q '<allow_active>auth_admin</allow_active>' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"
 grep -q '<allow_any>no</allow_any>' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"
 grep -q '<allow_inactive>no</allow_inactive>' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"
-! grep -q 'auth_admin_keep' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"
+if grep -q 'auth_admin_keep' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"; then echo 'Polkit authorization must not be retained' >&2; exit 1; fi
 gzip -t "${extract_dir}/usr/share/man/man1/rufusarm64-cli.1.gz"
 grep -q 'GNU GENERAL PUBLIC LICENSE' "${extract_dir}/usr/share/doc/rufusarm64/copyright"
 (cd dist && sha256sum -c "rufusarm64_${VERSION}_arm64.deb.sha256")
