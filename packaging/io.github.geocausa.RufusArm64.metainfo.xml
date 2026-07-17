@@ -11,7 +11,9 @@
   </description>
   <launchable type="desktop-id">io.github.geocausa.RufusArm64.desktop</launchable>
   <url type="homepage">https://github.com/geocausa/RufusUbuntuArm64</url>
-  <developer_name>RufusArm64 contributors</developer_name>
+  <developer id="io.github.geocausa">
+    <name>RufusArm64 contributors</name>
+  </developer>
   <provides>
     <binary>rufusarm64</binary>
     <binary>rufusarm64-persistence</binary>

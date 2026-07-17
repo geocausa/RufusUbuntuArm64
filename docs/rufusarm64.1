@@ -1,0 +1,25 @@
+.TH RUFUSARM64 1 "July 2026" "RufusArm64 0.10.4" "User Commands"
+.SH NAME
+rufusarm64 \- graphical bootable USB creator for Ubuntu ARM64
+.SH SYNOPSIS
+.B rufusarm64
+.RI [ --persistence ]
+.SH DESCRIPTION
+.B rufusarm64
+opens the graphical RufusArm64 application. It creates raw Linux media and
+supported Windows installation USB media after explicit target confirmation
+and administrator authentication.
+.PP
+The ordinary Create USB action preserves supported Linux raw/ISOHybrid images
+byte-for-byte. Persistent-live creation is a separate guarded workflow.
+.SH OPTIONS
+.TP
+.B --persistence
+Open the guarded persistent Ubuntu/Debian live-USB creator directly.
+.SH SAFETY
+Every selected target is erased. Verify the device model, capacity, and path
+shown in the final confirmation dialog. A successful write or byte comparison
+does not prove that particular firmware will boot the media.
+.SH SEE ALSO
+.BR rufusarm64-cli (1),
+.BR rufusarm64-persistence (1)
