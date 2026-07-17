@@ -1,8 +1,48 @@
 """Pure, testable helpers for the RufusArm64 GTK front end."""
 
+import json
 import os
 import re
 import stat
+import tempfile
+
+def atomic_write_json(path, payload):
+    """Durably replace an owner-only JSON file without following directory links."""
+    absolute = os.path.abspath(path)
+    directory = os.path.dirname(absolute)
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    directory_info = os.lstat(directory)
+    if stat.S_ISLNK(directory_info.st_mode) or not stat.S_ISDIR(directory_info.st_mode):
+        raise OSError("settings directory is not a real directory")
+    os.chmod(directory, 0o700)
+
+    descriptor = -1
+    temporary = ""
+    try:
+        descriptor, temporary = tempfile.mkstemp(prefix=".settings-", suffix=".tmp", dir=directory)
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            descriptor = -1
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, absolute)
+        temporary = ""
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        directory_fd = os.open(directory, flags)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+
 
 SUPPORTED_IMAGE_SUFFIXES = (
     ".iso", ".img", ".raw", ".bin",

@@ -4,6 +4,7 @@ import unittest
 
 from rufusarm64_logic import (
     acquisition_image_label,
+    atomic_write_json,
     build_acquisition_channel_download_command,
     build_acquisition_channel_list_command,
     build_acquisition_download_command,
@@ -34,6 +35,25 @@ from rufusarm64_logic import (
 
 
 class LogicTests(unittest.TestCase):
+    def test_atomic_write_json_is_owner_only_and_replaces(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "settings.json")
+            atomic_write_json(path, {"value": 1})
+            atomic_write_json(path, {"value": 2})
+            with open(path, "r", encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), '{\n  "value": 2\n}')
+            self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+            self.assertEqual(sorted(os.listdir(directory)), ["settings.json"])
+
+    def test_atomic_write_json_rejects_symlink_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            real = os.path.join(directory, "real")
+            linked = os.path.join(directory, "linked")
+            os.mkdir(real)
+            os.symlink(real, linked)
+            with self.assertRaises(OSError):
+                atomic_write_json(os.path.join(linked, "settings.json"), {"unsafe": True})
+
     def test_human_bytes(self):
         self.assertEqual(human_bytes(1024), "1.0 KiB")
 

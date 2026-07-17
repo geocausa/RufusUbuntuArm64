@@ -23,6 +23,7 @@ from gi.repository import GLib, Gtk
 
 from rufusarm64_logic import (
     acquisition_image_label,
+    atomic_write_json,
     build_acquisition_channel_download_command,
     build_acquisition_channel_list_command,
     build_acquisition_download_command,
@@ -935,13 +936,8 @@ class RufusWindow(Gtk.ApplicationWindow):
         except ValueError:
             pass
         try:
-            os.makedirs(directory, mode=0o700, exist_ok=True)
-            temporary = path + ".tmp"
-            with open(temporary, "w", encoding="utf-8") as handle:
-                json.dump(self.settings, handle, indent=2, sort_keys=True)
-            os.chmod(temporary, 0o600)
-            os.replace(temporary, path)
-        except OSError:
+            atomic_write_json(path, self.settings)
+        except (OSError, TypeError, ValueError):
             pass
 
     def on_configure(self, *_):
@@ -1464,8 +1460,13 @@ class RufusWindow(Gtk.ApplicationWindow):
         if not architecture:
             self.message(f"No Microsoft DBX download mapping is available for {machine}.", Gtk.MessageType.ERROR)
             return
-        self.dbx_update_button.set_sensitive(False)
+        self.active_job = "dbx-update"
+        self.cancel_requested = False
+        self.operation_started_at = datetime.now(timezone.utc)
+        self.set_busy(True)
+        self.progress.pulse()
         self.progress.set_text("Downloading Microsoft Secure Boot DBX…")
+        self.progress_detail.set_text("The DBX update is read-only, but other operations remain disabled until it finishes.")
 
         def worker():
             try:
@@ -1486,7 +1487,10 @@ class RufusWindow(Gtk.ApplicationWindow):
         threading.Thread(target=worker, daemon=True).start()
 
     def finish_dbx_update(self, path, digest, error):
-        self.dbx_update_button.set_sensitive(not self.busy and self.inspection.get("mode") == "windows")
+        if self.active_job != "dbx-update":
+            return False
+        self.active_job = ""
+        self.set_busy(False)
         if error:
             self.progress.set_text("Secure Boot DBX update failed")
             self.message(f"Could not update the Secure Boot DBX: {error}", Gtk.MessageType.ERROR)
