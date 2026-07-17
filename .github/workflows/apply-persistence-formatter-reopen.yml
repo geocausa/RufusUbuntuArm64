@@ -68,11 +68,14 @@ jobs:
         run: |
           set -euo pipefail
           git diff --check
-      - name: Run focused and complete Go tests
-        run: |
-          set -euo pipefail
-          go test ./internal/safety ./internal/linuxmedia ./internal/persistence
-          go test ./...
+      - name: Test safety package
+        run: go test -v ./internal/safety
+      - name: Test Linux-media package
+        run: go test -v ./internal/linuxmedia
+      - name: Test persistence package
+        run: go test -v ./internal/persistence
+      - name: Run complete Go suite
+        run: go test ./...
       - name: Exercise the real block-device formatter chain
         run: |
           set -euo pipefail
