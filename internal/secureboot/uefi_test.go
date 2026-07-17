@@ -225,3 +225,31 @@ func TestValidateUEFIMediaBoundsFileCount(t *testing.T) {
 		t.Fatalf("file-count bound was not enforced: %v", err)
 	}
 }
+
+func TestValidateUEFIMediaRejectsExcessiveConfiguredFileLimit(t *testing.T) {
+	_, err := ValidateUEFIMedia(context.Background(), t.TempDir(), UEFIValidationOptions{
+		Architecture: "arm64",
+		MaxFiles:     maximumUEFIMaxFiles + 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "safety maximum") {
+		t.Fatalf("excessive configured file limit was not rejected: %v", err)
+	}
+}
+
+func TestValidateUEFIMediaRejectsDuplicateSBATSections(t *testing.T) {
+	root := t.TempDir()
+	writeSyntheticEFI(t, root, "EFI/BOOT/BOOTAA64.EFI", syntheticUEFIPE(
+		imageFileMachineARM64,
+		imageSubsystemEFIApp,
+		syntheticUEFISection{name: ".text", data: []byte("fallback")},
+		syntheticUEFISection{name: ".sbat", data: validSBAT()},
+		syntheticUEFISection{name: ".sbat", data: []byte("grub,2,Ubuntu,grub,2,https://ubuntu.com\n")},
+	))
+	result, err := ValidateUEFIMedia(context.Background(), root, UEFIValidationOptions{Architecture: "arm64", RequireFallback: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Valid || !strings.Contains(strings.Join(result.Errors, "\n"), "multiple .sbat") {
+		t.Fatalf("duplicate SBAT sections were not rejected: %#v", result)
+	}
+}
