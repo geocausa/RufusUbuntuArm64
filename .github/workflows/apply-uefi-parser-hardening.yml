@@ -7,6 +7,12 @@ on:
     paths:
       - '.github/patches/uefi-parser-hardening.patch'
       - '.github/workflows/apply-uefi-parser-hardening.yml'
+  pull_request:
+    branches:
+      - develop/0.11.0
+    paths:
+      - '.github/patches/uefi-parser-hardening.patch'
+      - '.github/workflows/apply-uefi-parser-hardening.yml'
 
 permissions:
   contents: write
@@ -17,6 +23,10 @@ concurrency:
 
 jobs:
   apply:
+    if: >-
+      github.repository == 'geocausa/RufusUbuntuArm64' &&
+      (github.event_name == 'push' ||
+       github.event.pull_request.head.ref == 'feature/0.11-uefi-parser-hardening')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
