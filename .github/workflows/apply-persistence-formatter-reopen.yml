@@ -102,13 +102,14 @@ jobs:
             "${RUNNER_TEMP}/safety-loop.test" \
             -test.run '^TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop$' \
             -test.v
-      - name: Remove one-shot staging files
+      - name: Remove one-shot staging files and stage production tree
         env:
           PATCH_PATH: .github/patches/persistence-formatter-reopen.patch
           WORKFLOW_PATH: .github/workflows/apply-persistence-formatter-reopen.yml
         run: |
           set -euo pipefail
           git rm -- "${PATCH_PATH}" "${WORKFLOW_PATH}"
+          git add -A
       - name: Verify exact production diff
         env:
           BASE_SHA: c3bf92e78fd4f1fde7933765c0165011c72904f0
@@ -124,7 +125,7 @@ jobs:
           internal/safety/reopenable_linux.go
           internal/safety/reopenable_linux_test.go
           EOF
-          git diff --name-only "${BASE_SHA}" | LC_ALL=C sort >"${RUNNER_TEMP}/actual-files"
+          git diff --cached --name-only "${BASE_SHA}" | LC_ALL=C sort >"${RUNNER_TEMP}/actual-files"
           {
             echo '=== expected ==='
             cat "${RUNNER_TEMP}/expected-files"
@@ -133,7 +134,7 @@ jobs:
             echo '=== diff ==='
             diff -u "${RUNNER_TEMP}/expected-files" "${RUNNER_TEMP}/actual-files"
           } 2>&1 | tee "${RUNNER_TEMP}/formatter-fix-manifest.log"
-          git diff --check
+          git diff --cached --check
       - name: Upload production-diff diagnostic
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -144,8 +145,6 @@ jobs:
       - name: Commit validated production changes
         run: |
           set -euo pipefail
-          git add -A
-          git diff --cached --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m '0.10.5: allow inherited filesystem-tool descriptor reopen'
