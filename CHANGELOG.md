@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.2 — 2026-07-17
+
+- Fixed persistence analysis for official Canonical live images that contain in-tree directory symbolic links such as `dists/stable`.
+- Materialized accepted directory links as real FAT32 directories and included all duplicated files in entry, byte, and capacity limits.
+- Retained strict refusal of absolute or escaping links, symbolic-link cycles, device nodes, unsupported targets, FAT32 collisions, and unbounded trees.
+- Added end-to-end tests that analyze, copy, hash, and verify a distribution directory exposed through a relative directory link.
+- Kept the ordinary raw/ISOHybrid writer byte-for-byte unchanged; this release repairs only the guarded persistent-live workflow.
+
 ## 0.10.1 — 2026-07-16
 
 - Aligned graphical persistence analysis with the actual fresh GPT/FAT32/ext4 creator instead of extending or validating the ISO's embedded hybrid partition table.
