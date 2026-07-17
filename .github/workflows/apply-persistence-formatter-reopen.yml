@@ -33,16 +33,31 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26.5'
-      - name: Verify and apply the reviewed patch
+      - name: Verify audited branch ancestry
         env:
           BASE_SHA: c3bf92e78fd4f1fde7933765c0165011c72904f0
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "${BASE_SHA}" HEAD
+      - name: Verify reviewed patch checksum
+        env:
           PATCH_PATH: .github/patches/persistence-formatter-reopen.patch
           PATCH_SHA256: be037ffe5d04c644c91934626f06bfec06c516c7129e79ea3e4c7aaae205460e
         run: |
           set -euo pipefail
-          git merge-base --is-ancestor "${BASE_SHA}" HEAD
+          sha256sum "${PATCH_PATH}"
           printf '%s  %s\n' "${PATCH_SHA256}" "${PATCH_PATH}" | sha256sum -c -
-          git apply --check "${PATCH_PATH}"
+      - name: Check reviewed patch applicability
+        env:
+          PATCH_PATH: .github/patches/persistence-formatter-reopen.patch
+        run: |
+          set -euo pipefail
+          git apply --check --verbose "${PATCH_PATH}"
+      - name: Apply and format reviewed patch
+        env:
+          PATCH_PATH: .github/patches/persistence-formatter-reopen.patch
+        run: |
+          set -euo pipefail
           git apply "${PATCH_PATH}"
           gofmt -w internal/safety/reopenable_linux.go internal/safety/reopenable_linux_test.go
           git diff --check
