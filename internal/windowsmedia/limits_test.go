@@ -44,12 +44,12 @@ func TestCountBoundedEntryEnforcesExactLimit(t *testing.T) {
 
 func TestFinalizePlanUsesCheckedCapacityArithmetic(t *testing.T) {
 	plan := mediaPlan{
-		OtherBytes:    100,
-		InstallSize:   200,
-		DriverBytes:   300,
-		DriverFolder:  "/drivers",
-		Filesystem:    "fat32",
-		AnswerFile:    []byte("new"),
+		OtherBytes:         100,
+		InstallSize:        200,
+		DriverBytes:        300,
+		DriverFolder:       "/drivers",
+		Filesystem:         "fat32",
+		AnswerFile:         []byte("new"),
 		ExistingAnswerSize: 10,
 	}
 	if err := finalizePlan(&plan); err != nil {
