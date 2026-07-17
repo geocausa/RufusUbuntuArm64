@@ -12,6 +12,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  go-minimum:
+    name: Go 1.22 compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.22.x'
+      - name: Compile and test the declared minimum Go version
+        run: go test ./...
+
   wim-engine:
     name: Build bundled WIM engine
     runs-on: ubuntu-24.04-arm
@@ -39,16 +53,16 @@ jobs:
 
   test-and-package:
     name: Audit and package
-    needs: wim-engine
+    needs: [go-minimum, wim-engine]
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.23.x'
+          go-version: '1.26.5'
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: wimlib-arm64
@@ -58,6 +72,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             shellcheck desktop-file-utils appstream lintian
+          audit_bin="${RUNNER_TEMP}/rufusarm64-audit-tools"
+          mkdir -p "${audit_bin}"
+          GOBIN="${audit_bin}" go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          GOBIN="${audit_bin}" go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          GOBIN="${audit_bin}" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          echo "${audit_bin}" >> "${GITHUB_PATH}"
+      - name: Run pinned static, workflow, and vulnerability checks
+        run: ./scripts/static-audit.sh
       - name: Read canonical project version
         id: version
         run: |
@@ -76,7 +98,7 @@ jobs:
 
   native-arm64-smoke:
     name: Native ARM64 execution
-    needs: wim-engine
+    needs: [go-minimum, wim-engine]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
     steps:
@@ -85,7 +107,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.23.x'
+          go-version: '1.26.5'
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: wimlib-arm64
