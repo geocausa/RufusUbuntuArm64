@@ -1,0 +1,68 @@
+name: Audit source cleanup
+
+on:
+  push:
+    branches:
+      - audit/pre-0.11-hardening
+
+permissions:
+  contents: write
+
+concurrency:
+  group: audit-source-cleanup
+  cancel-in-progress: false
+
+jobs:
+  remove-exact-duplicates:
+    if: github.repository == 'geocausa/RufusUbuntuArm64'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: audit/pre-0.11-hardening
+      - name: Remove only the confirmed repeated definitions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('gui/rufusarm64.py')
+          text = path.read_text(encoding='utf-8')
+
+          function = '''def persistence_launcher_path():
+              if os.path.isfile(PERSISTENCE_LAUNCHER) and os.access(PERSISTENCE_LAUNCHER, os.X_OK):
+                  return PERSISTENCE_LAUNCHER
+              development = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rufusarm64_persistence.py")
+              if os.path.isfile(development) and os.access(development, os.X_OK):
+                  return development
+              raise FileNotFoundError("The guarded persistence creator is not installed.")
+          '''
+          method = '''    def open_persistence_creator(self, *_):
+                  if self.busy:
+                      return
+                  try:
+                      subprocess.Popen([persistence_launcher_path()], start_new_session=True)
+                  except OSError as exc:
+                      self.message(f"Could not open the persistent USB creator: {exc}", Gtk.MessageType.ERROR)
+          '''
+
+          for label, block in (("module function", function), ("window method", method)):
+              count = text.count(block)
+              if count not in (1, 3):
+                  raise SystemExit(f"unexpected {label} count: {count}")
+              if count == 3:
+                  text = text.replace(block + '\n\n' + block + '\n\n' + block, block, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+          python3 gui/test_source_structure.py
+      - name: Commit the exact cleanup when needed
+        run: |
+          if git diff --quiet -- gui/rufusarm64.py; then
+            exit 0
+          fi
+          git config user.name 'RufusArm64 audit'
+          git config user.email 'actions@users.noreply.github.com'
+          git add gui/rufusarm64.py
+          git commit -m 'audit: remove duplicated GUI definitions'
+          git push origin HEAD:audit/pre-0.11-hardening
