@@ -93,6 +93,11 @@ jobs:
           mkdir -p dist/audit-logs
           set -o pipefail
           ./scripts/test.sh 2>&1 | tee dist/audit-logs/test-and-package.log
+      - name: Confirm reproducible Debian package
+        if: success()
+        run: |
+          set -o pipefail
+          bash ./scripts/reproducible-package.sh 2>&1 | tee dist/audit-logs/reproducible-package.log
       - name: Upload complete audit logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
