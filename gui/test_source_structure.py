@@ -65,7 +65,7 @@ class SourceStructureTests(unittest.TestCase):
             'shellcheck -x scripts/*.sh packaging/rufusarm64',
             'lintian --fail-on error "${PACKAGE}"',
             'grep -q \'^NoDisplay=true$\' "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.Persistence.desktop"',
-            'grep -q \'^Actions=.*Persistence\' "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.desktop"',
+            'grep -q \'^Actions=.*PersistentLiveUSB\' "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.desktop"',
             'grep -q \'Open Persistent USB Creator\' "${installed_gui}"',
         )
         duplicated = [line for line in unique_lines if test_script.count(line) != 1]

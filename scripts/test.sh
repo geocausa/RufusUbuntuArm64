@@ -252,7 +252,10 @@ done
 [[ -x "${extract_dir}/usr/bin/rufusarm64-persistence" ]]
 [[ -f "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.Persistence.desktop" ]]
 grep -q '^NoDisplay=true$' "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.Persistence.desktop"
-grep -q '^Actions=.*Persistence' "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.desktop"
+if ! grep -q '^Actions=.*PersistentLiveUSB' "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.desktop"; then
+  echo "Main desktop entry must expose the PersistentLiveUSB action" >&2
+  exit 1
+fi
 grep -q 'Open Persistent USB Creator' "${installed_gui}"
 [[ -f "${extract_dir}/usr/share/man/man1/rufusarm64-cli.1.gz" ]]
 [[ -f "${extract_dir}/usr/share/doc/rufusarm64/acquisition-channel.md" ]]
