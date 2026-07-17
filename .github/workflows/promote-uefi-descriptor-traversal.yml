@@ -43,12 +43,12 @@ jobs:
           python3 /tmp/apply-uefi-descriptor-traversal.py
           gofmt -w internal/secureboot/uefi.go internal/secureboot/uefi_descriptor_linux.go internal/secureboot/uefi_test.go
           git diff --check
-      - name: Run focused and complete tests
-        run: |
-          set -euo pipefail
-          go test -race -count=1 ./internal/secureboot -run 'TestValidateUEFI'
-          go vet ./internal/secureboot
-          go test ./...
+      - name: Run focused UEFI race tests
+        run: go test -race -count=1 ./internal/secureboot -run 'TestValidateUEFI'
+      - name: Vet Secure Boot package
+        run: go vet ./internal/secureboot
+      - name: Run complete Go suite
+        run: go test ./...
       - name: Commit validated production changes
         run: |
           set -euo pipefail
