@@ -16,7 +16,7 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 ## Install on Ubuntu ARM64
 
 ```bash
-sudo apt install ./rufusarm64_0.10.1_arm64.deb
+sudo apt install ./rufusarm64_0.10.2_arm64.deb
 ```
 
 The package upgrades older `rufusarm64` installations in place. Open **RufusArm64** or **RufusArm64 Persistent Live USB** from the application menu afterward.
@@ -32,15 +32,18 @@ The package upgrades older `rufusarm64` installations in place. Open **RufusArm6
 
 Everything on the selected USB is permanently erased.
 
+The **Create USB** button in the main RufusArm64 window always performs the ordinary image-writing workflow. It does not turn a live ISO into persistent media. Use the separately installed **RufusArm64 Persistent Live USB** application for persistence.
+
 ## Persistent Linux media
 
-Version 0.10.1 includes a separate graphical **Persistent Live USB** wizard. It currently supports a deliberately narrow contract:
+Version 0.10.2 includes a separate graphical **Persistent Live USB** wizard. It currently supports a deliberately narrow contract:
 
 - plain raw-bootable ISOHybrid media;
 - Ubuntu 20.04+ casper or Debian live-boot;
 - GPT/UEFI;
 - an architecture-matching fallback loader in `EFI/BOOT`;
 - a FAT32-compatible live-media tree;
+- bounded in-tree file and directory symbolic links that can be safely materialized as ordinary FAT32 entries;
 - a writable FAT32 boot partition and separate ext4 persistence partition;
 - at least 1 GiB of persistence capacity.
 
@@ -58,14 +61,17 @@ For the structural form, the analyzer also requires modern casper metadata such 
 
 ### Persistence workflow
 
-1. Select the Linux ISO and exact removable USB.
-2. Choose a persistence size; zero uses the suitable remaining space.
-3. Run **Analyze selected image**. This identity-bound step mounts only the ISO read-only and never opens the USB device.
-4. Review the detected family, filesystem label, boot parameter, fresh GPT layout, required FAT32 capacity, and boot files to be changed.
-5. Confirm **Erase and create persistent USB**.
-6. Keep the drive connected while data are copied, flushed, and checked. Slow flash drives may spend several minutes committing cached writes.
+1. Open **RufusArm64 Persistent Live USB**, not the ordinary writer.
+2. Select the Linux ISO and exact removable USB.
+3. Choose a persistence size; zero uses the suitable remaining space.
+4. Run **Analyze selected image**. This identity-bound step mounts only the ISO read-only and never opens the USB device.
+5. Review the detected family, filesystem label, boot parameter, fresh GPT layout, required FAT32 capacity, and boot files to be changed.
+6. Confirm **Erase and create persistent USB**.
+7. Keep the drive connected while data are copied, flushed, and checked. Slow flash drives may spend several minutes committing cached writes.
 
 Persistence analysis and creation intentionally ignore the ISO's embedded hybrid MBR geometry. Like upstream Rufus, the creator builds a fresh target GPT containing a writable FAT32 boot partition and a separate ext4 persistence partition, then copies and verifies the approved live-media tree.
+
+Relative directory links used by Debian/Ubuntu repository metadata, such as `dists/stable`, are copied as real directories because FAT32 has no symbolic-link representation. Their files are hashed, counted again for capacity planning, copied through the same verified path, and rehashed on the destination. Absolute links, links outside the ISO, cycles, device nodes, and unbounded expansions remain refused.
 
 Creation is not final qualification. Boot the USB and run:
 
@@ -111,7 +117,7 @@ The privileged helpers:
 - bind the selected source and target to refreshed identities;
 - hash the already-open source before destructive work and recheck it later;
 - revalidate the target immediately before destructive phases;
-- reject symbolic-link traversal in untrusted paths and boot-file patching;
+- reject unsafe symbolic-link traversal while allowing only bounded in-tree materialization for FAT32 live-media copying;
 - hold target locks, flush block buffers, verify copied files, and check filesystems;
 - require fresh Polkit authorization and support protected cancellation.
 
@@ -128,7 +134,7 @@ Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, and the
 The installer is produced at:
 
 ```text
-dist/rufusarm64_0.10.1_arm64.deb
+dist/rufusarm64_0.10.2_arm64.deb
 ```
 
 ## Command-line examples
