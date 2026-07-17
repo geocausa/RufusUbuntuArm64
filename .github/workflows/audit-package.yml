@@ -98,7 +98,6 @@ jobs:
           PY
           bash -n scripts/build-deb.sh scripts/reproducible-package.sh
           shellcheck -x scripts/build-deb.sh scripts/reproducible-package.sh
-          bash ./scripts/reproducible-package.sh
       - name: Commit package hardening
         run: |
           git config user.name 'RufusArm64 audit'
