@@ -234,7 +234,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 			return fmt.Errorf("resolve Secure Boot DBX file: %w", err)
 		}
 		if err := safety.EnsurePathNotOnTarget(dbxPath, devicePath); err != nil {
-			return fmt.Errorf("Secure Boot DBX file is unsafe: %w", err)
+			return fmt.Errorf("secure boot DBX file is unsafe: %w", err)
 		}
 		database, err := secureboot.ParseFile(dbxPath)
 		if err != nil {
@@ -252,7 +252,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 			}
 			checked++
 			if result.DirectHashRevoked || result.X509CertificateRevoked {
-				return fmt.Errorf("Windows boot file %s is revoked by the selected Secure Boot DBX; no USB data was changed", result.Path)
+				return fmt.Errorf("windows boot file %s is revoked by the selected Secure Boot DBX; no USB data was changed", result.Path)
 			}
 		}
 		send(emit, Event{Stage: "secure_boot", Message: fmt.Sprintf("Checked %d EFI boot files; no direct hash or embedded-certificate revocation was found.", checked)})
@@ -273,7 +273,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 			return fmt.Errorf("resolve Windows driver folder: %w", err)
 		}
 		if err := safety.EnsurePathNotOnTarget(driverRoot, devicePath); err != nil {
-			return fmt.Errorf("Windows driver folder is unsafe: %w", err)
+			return fmt.Errorf("windows driver folder is unsafe: %w", err)
 		}
 		plan.DriverBytes, err = inspectDriverFolder(driverRoot, filesystem)
 		if err != nil {
@@ -902,7 +902,7 @@ func inspectDriverFolder(root string, filesystem string) (uint64, error) {
 
 func finalizePlan(plan *mediaPlan) error {
 	if plan == nil {
-		return errors.New("Windows media plan is nil")
+		return errors.New("windows media plan is nil")
 	}
 	installOutput := plan.InstallSize
 	if plan.NeedsSplit && plan.SplitBytes > 0 {
@@ -969,23 +969,6 @@ func prepareSplitImage(ctx context.Context, sourcePath, splitDir string, emit Ev
 		return nil, 0, err
 	}
 	return parts, total, nil
-}
-
-func verifySplitImage(ctx context.Context, parts []string, emit EventFunc) error {
-	if len(parts) == 0 {
-		return errors.New("no split WIM parts were supplied")
-	}
-	args := []string{"verify", parts[0]}
-	for _, part := range parts {
-		// An exact path is also a valid wimlib --ref glob, and avoids relying on
-		// shell expansion or filename case.
-		args = append(args, "--ref="+part)
-	}
-	wimlib, err := wimlibExecutable()
-	if err != nil {
-		return err
-	}
-	return run(ctx, emit, wimlib, args...)
 }
 
 func findExistingSplitFiles(root string) ([]string, error) {

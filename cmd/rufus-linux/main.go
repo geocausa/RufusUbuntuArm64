@@ -483,7 +483,7 @@ func runWrite(args []string) error {
 		TimeZone:             *winTimeZone,
 	}
 	if selectedMode != "windows" && (winOptions.Enabled() || scheme != "gpt" || targetSystemChoice != "uefi" || filesystemChoice != "auto" || clusterSize != 0 || *driverFolder != "" || *dbxFile != "" || *fullFormat || *badBlockCheck) {
-		return errors.New("Windows partition and setup options can only be used with a supported Windows installation ISO")
+		return errors.New("windows partition and setup options can only be used with a supported Windows installation ISO")
 	}
 	if selectedMode == "linux-persistent" {
 		if !*experimentalPersistence {
@@ -507,12 +507,12 @@ func runWrite(args []string) error {
 
 	if strings.TrimSpace(*driverFolder) != "" {
 		if err := safety.EnsurePathNotOnTarget(*driverFolder, resolved); err != nil {
-			return fmt.Errorf("Windows driver folder is on the selected target: %w", err)
+			return fmt.Errorf("windows driver folder is on the selected target: %w", err)
 		}
 	}
 	if strings.TrimSpace(*dbxFile) != "" {
 		if err := safety.EnsurePathNotOnTarget(*dbxFile, resolved); err != nil {
-			return fmt.Errorf("Secure Boot DBX file is on the selected target: %w", err)
+			return fmt.Errorf("secure boot DBX file is on the selected target: %w", err)
 		}
 	}
 	if selectedMode == "raw" && imageSize > dev.Size {

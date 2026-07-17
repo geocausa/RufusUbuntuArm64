@@ -90,10 +90,10 @@ func Detect(root fs.FS) (Detection, error) {
 		return detectDebian(info, debianConfigs), nil
 	}
 	if casperKernel && casperInitrd {
-		return Detection{}, errors.New("Ubuntu casper kernel and initrd were found, but no supported kernel command selects /casper/vmlinuz or boot=casper")
+		return Detection{}, errors.New("ubuntu casper kernel and initrd were found, but no supported kernel command selects /casper/vmlinuz or boot=casper")
 	}
 	if liveKernel && liveInitrd {
-		return Detection{}, errors.New("Debian live kernel and initrd were found, but no supported kernel command contains boot=live")
+		return Detection{}, errors.New("debian live kernel and initrd were found, but no supported kernel command contains boot=live")
 	}
 	return Detection{}, errors.New("media is not a supported Ubuntu casper or Debian live-boot layout")
 }
@@ -367,23 +367,6 @@ func kernelPathMatchesFamily(token string, family Family) bool {
 	}
 	name := strings.SplitN(remainder, "/", 2)[0]
 	return strings.HasPrefix(name, "vmlinuz")
-}
-
-func containsKernelToken(content, token string) bool {
-	for _, line := range strings.Split(content, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		fields := strings.Fields(trimmed)
-		if len(fields) < 2 || !isKernelArgumentCommand(fields[0]) {
-			continue
-		}
-		if kernelArgumentsContain(fields[1:], token) {
-			return true
-		}
-	}
-	return false
 }
 
 func isKernelArgumentCommand(command string) bool {

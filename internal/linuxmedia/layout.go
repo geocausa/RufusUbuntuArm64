@@ -78,14 +78,14 @@ func PlanPersistentLayout(targetSize, sectorSize, copiedBytes, requestedPersiste
 		return PersistentLayout{}, fmt.Errorf("target size %d is not aligned to logical sector size %d", targetSize, sectorSize)
 	}
 	if copiedBytes == 0 {
-		return PersistentLayout{}, errors.New("Linux media tree is empty")
+		return PersistentLayout{}, errors.New("linux media tree is empty")
 	}
 	margin := copiedBytes / 20
 	if margin < 64*1024*1024 {
 		margin = 64 * 1024 * 1024
 	}
 	if copiedBytes > ^uint64(0)-margin {
-		return PersistentLayout{}, errors.New("Linux media size overflows the boot partition calculation")
+		return PersistentLayout{}, errors.New("linux media size overflows the boot partition calculation")
 	}
 	bootSize := alignLayout(copiedBytes+margin, layoutAlignment)
 	if bootSize < minimumBootBytes {
@@ -159,15 +159,15 @@ func PlanPersistentLayout(targetSize, sectorSize, copiedBytes, requestedPersiste
 // file tail slack, directory clusters, and long-filename directory records.
 func EstimateFAT32Bytes(manifest Manifest) (uint64, error) {
 	if len(manifest.Entries) == 0 || manifest.TotalBytes == 0 {
-		return 0, errors.New("Linux media manifest is empty")
+		return 0, errors.New("linux media manifest is empty")
 	}
 	entryCount := uint64(len(manifest.Entries))
 	if entryCount > ^uint64(0)/fat32EntryOverhead {
-		return 0, errors.New("Linux media entry count overflows FAT32 sizing")
+		return 0, errors.New("linux media entry count overflows FAT32 sizing")
 	}
 	overhead := entryCount * fat32EntryOverhead
 	if manifest.TotalBytes > ^uint64(0)-overhead {
-		return 0, errors.New("Linux media size overflows FAT32 sizing")
+		return 0, errors.New("linux media size overflows FAT32 sizing")
 	}
 	return manifest.TotalBytes + overhead, nil
 }
@@ -365,24 +365,6 @@ func makeLayoutGPTHeader(sectorSize, current, backup, firstUsable, lastUsable ui
 	binary.LittleEndian.PutUint32(header[88:92], entriesCRC)
 	binary.LittleEndian.PutUint32(header[16:20], crc32.ChecksumIEEE(header[:layoutGPTHeaderSize]))
 	return header
-}
-
-func verifyLayoutHeader(header []byte, current, backup, entriesLBA uint64, diskGUID [16]byte, entriesCRC uint32) error {
-	if len(header) < layoutGPTHeaderSize || string(header[:8]) != "EFI PART" || binary.LittleEndian.Uint32(header[12:16]) != layoutGPTHeaderSize {
-		return errors.New("invalid GPT header structure")
-	}
-	storedCRC := binary.LittleEndian.Uint32(header[16:20])
-	copyHeader := append([]byte(nil), header[:layoutGPTHeaderSize]...)
-	binary.LittleEndian.PutUint32(copyHeader[16:20], 0)
-	if crc32.ChecksumIEEE(copyHeader) != storedCRC {
-		return errors.New("GPT header CRC mismatch")
-	}
-	if binary.LittleEndian.Uint64(header[24:32]) != current || binary.LittleEndian.Uint64(header[32:40]) != backup ||
-		binary.LittleEndian.Uint64(header[72:80]) != entriesLBA || !bytes.Equal(header[56:72], diskGUID[:]) ||
-		binary.LittleEndian.Uint32(header[88:92]) != entriesCRC {
-		return errors.New("GPT header geometry mismatch")
-	}
-	return nil
 }
 
 func makeLayoutProtectiveMBR(totalLBAs, sectorSize uint64) []byte {

@@ -83,14 +83,14 @@ func installLegacyBIOSBoot(disk *os.File, partitionPath, filesystem string, layo
 		return err
 	}
 	if err := patchAndVerify(disk, 0, windows7MBRCode); err != nil {
-		return fmt.Errorf("write Windows MBR bootstrap: %w", err)
+		return fmt.Errorf("write windows MBR bootstrap: %w", err)
 	}
 	mbr := make([]byte, 512)
 	if _, err := disk.ReadAt(mbr, 0); err != nil {
-		return fmt.Errorf("read back Windows MBR: %w", err)
+		return fmt.Errorf("read back windows MBR: %w", err)
 	}
 	if mbr[446] != 0x80 || mbr[510] != 0x55 || mbr[511] != 0xaa {
-		return errors.New("Windows MBR bootstrap verification found an invalid active partition table")
+		return errors.New("windows MBR bootstrap verification found an invalid active partition table")
 	}
 
 	partition, err := os.OpenFile(partitionPath, os.O_RDWR|os.O_EXCL, 0)
