@@ -29,7 +29,7 @@ import (
 	"github.com/geocausa/RufusArm64/internal/sourcefile"
 )
 
-var version = "0.9.0"
+var version = "development"
 
 type jsonEvent struct {
 	Event   string  `json:"event"`
@@ -164,8 +164,12 @@ func run(args []string) error {
 		return err
 	}
 
+	// Keep both independently useful identities through every callback. The
+	// package token deliberately excludes child partitions, so formatting the
+	// selected disk does not invalidate it; a disconnect/reconnect or /dev name
+	// reuse does.
 	targetCheck := func(source *os.File) error {
-		fresh, currentID, err := safety.RevalidateTarget(resolvedTarget, "", false)
+		fresh, currentID, err := safety.RevalidateTarget(resolvedTarget, *expectedTargetIdentity, false)
 		if err != nil {
 			return err
 		}
