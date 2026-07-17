@@ -1,0 +1,67 @@
+name: Audit package assertion fix
+
+on:
+  push:
+    branches:
+      - audit/pre-0.11-hardening
+
+permissions:
+  contents: write
+
+concurrency:
+  group: audit-package-assertion-fix
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    if: github.repository == 'geocausa/RufusUbuntuArm64'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: audit/pre-0.11-hardening
+      - name: Correct the exact desktop-action assertion
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          test = Path("scripts/test.sh")
+          text = test.read_text(encoding="utf-8")
+          old = "grep -q '^Actions=.*Persistence' \"${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.desktop\""
+          new = """if ! grep -q '^Actions=.*PersistentLiveUSB' \"${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.desktop\"; then
+            echo \"Main desktop entry must expose the PersistentLiveUSB action\" >&2
+            exit 1
+          fi"""
+          if text.count(old) == 1:
+              text = text.replace(old, new, 1)
+              test.write_text(text, encoding="utf-8")
+          elif new not in text:
+              raise SystemExit("scripts/test.sh: expected desktop-action assertion was not found")
+
+          structure = Path("gui/test_source_structure.py")
+          text = structure.read_text(encoding="utf-8")
+          old = "            'grep -q \\'^Actions=.*Persistence\\' \"${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.desktop\"',"
+          new = "            'grep -q \\'^Actions=.*PersistentLiveUSB\\' \"${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.desktop\"',"
+          if text.count(old) == 1:
+              text = text.replace(old, new, 1)
+              structure.write_text(text, encoding="utf-8")
+          elif new not in text:
+              raise SystemExit("gui/test_source_structure.py: expected assertion invariant was not found")
+          PY
+          bash -n scripts/test.sh
+          python3 gui/test_source_structure.py
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -x scripts/test.sh
+          fi
+      - name: Commit the focused test correction
+        run: |
+          if git diff --quiet; then
+            echo "Package assertion already corrected."
+            exit 0
+          fi
+          git config user.name 'RufusArm64 audit'
+          git config user.email 'actions@users.noreply.github.com'
+          git add scripts/test.sh gui/test_source_structure.py
+          git commit -m 'audit: correct persistent desktop action assertion'
+          git push origin HEAD:audit/pre-0.11-hardening
