@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - diagnostic/partition-parent-open-ebusy
+  pull_request:
+    branches:
+      - audit/pre-0.11-hardening
 
 permissions:
   contents: read
