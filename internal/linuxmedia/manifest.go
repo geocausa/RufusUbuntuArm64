@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -57,7 +56,18 @@ type Manifest struct {
 	UEFIBootPath         string  `json:"uefi_boot_path,omitempty"`
 }
 
+type manifestBuilder struct {
+	ctx      context.Context
+	root     string
+	opts     Options
+	manifest Manifest
+	seen     map[string]string
+}
+
 func Inspect(ctx context.Context, root string, opts Options) (Manifest, error) {
+	if ctx == nil {
+		return Manifest{}, errors.New("media inspection context is nil")
+	}
 	root, err := resolveRoot(root)
 	if err != nil {
 		return Manifest{}, err
@@ -66,99 +76,164 @@ func Inspect(ctx context.Context, root string, opts Options) (Manifest, error) {
 	if err != nil {
 		return Manifest{}, err
 	}
-	manifest := Manifest{SourceRoot: root, Architecture: opts.Architecture}
-	seen := make(map[string]string)
-	walkErr := filepath.WalkDir(root, func(path string, de fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		if relative == "." {
-			return nil
-		}
-		relative = filepath.Clean(relative)
-		if !filepath.IsLocal(relative) {
-			return fmt.Errorf("unsafe media path %q", relative)
-		}
-		if len(manifest.Entries) >= opts.MaxEntries {
-			return fmt.Errorf("media tree exceeds the %d-entry safety limit", opts.MaxEntries)
-		}
-		if opts.RequireFAT32 {
-			if err := validateFATPath(relative); err != nil {
-				return err
-			}
-			folded := strings.ToLower(filepath.ToSlash(relative))
-			if previous, ok := seen[folded]; ok && previous != filepath.ToSlash(relative) {
-				return fmt.Errorf("FAT32 case-insensitive path collision between %q and %q", previous, filepath.ToSlash(relative))
-			}
-			seen[folded] = filepath.ToSlash(relative)
-		}
-
-		info, err := os.Lstat(path)
-		if err != nil {
-			return err
-		}
-		entry := Entry{Path: filepath.ToSlash(relative), Mode: uint32(info.Mode().Perm())}
-		switch {
-		case info.IsDir():
-			manifest.Directories++
-			manifest.Entries = append(manifest.Entries, entry)
-			return nil
-		case info.Mode()&os.ModeSymlink != 0:
-			resolved, resolvedInfo, err := resolveFileSymlink(root, path)
-			if err != nil {
-				return fmt.Errorf("inspect symbolic link %s: %w", entry.Path, err)
-			}
-			entry.SourcePath = resolved
-			entry.DereferencedSymlink = true
-			entry.Size = uint64(resolvedInfo.Size())
-			entry.Mode = uint32(resolvedInfo.Mode().Perm())
-			manifest.DereferencedSymlinks++
-		case info.Mode().IsRegular():
-			entry.SourcePath = path
-			entry.Size = uint64(info.Size())
-		default:
-			return fmt.Errorf("unsupported non-regular media entry %q", entry.Path)
-		}
-		if opts.RequireFAT32 && entry.Size > fat32MaxFileSize {
-			return fmt.Errorf("%s is %d bytes and exceeds the FAT32 single-file limit", entry.Path, entry.Size)
-		}
-		if entry.Size > opts.MaxBytes-manifest.TotalBytes {
-			return fmt.Errorf("media tree exceeds the %d-byte safety limit", opts.MaxBytes)
-		}
-		digest, err := hashStableFile(ctx, entry.SourcePath, entry.Size)
-		if err != nil {
-			return fmt.Errorf("hash %s: %w", entry.Path, err)
-		}
-		entry.SHA256 = hex.EncodeToString(digest[:])
-		manifest.TotalBytes += entry.Size
-		manifest.Files++
-		manifest.Entries = append(manifest.Entries, entry)
-		return nil
-	})
-	if walkErr != nil {
-		return Manifest{}, walkErr
+	builder := manifestBuilder{
+		ctx:  ctx,
+		root: root,
+		opts: opts,
+		manifest: Manifest{
+			SourceRoot:   root,
+			Architecture: opts.Architecture,
+		},
+		seen: make(map[string]string),
 	}
+	rootKey, err := canonicalDirectory(root)
+	if err != nil {
+		return Manifest{}, err
+	}
+	if err := builder.walkDirectory(root, "", map[string]struct{}{rootKey: {}}); err != nil {
+		return Manifest{}, err
+	}
+
 	bootPath := uefiBootPath(opts.Architecture)
 	if bootPath != "" {
-		for _, entry := range manifest.Entries {
+		for _, entry := range builder.manifest.Entries {
 			if strings.EqualFold(entry.Path, bootPath) && entry.SHA256 != "" {
-				manifest.UEFIBootPath = entry.Path
+				builder.manifest.UEFIBootPath = entry.Path
 				break
 			}
 		}
 	}
-	if opts.RequireUEFI && manifest.UEFIBootPath == "" {
+	if opts.RequireUEFI && builder.manifest.UEFIBootPath == "" {
 		return Manifest{}, fmt.Errorf("media tree has no %s fallback UEFI bootloader", bootPath)
 	}
-	sort.Slice(manifest.Entries, func(i, j int) bool { return manifest.Entries[i].Path < manifest.Entries[j].Path })
-	return manifest, nil
+	sort.Slice(builder.manifest.Entries, func(i, j int) bool {
+		return builder.manifest.Entries[i].Path < builder.manifest.Entries[j].Path
+	})
+	return builder.manifest, nil
+}
+
+func (builder *manifestBuilder) walkDirectory(sourceDirectory, logicalDirectory string, ancestors map[string]struct{}) error {
+	entries, err := os.ReadDir(sourceDirectory)
+	if err != nil {
+		return err
+	}
+	for _, directoryEntry := range entries {
+		if err := builder.ctx.Err(); err != nil {
+			return err
+		}
+		sourcePath := filepath.Join(sourceDirectory, directoryEntry.Name())
+		logicalPath := directoryEntry.Name()
+		if logicalDirectory != "" {
+			logicalPath = filepath.Join(logicalDirectory, directoryEntry.Name())
+		}
+		if err := builder.inspectPath(sourcePath, logicalPath, ancestors); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (builder *manifestBuilder) inspectPath(sourcePath, logicalPath string, ancestors map[string]struct{}) error {
+	logicalPath = filepath.Clean(logicalPath)
+	if !filepath.IsLocal(logicalPath) || logicalPath == "." {
+		return fmt.Errorf("unsafe media path %q", logicalPath)
+	}
+	if len(builder.manifest.Entries) >= builder.opts.MaxEntries {
+		return fmt.Errorf("media tree exceeds the %d-entry safety limit", builder.opts.MaxEntries)
+	}
+	if builder.opts.RequireFAT32 {
+		if err := validateFATPath(logicalPath); err != nil {
+			return err
+		}
+		portablePath := filepath.ToSlash(logicalPath)
+		folded := strings.ToLower(portablePath)
+		if previous, ok := builder.seen[folded]; ok && previous != portablePath {
+			return fmt.Errorf("FAT32 case-insensitive path collision between %q and %q", previous, portablePath)
+		}
+		builder.seen[folded] = portablePath
+	}
+
+	info, err := os.Lstat(sourcePath)
+	if err != nil {
+		return err
+	}
+	entry := Entry{Path: filepath.ToSlash(logicalPath), Mode: uint32(info.Mode().Perm())}
+	switch {
+	case info.IsDir():
+		builder.manifest.Directories++
+		builder.manifest.Entries = append(builder.manifest.Entries, entry)
+		return builder.descendDirectory(sourcePath, logicalPath, ancestors, false)
+	case info.Mode()&os.ModeSymlink != 0:
+		resolved, resolvedInfo, err := resolveMediaSymlink(builder.root, sourcePath)
+		if err != nil {
+			return fmt.Errorf("inspect symbolic link %s: %w", entry.Path, err)
+		}
+		entry.Mode = uint32(resolvedInfo.Mode().Perm())
+		entry.DereferencedSymlink = true
+		builder.manifest.DereferencedSymlinks++
+		if resolvedInfo.IsDir() {
+			builder.manifest.Directories++
+			builder.manifest.Entries = append(builder.manifest.Entries, entry)
+			return builder.descendDirectory(resolved, logicalPath, ancestors, true)
+		}
+		entry.SourcePath = resolved
+		entry.Size = uint64(resolvedInfo.Size())
+	case info.Mode().IsRegular():
+		entry.SourcePath = sourcePath
+		entry.Size = uint64(info.Size())
+	default:
+		return fmt.Errorf("unsupported non-regular media entry %q", entry.Path)
+	}
+
+	if builder.opts.RequireFAT32 && entry.Size > fat32MaxFileSize {
+		return fmt.Errorf("%s is %d bytes and exceeds the FAT32 single-file limit", entry.Path, entry.Size)
+	}
+	if entry.Size > builder.opts.MaxBytes-builder.manifest.TotalBytes {
+		return fmt.Errorf("media tree exceeds the %d-byte safety limit", builder.opts.MaxBytes)
+	}
+	digest, err := hashStableFile(builder.ctx, entry.SourcePath, entry.Size)
+	if err != nil {
+		return fmt.Errorf("hash %s: %w", entry.Path, err)
+	}
+	entry.SHA256 = hex.EncodeToString(digest[:])
+	builder.manifest.TotalBytes += entry.Size
+	builder.manifest.Files++
+	builder.manifest.Entries = append(builder.manifest.Entries, entry)
+	return nil
+}
+
+func (builder *manifestBuilder) descendDirectory(sourceDirectory, logicalDirectory string, ancestors map[string]struct{}, symbolic bool) error {
+	key, err := canonicalDirectory(sourceDirectory)
+	if err != nil {
+		return err
+	}
+	if _, exists := ancestors[key]; exists {
+		if symbolic {
+			return fmt.Errorf("inspect symbolic link %s: directory link creates a traversal cycle", filepath.ToSlash(logicalDirectory))
+		}
+		return fmt.Errorf("directory traversal cycle at %s", filepath.ToSlash(logicalDirectory))
+	}
+	nextAncestors := make(map[string]struct{}, len(ancestors)+1)
+	for ancestor := range ancestors {
+		nextAncestors[ancestor] = struct{}{}
+	}
+	nextAncestors[key] = struct{}{}
+	return builder.walkDirectory(sourceDirectory, logicalDirectory, nextAncestors)
+}
+
+func canonicalDirectory(path string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", errors.New("path is not a directory")
+	}
+	return filepath.Clean(resolved), nil
 }
 
 func normalizeOptions(opts Options) (Options, error) {
@@ -202,7 +277,7 @@ func resolveRoot(root string) (string, error) {
 	return resolved, nil
 }
 
-func resolveFileSymlink(root, path string) (string, os.FileInfo, error) {
+func resolveMediaSymlink(root, path string) (string, os.FileInfo, error) {
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return "", nil, err
@@ -215,8 +290,8 @@ func resolveFileSymlink(root, path string) (string, os.FileInfo, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	if !info.Mode().IsRegular() {
-		return "", nil, errors.New("only symbolic links to regular files are supported")
+	if !info.Mode().IsRegular() && !info.IsDir() {
+		return "", nil, errors.New("symbolic link target is neither a regular file nor a directory")
 	}
 	return resolved, info, nil
 }
