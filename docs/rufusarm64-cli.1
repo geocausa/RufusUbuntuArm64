@@ -1,4 +1,4 @@
-.TH RUFUSARM64-CLI 1 "16 July 2026" "RufusArm64 0.10.1" "User Commands"
+.TH RUFUSARM64-CLI 1 "17 July 2026" "RufusArm64 0.10.2" "User Commands"
 .SH NAME
 rufusarm64-cli \- safely create bootable USB media on Linux
 .SH SYNOPSIS
@@ -55,7 +55,7 @@ creates extracted Windows installation media. Windows media support GPT or MBR,
 UEFI or x86-family BIOS/CSM, and Automatic, FAT32, or NTFS selection.
 Compressed and common virtual-disk inputs are prepared before target erasure.
 .PP
-Version 0.10.1 supplies the engine used by the dedicated graphical
+Version 0.10.2 supplies the engine used by the dedicated graphical
 persistent-live USB wizard. The graphical path performs identity-bound read-only
 analysis, exact target confirmation, fresh Polkit authorization, destructive
 creation through a separate narrow helper, and post-creation qualification.
@@ -148,6 +148,12 @@ Read-only automatic analysis mounts only the identity-bound ISO and validates th
 same complete media tree, architecture-matching fallback UEFI loader, FAT32 path
 and file-size rules, boot-partition capacity, and requested persistence size used
 by creation. It does not extend or rely on the ISO's embedded hybrid MBR geometry.
+.PP
+FAT32 cannot represent symbolic links. Version 0.10.2 safely materializes bounded
+relative file and directory links whose fully resolved targets remain inside the
+mounted image. The materialized files are counted again for capacity planning,
+hashed, copied, and rehashed. Absolute or escaping links, cycles, device nodes,
+case collisions, oversized files, and unbounded expansions are refused.
 .PP
 Persistent creation produces a fresh GPT with a FAT32 UEFI boot partition and an
 ext4 persistence partition. It verifies both GPT copies, copies and rehashes a
