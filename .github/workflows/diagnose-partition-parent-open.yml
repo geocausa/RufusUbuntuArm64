@@ -1,0 +1,60 @@
+name: Diagnose partition formatter parent-open conflict
+
+on:
+  push:
+    branches:
+      - diagnostic/partition-parent-open-ebusy
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Reproduce parent-disk open versus child formatter
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dosfstools util-linux
+          image="${RUNNER_TEMP}/partition-parent-open.img"
+          truncate -s 512M "${image}"
+          loop="$(sudo losetup --find --show --partscan "${image}")"
+          cleanup() {
+            sudo losetup --detach "${loop}" || true
+          }
+          trap cleanup EXIT
+          printf 'label: gpt\n,128M,U\n,128M,L\n' | sudo sfdisk "${loop}"
+          sudo blockdev --rereadpt "${loop}" || sudo partx -u "${loop}"
+          sudo udevadm settle || true
+          partition="${loop}p1"
+          for _ in $(seq 1 40); do
+            [[ -b "${partition}" ]] && break
+            sleep 0.25
+          done
+          [[ -b "${partition}" ]]
+
+          sudo bash -euxo pipefail -c '
+            loop="$1"
+            partition="$2"
+            exec 9<>"${loop}"
+            flock -n 9
+            exec 3<>"${partition}"
+            set +e
+            output="$(mkfs.vfat -F 32 /proc/self/fd/3 2>&1)"
+            status=$?
+            set -e
+            printf "%s\n" "${output}"
+            if [[ ${status} -eq 0 ]]; then
+              echo "mkfs.vfat unexpectedly succeeded while the parent disk was open" >&2
+              exit 1
+            fi
+            grep -Fq "Device or resource busy" <<<"${output}"
+            exec 9>&-
+            mkfs.vfat -F 32 /proc/self/fd/3
+            fsck.vfat -n /proc/self/fd/3
+          ' bash "${loop}" "${partition}"
