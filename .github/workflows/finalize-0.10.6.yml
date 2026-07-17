@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - hotfix/0.10.6-persistence-no-automount
+  pull_request:
+    branches:
+      - audit/pre-0.11-hardening
 
 permissions:
   contents: write
@@ -15,7 +18,10 @@ concurrency:
 
 jobs:
   finalize:
-    if: github.repository == 'geocausa/RufusUbuntuArm64'
+    if: >-
+      github.repository == 'geocausa/RufusUbuntuArm64' &&
+      (github.event_name == 'push' ||
+       github.event.pull_request.head.ref == 'hotfix/0.10.6-persistence-no-automount')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
