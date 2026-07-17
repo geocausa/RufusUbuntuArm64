@@ -14,21 +14,19 @@ def literal(old, new):
     text = text.replace(old, new, 1)
 
 
-def methods(start, end, replacement):
+def replace_refresh(replacement):
     global text
-    pattern = rf"(?ms)^    def {re.escape(start)}\(.*?(?=^    def {re.escape(end)}\()"
+    pattern = r"(?ms)^    def refresh_devices\(.*?(?=^    @staticmethod\n    def new_cancel_path\()"
     text, count = re.subn(pattern, replacement.rstrip() + "\n\n", text, count=1)
     if count != 1:
-        raise SystemExit(f"expected one method range {start}..{end}, found {count}")
+        raise SystemExit(f"expected one refresh range, found {count}")
 
 
 literal(
     "        self.busy = False\n        self.job = \"\"\n",
     "        self.busy = False\n        self.closed = False\n        self.device_generation = 0\n        self.device_refreshing = False\n        self.job = \"\"\n",
 )
-methods(
-    "refresh_devices",
-    "new_cancel_path",
+replace_refresh(
     '''    def refresh_devices(self):
         if self.busy or self.device_refreshing or self.closed:
             return
@@ -72,10 +70,7 @@ methods(
         else:
             self.progress.set_text("No removable USB drive found")
         self.set_busy(self.busy)
-        return False
-
-    @staticmethod
-    def new_cancel_path():''',
+        return False'''
 )
 literal(
     '''    def set_busy(self, busy, job=""):
