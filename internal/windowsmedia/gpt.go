@@ -28,6 +28,12 @@ type diskLayout struct {
 	Boot *partitionLayout
 }
 
+type gptTarget interface {
+	io.ReaderAt
+	io.WriterAt
+	Sync() error
+}
+
 const (
 	gptHeaderSize       = 92
 	gptEntrySize        = 128
@@ -85,7 +91,7 @@ func writeUEFINTFSGPT(target *os.File, targetSize, sectorSize uint64, label stri
 	return writeGPT(target, targetSize, sectorSize, label, true, bootImageSize)
 }
 
-func writeGPT(target *os.File, targetSize, sectorSize uint64, label string, uefiNTFS bool, bootImageSize uint64) (diskLayout, error) {
+func writeGPT(target gptTarget, targetSize, sectorSize uint64, label string, uefiNTFS bool, bootImageSize uint64) (diskLayout, error) {
 	if target == nil {
 		return diskLayout{}, errors.New("nil GPT target")
 	}
@@ -189,24 +195,34 @@ func writeGPT(target *os.File, targetSize, sectorSize uint64, label string, uefi
 	backupHeader := makeGPTHeader(sectorSize, backupHeaderLBA, 1, firstUsableLBA, lastUsableLBA, diskGUID, backupEntriesLBA, entriesCRC)
 	protectiveMBR := makeProtectiveMBR(totalLBAs, sectorSize)
 
-	writes := []struct {
-		offset uint64
-		data   []byte
-		name   string
-	}{
-		{backupEntriesLBA * sectorSize, entries, "backup GPT entries"},
-		{backupHeaderLBA * sectorSize, backupHeader, "backup GPT header"},
-		{primaryEntriesLBA * sectorSize, entries, "primary GPT entries"},
-		{sectorSize, primaryHeader, "primary GPT header"},
-		{0, protectiveMBR, "protective MBR"},
+	backupRegions := []gptMetadataRegion{
+		{offset: backupEntriesLBA * sectorSize, data: entries, name: "backup GPT entries"},
+		{offset: backupHeaderLBA * sectorSize, data: backupHeader, name: "backup GPT header"},
 	}
-	for _, write := range writes {
-		if _, err := writeGPTMetadataAt(target, write.data, write.offset); err != nil {
-			return diskLayout{}, fmt.Errorf("write %s: %w", write.name, err)
+	primaryRegions := []gptMetadataRegion{
+		{offset: primaryEntriesLBA * sectorSize, data: entries, name: "primary GPT entries"},
+		{offset: sectorSize, data: primaryHeader, name: "primary GPT header"},
+		{offset: 0, data: protectiveMBR, name: "protective MBR"},
+	}
+	for _, region := range backupRegions {
+		if _, err := writeGPTMetadataAt(target, region.data, region.offset); err != nil {
+			return diskLayout{}, fmt.Errorf("write %s: %w", region.name, err)
 		}
 	}
 	if err := target.Sync(); err != nil {
-		return diskLayout{}, fmt.Errorf("sync GPT metadata: %w", err)
+		return diskLayout{}, fmt.Errorf("make backup GPT durable: %w", err)
+	}
+	for _, region := range primaryRegions {
+		if _, err := writeGPTMetadataAt(target, region.data, region.offset); err != nil {
+			return diskLayout{}, fmt.Errorf("write %s: %w", region.name, err)
+		}
+	}
+	if err := target.Sync(); err != nil {
+		return diskLayout{}, fmt.Errorf("make primary GPT durable: %w", err)
+	}
+	regions := append(append([]gptMetadataRegion(nil), backupRegions...), primaryRegions...)
+	if err := verifyGPTMetadata(target, regions); err != nil {
+		return diskLayout{}, fmt.Errorf("verify GPT metadata: %w", err)
 	}
 	return layout, nil
 }
