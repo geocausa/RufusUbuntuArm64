@@ -520,7 +520,7 @@ func openPersistentPartition(path string, layout PartitionLayout, expectedParent
 	} else if stat.Mode&syscall.S_IFMT != syscall.S_IFBLK {
 		return nil, safety.ErrNotBlockDevice
 	}
-	file, err := os.OpenFile(path, os.O_RDWR|syscall.O_EXCL|syscall.O_NOFOLLOW, 0)
+	file, err := safety.OpenReopenableDevice(path)
 	if err != nil {
 		return nil, err
 	}

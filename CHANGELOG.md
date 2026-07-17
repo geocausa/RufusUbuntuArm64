@@ -8,6 +8,7 @@
 - Moved slow image, device, and signed-catalog probes off the GTK thread; added stale-result generations, worker-owned process references, and early cancellation handling.
 - Added Go 1.22 compatibility, Staticcheck, Govulncheck, Actionlint, ShellCheck, Lintian, AppStream, desktop validation, deterministic packaging, and byte-for-byte package reproducibility gates.
 - Corrected Debian metadata, runtime dependencies, copyright, changelog, launcher man pages, and verification wording. Software checks do not claim firmware boot, Secure Boot acceptance, or persistence across reboot without physical qualification.
+- Fixed real-device persistent-media creation by retaining identity-bound, flocked partition descriptors without a kernel-exclusive open, so FAT32/ext4 formatters and filesystem tools can safely reopen inherited `/proc/self/fd/N` targets; added a real loop-device regression gate.
 
 ## 0.10.4 — 2026-07-17
 

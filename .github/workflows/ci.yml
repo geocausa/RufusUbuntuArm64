@@ -71,7 +71,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            shellcheck desktop-file-utils appstream lintian
+            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs
           audit_bin="${RUNNER_TEMP}/rufusarm64-audit-tools"
           mkdir -p "${audit_bin}"
           GOBIN="${audit_bin}" go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
@@ -80,6 +80,16 @@ jobs:
           echo "${audit_bin}" >> "${GITHUB_PATH}"
       - name: Run pinned static, workflow, and vulnerability checks
         run: bash ./scripts/static-audit.sh
+      - name: Exercise inherited formatter descriptors on a real loop device
+        env:
+          RUFUS_REAL_BLOCK_TEST: '1'
+        run: |
+          sudo modprobe loop || true
+          go test -c -o "${RUNNER_TEMP}/safety-loop.test" ./internal/safety
+          sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
+            "${RUNNER_TEMP}/safety-loop.test" \
+            -test.run '^TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop$' \
+            -test.v
       - name: Read canonical project version
         id: version
         if: success()

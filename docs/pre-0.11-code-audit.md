@@ -6,7 +6,7 @@ Baseline: `7b10e134b83fca3c82f5dc354f844cee4ed2c557` (`0.10.4`)
 
 Audit disposition at the current branch head:
 
-- **22 fixed findings** with code, regression coverage, or permanent CI/package gates;
+- **23 fixed findings** with code, regression coverage, or permanent CI/package gates;
 - **3 cleared findings** where the original concern did not represent a defect;
 - **4 explicit architectural or trust deferrals** that do not weaken the current documented release contract;
 - **2 planned parity items** that remain outside this corrective branch.
@@ -143,6 +143,22 @@ The Windows GPT creator now validates signed-offset bounds, rejects short writes
 **Status:** deferred
 
 The identity token includes `MAJ:MIN`, `diskseq`, serial, WWN, size, model, vendor, transport, and policy flags. On older kernels or inexpensive USB bridges, `diskseq`, serial, and WWN can all be absent. Add stable sysfs/USB topology identifiers where available, while retaining open-descriptor identity and capacity checks.
+
+### A-032 — kernel-exclusive partition descriptors block inherited filesystem tools
+
+**Severity:** high destructive-path correctness
+**Status:** fixed
+
+The persistent-media creator opened each new partition with `O_EXCL`, then passed that descriptor to `mkfs.vfat`, `mkfs.ext4`, `mount`, and filesystem checkers through `/proc/self/fd/3`. Those tools reopen the inherited path. On a real Linux block device, the creator's existing kernel-exclusive holder makes the trusted reopen fail with `EBUSY` after the new GPT has already replaced the previous media layout.
+
+Implemented correction:
+
+- retain `O_NOFOLLOW`, the parent whole-disk lock, the partition advisory `flock`, and all descriptor identity, size, geometry, and parent-disk checks;
+- omit kernel `O_EXCL` only for descriptors intentionally inherited by trusted filesystem tools;
+- keep every external command bound to the already-verified descriptor rather than returning to the user-supplied partition pathname;
+- add a permanent root-only loop-device CI regression that formats, checks, mounts, writes, and unmounts FAT32 and ext4 through inherited `/proc/self/fd/3` handles.
+
+The resulting failure mode remains explicit: media interrupted before filesystem creation is incomplete and must be recreated. No software-only test changes the separate physical boot and persistence qualification requirement.
 
 ## GUI, semantics, and concurrency
 
