@@ -26,6 +26,7 @@ const (
 	layoutGPTHeaderSize   = 92
 	layoutGPTEntrySize    = 128
 	layoutGPTEntryCount   = 128
+	layoutGPTNoAutomount  = uint64(1) << 63
 )
 
 var layoutEFIType = [16]byte{
@@ -337,13 +338,15 @@ func writeLayoutEntry(entry []byte, partitionType, unique [16]byte, layout Parti
 	copy(entry[16:32], unique[:])
 	binary.LittleEndian.PutUint64(entry[32:40], layout.StartBytes/sectorSize)
 	binary.LittleEndian.PutUint64(entry[40:48], (layout.StartBytes+layout.SizeBytes)/sectorSize-1)
+	binary.LittleEndian.PutUint64(entry[48:56], layoutGPTNoAutomount)
 	writeLayoutName(entry[56:128], name)
 }
 
 func verifyLayoutEntry(entry []byte, partitionType, unique [16]byte, layout PartitionLayout, sectorSize uint64) error {
 	if !bytes.Equal(entry[:16], partitionType[:]) || !bytes.Equal(entry[16:32], unique[:]) ||
 		binary.LittleEndian.Uint64(entry[32:40]) != layout.StartBytes/sectorSize ||
-		binary.LittleEndian.Uint64(entry[40:48]) != (layout.StartBytes+layout.SizeBytes)/sectorSize-1 {
+		binary.LittleEndian.Uint64(entry[40:48]) != (layout.StartBytes+layout.SizeBytes)/sectorSize-1 ||
+		binary.LittleEndian.Uint64(entry[48:56]) != layoutGPTNoAutomount {
 		return errors.New("partition entry does not match the planned extent")
 	}
 	return nil

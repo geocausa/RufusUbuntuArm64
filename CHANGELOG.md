@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.6 — 2026-07-17
+
+- Marked both fresh persistent-live GPT partitions with attribute bit 63 before the kernel publishes them, preventing desktop automount services from racing FAT32 and ext4 creation.
+- Included the do-not-automount attribute in exact primary and backup GPT entry-table readback verification and added focused regression coverage for both partitions.
+- Bumped the Debian package and runtime version so systems already on 0.10.5 receive the correction through a normal upgrade.
+
 ## 0.10.5 — 2026-07-17
 
 - Completed the pre-parity correctness, destructive-operation, privilege-boundary, parser, arithmetic, concurrency, acquisition, packaging, and supply-chain audit.
