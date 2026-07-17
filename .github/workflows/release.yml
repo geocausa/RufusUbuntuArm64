@@ -6,13 +6,20 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   wim-engine:
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - name: Install WIM build dependencies
         run: |
           sudo apt-get update
@@ -20,7 +27,7 @@ jobs:
             build-essential autoconf automake libtool pkg-config git ca-certificates \
             libxml2-dev zlib1g-dev liblzma-dev libbz2-dev liblz4-dev libzstd-dev
       - run: ./scripts/build-wimlib-arm64.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: wimlib-arm64
           path: |
@@ -32,15 +39,25 @@ jobs:
   release:
     needs: wim-engine
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.23.x'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: wimlib-arm64
           path: vendor/wimlib
+      - name: Install release validators
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            shellcheck desktop-file-utils appstream lintian
       - name: Verify tag matches canonical version
         id: version
         run: |
@@ -74,7 +91,7 @@ jobs:
               "RufusArm64-${VERSION}-wimlib-1.14.5-source.tar.gz" \
               >> "rufusarm64_${VERSION}_arm64.deb.sha256"
           )
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           body_path: docs/release-${{ steps.version.outputs.version }}.md
           files: |
