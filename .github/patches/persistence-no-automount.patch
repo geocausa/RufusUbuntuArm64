@@ -1,0 +1,55 @@
+diff --git a/internal/linuxmedia/layout.go b/internal/linuxmedia/layout.go
+--- a/internal/linuxmedia/layout.go
++++ b/internal/linuxmedia/layout.go
+@@ -28,6 +28,7 @@ const (
+ 	layoutGPTHeaderSize   = 92
+ 	layoutGPTEntrySize    = 128
+ 	layoutGPTEntryCount   = 128
++	layoutGPTNoAutomount  = uint64(1) << 63
+ )
+@@ -343,6 +344,7 @@ func writeLayoutEntry(entry []byte, partitionType, unique [16]byte, layout Partit
+ 	copy(entry[16:32], unique[:])
+ 	binary.LittleEndian.PutUint64(entry[32:40], layout.StartBytes/sectorSize)
+ 	binary.LittleEndian.PutUint64(entry[40:48], (layout.StartBytes+layout.SizeBytes)/sectorSize-1)
++	binary.LittleEndian.PutUint64(entry[48:56], layoutGPTNoAutomount)
+ 	writeLayoutName(entry[56:128], name)
+ }
+@@ -351,7 +353,8 @@ func verifyLayoutEntry(entry []byte, partitionType, unique [16]byte, layout Parti
+ 	if !bytes.Equal(entry[:16], partitionType[:]) || !bytes.Equal(entry[16:32], unique[:]) ||
+ 		binary.LittleEndian.Uint64(entry[32:40]) != layout.StartBytes/sectorSize ||
+-		binary.LittleEndian.Uint64(entry[40:48]) != (layout.StartBytes+layout.SizeBytes)/sectorSize-1 {
++		binary.LittleEndian.Uint64(entry[40:48]) != (layout.StartBytes+layout.SizeBytes)/sectorSize-1 ||
++		binary.LittleEndian.Uint64(entry[48:56]) != layoutGPTNoAutomount {
+ 		return errors.New("partition entry does not match the planned extent")
+ 	}
+ 	return nil
+diff --git a/internal/linuxmedia/layout_test.go b/internal/linuxmedia/layout_test.go
+--- a/internal/linuxmedia/layout_test.go
++++ b/internal/linuxmedia/layout_test.go
+@@ -6,6 +6,7 @@ package linuxmedia
+ 
+ import (
+ 	"bytes"
++	"encoding/binary"
+ 	"os"
+ 	"path/filepath"
+ 	"strings"
+@@ -104,6 +105,18 @@ func TestWritePersistentGPTWritesAndVerifiesBothCopies(t *testing.T) {
+ 		file.Close()
+ 		t.Fatalf("invalid primary GPT bytes")
+ 	}
++	entries := make([]byte, 2*layoutGPTEntrySize)
++	if _, err := file.ReadAt(entries, int64(2*layout.SectorSize)); err != nil {
++		file.Close()
++		t.Fatal(err)
++	}
++	for index := 0; index < 2; index++ {
++		entry := entries[index*layoutGPTEntrySize : (index+1)*layoutGPTEntrySize]
++		if attributes := binary.LittleEndian.Uint64(entry[48:56]); attributes != layoutGPTNoAutomount {
++			file.Close()
++			t.Fatalf("partition %d attributes=%#x want=%#x", index+1, attributes, layoutGPTNoAutomount)
++		}
++	}
+ 	backup := make([]byte, 8)
+ 	if _, err := file.ReadAt(backup, int64(layout.TargetSize-layout.SectorSize)); err != nil {
+ 		file.Close()
