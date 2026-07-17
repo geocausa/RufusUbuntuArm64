@@ -1,4 +1,5 @@
 name: Apply UEFI descriptor traversal
+# Trigger after workflow registration.
 
 on:
   push:
