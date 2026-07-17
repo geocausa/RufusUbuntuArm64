@@ -56,6 +56,16 @@ jobs:
           name: uefi-focused-tests-${{ github.run_id }}
           path: /tmp/uefi-focused-tests.log
           if-no-files-found: error
+      - name: Upload transformed UEFI sources
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: uefi-transformed-sources-${{ github.run_id }}
+          path: |
+            internal/secureboot/uefi.go
+            internal/secureboot/uefi_descriptor_linux.go
+            internal/secureboot/uefi_test.go
+          if-no-files-found: error
       - name: Vet Secure Boot package
         run: go vet ./internal/secureboot
       - name: Run complete Go suite
