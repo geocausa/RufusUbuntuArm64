@@ -69,7 +69,16 @@ jobs:
           set -euo pipefail
           git diff --check
       - name: Test safety package
-        run: go test -v ./internal/safety
+        run: |
+          set -o pipefail
+          go test -v ./internal/safety 2>&1 | tee "${RUNNER_TEMP}/formatter-fix-safety.log"
+      - name: Upload safety-package diagnostic
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: formatter-fix-safety-${{ github.run_id }}
+          path: ${{ runner.temp }}/formatter-fix-safety.log
+          if-no-files-found: error
       - name: Test Linux-media package
         run: go test -v ./internal/linuxmedia
       - name: Test persistence package
