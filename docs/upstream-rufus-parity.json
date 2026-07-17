@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "generated_on": "2026-07-17",
+  "upstream": {
+    "repository": "pbatard/rufus",
+    "version": "4.15",
+    "build": 2396,
+    "commit": "6d8fbf98305ff37eb531c45cbd6ff44563c53917"
+  },
+  "project": {
+    "repository": "geocausa/RufusUbuntuArm64",
+    "baseline": "0.10.1",
+    "target_milestone": "0.11.0"
+  },
+  "status_definitions": {
+    "implemented": "Available through a tested Linux-native path.",
+    "partial": "A useful subset is available, with documented missing behavior.",
+    "in_progress": "Implementation exists on the 0.11 development branch but is not released.",
+    "planned": "Suitable for a Linux-native implementation but not yet present.",
+    "not_portable": "Depends on a Windows-only provider or filesystem with no verified Linux equivalent.",
+    "out_of_scope": "Not appropriate for the ARM64/Linux product goal."
+  },
+  "features": [
+    {
+      "id": "raw-image-write",
+      "upstream_feature": "Create bootable drives from disk images, including compressed images",
+      "status": "implemented",
+      "notes": "Raw, ISOHybrid, ZIP, gzip, bzip2, XZ, LZMA, Zstandard, VHD, VHDX, QCOW2, and VMDK inputs are supported with source and target identity checks."
+    },
+    {
+      "id": "windows-install-media",
+      "upstream_feature": "Create Windows installation drives",
+      "status": "implemented",
+      "notes": "GPT/MBR, UEFI, x86 BIOS/CSM, FAT32, NTFS, WIM splitting, UEFI:NTFS, setup options, and driver staging are available."
+    },
+    {
+      "id": "windows-11-oobe-options",
+      "upstream_feature": "Improve Windows installation experience through OOBE parameters",
+      "status": "partial",
+      "notes": "Hardware-check bypass, local/offline account, privacy, regional settings, and BitLocker controls exist; newer Rufus policy and application-removal options remain to be inventoried."
+    },
+    {
+      "id": "linux-persistence",
+      "upstream_feature": "Create persistent Linux partitions",
+      "status": "implemented",
+      "notes": "Guarded GPT/UEFI creation is available for the qualified Ubuntu casper and Debian live-boot contract; broader distribution coverage remains planned."
+    },
+    {
+      "id": "uefi-runtime-validation",
+      "upstream_feature": "Perform runtime validation of UEFI bootable media",
+      "status": "in_progress",
+      "notes": "The 0.11 branch validates fallback loaders, PE architecture and EFI subsystem fields, bounded SBAT metadata, and optional DBX hash/certificate revocations. Boot-chain reference resolution and trusted SBAT-level comparison remain planned."
+    },
+    {
+      "id": "image-checksums",
+      "upstream_feature": "Compute MD5, SHA-1, SHA-256, and SHA-512 checksums",
+      "status": "partial",
+      "notes": "SHA-256 is implemented throughout destructive workflows; user-facing MD5, SHA-1, SHA-512, and checksum-file comparison remain planned."
+    },
+    {
+      "id": "bad-blocks-and-fake-capacity",
+      "upstream_feature": "Perform bad-block checks, including fake flash-drive detection",
+      "status": "partial",
+      "notes": "Windows-media workflows provide a destructive single-pass write/read option; multi-pattern tests, wraparound detection, and reusable qualification reports remain planned."
+    },
+    {
+      "id": "drive-to-image",
+      "upstream_feature": "Create VHD/DD, VHDX, and FFU images of an existing drive",
+      "status": "planned",
+      "notes": "Start with identity-bound raw and compressed backups, then evaluate sparse VHD/VHDX export."
+    },
+    {
+      "id": "windows-to-go",
+      "upstream_feature": "Create Windows To Go drives",
+      "status": "planned",
+      "notes": "Requires a Linux-native wimlib deployment path, BCD construction, offline registry changes, and extensive physical qualification."
+    },
+    {
+      "id": "official-image-downloads",
+      "upstream_feature": "Download official Microsoft Windows and UEFI Shell images",
+      "status": "partial",
+      "notes": "Threshold-signed acquisition and rollback-resistant cache foundations exist, but the production catalog is deliberately disabled until offline trust metadata is provisioned."
+    },
+    {
+      "id": "filesystems",
+      "upstream_feature": "Format FAT/FAT32/NTFS/UDF/exFAT/ReFS/ext2/ext3",
+      "status": "partial",
+      "notes": "FAT32, NTFS, and ext4 persistence are implemented. exFAT, UDF, and selected ext workflows are planned; ReFS is not portable through a verified Linux formatter."
+    },
+    {
+      "id": "dos-media",
+      "upstream_feature": "Create FreeDOS or MS-DOS bootable drives",
+      "status": "out_of_scope",
+      "notes": "DOS boot targets are x86 BIOS environments and do not advance the primary Ubuntu ARM64 goal; FreeDOS may be reconsidered only as an explicitly cross-architecture utility."
+    },
+    {
+      "id": "ffu",
+      "upstream_feature": "Read and write Full Flash Update images",
+      "status": "not_portable",
+      "notes": "The official Windows FFU provider has no verified Linux-native equivalent; RufusArm64 continues to refuse FFU rather than claim unsafe compatibility."
+    },
+    {
+      "id": "localization",
+      "upstream_feature": "Localized user interface",
+      "status": "planned",
+      "notes": "GTK strings and diagnostics must be moved into a translation catalog before language packs are accepted."
+    },
+    {
+      "id": "portable-distribution",
+      "upstream_feature": "Small portable executable",
+      "status": "partial",
+      "notes": "The Debian package is self-contained for privileged helpers and WIM support; AppImage/portable packaging and verified updates remain planned."
+    }
+  ]
+}
