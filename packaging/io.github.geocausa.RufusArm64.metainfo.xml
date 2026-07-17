@@ -17,6 +17,11 @@
     <binary>rufusarm64-persistence</binary>
   </provides>
   <releases>
+    <release version="0.10.3" date="2026-07-17">
+      <description>
+        <p>Consolidates the desktop experience to one visible RufusArm64 application entry with a Create Persistent Live USB action, while retaining the separate guarded persistence helper internally.</p>
+      </description>
+    </release>
     <release version="0.10.2" date="2026-07-17">
       <description>
         <p>Fixes persistent-live analysis and verified FAT32 copying for bounded in-tree directory links such as Canonical images' dists/stable metadata path, while retaining escape and cycle rejection.</p>
