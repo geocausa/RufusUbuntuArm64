@@ -30,6 +30,7 @@ const (
 	imageSubsystemEFIRuntime = uint16(12)
 	imageSubsystemEFIROM     = uint16(13)
 	defaultUEFIMaxFiles      = 512
+	maximumUEFIMaxFiles      = 4096
 	maximumUEFIFileSize      = int64(256 * 1024 * 1024)
 	maximumSBATSectionSize   = uint32(1024 * 1024)
 	maximumSBATRecords       = 1024
@@ -120,6 +121,9 @@ func ValidateUEFIMedia(ctx context.Context, root string, opts UEFIValidationOpti
 	}
 	if opts.MaxFiles <= 0 {
 		opts.MaxFiles = defaultUEFIMaxFiles
+	}
+	if opts.MaxFiles > maximumUEFIMaxFiles {
+		return UEFIMediaValidation{}, fmt.Errorf("UEFI file limit %d exceeds the %d-file safety maximum", opts.MaxFiles, maximumUEFIMaxFiles)
 	}
 	if strings.TrimSpace(root) == "" {
 		return UEFIMediaValidation{}, errors.New("UEFI media root is required")
@@ -324,6 +328,9 @@ func parseUEFIImage(data []byte) (parsedUEFIImage, error) {
 		name := strings.TrimRight(string(entry[:8]), "\x00")
 		if name != ".sbat" {
 			continue
+		}
+		if sbat != nil {
+			return parsedUEFIImage{}, errors.New("PE image contains multiple .sbat sections")
 		}
 		rawSize := binary.LittleEndian.Uint32(entry[16:20])
 		rawOffset := binary.LittleEndian.Uint32(entry[20:24])
