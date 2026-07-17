@@ -1,0 +1,40 @@
+name: Audit ledger and semantics
+
+on:
+  push:
+    branches:
+      - audit/pre-0.11-hardening
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.repository == 'geocausa/RufusUbuntuArm64'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: audit/pre-0.11-hardening
+      - name: Apply reviewed wording and ledger changes
+        run: |
+          python3 scripts/audit_completion_semantics.py
+          python3 scripts/audit_ledger_statuses.py
+          python3 scripts/audit_ledger_concurrency.py
+          python3 scripts/audit_ledger_package.py
+          python3 scripts/audit_ledger_gate.py
+      - name: Validate GUI and audit disposition
+        run: |
+          python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_logic.py gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py gui/test_source_structure.py
+          PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
+          test "$(grep -c '^### A-' docs/pre-0.11-code-audit.md)" -eq 31
+          ! grep -q '\*\*Status:\*\* fixing\|\*\*Status:\*\* confirmed' docs/pre-0.11-code-audit.md
+      - name: Commit validated result
+        run: |
+          git config user.name 'RufusArm64 audit'
+          git config user.email 'actions@users.noreply.github.com'
+          rm scripts/audit_completion_semantics.py scripts/audit_ledger_statuses.py scripts/audit_ledger_concurrency.py scripts/audit_ledger_package.py scripts/audit_ledger_gate.py
+          git add gui/rufusarm64.py gui/rufusarm64_logic.py gui/rufusarm64_persistence.py gui/test_logic.py docs/pre-0.11-code-audit.md scripts/audit_completion_semantics.py scripts/audit_ledger_statuses.py scripts/audit_ledger_concurrency.py scripts/audit_ledger_package.py scripts/audit_ledger_gate.py
+          git commit -m 'audit: reconcile verification wording and final severity ledger'
+          git push origin HEAD:audit/pre-0.11-hardening
