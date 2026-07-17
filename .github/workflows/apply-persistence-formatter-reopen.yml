@@ -148,5 +148,34 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m '0.10.5: allow inherited filesystem-tool descriptor reopen'
+      - name: Archive validated production commit
+        run: |
+          set -euo pipefail
+          archive_root="${RUNNER_TEMP}/formatter-fix-production"
+          mkdir -p "${archive_root}"
+          git archive --format=tar.gz -o "${archive_root}/production-tree.tar.gz" HEAD \
+            .github/workflows/ci.yml \
+            CHANGELOG.md \
+            docs/persistence-materialization.md \
+            docs/pre-0.11-code-audit.md \
+            internal/linuxmedia/create.go \
+            internal/persistence/filesystem.go \
+            internal/safety/reopenable_linux.go \
+            internal/safety/reopenable_linux_test.go
+          git format-patch -1 --stdout >"${archive_root}/production-commit.patch"
+          git rev-parse HEAD >"${archive_root}/validated-commit.txt"
+          sha256sum "${archive_root}/production-tree.tar.gz" \
+            "${archive_root}/production-commit.patch" \
+            >"${archive_root}/SHA256SUMS"
       - name: Push validated production changes
-        run: git push origin 'HEAD:fix/persistence-formatter-reopen'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          git push origin 'HEAD:fix/persistence-formatter-reopen' 2>&1 | tee "${RUNNER_TEMP}/formatter-fix-production/push.log"
+      - name: Upload validated production commit
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: formatter-fix-production-${{ github.run_id }}
+          path: ${{ runner.temp }}/formatter-fix-production/
+          if-no-files-found: error
