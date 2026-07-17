@@ -39,7 +39,7 @@ jobs:
   release:
     needs: wim-engine
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 70
     permissions:
       contents: write
     steps:
@@ -48,7 +48,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.23.x'
+          go-version: '1.26.5'
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: wimlib-arm64
@@ -58,6 +58,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             shellcheck desktop-file-utils appstream lintian
+          audit_bin="${RUNNER_TEMP}/rufusarm64-audit-tools"
+          mkdir -p "${audit_bin}"
+          GOBIN="${audit_bin}" go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          GOBIN="${audit_bin}" go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          GOBIN="${audit_bin}" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          echo "${audit_bin}" >> "${GITHUB_PATH}"
+      - name: Run pinned static, workflow, and vulnerability checks
+        run: ./scripts/static-audit.sh
       - name: Verify tag matches canonical version
         id: version
         run: |
