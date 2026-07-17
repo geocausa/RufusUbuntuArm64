@@ -17,6 +17,11 @@
     <binary>rufusarm64-persistence</binary>
   </provides>
   <releases>
+    <release version="0.10.2" date="2026-07-17">
+      <description>
+        <p>Fixes persistent-live analysis and verified FAT32 copying for bounded in-tree directory links such as Canonical images' dists/stable metadata path, while retaining escape and cycle rejection.</p>
+      </description>
+    </release>
     <release version="0.10.1" date="2026-07-16">
       <description>
         <p>Aligns persistence analysis with the fresh GPT/FAT32/ext4 creator layout, fixes Canonical Resolute concept-image compatibility, and removes reliance on embedded ISOHybrid MBR geometry.</p>
