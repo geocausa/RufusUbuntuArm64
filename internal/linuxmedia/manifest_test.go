@@ -53,6 +53,39 @@ func TestInspectRejectsEscapingSymlink(t *testing.T) {
 	}
 }
 
+func TestInspectOmitsRootSelfAlias(t *testing.T) {
+	source := t.TempDir()
+	writeMediaFile(t, source, "efi/boot/bootaa64.efi", "boot")
+	writeMediaFile(t, source, "casper/vmlinuz", "kernel")
+	if err := os.Symlink(".", filepath.Join(source, "ubuntu")); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest, err := Inspect(context.Background(), source, Options{Architecture: "arm64", RequireUEFI: true, RequireFAT32: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.OmittedRootAliases != 1 {
+		t.Fatalf("root alias was not recorded: %+v", manifest)
+	}
+	for _, entry := range manifest.Entries {
+		if entry.Path == "ubuntu" || strings.HasPrefix(entry.Path, "ubuntu/") {
+			t.Fatalf("root alias must not recursively duplicate the image: %+v", entry)
+		}
+	}
+
+	destination := t.TempDir()
+	if err := CopyAndVerify(context.Background(), manifest, destination, CopyOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(destination, "ubuntu")); !os.IsNotExist(err) {
+		t.Fatalf("root alias should be omitted from FAT32 output, err=%v", err)
+	}
+	if content, err := os.ReadFile(filepath.Join(destination, "casper", "vmlinuz")); err != nil || string(content) != "kernel" {
+		t.Fatalf("ordinary media content was not preserved: content=%q err=%v", content, err)
+	}
+}
+
 func TestInspectMaterializesDirectorySymlink(t *testing.T) {
 	source := t.TempDir()
 	writeMediaFile(t, source, "efi/boot/bootaa64.efi", "boot")
@@ -113,6 +146,20 @@ func TestInspectRejectsDirectorySymlinkCycle(t *testing.T) {
 	}
 	if _, err := Inspect(context.Background(), source, Options{}); err == nil || !strings.Contains(err.Error(), "cycle") {
 		t.Fatalf("directory-cycle error = %v", err)
+	}
+}
+
+func TestInspectRejectsNestedRootAlias(t *testing.T) {
+	source := t.TempDir()
+	writeMediaFile(t, source, "efi/boot/bootaa64.efi", "boot")
+	if err := os.MkdirAll(filepath.Join(source, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("..", filepath.Join(source, "nested", "root")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Inspect(context.Background(), source, Options{}); err == nil || !strings.Contains(err.Error(), "unsafe media-root traversal") {
+		t.Fatalf("nested root alias error = %v", err)
 	}
 }
 
