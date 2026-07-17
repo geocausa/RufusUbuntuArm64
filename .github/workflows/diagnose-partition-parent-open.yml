@@ -20,13 +20,19 @@ jobs:
         with:
           persist-credentials: false
       - name: Reproduce parent-disk open versus child formatter
+        id: diagnose
+        continue-on-error: true
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          log="${RUNNER_TEMP}/partition-parent-open.log"
+          exec > >(tee "${log}") 2>&1
+          echo "diagnostic log: ${log}"
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends dosfstools util-linux
           image="${RUNNER_TEMP}/partition-parent-open.img"
           truncate -s 512M "${image}"
           loop="$(sudo losetup --find --show --partscan "${image}")"
+          echo "loop=${loop}"
           cleanup() {
             sudo losetup --detach "${loop}" || true
           }
@@ -39,25 +45,34 @@ jobs:
             [[ -b "${partition}" ]] && break
             sleep 0.25
           done
-          [[ -b "${partition}" ]]
+          ls -l "${loop}"* || true
+          if [[ ! -b "${partition}" ]]; then
+            echo "partition node did not appear: ${partition}"
+            exit 2
+          fi
 
-          sudo bash -euxo pipefail -c '
+          sudo bash -uxo pipefail -c '
             loop="$1"
             partition="$2"
             exec 9<>"${loop}"
             flock -n 9
             exec 3<>"${partition}"
-            set +e
             output="$(mkfs.vfat -F 32 /proc/self/fd/3 2>&1)"
-            status=$?
-            set -e
-            printf "%s\n" "${output}"
-            if [[ ${status} -eq 0 ]]; then
-              echo "mkfs.vfat unexpectedly succeeded while the parent disk was open" >&2
-              exit 1
-            fi
-            grep -Fq "Device or resource busy" <<<"${output}"
+            first_status=$?
+            printf "FIRST_STATUS=%s\n%s\n" "${first_status}" "${output}"
             exec 9>&-
-            mkfs.vfat -F 32 /proc/self/fd/3
-            fsck.vfat -n /proc/self/fd/3
+            output="$(mkfs.vfat -F 32 /proc/self/fd/3 2>&1)"
+            second_status=$?
+            printf "SECOND_STATUS=%s\n%s\n" "${second_status}" "${output}"
+            if [[ ${second_status} -eq 0 ]]; then
+              fsck.vfat -n /proc/self/fd/3
+            fi
+            exit 0
           ' bash "${loop}" "${partition}"
+      - name: Upload diagnostic log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: partition-parent-open-${{ github.run_id }}
+          path: ${{ runner.temp }}/partition-parent-open.log
+          if-no-files-found: error
