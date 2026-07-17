@@ -59,10 +59,11 @@ jobs:
         run: |
           set -euo pipefail
           git apply --verbose "${PATCH_PATH}"
-      - name: Format added Go files
+      - name: Format added source and documentation
         run: |
           set -euo pipefail
           gofmt -w internal/safety/reopenable_linux.go internal/safety/reopenable_linux_test.go
+          sed -i 's/^\(\*\*Severity:\*\* high destructive-path correctness\)  $/\1/' docs/pre-0.11-code-audit.md
       - name: Validate patched diff whitespace
         run: |
           set -euo pipefail
