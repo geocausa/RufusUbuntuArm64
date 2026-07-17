@@ -2,9 +2,7 @@
 
 package windowsmedia
 
-import (
-	"fmt"
-)
+import "fmt"
 
 const (
 	maxWindowsMediaEntries = 300000
@@ -33,7 +31,7 @@ func countBoundedEntry(count *int, limit int, label string) error {
 	if count == nil || limit <= 0 {
 		return fmt.Errorf("invalid %s traversal limit", label)
 	}
-	*count++
+	*count = *count + 1
 	if *count > limit {
 		return fmt.Errorf("%s contains more than %d entries", label, limit)
 	}
