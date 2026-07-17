@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.5 — 2026-07-17
+
+- Completed the pre-parity correctness, destructive-operation, privilege-boundary, parser, arithmetic, concurrency, acquisition, packaging, and supply-chain audit.
+- Retained confirmed source and target identities through destructive revalidation, added checked size and offset arithmetic, and strengthened GPT durability, short-write handling, and exact metadata readback.
+- Bound reused verified downloads to no-follow regular-file descriptors and closed pathname replacement and symbolic-link races.
+- Moved slow image, device, and signed-catalog probes off the GTK thread; added stale-result generations, worker-owned process references, and early cancellation handling.
+- Added Go 1.22 compatibility, Staticcheck, Govulncheck, Actionlint, ShellCheck, Lintian, AppStream, desktop validation, deterministic packaging, and byte-for-byte package reproducibility gates.
+- Corrected Debian metadata, runtime dependencies, copyright, changelog, launcher man pages, and verification wording. Software checks do not claim firmware boot, Secure Boot acceptance, or persistence across reboot without physical qualification.
+
 ## 0.10.4 — 2026-07-17
 
 - Fixed persistence analysis for the official Ubuntu 26.04 ARM64 desktop ISO root alias `ubuntu -> .`.
