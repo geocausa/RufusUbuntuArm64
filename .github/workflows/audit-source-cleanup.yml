@@ -1,9 +1,9 @@
 name: Audit source cleanup
 
 on:
-  push:
+  pull_request:
     branches:
-      - audit/pre-0.11-hardening
+      - feature/persistence-wizard
 
 permissions:
   contents: write
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   remove-exact-duplicates:
-    if: github.repository == 'geocausa/RufusUbuntuArm64'
+    if: github.repository == 'geocausa/RufusUbuntuArm64' && github.event.pull_request.head.ref == 'audit/pre-0.11-hardening'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
