@@ -7,12 +7,19 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   wim-engine:
     name: Build bundled WIM engine
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - name: Install WIM build dependencies
         run: |
           sudo apt-get update
@@ -21,7 +28,7 @@ jobs:
             libxml2-dev zlib1g-dev liblzma-dev libbz2-dev liblz4-dev libzstd-dev
       - name: Build and inspect the pinned ARM64 engine
         run: ./scripts/build-wimlib-arm64.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: wimlib-arm64
           path: |
@@ -34,15 +41,23 @@ jobs:
     name: Audit and package
     needs: wim-engine
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.23.x'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: wimlib-arm64
           path: vendor/wimlib
+      - name: Install audit validators
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            shellcheck desktop-file-utils appstream lintian
       - name: Read canonical project version
         id: version
         run: |
@@ -51,7 +66,7 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
       - name: Full test, audit, and ARM64 package pass
         run: ./scripts/test.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rufusarm64-${{ steps.version.outputs.version }}-ubuntu-arm64
           path: |
@@ -63,12 +78,15 @@ jobs:
     name: Native ARM64 execution
     needs: wim-engine
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.23.x'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: wimlib-arm64
           path: vendor/wimlib
@@ -86,4 +104,5 @@ jobs:
           trap 'rm -rf "${package_root}"' EXIT
           dpkg-deb -x "dist/rufusarm64_${VERSION}_arm64.deb" "${package_root}"
           test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-helper" version)" = "${VERSION}"
+          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-persistence-helper" --help 2>&1 || true)" != ""
           "${package_root}/usr/lib/rufusarm64/wimlib-imagex" --version
