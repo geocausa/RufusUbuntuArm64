@@ -32,16 +32,20 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26.5'
-      - name: Verify audited ancestry and reviewed patch
+      - name: Verify audited branch ancestry
         env:
           BASE_SHA: e0cb993c923d9ddc87e38c89e181e17215bdd70c
+        run: git merge-base --is-ancestor "${BASE_SHA}" HEAD
+      - name: Verify reviewed patch checksum
+        env:
           PATCH_PATH: .github/patches/persistence-no-automount.patch
           PATCH_SHA256: 369c96114042af77a6f5c56899153dbfa80a504c2b9e86da793b128f77b26198
         run: |
           set -euo pipefail
-          git merge-base --is-ancestor "${BASE_SHA}" HEAD
+          sha256sum "${PATCH_PATH}"
           printf '%s  %s\n' "${PATCH_SHA256}" "${PATCH_PATH}" | sha256sum -c -
-          git apply --check "${PATCH_PATH}"
+      - name: Verify reviewed patch applicability
+        run: git apply --check .github/patches/persistence-no-automount.patch
       - name: Apply and format reviewed patch
         run: |
           set -euo pipefail
@@ -68,6 +72,6 @@ jobs:
           diff -u "${RUNNER_TEMP}/expected-files" "${RUNNER_TEMP}/actual-files"
           git diff --cached --check
           git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.email '4189828+github-actions[bot]@users.noreply.github.com'
           git commit -m '0.10.6: prevent persistent partition automount races'
           git push origin 'HEAD:hotfix/0.10.6-persistence-no-automount'
