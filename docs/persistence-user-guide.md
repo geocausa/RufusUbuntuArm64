@@ -38,12 +38,15 @@ The graphical wizard accepts only media that pass all preflight checks:
 - a matching fallback UEFI loader in `EFI/BOOT`;
 - a FAT32-safe media tree;
 - bounded relative file and directory symbolic links whose resolved targets stay inside the mounted ISO;
+- a direct root-self convenience alias such as the official Ubuntu 26.04 `ubuntu -> .` entry, which can be safely omitted;
 - GPT/UEFI creation with one FAT32 boot partition and one ext4 persistence partition;
 - at least 1 GiB of persistence storage.
 
 Traditional Ubuntu configurations may contain `boot=casper`. Newer configurations may instead use a command such as `linux /casper/vmlinuz $cmdline ---`. RufusArm64 recognizes both forms and inserts `persistent` before the `---` separator while leaving unrelated kernel entries unchanged.
 
-FAT32 cannot store Unix symbolic links. Safe in-tree links are therefore materialized as ordinary files or directories. A repository alias such as `dists/stable -> resolute` becomes a real `dists/stable` directory containing verified copies of the target files. Those duplicate files count toward entry, byte, FAT32-capacity, copy, and verification limits. Absolute links, links that escape the ISO, directory cycles, device nodes, case-colliding paths, and unbounded expansions are refused.
+FAT32 cannot store Unix symbolic links. Safe in-tree links are therefore materialized as ordinary files or directories. A repository alias such as `dists/stable -> resolute` becomes a real `dists/stable` directory containing verified copies of the target files. Those duplicate files count toward entry, byte, FAT32-capacity, copy, and verification limits.
+
+A root-level alias such as `ubuntu -> .` is different: copying it as a real directory would recursively duplicate the complete image. RufusArm64 therefore omits only a direct child of the media root that resolves exactly back to that root. Nested aliases back to the root, absolute or external links, directory cycles, device nodes, case-colliding paths, and unbounded expansions are refused.
 
 Compressed images, virtual disks, MBR persistence, BIOS-only media, files too large for FAT32, encrypted persistence, and unrecognized boot layouts are refused. An unversioned derivative must include modern casper metadata; a kernel path alone is not enough to weaken the compatibility gate.
 
