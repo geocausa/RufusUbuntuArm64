@@ -82,13 +82,27 @@ jobs:
         run: ./scripts/static-audit.sh
       - name: Read canonical project version
         id: version
+        if: success()
         run: |
           version="$(tr -d '\r\n' < VERSION)"
           echo "VERSION=${version}" >> "$GITHUB_ENV"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
       - name: Full test, audit, and ARM64 package pass
-        run: ./scripts/test.sh
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: success()
+        run: |
+          mkdir -p dist/audit-logs
+          set -o pipefail
+          ./scripts/test.sh 2>&1 | tee dist/audit-logs/test-and-package.log
+      - name: Upload complete audit logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: audit-logs-${{ github.run_id }}-x86-64
+          path: dist/audit-logs/
+          if-no-files-found: warn
+      - name: Upload ARM64 package
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rufusarm64-${{ steps.version.outputs.version }}-ubuntu-arm64
           path: |
@@ -119,8 +133,12 @@ jobs:
           echo "VERSION=${version}" >> "$GITHUB_ENV"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
       - name: Run the complete suite natively on ARM64
-        run: ./scripts/test.sh
+        run: |
+          mkdir -p dist/audit-logs
+          set -o pipefail
+          ./scripts/test.sh 2>&1 | tee dist/audit-logs/native-arm64.log
       - name: Execute packaged ARM64 binaries
+        if: success()
         run: |
           package_root="$(mktemp -d)"
           trap 'rm -rf "${package_root}"' EXIT
@@ -128,3 +146,10 @@ jobs:
           test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-helper" version)" = "${VERSION}"
           test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-persistence-helper" --help 2>&1 || true)" != ""
           "${package_root}/usr/lib/rufusarm64/wimlib-imagex" --version
+      - name: Upload native ARM64 logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: audit-logs-${{ github.run_id }}-arm64
+          path: dist/audit-logs/
+          if-no-files-found: warn
