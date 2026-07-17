@@ -1,0 +1,276 @@
+diff --git a/internal/linuxmedia/create.go b/internal/linuxmedia/create.go
+--- a/internal/linuxmedia/create.go
++++ b/internal/linuxmedia/create.go
+@@ -523,7 +523,7 @@ func openPersistentPartition(path string, layout PartitionLayout, expectedParen
+ 	} else if stat.Mode&syscall.S_IFMT != syscall.S_IFBLK {
+ 		return nil, safety.ErrNotBlockDevice
+ 	}
+-	file, err := os.OpenFile(path, os.O_RDWR|syscall.O_EXCL|syscall.O_NOFOLLOW, 0)
++	file, err := safety.OpenReopenableDevice(path)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+diff --git a/internal/persistence/filesystem.go b/internal/persistence/filesystem.go
+--- a/internal/persistence/filesystem.go
++++ b/internal/persistence/filesystem.go
+@@ -54,7 +54,7 @@ func CreateFilesystem(ctx context.Context, partitionPath string, plan Plan, opts
+ 		return errors.New("persistence partition path is a symbolic link")
+ 	}
+ 
+-	partition, err := os.OpenFile(partitionPath, os.O_RDWR|syscall.O_EXCL|syscall.O_NOFOLLOW, 0)
++	partition, err := safety.OpenReopenableDevice(partitionPath)
+ 	if err != nil {
+ 		return fmt.Errorf("open persistence partition: %w", err)
+ 	}
+diff --git a/internal/safety/reopenable_linux.go b/internal/safety/reopenable_linux.go
+new file mode 100644
+--- /dev/null
++++ b/internal/safety/reopenable_linux.go
+@@ -0,0 +1,22 @@
++//go:build linux
++
++package safety
++
++import (
++	"os"
++	"syscall"
++)
++
++// reopenableDeviceOpenFlags deliberately excludes O_EXCL. Linux filesystem
++// tools such as mkfs.vfat and mkfs.ext4 reopen an inherited /proc/self/fd/N
++// target with their own exclusive open. Holding the original block-device
++// descriptor with O_EXCL makes that trusted reopen fail with EBUSY.
++const reopenableDeviceOpenFlags = os.O_RDWR | syscall.O_NOFOLLOW
++
++// OpenReopenableDevice opens a no-follow read/write descriptor that trusted
++// filesystem tools can reopen through an inherited /proc/self/fd/N path.
++// Callers must retain their whole-disk lock, take an advisory flock on the
++// returned descriptor, and revalidate its identity and geometry.
++func OpenReopenableDevice(path string) (*os.File, error) {
++	return os.OpenFile(path, reopenableDeviceOpenFlags, 0)
++}
+diff --git a/internal/safety/reopenable_linux_test.go b/internal/safety/reopenable_linux_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/safety/reopenable_linux_test.go
+@@ -0,0 +1,137 @@
++//go:build linux
++
++package safety
++
++import (
++	"fmt"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strings"
++	"syscall"
++	"testing"
++)
++
++func TestReopenableDeviceFlagsExcludeKernelExclusiveOpen(t *testing.T) {
++	if reopenableDeviceOpenFlags&syscall.O_EXCL != 0 {
++		t.Fatal("reopenable filesystem-tool descriptor must not use O_EXCL")
++	}
++}
++
++func TestOpenReopenableDeviceRefusesSymlink(t *testing.T) {
++	target := filepath.Join(t.TempDir(), "device")
++	if err := os.WriteFile(target, []byte("device"), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	link := filepath.Join(t.TempDir(), "device-link")
++	if err := os.Symlink(target, link); err != nil {
++		t.Fatal(err)
++	}
++	if file, err := OpenReopenableDevice(link); err == nil {
++		file.Close()
++		t.Fatal("symbolic-link device path accepted")
++	}
++}
++
++func TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop(t *testing.T) {
++	if os.Getenv("RUFUS_REAL_BLOCK_TEST") != "1" {
++		t.Skip("set RUFUS_REAL_BLOCK_TEST=1 and run as root for the loop-device regression")
++	}
++	if os.Geteuid() != 0 {
++		t.Fatal("real block-device regression requires root")
++	}
++	for _, program := range []string{"losetup", "mkfs.vfat", "fsck.vfat", "mkfs.ext4", "e2fsck", "mount", "umount"} {
++		if _, err := exec.LookPath(program); err != nil {
++			t.Fatalf("required integration-test program %q is unavailable: %v", program, err)
++		}
++	}
++
++	imagePath := filepath.Join(t.TempDir(), "formatter-loop.img")
++	image, err := os.OpenFile(imagePath, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0o600)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := image.Truncate(256 * 1024 * 1024); err != nil {
++		image.Close()
++		t.Fatal(err)
++	}
++	if err := image.Close(); err != nil {
++		t.Fatal(err)
++	}
++
++	output, err := exec.Command("losetup", "--find", "--show", imagePath).CombinedOutput()
++	if err != nil {
++		t.Fatalf("attach loop device: %v: %s", err, strings.TrimSpace(string(output)))
++	}
++	loopPath := strings.TrimSpace(string(output))
++	if loopPath == "" {
++		t.Fatal("losetup returned an empty loop-device path")
++	}
++	mountedAt := ""
++	defer func() {
++		if mountedAt != "" {
++			_ = exec.Command("umount", "--", mountedAt).Run()
++		}
++		if output, err := exec.Command("losetup", "--detach", loopPath).CombinedOutput(); err != nil {
++			t.Errorf("detach loop device: %v: %s", err, strings.TrimSpace(string(output)))
++		}
++	}()
++
++	device, err := OpenReopenableDevice(loopPath)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer device.Close()
++	if err := syscall.Flock(int(device.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
++		t.Fatalf("lock loop device: %v", err)
++	}
++	defer syscall.Flock(int(device.Fd()), syscall.LOCK_UN) // best effort
++
++	const inheritedDevice = "/proc/self/fd/3"
++	runInheritedDeviceCommand(t, device, "mkfs.vfat", "-F", "32", inheritedDevice)
++	runInheritedDeviceCommand(t, device, "fsck.vfat", "-n", inheritedDevice)
++
++	mountDir := filepath.Join(t.TempDir(), "mount")
++	if err := os.Mkdir(mountDir, 0o700); err != nil {
++		t.Fatal(err)
++	}
++	runInheritedDeviceCommand(t, device, "mount", "-t", "vfat", "-o", "rw,nosuid,nodev,noexec", "--", inheritedDevice, mountDir)
++	mountedAt = mountDir
++	if err := os.WriteFile(filepath.Join(mountDir, "probe"), []byte("fat32\n"), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	runCommand(t, "umount", "--", mountDir)
++	mountedAt = ""
++
++	runInheritedDeviceCommand(t, device, "mkfs.ext4", "-F", "-m", "0", inheritedDevice)
++	runInheritedDeviceCommand(t, device, "mount", "-t", "ext4", "-o", "rw,nosuid,nodev,noexec", "--", inheritedDevice, mountDir)
++	mountedAt = mountDir
++	if err := os.WriteFile(filepath.Join(mountDir, "probe"), []byte("ext4\n"), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	runCommand(t, "umount", "--", mountDir)
++	mountedAt = ""
++	runInheritedDeviceCommand(t, device, "e2fsck", "-f", "-n", inheritedDevice)
++}
++
++func runInheritedDeviceCommand(t *testing.T, device *os.File, name string, args ...string) {
++	t.Helper()
++	command := exec.Command(name, args...)
++	command.ExtraFiles = []*os.File{device}
++	output, err := command.CombinedOutput()
++	if err != nil {
++		t.Fatalf("%s failed: %v: %s", formatCommand(name, args), err, strings.TrimSpace(string(output)))
++	}
++}
++
++func runCommand(t *testing.T, name string, args ...string) {
++	t.Helper()
++	output, err := exec.Command(name, args...).CombinedOutput()
++	if err != nil {
++		t.Fatalf("%s failed: %v: %s", formatCommand(name, args), err, strings.TrimSpace(string(output)))
++	}
++}
++
++func formatCommand(name string, args []string) string {
++	return fmt.Sprintf("%s %s", name, strings.Join(args, " "))
++}
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -74,6 +74,6 @@ jobs:
+           sudo apt-get update
+           sudo apt-get install -y --no-install-recommends \
+-            shellcheck desktop-file-utils appstream lintian
++            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs
+           audit_bin="${RUNNER_TEMP}/rufusarm64-audit-tools"
+           mkdir -p "${audit_bin}"
+           GOBIN="${audit_bin}" go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+@@ -82,6 +82,16 @@ jobs:
+           echo "${audit_bin}" >> "${GITHUB_PATH}"
+       - name: Run pinned static, workflow, and vulnerability checks
+         run: bash ./scripts/static-audit.sh
++      - name: Exercise inherited formatter descriptors on a real loop device
++        env:
++          RUFUS_REAL_BLOCK_TEST: '1'
++        run: |
++          sudo modprobe loop || true
++          go test -c -o "${RUNNER_TEMP}/safety-loop.test" ./internal/safety
++          sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
++            "${RUNNER_TEMP}/safety-loop.test" \
++            -test.run '^TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop$' \
++            -test.v
+       - name: Read canonical project version
+         id: version
+         if: success()
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -10,5 +10,6 @@
+ - Moved slow image, device, and signed-catalog probes off the GTK thread; added stale-result generations, worker-owned process references, and early cancellation handling.
+ - Added Go 1.22 compatibility, Staticcheck, Govulncheck, Actionlint, ShellCheck, Lintian, AppStream, desktop validation, deterministic packaging, and byte-for-byte package reproducibility gates.
+ - Corrected Debian metadata, runtime dependencies, copyright, changelog, launcher man pages, and verification wording. Software checks do not claim firmware boot, Secure Boot acceptance, or persistence across reboot without physical qualification.
++- Fixed real-device persistent-media creation by retaining identity-bound, flocked partition descriptors without a kernel-exclusive open, so FAT32/ext4 formatters and filesystem tools can safely reopen inherited `/proc/self/fd/N` targets; added a real loop-device regression gate.
+ 
+ ## 0.10.4 — 2026-07-17
+diff --git a/docs/persistence-materialization.md b/docs/persistence-materialization.md
+--- a/docs/persistence-materialization.md
++++ b/docs/persistence-materialization.md
+@@ -53,6 +53,7 @@ It:
+ 
+ - rejects symlinks and non-block devices;
+-- opens and locks the partition before invoking external tools;
++- opens the partition with `O_NOFOLLOW`, takes an advisory exclusive `flock`, and keeps the parent whole-disk lock for the complete operation;
+ - verifies the open device identity and exact planned capacity;
+ - passes the partition to tools through an inherited `/proc/self/fd/3` descriptor instead of reopening the user-supplied path;
++- deliberately does not hold the partition with kernel `O_EXCL`, because `mkfs`, `mount`, and filesystem checkers must reopen the inherited descriptor path and would otherwise fail with `EBUSY`;
+ - runs `mkfs.ext4` with the exact `casper-rw` or `persistence` label and eager metadata initialization;
+diff --git a/docs/pre-0.11-code-audit.md b/docs/pre-0.11-code-audit.md
+--- a/docs/pre-0.11-code-audit.md
++++ b/docs/pre-0.11-code-audit.md
+@@ -8,7 +8,7 @@ Baseline: `7b10e134b83fca3c82f5dc354f844cee4ed2c557` (`0.10.4`)
+ 
+ Audit disposition at the current branch head:
+ 
+-- **22 fixed findings** with code, regression coverage, or permanent CI/package gates;
++- **23 fixed findings** with code, regression coverage, or permanent CI/package gates;
+ - **3 cleared findings** where the original concern did not represent a defect;
+ - **4 explicit architectural or trust deferrals** that do not weaken the current documented release contract;
+ - **2 planned parity items** that remain outside this corrective branch.
+@@ -146,4 +146,20 @@ The identity token includes `MAJ:MIN`, `diskseq`, serial, WWN, size, model, vend
+ 
+ The identity token includes `MAJ:MIN`, `diskseq`, serial, WWN, size, model, vendor, transport, and policy flags. On older kernels or inexpensive USB bridges, `diskseq`, serial, and WWN can all be absent. Add stable sysfs/USB topology identifiers where available, while retaining open-descriptor identity and capacity checks.
+ 
++### A-032 — kernel-exclusive partition descriptors block inherited filesystem tools
++
++**Severity:** high destructive-path correctness  
++**Status:** fixed
++
++The persistent-media creator opened each new partition with `O_EXCL`, then passed that descriptor to `mkfs.vfat`, `mkfs.ext4`, `mount`, and filesystem checkers through `/proc/self/fd/3`. Those tools reopen the inherited path. On a real Linux block device, the creator's existing kernel-exclusive holder makes the trusted reopen fail with `EBUSY` after the new GPT has already replaced the previous media layout.
++
++Implemented correction:
++
++- retain `O_NOFOLLOW`, the parent whole-disk lock, the partition advisory `flock`, and all descriptor identity, size, geometry, and parent-disk checks;
++- omit kernel `O_EXCL` only for descriptors intentionally inherited by trusted filesystem tools;
++- keep every external command bound to the already-verified descriptor rather than returning to the user-supplied partition pathname;
++- add a permanent root-only loop-device CI regression that formats, checks, mounts, writes, and unmounts FAT32 and ext4 through inherited `/proc/self/fd/3` handles.
++
++The resulting failure mode remains explicit: media interrupted before filesystem creation is incomplete and must be recreated. No software-only test changes the separate physical boot and persistence qualification requirement.
++
+ ## GUI, semantics, and concurrency
