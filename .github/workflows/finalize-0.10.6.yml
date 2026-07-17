@@ -1,5 +1,6 @@
 name: Finalize RufusArm64 0.10.6
 
+# One-shot release gate for the persistence automount-race hotfix.
 on:
   push:
     branches:
