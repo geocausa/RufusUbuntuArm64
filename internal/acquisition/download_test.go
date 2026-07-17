@@ -88,6 +88,52 @@ func TestDownloadRejectsUnexpectedSize(t *testing.T) {
 	}
 }
 
+func TestHashExistingDownloadRejectsPathReplacement(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "image.iso")
+	if err := os.WriteFile(path, []byte("signed image"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	expected, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(path, filepath.Join(directory, "original.iso")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("replacement"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hashExistingDownload(path, expected); err == nil || !strings.Contains(err.Error(), "changed") {
+		t.Fatalf("replacement error = %v", err)
+	}
+}
+
+func TestHashExistingDownloadRejectsSymlinkSwap(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "image.iso")
+	target := filepath.Join(directory, "target.iso")
+	if err := os.WriteFile(path, []byte("signed image"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("signed image"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	expected, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hashExistingDownload(path, expected); err == nil {
+		t.Fatal("symlink replacement was accepted")
+	}
+}
+
 func TestDownloadRejectsUnsignedRedirectHost(t *testing.T) {
 	data := []byte("redirect")
 	var server *httptest.Server

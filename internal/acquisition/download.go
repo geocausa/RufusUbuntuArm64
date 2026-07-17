@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -164,7 +165,7 @@ func existingDownload(path string, image Image, replace bool) (DownloadResult, b
 		return DownloadResult{}, true, errors.New("download destination exists and is not a regular file")
 	}
 	if uint64(info.Size()) == image.Size {
-		digest, hashErr := hashFile(path)
+		digest, hashErr := hashExistingDownload(path, info)
 		if hashErr != nil {
 			return DownloadResult{}, true, hashErr
 		}
@@ -232,15 +233,42 @@ func secureHTTPClient(image Image, allowHTTP bool) *http.Client {
 	}
 }
 
-func hashFile(path string) (string, error) {
-	file, err := os.Open(path)
+func hashExistingDownload(path string, expected os.FileInfo) (string, error) {
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
 	if err != nil {
-		return "", fmt.Errorf("open existing download: %w", err)
+		return "", fmt.Errorf("open existing download without following links: %w", err)
+	}
+	file := os.NewFile(uintptr(fd), path)
+	if file == nil {
+		_ = syscall.Close(fd)
+		return "", errors.New("open existing download returned an invalid file handle")
 	}
 	defer file.Close()
+
+	before, err := file.Stat()
+	if err != nil {
+		return "", fmt.Errorf("inspect opened existing download: %w", err)
+	}
+	if !before.Mode().IsRegular() || !os.SameFile(expected, before) {
+		return "", errors.New("existing download changed before it could be verified")
+	}
 	digest := sha256.New()
 	if _, err := io.CopyBuffer(digest, file, make([]byte, downloadBufferSize)); err != nil {
 		return "", fmt.Errorf("hash existing download: %w", err)
+	}
+	after, err := file.Stat()
+	if err != nil {
+		return "", fmt.Errorf("reinspect opened existing download: %w", err)
+	}
+	if before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
+		return "", errors.New("existing download changed while it was being verified")
+	}
+	current, err := os.Lstat(path)
+	if err != nil {
+		return "", fmt.Errorf("reinspect existing download path: %w", err)
+	}
+	if !current.Mode().IsRegular() || !os.SameFile(after, current) {
+		return "", errors.New("existing download path changed while it was being verified")
 	}
 	return hex.EncodeToString(digest.Sum(nil)), nil
 }
