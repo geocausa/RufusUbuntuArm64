@@ -1239,10 +1239,17 @@ class RufusWindow(Gtk.ApplicationWindow):
 
     def run_download(self, command):
         result_payload = {}
+        process = None
         try:
-            self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True)
-            assert self.process.stdout is not None
-            for raw in self.process.stdout:
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True)
+            self.process = process
+            assert process.stdout is not None
+            if self.cancel_requested and process.poll() is None:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except (ProcessLookupError, PermissionError, OSError):
+                    pass
+            for raw in process.stdout:
                 line = raw.strip()
                 if not line:
                     continue
@@ -1255,13 +1262,14 @@ class RufusWindow(Gtk.ApplicationWindow):
                     GLib.idle_add(self.handle_event, payload)
                 elif isinstance(payload, dict) and payload.get("path"):
                     result_payload = payload
-            return_code = self.process.wait()
+            return_code = process.wait()
             GLib.idle_add(self.finish_download, return_code, result_payload)
         except Exception as exc:
             GLib.idle_add(self.append_log, f"Verified download failed: {exc}")
             GLib.idle_add(self.finish_download, 1, {})
         finally:
-            self.process = None
+            if self.process is process:
+                self.process = None
 
     def finish_download(self, return_code, payload):
         was_cancelled = self.cancel_requested
@@ -1367,17 +1375,20 @@ class RufusWindow(Gtk.ApplicationWindow):
         return True
 
     def run_persistence_plan(self, command):
+        process = None
         try:
-            self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
-            stdout, stderr = self.process.communicate()
-            return_code = self.process.returncode
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+            self.process = process
+            stdout, stderr = process.communicate()
+            return_code = process.returncode
             payload = json.loads(stdout) if return_code == 0 else {}
             error = stderr.strip() or stdout.strip() if return_code != 0 else ""
             GLib.idle_add(self.finish_persistence_plan, return_code, payload, error)
         except Exception as exc:
             GLib.idle_add(self.finish_persistence_plan, 1, {}, str(exc))
         finally:
-            self.process = None
+            if self.process is process:
+                self.process = None
 
     def finish_persistence_plan(self, return_code, payload, error):
         was_cancelled = self.cancel_requested
@@ -1661,8 +1672,9 @@ class RufusWindow(Gtk.ApplicationWindow):
         threading.Thread(target=self.run_writer, args=(command,), daemon=True).start()
 
     def run_writer(self, command):
+        process = None
         try:
-            self.process = subprocess.Popen(
+            process = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -1670,13 +1682,14 @@ class RufusWindow(Gtk.ApplicationWindow):
                 bufsize=1,
                 start_new_session=True,
             )
-            assert self.process.stdout is not None
-            if self.cancel_requested and self.process.poll() is None:
+            self.process = process
+            assert process.stdout is not None
+            if self.cancel_requested and process.poll() is None:
                 try:
-                    os.killpg(self.process.pid, signal.SIGTERM)
-                except (ProcessLookupError, PermissionError):
+                    os.killpg(process.pid, signal.SIGTERM)
+                except (ProcessLookupError, PermissionError, OSError):
                     pass
-            for raw in self.process.stdout:
+            for raw in process.stdout:
                 line = raw.strip()
                 if not line:
                     continue
@@ -1686,13 +1699,14 @@ class RufusWindow(Gtk.ApplicationWindow):
                     GLib.idle_add(self.append_log, line)
                     continue
                 GLib.idle_add(self.handle_event, event)
-            return_code = self.process.wait()
+            return_code = process.wait()
             GLib.idle_add(self.finish, return_code)
         except Exception as exc:
             GLib.idle_add(self.append_log, f"Failed to start the writer: {exc}")
             GLib.idle_add(self.finish, 1)
         finally:
-            self.process = None
+            if self.process is process:
+                self.process = None
 
     def handle_event(self, event):
         message = event.get("message", "")

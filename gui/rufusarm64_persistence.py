@@ -270,17 +270,20 @@ class Window(Gtk.ApplicationWindow):
         threading.Thread(target=self.run_analysis, args=(command, key), daemon=True).start()
 
     def run_analysis(self, command, key):
+        process = None
         try:
-            self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
-            stdout, stderr = self.process.communicate()
-            code = self.process.returncode
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+            self.process = process
+            stdout, stderr = process.communicate()
+            code = process.returncode
             payload = json.loads(stdout) if code == 0 else {}
             error = (stderr.strip() or stdout.strip()) if code else ""
             GLib.idle_add(self.finish_analysis, code, payload, error, key)
         except Exception as exc:
             GLib.idle_add(self.finish_analysis, 1, {}, str(exc), key)
         finally:
-            self.process = None
+            if self.process is process:
+                self.process = None
 
     def finish_analysis(self, code, payload, error, key):
         cancelled = self.cancel_requested
@@ -364,9 +367,11 @@ class Window(Gtk.ApplicationWindow):
         threading.Thread(target=self.run_create, args=(command,), daemon=True).start()
 
     def run_create(self, command):
+        process = None
         try:
-            self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True)
-            for raw in self.process.stdout or ():
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True)
+            self.process = process
+            for raw in process.stdout or ():
                 line = raw.strip()
                 if not line:
                     continue
@@ -376,13 +381,14 @@ class Window(Gtk.ApplicationWindow):
                     GLib.idle_add(self.append_log, line)
                 else:
                     GLib.idle_add(self.handle_event, event)
-            code = self.process.wait()
+            code = process.wait()
             GLib.idle_add(self.finish_create, code)
         except Exception as exc:
             GLib.idle_add(self.append_log, f"Persistent USB creation failed: {exc}")
             GLib.idle_add(self.finish_create, 1)
         finally:
-            self.process = None
+            if self.process is process:
+                self.process = None
 
     def handle_event(self, event):
         message = str(event.get("message") or "")

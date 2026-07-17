@@ -59,6 +59,44 @@ class SourceStructureTests(unittest.TestCase):
             "temporary source-rewrite machinery must not be part of a release branch",
         )
 
+    def test_worker_process_references_are_ownership_guarded(self):
+        workers = {
+            "rufusarm64.py": ("run_download", "run_persistence_plan", "run_writer"),
+            "rufusarm64_persistence.py": ("run_analysis", "run_create"),
+        }
+        failures = []
+        for filename, method_names in workers.items():
+            path = GUI_ROOT / filename
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(path))
+            methods = {
+                node.name: ast.get_source_segment(source, node) or ""
+                for class_node in tree.body
+                if isinstance(class_node, ast.ClassDef)
+                for node in class_node.body
+                if isinstance(node, ast.FunctionDef)
+            }
+            for method_name in method_names:
+                body = methods.get(method_name, "")
+                if not body:
+                    failures.append(f"{filename}: missing {method_name}")
+                    continue
+                for required in ("process = None", "self.process = process", "if self.process is process:"):
+                    if required not in body:
+                        failures.append(f"{filename}:{method_name} lacks {required!r}")
+        main_source = (GUI_ROOT / "rufusarm64.py").read_text(encoding="utf-8")
+        main_tree = ast.parse(main_source, filename="rufusarm64.py")
+        download_source = next(
+            ast.get_source_segment(main_source, node) or ""
+            for class_node in main_tree.body
+            if isinstance(class_node, ast.ClassDef)
+            for node in class_node.body
+            if isinstance(node, ast.FunctionDef) and node.name == "run_download"
+        )
+        if "if self.cancel_requested and process.poll() is None:" not in download_source:
+            failures.append("rufusarm64.py:run_download does not honor early cancellation")
+        self.assertEqual(failures, [], "\n" + "\n".join(failures))
+
     def test_audit_commands_and_package_assertions_are_not_duplicated(self):
         test_script = (REPOSITORY_ROOT / "scripts" / "test.sh").read_text(encoding="utf-8")
         unique_lines = (
