@@ -38,7 +38,7 @@ func TestInspectAndCopyVerifiedTree(t *testing.T) {
 	}
 }
 
-func TestInspectRejectsEscapingAndDirectorySymlinks(t *testing.T) {
+func TestInspectRejectsEscapingSymlink(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "outside")
 	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
 		t.Fatal(err)
@@ -51,17 +51,68 @@ func TestInspectRejectsEscapingAndDirectorySymlinks(t *testing.T) {
 	if _, err := Inspect(context.Background(), source, Options{}); err == nil || !strings.Contains(err.Error(), "escapes") {
 		t.Fatalf("escaping symlink error = %v", err)
 	}
+}
 
-	source = t.TempDir()
+func TestInspectMaterializesDirectorySymlink(t *testing.T) {
+	source := t.TempDir()
 	writeMediaFile(t, source, "efi/boot/bootaa64.efi", "boot")
-	if err := os.Mkdir(filepath.Join(source, "real-dir"), 0o755); err != nil {
+	writeMediaFile(t, source, "dists/resolute/Release", "release metadata")
+	writeMediaFile(t, source, "dists/resolute/main/binary-arm64/Packages", "packages")
+	if err := os.Symlink("resolute", filepath.Join(source, "dists", "stable")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("real-dir", filepath.Join(source, "dir-link")); err != nil {
+
+	manifest, err := Inspect(context.Background(), source, Options{Architecture: "arm64", RequireUEFI: true, RequireFAT32: true})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Inspect(context.Background(), source, Options{}); err == nil || !strings.Contains(err.Error(), "regular files") {
-		t.Fatalf("directory symlink error = %v", err)
+	if manifest.DereferencedSymlinks != 1 {
+		t.Fatalf("unexpected symlink count: %+v", manifest)
+	}
+	var linkedDirectory, linkedRelease bool
+	for _, entry := range manifest.Entries {
+		switch entry.Path {
+		case "dists/stable":
+			linkedDirectory = entry.SHA256 == "" && entry.DereferencedSymlink
+		case "dists/stable/Release":
+			linkedRelease = entry.SHA256 != "" && entry.SourcePath == filepath.Join(source, "dists", "resolute", "Release")
+		}
+	}
+	if !linkedDirectory || !linkedRelease {
+		t.Fatalf("directory symlink was not materialized safely: %+v", manifest)
+	}
+
+	destination := t.TempDir()
+	if err := CopyAndVerify(context.Background(), manifest, destination, CopyOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(filepath.Join(destination, "dists", "stable"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("linked distribution was not materialized as a real directory: %v", info.Mode())
+	}
+	content, err := os.ReadFile(filepath.Join(destination, "dists", "stable", "Release"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "release metadata" {
+		t.Fatalf("materialized link content = %q", content)
+	}
+}
+
+func TestInspectRejectsDirectorySymlinkCycle(t *testing.T) {
+	source := t.TempDir()
+	writeMediaFile(t, source, "efi/boot/bootaa64.efi", "boot")
+	if err := os.MkdirAll(filepath.Join(source, "dists", "resolute"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("..", filepath.Join(source, "dists", "resolute", "loop")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Inspect(context.Background(), source, Options{}); err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("directory-cycle error = %v", err)
 	}
 }
 
