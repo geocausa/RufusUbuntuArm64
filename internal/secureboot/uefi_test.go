@@ -253,3 +253,85 @@ func TestValidateUEFIMediaRejectsDuplicateSBATSections(t *testing.T) {
 		t.Fatalf("duplicate SBAT sections were not rejected: %#v", result)
 	}
 }
+
+func TestValidateUEFIMediaRejectsRootSubstitution(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "media")
+	writeSyntheticEFI(t, root, "EFI/BOOT/BOOTAA64.EFI", syntheticUEFIPE(imageFileMachineARM64, imageSubsystemEFIApp))
+	swapped := false
+	_, err := validateUEFIMedia(context.Background(), root, UEFIValidationOptions{Architecture: "arm64"}, func(stage, relative string) {
+		if stage != "root-before-open" || swapped {
+			return
+		}
+		swapped = true
+		if err := os.Rename(root, root+".original"); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "root changed during validation") {
+		t.Fatalf("root substitution was not rejected: %v", err)
+	}
+}
+
+func TestValidateUEFIMediaRejectsFileSubstitution(t *testing.T) {
+	root := t.TempDir()
+	relative := "EFI/BOOT/BOOTAA64.EFI"
+	path := writeSyntheticEFI(t, root, relative, syntheticUEFIPE(imageFileMachineARM64, imageSubsystemEFIApp))
+	swapped := false
+	_, err := validateUEFIMedia(context.Background(), root, UEFIValidationOptions{Architecture: "arm64"}, func(stage, candidate string) {
+		if stage != "entry-before-open" || candidate != relative || swapped {
+			return
+		}
+		swapped = true
+		if err := os.Rename(path, path+".original"); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, syntheticUEFIPE(imageFileMachineAMD64, imageSubsystemEFIApp), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "entry changed during validation") {
+		t.Fatalf("file substitution was not rejected: %v", err)
+	}
+}
+
+func TestValidateUEFIMediaRejectsDirectorySubstitution(t *testing.T) {
+	root := t.TempDir()
+	writeSyntheticEFI(t, root, "EFI/BOOT/BOOTAA64.EFI", syntheticUEFIPE(imageFileMachineARM64, imageSubsystemEFIApp))
+	directory := filepath.Join(root, "EFI")
+	swapped := false
+	_, err := validateUEFIMedia(context.Background(), root, UEFIValidationOptions{Architecture: "arm64"}, func(stage, relative string) {
+		if stage != "entry-before-open" || relative != "EFI" || swapped {
+			return
+		}
+		swapped = true
+		if err := os.Rename(directory, directory+".original"); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "entry changed during validation") {
+		t.Fatalf("directory substitution was not rejected: %v", err)
+	}
+}
+
+func TestValidateUEFIMediaDoesNotTraverseSymlinkComponents(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	writeSyntheticEFI(t, outside, "EFI/BOOT/BOOTAA64.EFI", syntheticUEFIPE(imageFileMachineARM64, imageSubsystemEFIApp))
+	if err := os.Symlink(filepath.Join(outside, "EFI"), filepath.Join(root, "EFI")); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ValidateUEFIMedia(context.Background(), root, UEFIValidationOptions{Architecture: "arm64", RequireFallback: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Valid || len(result.Files) != 0 || !strings.Contains(strings.Join(result.Warnings, "\n"), "ignored symbolic link EFI") {
+		t.Fatalf("symlink component was traversed or not reported: %#v", result)
+	}
+}
