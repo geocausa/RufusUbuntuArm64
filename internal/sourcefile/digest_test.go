@@ -56,6 +56,7 @@ func TestSHA256OpenRejectsNilContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer file.Close()
+	//lint:ignore SA1012 This regression test deliberately verifies that nil contexts fail closed.
 	if _, err := SHA256Open(nil, file, nil); err == nil || !strings.Contains(err.Error(), "context") {
 		t.Fatalf("nil-context error = %v", err)
 	}
