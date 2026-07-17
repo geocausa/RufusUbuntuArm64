@@ -697,16 +697,13 @@ func TestCreateWritesSelectedWindowsOptions(t *testing.T) {
 	}
 }
 
-func TestWimlibExecutablePrefersEnvironmentOverride(t *testing.T) {
+func TestWimlibExecutableIgnoresEnvironmentOverride(t *testing.T) {
 	fake := filepath.Join(t.TempDir(), "wimlib-imagex")
 	writeExecutable(t, fake, "#!/bin/sh\nexit 0\n")
 	t.Setenv("RUFUSARM64_WIMLIB", fake)
 	path, err := wimlibExecutable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if path != fake {
-		t.Fatalf("wimlibExecutable()=%q want %q", path, fake)
+	if err == nil && path == fake {
+		t.Fatalf("privileged WIM executable followed environment override %q", path)
 	}
 }
 

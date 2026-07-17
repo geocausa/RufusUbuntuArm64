@@ -154,7 +154,7 @@ class LogicTests(unittest.TestCase):
         })
         self.assertIn("Compatible media", summary)
         self.assertIn("16.0 GiB", summary)
-        self.assertIn("command-line only", summary)
+        self.assertIn("guarded persistent USB creator", summary)
 
     def test_supported_image_name(self):
         self.assertTrue(supported_image_name("Windows.ISO"))
