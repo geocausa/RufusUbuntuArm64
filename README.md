@@ -10,33 +10,40 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 - Native FAT32 UEFI media with automatic WIM/ESD splitting, plus checksum-pinned Rufus UEFI:NTFS support.
 - Optional Windows Setup customizations, driver staging, and Microsoft Secure Boot DBX scanning.
 - Signed image-catalog verification, threshold-root channel foundations, rollback protection, and checksum-gated downloads.
-- A dedicated guarded graphical workflow for persistent Ubuntu casper and Debian live-boot USB media.
+- A guarded graphical workflow for persistent Ubuntu casper and Debian live-boot USB media, exposed through the single RufusArm64 application entry.
 - Whole-device, source-identity, target-identity, mount, system-disk, cancellation, filesystem, and post-copy verification safeguards.
 
 ## Install on Ubuntu ARM64
 
 ```bash
-sudo apt install ./rufusarm64_0.10.2_arm64.deb
+sudo apt install ./rufusarm64_0.10.3_arm64.deb
 ```
 
-The package upgrades older `rufusarm64` installations in place. Open **RufusArm64** or **RufusArm64 Persistent Live USB** from the application menu afterward.
+The package upgrades older `rufusarm64` installations in place. One visible **RufusArm64** application entry is installed. Its normal launch opens the ordinary writer, and its **Create Persistent Live USB** desktop action opens the guarded persistence wizard.
 
 ## Create ordinary boot media
 
 1. Connect a removable USB drive.
-2. Choose an ISO, raw image, supported compressed image, or supported virtual disk.
-3. Select the exact USB device.
-4. For Windows media, review the partition scheme, target system, filesystem, and optional Setup choices.
-5. Keep copied-file verification enabled for qualification runs.
-6. Select **Create USB**, verify the destructive warning, and authenticate.
+2. Open **RufusArm64** normally.
+3. Choose an ISO, raw image, supported compressed image, or supported virtual disk.
+4. Select the exact USB device.
+5. For Windows media, review the partition scheme, target system, filesystem, and optional Setup choices.
+6. Keep copied-file verification enabled for qualification runs.
+7. Select **Create USB**, verify the destructive warning, and authenticate.
 
 Everything on the selected USB is permanently erased.
 
-The **Create USB** button in the main RufusArm64 window always performs the ordinary image-writing workflow. It does not turn a live ISO into persistent media. Use the separately installed **RufusArm64 Persistent Live USB** application for persistence.
+The **Create USB** button in the ordinary writer always performs the normal image-writing workflow. It does not turn a live ISO into persistent media.
 
 ## Persistent Linux media
 
-Version 0.10.2 includes a separate graphical **Persistent Live USB** wizard. It currently supports a deliberately narrow contract:
+Version 0.10.3 retains the separate guarded persistence wizard internally while presenting only one desktop application icon. Open it from the same RufusArm64 application entry using the **Create Persistent Live USB** action. The direct command remains available for troubleshooting:
+
+```text
+rufusarm64 --persistence
+```
+
+The wizard currently supports a deliberately narrow contract:
 
 - plain raw-bootable ISOHybrid media;
 - Ubuntu 20.04+ casper or Debian live-boot;
@@ -61,7 +68,7 @@ For the structural form, the analyzer also requires modern casper metadata such 
 
 ### Persistence workflow
 
-1. Open **RufusArm64 Persistent Live USB**, not the ordinary writer.
+1. Open the **Create Persistent Live USB** action from the RufusArm64 application entry, or run `rufusarm64 --persistence`.
 2. Select the Linux ISO and exact removable USB.
 3. Choose a persistence size; zero uses the suitable remaining space.
 4. Run **Analyze selected image**. This identity-bound step mounts only the ISO read-only and never opens the USB device.
@@ -134,7 +141,7 @@ Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, and the
 The installer is produced at:
 
 ```text
-dist/rufusarm64_0.10.2_arm64.deb
+dist/rufusarm64_0.10.3_arm64.deb
 ```
 
 ## Command-line examples
@@ -151,7 +158,7 @@ sudo rufusarm64-cli write \
   --image ubuntu.iso --device /dev/sdX --persistence-size 16G
 ```
 
-The graphical applications supply device-identity binding, exact confirmation, and protected cancellation automatically and are recommended for normal use.
+The single visible graphical application entry supplies the ordinary writer and the persistent-live action while retaining separate guarded helpers internally.
 
 ## License
 
