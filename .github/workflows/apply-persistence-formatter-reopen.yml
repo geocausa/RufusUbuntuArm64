@@ -1,0 +1,86 @@
+name: Apply persistence formatter reopen fix
+
+on:
+  push:
+    branches:
+      - fix/persistence-formatter-reopen
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-persistence-formatter-reopen
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply, validate, and promote fix
+    if: github.repository == 'geocausa/RufusUbuntuArm64'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - name: Verify and apply the reviewed patch
+        env:
+          BASE_SHA: c3bf92e78fd4f1fde7933765c0165011c72904f0
+          PATCH_PATH: .github/patches/persistence-formatter-reopen.patch
+          PATCH_SHA256: be037ffe5d04c644c91934626f06bfec06c516c7129e79ea3e4c7aaae205460e
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "${BASE_SHA}" HEAD
+          printf '%s  %s\n' "${PATCH_SHA256}" "${PATCH_PATH}" | sha256sum -c -
+          git apply --check "${PATCH_PATH}"
+          git apply "${PATCH_PATH}"
+          gofmt -w internal/safety/reopenable_linux.go internal/safety/reopenable_linux_test.go
+          git diff --check
+      - name: Run focused and complete Go tests
+        run: |
+          set -euo pipefail
+          go test ./internal/safety ./internal/linuxmedia ./internal/persistence
+          go test ./...
+      - name: Exercise the real block-device formatter chain
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dosfstools e2fsprogs
+          sudo modprobe loop || true
+          go test -c -o "${RUNNER_TEMP}/safety-loop.test" ./internal/safety
+          sudo env \
+            PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            RUFUS_REAL_BLOCK_TEST=1 \
+            "${RUNNER_TEMP}/safety-loop.test" \
+            -test.run '^TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop$' \
+            -test.v
+      - name: Commit only the validated production changes
+        env:
+          BASE_SHA: c3bf92e78fd4f1fde7933765c0165011c72904f0
+          PATCH_PATH: .github/patches/persistence-formatter-reopen.patch
+          WORKFLOW_PATH: .github/workflows/apply-persistence-formatter-reopen.yml
+        run: |
+          set -euo pipefail
+          git rm -- "${PATCH_PATH}" "${WORKFLOW_PATH}"
+          cat >"${RUNNER_TEMP}/expected-files" <<'EOF'
+          .github/workflows/ci.yml
+          CHANGELOG.md
+          docs/persistence-materialization.md
+          docs/pre-0.11-code-audit.md
+          internal/linuxmedia/create.go
+          internal/persistence/filesystem.go
+          internal/safety/reopenable_linux.go
+          internal/safety/reopenable_linux_test.go
+          EOF
+          git diff --name-only "${BASE_SHA}" | LC_ALL=C sort >"${RUNNER_TEMP}/actual-files"
+          diff -u "${RUNNER_TEMP}/expected-files" "${RUNNER_TEMP}/actual-files"
+          git diff --check
+          git add -A
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m '0.10.5: allow inherited filesystem-tool descriptor reopen'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
