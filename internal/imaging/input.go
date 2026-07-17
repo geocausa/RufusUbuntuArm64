@@ -446,6 +446,9 @@ func prepareZIP(ctx context.Context, src *os.File, sourceSize int64, rawPath str
 	if candidate == nil {
 		return errors.New("ZIP image contains no regular file")
 	}
+	if err := requireHostFileSize("expanded ZIP image", candidate.UncompressedSize64); err != nil {
+		return err
+	}
 	reader, err := candidate.Open()
 	if err != nil {
 		return fmt.Errorf("open ZIP image entry: %w", err)
@@ -526,6 +529,9 @@ func prepareVirtualDisk(ctx context.Context, src *os.File, rawPath string, kind 
 	if details.VirtualSize == 0 {
 		return errors.New("virtual disk reports a zero logical size")
 	}
+	if err := requireHostFileSize("virtual disk logical size", details.VirtualSize); err != nil {
+		return err
+	}
 	if maxSize > 0 && details.VirtualSize > maxSize {
 		return fmt.Errorf("virtual disk expands to %s, larger than the selected target (%s)", humanInputBytes(details.VirtualSize), humanInputBytes(maxSize))
 	}
@@ -581,13 +587,17 @@ func copyPrepared(ctx context.Context, reader io.Reader, rawPath string, total, 
 		}
 		n, readErr := reader.Read(buffer)
 		if n > 0 {
-			if maxSize > 0 && done+uint64(n) > maxSize {
+			nextDone, err := checkedImageAdd("expanded image size", done, uint64(n))
+			if err != nil {
+				return err
+			}
+			if maxSize > 0 && nextDone > maxSize {
 				return fmt.Errorf("expanded image exceeds the selected target size of %s", humanInputBytes(maxSize))
 			}
 			if _, err := writeFull(out, buffer[:n]); err != nil {
 				return fmt.Errorf("write prepared image: %w", err)
 			}
-			done += uint64(n)
+			done = nextDone
 			if time.Since(last) >= 200*time.Millisecond || (total > 0 && done == total) {
 				emitPrepare(progress, PrepareProgress{Stage: "prepare", Message: "Preparing the disk image before erasing the USB…", Done: done, Total: total})
 				last = time.Now()
@@ -643,17 +653,23 @@ type sizeLimitWriter struct {
 }
 
 func (w *sizeLimitWriter) Write(data []byte) (int, error) {
-	if w.Max > 0 && w.Written+uint64(len(data)) > w.Max {
+	next, addErr := checkedImageAdd("expanded image size", w.Written, uint64(len(data)))
+	if addErr != nil {
 		w.Exceeded = true
-		allowed := int(w.Max - w.Written)
-		if allowed > 0 {
-			n, err := w.Writer.Write(data[:allowed])
-			w.Written += uint64(n)
-			if err != nil {
-				return n, err
-			}
+		return 0, addErr
+	}
+	if w.Max > 0 && next > w.Max {
+		w.Exceeded = true
+		if w.Written >= w.Max {
+			return 0, errors.New("expanded image size limit exceeded")
 		}
-		return allowed, errors.New("expanded image size limit exceeded")
+		allowed := int(w.Max - w.Written)
+		n, err := w.Writer.Write(data[:allowed])
+		w.Written += uint64(n)
+		if err != nil {
+			return n, err
+		}
+		return n, errors.New("expanded image size limit exceeded")
 	}
 	n, err := w.Writer.Write(data)
 	w.Written += uint64(n)
