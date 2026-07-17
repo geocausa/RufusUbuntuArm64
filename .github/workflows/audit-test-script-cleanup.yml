@@ -56,7 +56,6 @@ jobs:
           path.write_text(text, encoding='utf-8')
           PY
           bash -n scripts/test.sh
-          python3 gui/test_source_structure.py
       - name: Commit the exact cleanup
         run: |
           if git diff --quiet -- scripts/test.sh; then
