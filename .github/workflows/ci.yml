@@ -79,7 +79,7 @@ jobs:
           GOBIN="${audit_bin}" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           echo "${audit_bin}" >> "${GITHUB_PATH}"
       - name: Run pinned static, workflow, and vulnerability checks
-        run: ./scripts/static-audit.sh
+        run: bash ./scripts/static-audit.sh
       - name: Read canonical project version
         id: version
         if: success()
