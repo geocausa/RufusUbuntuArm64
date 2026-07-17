@@ -16,23 +16,23 @@ import (
 )
 
 const (
-	imageFileMachineI386      = uint16(0x014c)
-	imageFileMachineARM       = uint16(0x01c0)
-	imageFileMachineARMNT     = uint16(0x01c4)
-	imageFileMachineIA64      = uint16(0x0200)
-	imageFileMachineEBC       = uint16(0x0ebc)
-	imageFileMachineAMD64     = uint16(0x8664)
-	imageFileMachineARM64     = uint16(0xaa64)
-	imageFileMachineRISCV64   = uint16(0x5064)
-	imageFileMachineLOONG64   = uint16(0x6264)
-	imageSubsystemEFIApp      = uint16(10)
-	imageSubsystemEFIBoot     = uint16(11)
-	imageSubsystemEFIRuntime  = uint16(12)
-	imageSubsystemEFIROM      = uint16(13)
-	defaultUEFIMaxFiles       = 512
-	maximumUEFIFileSize       = int64(256 * 1024 * 1024)
-	maximumSBATSectionSize    = uint32(1024 * 1024)
-	maximumSBATRecords        = 1024
+	imageFileMachineI386     = uint16(0x014c)
+	imageFileMachineARM      = uint16(0x01c0)
+	imageFileMachineARMNT    = uint16(0x01c4)
+	imageFileMachineIA64     = uint16(0x0200)
+	imageFileMachineEBC      = uint16(0x0ebc)
+	imageFileMachineAMD64    = uint16(0x8664)
+	imageFileMachineARM64    = uint16(0xaa64)
+	imageFileMachineRISCV64  = uint16(0x5064)
+	imageFileMachineLOONG64  = uint16(0x6264)
+	imageSubsystemEFIApp     = uint16(10)
+	imageSubsystemEFIBoot    = uint16(11)
+	imageSubsystemEFIRuntime = uint16(12)
+	imageSubsystemEFIROM     = uint16(13)
+	defaultUEFIMaxFiles      = 512
+	maximumUEFIFileSize      = int64(256 * 1024 * 1024)
+	maximumSBATSectionSize   = uint32(1024 * 1024)
+	maximumSBATRecords       = 1024
 )
 
 // UEFIValidationOptions controls a bounded, read-only validation of a mounted or
@@ -50,12 +50,12 @@ type UEFIValidationOptions struct {
 // section. RufusArm64 reports this metadata but does not yet claim firmware SBAT
 // level comparison; that requires a separately trusted revocation-level input.
 type SBATComponent struct {
-	Component     string `json:"component"`
-	Generation    uint64 `json:"generation"`
-	Vendor        string `json:"vendor"`
-	Package       string `json:"package"`
-	Version       string `json:"version"`
-	VendorURL     string `json:"vendor_url"`
+	Component  string `json:"component"`
+	Generation uint64 `json:"generation"`
+	Vendor     string `json:"vendor"`
+	Package    string `json:"package"`
+	Version    string `json:"version"`
+	VendorURL  string `json:"vendor_url"`
 }
 
 // UEFIFileValidation describes structural and optional revocation checks for one
@@ -82,16 +82,16 @@ type UEFIFileValidation struct {
 // Errors; operational failures such as an unreadable root are returned as Go
 // errors.
 type UEFIMediaValidation struct {
-	Root             string               `json:"root"`
-	Architecture     string               `json:"architecture"`
-	FallbackPath     string               `json:"fallback_path"`
-	FallbackFound    bool                 `json:"fallback_found"`
-	DBXChecked       bool                 `json:"dbx_checked"`
-	Valid            bool                 `json:"valid"`
-	Revoked          bool                 `json:"revoked"`
-	Files            []UEFIFileValidation `json:"files"`
-	Warnings         []string             `json:"warnings,omitempty"`
-	Errors           []string             `json:"errors,omitempty"`
+	Root          string               `json:"root"`
+	Architecture  string               `json:"architecture"`
+	FallbackPath  string               `json:"fallback_path"`
+	FallbackFound bool                 `json:"fallback_found"`
+	DBXChecked    bool                 `json:"dbx_checked"`
+	Valid         bool                 `json:"valid"`
+	Revoked       bool                 `json:"revoked"`
+	Files         []UEFIFileValidation `json:"files"`
+	Warnings      []string             `json:"warnings,omitempty"`
+	Errors        []string             `json:"errors,omitempty"`
 }
 
 type uefiArchitecture struct {
@@ -385,12 +385,12 @@ func parseSBAT(data []byte) ([]SBATComponent, error) {
 		}
 		seen[key] = struct{}{}
 		result = append(result, SBATComponent{
-			Component: record[0],
+			Component:  record[0],
 			Generation: generation,
-			Vendor: record[2],
-			Package: record[3],
-			Version: record[4],
-			VendorURL: record[5],
+			Vendor:     record[2],
+			Package:    record[3],
+			Version:    record[4],
+			VendorURL:  record[5],
 		})
 	}
 	if len(result) == 0 {
