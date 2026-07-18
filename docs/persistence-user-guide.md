@@ -8,7 +8,7 @@ RufusArm64 does not maintain or scrape operating-system download links. Download
 
 The **Create USB** button performs a normal image write unless persistence is explicitly enabled. For a Linux ISOHybrid image, the normal mode preserves the image byte-for-byte and creates a non-persistent live USB.
 
-Persistence is presented in the same main application window. Select the ISO and USB drive, expand **Persistent storage**, turn on saved changes, check compatibility, and use the same **Create USB** button. The restricted persistence helper remains separate internally so the ordinary writer does not silently gain persistence privileges.
+Persistence is presented in the same main application window. Select the ISO and USB drive, expand **Persistent storage**, turn on saved changes, check compatibility, and use the same **Create USB** button. The desktop persistence shortcut also opens this same main application; it does not launch a second visible program. The restricted persistence helper remains separate internally so the ordinary writer does not silently gain persistence privileges.
 
 ## What persistence means
 
