@@ -19,23 +19,25 @@ jobs:
       - name: Apply reviewed build-version patch
         shell: bash
         run: |
+          exec > >(tee integration.log) 2>&1
           set -euxo pipefail
           python3 <<'PY'
           from pathlib import Path
+          import re
+
+          def replace_once(text, pattern, replacement, label):
+              updated, count = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE | re.DOTALL)
+              if count != 1:
+                  raise SystemExit(f"{label}: replacement count {count}, want 1")
+              return updated
 
           build = Path("scripts/build-deb.sh")
           text = build.read_text()
-          old = '''PROJECT_VERSION="$(tr -d '\\r\\n' < "${ROOT_DIR}/VERSION")"
-          VERSION="${VERSION:-${PROJECT_VERSION}}"
-          if [[ "${VERSION}" != "${PROJECT_VERSION}" ]]; then
-            echo "Requested version ${VERSION} does not match repository VERSION ${PROJECT_VERSION}" >&2
-            exit 1
-          fi
-          ARCH="arm64"
-          OUTPUT_DIR="${OUTPUT_DIR:-${ROOT_DIR}/dist}"
-          SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(python3 - "${ROOT_DIR}/CHANGELOG.md" "${VERSION}" <<'PYDATE'
-          '''
-          new = '''PROJECT_VERSION="$(tr -d '\\r\\n' < "${ROOT_DIR}/VERSION")"
+          if "RUFUS_ALLOW_NONRELEASE_VERSION" not in text:
+              text = replace_once(
+                  text,
+                  r'PROJECT_VERSION="\$\(tr -d \'\\r\\n\' < "\$\{ROOT_DIR\}/VERSION"\)"\nVERSION="\$\{VERSION:-\$\{PROJECT_VERSION\}\}"\nif \[\[ "\$\{VERSION\}" != "\$\{PROJECT_VERSION\}" \]\]; then\n.*?\nfi\n(?=ARCH="arm64")',
+                  '''PROJECT_VERSION="$(tr -d '\\r\\n' < "${ROOT_DIR}/VERSION")"
           VERSION="${VERSION:-${PROJECT_VERSION}}"
           RUFUS_ALLOW_NONRELEASE_VERSION="${RUFUS_ALLOW_NONRELEASE_VERSION:-0}"
           if [[ "${VERSION}" != "${PROJECT_VERSION}" && "${RUFUS_ALLOW_NONRELEASE_VERSION}" != "1" ]]; then
@@ -46,31 +48,23 @@ jobs:
             echo "Invalid Debian package version: ${VERSION}" >&2
             exit 1
           fi
-          ARCH="arm64"
-          OUTPUT_DIR="${OUTPUT_DIR:-${ROOT_DIR}/dist}"
-          SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(python3 - "${ROOT_DIR}/CHANGELOG.md" "${PROJECT_VERSION}" <<'PYDATE'
-          '''
-          if old not in text:
-              raise SystemExit("build-deb version block not found")
-          build.write_text(text.replace(old, new, 1))
+          ''',
+                  "build-deb version guard",
+              )
+              old = '"${ROOT_DIR}/CHANGELOG.md" "${VERSION}" <<\'PYDATE\''
+              new = '"${ROOT_DIR}/CHANGELOG.md" "${PROJECT_VERSION}" <<\'PYDATE\''
+              if text.count(old) != 1:
+                  raise SystemExit(f"build-deb changelog version count {text.count(old)}, want 1")
+              text = text.replace(old, new, 1)
+              build.write_text(text)
 
           tests = Path("scripts/test.sh")
           text = tests.read_text()
-          old = '''PROJECT_VERSION="$(tr -d '\\r\\n' < VERSION)"
-          VERSION="${VERSION:-${PROJECT_VERSION}}"
-          if [[ "${VERSION}" != "${PROJECT_VERSION}" ]]; then
-            echo "Requested version ${VERSION} does not match repository VERSION ${PROJECT_VERSION}" >&2
-            exit 1
-          fi
-          export VERSION
-          PACKAGE="dist/rufusarm64_${VERSION}_arm64.deb"
-
-          grep -Fq "RufusArm64 ${VERSION}" docs/rufusarm64-cli.1
-          grep -Fq "## ${VERSION} —" CHANGELOG.md
-          grep -Fq "release version=\\"${VERSION}\\"" packaging/io.github.geocausa.RufusArm64.metainfo.xml
-          grep -Fq "rufusarm64_${VERSION}_arm64.deb" README.md
-          '''
-          new = '''PROJECT_VERSION="$(tr -d '\\r\\n' < VERSION)"
+          if "RUFUS_ALLOW_NONRELEASE_VERSION" not in text:
+              text = replace_once(
+                  text,
+                  r'PROJECT_VERSION="\$\(tr -d \'\\r\\n\' < VERSION\)"\nVERSION="\$\{VERSION:-\$\{PROJECT_VERSION\}\}"\nif \[\[ "\$\{VERSION\}" != "\$\{PROJECT_VERSION\}" \]\]; then\n.*?\nfi\nexport VERSION\nPACKAGE="dist/rufusarm64_\$\{VERSION\}_arm64\.deb"\n\n.*?grep -Fq "rufusarm64_\$\{VERSION\}_arm64\.deb" README\.md\n',
+                  '''PROJECT_VERSION="$(tr -d '\\r\\n' < VERSION)"
           VERSION="${VERSION:-${PROJECT_VERSION}}"
           RUFUS_ALLOW_NONRELEASE_VERSION="${RUFUS_ALLOW_NONRELEASE_VERSION:-0}"
           if [[ "${VERSION}" != "${PROJECT_VERSION}" && "${RUFUS_ALLOW_NONRELEASE_VERSION}" != "1" ]]; then
@@ -86,12 +80,12 @@ jobs:
 
           grep -Fq "RufusArm64 ${PROJECT_VERSION}" docs/rufusarm64-cli.1
           grep -Fq "## ${PROJECT_VERSION} —" CHANGELOG.md
-          grep -Fq "release version=\\"${PROJECT_VERSION}\\"" packaging/io.github.geocausa.RufusArm64.metainfo.xml
+          grep -Fq "release version=\"${PROJECT_VERSION}\"" packaging/io.github.geocausa.RufusArm64.metainfo.xml
           grep -Fq "rufusarm64_${PROJECT_VERSION}_arm64.deb" README.md
-          '''
-          if old not in text:
-              raise SystemExit("test version block not found")
-          tests.write_text(text.replace(old, new, 1))
+          ''',
+                  "test version guard",
+              )
+              tests.write_text(text)
 
           repro = Path("scripts/reproducible-package.sh")
           repro.write_text('''#!/usr/bin/env bash
@@ -137,64 +131,48 @@ jobs:
           ''')
 
           workflow = Path(".github/workflows/ci.yml")
-          text = workflow.read_text()
-          old = '''      - name: Read canonical project version
-                id: version
-                if: success()
-                run: |
-                  version="$(tr -d '\\r\\n' < VERSION)"
-                  echo "VERSION=${version}" >> "$GITHUB_ENV"
-                  echo "version=${version}" >> "$GITHUB_OUTPUT"
-          '''
-          new = '''      - name: Resolve traceable build version
-                id: version
-                if: success()
-                run: |
-                  project_version="$(tr -d '\\r\\n' < VERSION)"
-                  version="${project_version}"
-                  allow_nonrelease=0
-                  if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-                    pr_number="${{ github.event.pull_request.number }}"
-                    head_sha="${{ github.event.pull_request.head.sha }}"
-                    version="${project_version}+pr${pr_number}.${head_sha:0:8}"
-                    allow_nonrelease=1
-                  fi
-                  dpkg --validate-version "${version}"
-                  echo "VERSION=${version}" >> "$GITHUB_ENV"
-                  echo "RUFUS_ALLOW_NONRELEASE_VERSION=${allow_nonrelease}" >> "$GITHUB_ENV"
-                  echo "version=${version}" >> "$GITHUB_OUTPUT"
-          '''
-          if text.count(old) != 1:
-              raise SystemExit(f"audit version step count = {text.count(old)}, want 1")
-          text = text.replace(old, new, 1)
+          lines = workflow.read_text().splitlines()
 
-          old = '''      - name: Read canonical project version
-                id: version
-                run: |
-                  version="$(tr -d '\\r\\n' < VERSION)"
-                  echo "VERSION=${version}" >> "$GITHUB_ENV"
-                  echo "version=${version}" >> "$GITHUB_OUTPUT"
-          '''
-          new = '''      - name: Resolve traceable build version
-                id: version
-                run: |
-                  project_version="$(tr -d '\\r\\n' < VERSION)"
-                  version="${project_version}"
-                  allow_nonrelease=0
-                  if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-                    pr_number="${{ github.event.pull_request.number }}"
-                    head_sha="${{ github.event.pull_request.head.sha }}"
-                    version="${project_version}+pr${pr_number}.${head_sha:0:8}"
-                    allow_nonrelease=1
-                  fi
-                  dpkg --validate-version "${version}"
-                  echo "VERSION=${version}" >> "$GITHUB_ENV"
-                  echo "RUFUS_ALLOW_NONRELEASE_VERSION=${allow_nonrelease}" >> "$GITHUB_ENV"
-                  echo "version=${version}" >> "$GITHUB_OUTPUT"
-          '''
-          if text.count(old) != 1:
-              raise SystemExit(f"native version step count = {text.count(old)}, want 1")
-          workflow.write_text(text.replace(old, new, 1))
+          def replace_step(lines, old_name, occurrence, include_success_guard):
+              indexes = [i for i, line in enumerate(lines) if line.strip() == f"- name: {old_name}"]
+              if len(indexes) != 2:
+                  raise SystemExit(f"{old_name}: found {len(indexes)} steps, want 2")
+              start = indexes[occurrence]
+              prefix = lines[start][: len(lines[start]) - len(lines[start].lstrip())]
+              end = start + 1
+              while end < len(lines):
+                  line = lines[end]
+                  if line.startswith(prefix + "- name:"):
+                      break
+                  end += 1
+              relative = [
+                  "- name: Resolve traceable build version",
+                  "  id: version",
+              ]
+              if include_success_guard:
+                  relative.append("  if: success()")
+              relative.extend([
+                  "  run: |",
+                  "    project_version=\"$(tr -d '\\r\\n' < VERSION)\"",
+                  "    version=\"${project_version}\"",
+                  "    allow_nonrelease=0",
+                  "    if [[ \"${GITHUB_EVENT_NAME}\" == \"pull_request\" ]]; then",
+                  "      pr_number=\"$(python3 -c 'import json,os; print(json.load(open(os.environ[\"GITHUB_EVENT_PATH\"]))[\"number\"])')\"",
+                  "      head_sha=\"$(python3 -c 'import json,os; print(json.load(open(os.environ[\"GITHUB_EVENT_PATH\"]))[\"pull_request\"][\"head\"][\"sha\"])')\"",
+                  "      version=\"${project_version}+pr${pr_number}.${head_sha:0:8}\"",
+                  "      allow_nonrelease=1",
+                  "    fi",
+                  "    dpkg --validate-version \"${version}\"",
+                  "    echo \"VERSION=${version}\" >> \"$GITHUB_ENV\"",
+                  "    echo \"RUFUS_ALLOW_NONRELEASE_VERSION=${allow_nonrelease}\" >> \"$GITHUB_ENV\"",
+                  "    echo \"version=${version}\" >> \"$GITHUB_OUTPUT\"",
+              ])
+              lines[start:end] = [prefix + item for item in relative]
+
+          if not any("Resolve traceable build version" in line for line in lines):
+              replace_step(lines, "Read canonical project version", 1, False)
+              replace_step(lines, "Read canonical project version", 0, True)
+              workflow.write_text("\n".join(lines) + "\n")
           PY
           bash -n scripts/build-deb.sh scripts/test.sh scripts/reproducible-package.sh
           dpkg --validate-version '0.11.0+pr96.deadbeef'
@@ -207,10 +185,23 @@ jobs:
           assert 'RUFUS_ALLOW_NONRELEASE_VERSION' in build
           assert 'RufusArm64 ${PROJECT_VERSION}' in tests
           assert ci.count('Resolve traceable build version') == 2
+          assert 'GITHUB_EVENT_PATH' in ci
           assert '+pr${pr_number}.${head_sha:0:8}' in ci
           PY
           git config user.name "RufusArm64 CI"
           git config user.email "actions@users.noreply.github.com"
           git add scripts/build-deb.sh scripts/test.sh scripts/reproducible-package.sh .github/workflows/ci.yml
+          if git diff --cached --quiet; then
+            echo "Traceable build versioning is already present."
+            exit 0
+          fi
           git commit -m "build: stamp traceable pull request versions"
           git push origin HEAD:feature/windows-option-eligibility
+      - name: Upload integration diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr96-build-version-integration
+          path: integration.log
+          if-no-files-found: warn
+          retention-days: 1
