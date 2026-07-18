@@ -44,13 +44,13 @@ required_tag_once = {
     "contents write permission": "  contents: write\n",
     "actions write permission": "  actions: write\n",
     "repository ownership guard": "    if: github.repository == 'geocausa/RufusUbuntuArm64'\n",
-    "version synchronization gate": "          python3 scripts/check-version-sync.py\n",
-    "release artifact gate": "          python3 scripts/check-release-runtime-integrity.py\n",
-    "exact tag ref creation": '              -f ref="refs/tags/${tag}" \\\n',
-    "exact release commit binding": '              -f sha="${GITHUB_SHA}" >/dev/null\n',
-    "release workflow dispatch": "          gh workflow run release.yml \\\n",
-    "tag-ref dispatch": '            --ref "${TAG}" \\\n',
-    "version-input dispatch": '            -f expected_version="${VERSION}"\n',
+    "version synchronization gate": "python3 scripts/check-version-sync.py",
+    "release artifact gate": "python3 scripts/check-release-runtime-integrity.py",
+    "exact tag ref creation": '-f ref="refs/tags/${tag}"',
+    "exact release commit binding": '-f sha="${GITHUB_SHA}" >/dev/null',
+    "release workflow dispatch": "gh workflow run release.yml",
+    "tag-ref dispatch": '--ref "${TAG}"',
+    "version-input dispatch": '-f expected_version="${VERSION}"',
 }
 for description, marker in required_tag_once.items():
     count = tag_text.count(marker)
