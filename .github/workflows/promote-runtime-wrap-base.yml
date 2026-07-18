@@ -23,17 +23,31 @@ jobs:
           go-version: '1.22.x'
       - name: Apply transaction regression suite
         run: python3 tools/apply_runtime_wrap_tests.py
-      - name: Check formatting
-        run: test -z "$(gofmt -l internal/runtimeintegrity internal/secureboot)"
+      - name: Format and verify staged sources
+        run: |
+          gofmt -w internal/runtimeintegrity/transaction.go internal/runtimeintegrity/transaction_linux.go internal/runtimeintegrity/transaction_test.go internal/secureboot/inspect.go
+          test -z "$(gofmt -l internal/runtimeintegrity internal/secureboot)"
       - name: Run focused race tests
-        run: go test -race ./internal/runtimeintegrity ./internal/secureboot
+        run: |
+          set -o pipefail
+          go test -race -v ./internal/runtimeintegrity ./internal/secureboot 2>&1 | tee runtime-wrap-tests.log
+      - name: Upload focused diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: runtime-wrap-tests
+          path: runtime-wrap-tests.log
+          if-no-files-found: warn
       - name: Vet transaction packages
         run: go vet ./internal/runtimeintegrity ./internal/secureboot
       - name: Run complete Go suite
         run: go test ./...
       - name: Confirm no writer or privilege dependency
         run: |
-          ! grep -R -nE 'pkexec|ResolveDevice|/dev/' internal/runtimeintegrity/transaction*.go
+          if grep -R -nE 'pkexec|ResolveDevice|/dev/' internal/runtimeintegrity/transaction*.go; then
+            echo 'transaction package crossed the ordinary-directory safety boundary' >&2
+            exit 1
+          fi
       - name: Commit validated transaction source and tests
         run: |
           rm -f tools/apply_runtime_wrap_tests.py .github/runtime-wrap-trigger
