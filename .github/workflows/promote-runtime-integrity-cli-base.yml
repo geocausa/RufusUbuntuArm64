@@ -60,7 +60,7 @@ jobs:
         run: |
           go test ./cmd/rufus-linux -run 'TestRuntimeIntegrityCLIManifestAndVerify|TestRuntimeIntegrityCLIRejectsInvalidArguments' -count=5
           ! grep -nE 'pkexec|RequireRoot|ResolveDevice' cmd/rufus-linux/main.go | grep -E 'runUEFIIntegrity|runtimeIntegrity' || true
-      - name: Commit validated production changes
+      - name: Create validated production commit
         run: |
           rm -f tools/apply_runtime_integrity_cli.py .github/runtime-integrity-cli-trigger
           git config user.name github-actions[bot]
@@ -68,4 +68,12 @@ jobs:
           git add cmd/rufus-linux/main.go cmd/rufus-linux/main_test.go docs/rufusarm64-cli.1 README.md .github/workflows/ci.yml
           git add -u tools/apply_runtime_integrity_cli.py .github/runtime-integrity-cli-trigger
           git commit -m '0.11: expose runtime integrity manifest CLI'
+          git rev-parse HEAD | tee validated-runtime-integrity-cli-commit.txt
           git push origin HEAD:feature/0.11-runtime-integrity-cli
+      - name: Upload validated commit identity
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: validated-runtime-integrity-cli-commit
+          path: validated-runtime-integrity-cli-commit.txt
+          if-no-files-found: warn
