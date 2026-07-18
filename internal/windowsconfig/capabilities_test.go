@@ -7,14 +7,14 @@ import (
 
 func TestCapabilities(t *testing.T) {
 	tests := []struct {
-		name          string
-		metadata      MediaMetadata
-		recognized    bool
-		generation    string
-		family        string
-		architecture  string
-		win11Only     bool
-		generic       bool
+		name           string
+		metadata       MediaMetadata
+		recognized     bool
+		generation     string
+		family         string
+		architecture   string
+		win11Only      bool
+		generic        bool
 		reasonContains string
 	}{
 		{
@@ -33,9 +33,9 @@ func TestCapabilities(t *testing.T) {
 			recognized: true, generation: "10", family: "client", architecture: "x86", generic: true,
 		},
 		{
-			name: "Windows Server",
+			name: "Windows Server without positive generation fails closed",
 			metadata: MediaMetadata{ProductName: "Windows Server 2025 Standard", Version: "10.0", Architecture: "amd64", InstallationType: "Server"},
-			recognized: true, family: "server", architecture: "amd64", generic: false, reasonContains: "version could not be identified",
+			family: "server", architecture: "amd64", reasonContains: "version could not be identified",
 		},
 		{
 			name: "unknown NT 10 media fails closed",
