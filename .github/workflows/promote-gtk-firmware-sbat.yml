@@ -18,6 +18,18 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
+      - name: Correct staged parity target
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/apply_gtk_firmware_sbat.py')
+          text = path.read_text(encoding='utf-8')
+          old = '"notes": "The 0.11 development line exposes descriptor-rooted CLI and GTK validation of fallback loaders, PE architecture and EFI subsystem fields, bounded SBAT metadata, optional DBX hash/certificate revocations, and shim-compatible comparison against an explicitly supplied trusted local SbatLevel. Firmware SbatLevel acquisition and complete boot-chain reference resolution remain planned."'
+          new = '"notes": "The 0.11 development line exposes descriptor-rooted CLI and GTK validation of fallback loaders, PE architecture and EFI subsystem fields, bounded SBAT metadata, optional DBX hash/certificate revocations, shim-compatible local SbatLevel comparison, and read-only acquisition of the running shim SbatLevelRT/SbatLevel through strictly validated efivarfs files. GTK SBAT source selection and complete boot-chain reference resolution remain planned."'
+          if text.count(old) != 1:
+              raise SystemExit('staged parity target correction did not match exactly once')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Apply GTK firmware SBAT selector
         run: |
           set -o pipefail
