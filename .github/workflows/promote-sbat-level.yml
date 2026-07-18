@@ -32,6 +32,7 @@ jobs:
         run: |
           set -o pipefail
           {
+            python3 .github/scripts/fix-sbat-level-transform.py
             python3 .github/scripts/apply-sbat-level.py
             gofmt -w \
               internal/secureboot/uefi.go \
