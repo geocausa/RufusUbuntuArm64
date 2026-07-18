@@ -14,6 +14,7 @@ grep -Fq "RufusArm64 ${VERSION}" docs/rufusarm64-cli.1
 grep -Fq "## ${VERSION} —" CHANGELOG.md
 grep -Fq "release version=\"${VERSION}\"" packaging/io.github.geocausa.RufusArm64.metainfo.xml
 grep -Fq "rufusarm64_${VERSION}_arm64.deb" README.md
+python3 scripts/check-version-sync.py
 
 unformatted="$(gofmt -l cmd internal)"
 if [[ -n "${unformatted}" ]]; then

@@ -11,12 +11,13 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 - Optional Windows Setup customizations, driver staging, and Microsoft Secure Boot DBX scanning.
 - Signed image-catalog verification, threshold-root channel foundations, rollback protection, and checksum-gated downloads.
 - A guarded graphical workflow for persistent Ubuntu casper and Debian live-boot USB media, exposed through the single RufusArm64 application entry.
+- Descriptor-safe UEFI, DBX, and SBAT analysis plus optional ARM64 boot-time media-integrity validation for the supported persistent writable-copy path.
 - Whole-device, source-identity, target-identity, mount, system-disk, cancellation, filesystem, and post-copy verification safeguards.
 
 ## Install on Ubuntu ARM64
 
 ```bash
-sudo apt install ./rufusarm64_0.10.6_arm64.deb
+sudo apt install ./rufusarm64_0.11.0_arm64.deb
 ```
 
 The package upgrades older `rufusarm64` installations in place. One visible **RufusArm64** application entry is installed. Its normal launch opens the ordinary writer, and its **Create Persistent Live USB** desktop action opens the guarded persistence wizard.
@@ -37,7 +38,7 @@ The **Create USB** button in the ordinary writer always performs the normal imag
 
 ## Persistent Linux media
 
-Version 0.10.6 retains the separate guarded persistence wizard internally while presenting only one desktop application icon. Open it from the same RufusArm64 application entry using the **Create Persistent Live USB** action. The direct command remains available for troubleshooting:
+Version 0.11.0 retains the separate guarded persistence wizard internally while presenting only one desktop application icon. Open it from the same RufusArm64 application entry using the **Create Persistent Live USB** action. The direct command remains available for troubleshooting:
 
 ```text
 rufusarm64 --persistence
@@ -72,10 +73,11 @@ For the structural form, the analyzer also requires modern casper metadata such 
 1. Open the **Create Persistent Live USB** action from the RufusArm64 application entry, or run `rufusarm64 --persistence`.
 2. Select the Linux ISO and exact removable USB.
 3. Choose a persistence size; zero uses the suitable remaining space.
-4. Run **Analyze selected image**. This identity-bound step mounts only the ISO read-only and never opens the USB device.
-5. Review the detected family, filesystem label, boot parameter, fresh GPT layout, required FAT32 capacity, and boot files to be changed.
-6. Confirm **Erase and create persistent USB**.
-7. Keep the drive connected while data are copied, flushed, and checked. Slow flash drives may spend several minutes committing cached writes.
+4. Optionally select **Validate media at UEFI boot**. The current package-owned ARM64 loader is unsigned, so Secure Boot compatibility is not established.
+5. Run **Analyze selected image**. This identity-bound step mounts only the ISO read-only and never opens the USB device; changing the option afterward requires analysis again.
+6. Review the detected family, filesystem label, boot parameter, fresh GPT layout, required FAT32 capacity, and boot files to be changed.
+7. Confirm **Erase and create persistent USB**.
+8. Keep the drive connected while data are copied, flushed, and checked. Slow flash drives may spend several minutes committing cached writes.
 
 Persistence analysis and creation intentionally ignore the ISO's embedded hybrid MBR geometry. Like upstream Rufus, the creator builds a fresh target GPT containing a writable FAT32 boot partition and a separate ext4 persistence partition, then copies and verifies the approved live-media tree.
 
@@ -99,9 +101,18 @@ sudo rufusarm64-cli qualify verify \
 
 A passing report qualifies only that exact ISO, USB, controller, firmware, and computer for the observed reboot. It is not a universal firmware guarantee.
 
-Compressed images, virtual disks, MBR/BIOS persistence, encrypted persistence, oversized FAT32 files, unknown boot layouts, bootloader replacement, kernel/initramfs replacement, and major distribution upgrades remain outside this persistence contract.
+Compressed images, virtual disks, MBR/BIOS persistence, encrypted persistence, oversized FAT32 files, unknown boot layouts, arbitrary bootloader replacement, kernel/initramfs replacement, and major distribution upgrades remain outside this persistence contract. The only fallback-loader wrapping is the explicit, transactional ARM64 runtime-integrity option described below.
 
 See `docs/persistence-user-guide.md` and `docs/persistence-qualification.md`.
+
+
+### Optional boot-time UEFI media validation
+
+For compatible ARM64 persistent writable-copy media, the wizard can transactionally preserve the image's original `EFI/BOOT/BOOTAA64.EFI` as `EFI/BOOT/bootaa64_original.efi`, install the package-owned `uefi-md5sum` wrapper, and generate a verified root `md5sum.txt`. At boot, the wrapper checks the covered media tree and then chainloads the original fallback loader.
+
+The canonical loader is built twice from pinned `uefi-md5sum` v1.2 and EDK2 commits and accepted only when the binaries and provenance are byte-for-byte identical. It is **unsigned**. Secure Boot compatibility is not established, and the option is off by default. Raw-image, Windows, NTFS, compressed-stream, and virtual-disk writers do not expose it.
+
+The unchanged-media and intentional-corruption paths, including original-loader chainload, are qualified under pinned AArch64 QEMU firmware. That evidence does not replace physical qualification of the exact USB, controller, firmware, Secure Boot state, and computer.
 
 ## Windows ARM64 media
 
@@ -133,7 +144,7 @@ No private acquisition signing key is included in source, CI, packages, or artif
 
 ## Build and test
 
-Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, and the verified ARM64 WIM engine under `vendor/wimlib/arm64/`.
+Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, the verified ARM64 WIM engine under `vendor/wimlib/arm64/`, and the reproducible package-private ARM64 `uefi-md5sum` artifact under `vendor/uefi-md5sum/arm64/`. Regenerating the loader additionally requires the pinned EDK2 toolchain dependencies documented in `docs/uefi-md5sum-build.md`.
 
 ```bash
 ./scripts/test.sh
@@ -142,7 +153,7 @@ Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, and the
 The installer is produced at:
 
 ```text
-dist/rufusarm64_0.10.6_arm64.deb
+dist/rufusarm64_0.11.0_arm64.deb
 ```
 
 ## Command-line examples
@@ -164,7 +175,7 @@ sudo rufusarm64-cli write \
 
 The single visible graphical application entry supplies the ordinary writer and the persistent-live action while retaining separate guarded helpers internally. The main window also provides a read-only **Validate UEFI Media…** dialog for mounted or extracted media; it reports fallback-loader, PE/EFI, DBX, and SBAT results, and can compare against either a trusted local SbatLevel CSV or the running shim firmware SBAT level without changing the write path.
 
-That pre-boot structural/Secure Boot analysis is separate from Rufus's boot-time media-integrity option. The 0.11 development line includes descriptor-safe `uefi-md5sum` manifest generation and verification through the unprivileged CLI; it does not yet replace or chainload the media fallback loader.
+That pre-boot structural/Secure Boot analysis is separate from the boot-time media-integrity option. Version 0.11.0 also provides descriptor-safe manifest generation and verification through the unprivileged CLI and an opt-in transactional ARM64 wrapper in the guarded persistent-media workflow; the wrapper is unsigned and is not offered by other writer modes.
 
 ## License
 
