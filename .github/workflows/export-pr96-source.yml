@@ -79,9 +79,10 @@ jobs:
           \t\treturn fmt.Errorf("prepare Windows setup options: %w", err)
           \t}
           '''
-          if old not in writer_text:
+          if old in writer_text:
+              writer.write_text(writer_text.replace(old, new, 1))
+          elif new not in writer_text:
               raise SystemExit("expected Windows customization block was not found")
-          writer.write_text(writer_text.replace(old, new, 1))
 
           Path("internal/windowsmedia/customizations_plan_test.go").write_text(r'''//go:build linux
 
@@ -146,9 +147,12 @@ jobs:
           PY
           gofmt -w internal/windowsmedia/customizations.go internal/windowsmedia/windowsmedia.go internal/windowsmedia/customizations_plan_test.go
           go test ./internal/windowsmedia ./internal/windowsconfig
-          rm .github/workflows/export-pr96-source.yml
           git config user.name "RufusArm64 CI"
           git config user.email "actions@users.noreply.github.com"
-          git add internal/windowsmedia/customizations.go internal/windowsmedia/windowsmedia.go internal/windowsmedia/customizations_plan_test.go .github/workflows/export-pr96-source.yml
+          git add internal/windowsmedia/customizations.go internal/windowsmedia/windowsmedia.go internal/windowsmedia/customizations_plan_test.go
+          if git diff --cached --quiet; then
+            echo "Writer integration is already present."
+            exit 0
+          fi
           git commit -m "windows: enforce media eligibility in writer"
           git push origin HEAD:feature/windows-option-eligibility
