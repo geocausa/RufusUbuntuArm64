@@ -22,7 +22,9 @@ from rufusarm64_persistence_logic import (
     normalize_boot_label,
     normalize_persistence_gib,
     normalize_plan,
-    plan_summary,
+    technical_plan_summary,
+    user_plan_summary,
+    completion_checklist,
 )
 
 APP_ID = "io.github.geocausa.RufusArm64.Persistence"
@@ -34,7 +36,7 @@ PKEXEC = "/usr/bin/pkexec"
 class Window(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="RufusArm64 Persistent Live USB")
-        self.set_default_size(760, 700)
+        self.set_default_size(760, 680)
         self.devices = []
         self.process = None
         self.busy = False
@@ -65,8 +67,8 @@ class Window(Gtk.ApplicationWindow):
         title.set_xalign(0)
         outer.pack_start(title, False, False, 0)
         intro = Gtk.Label(label=(
-            "The live system is copied to a writable FAT32 boot partition. A separate ext4 partition stores "
-            "supported file, setting, and package changes across reboots. This remains a live environment, not a normal installation."
+            "Choose a supported Ubuntu or Debian ISO, select a removable USB drive, and choose how much space "
+            "to keep for files and settings. RufusArm64 checks compatibility before it allows the USB to be erased."
         ))
         intro.set_xalign(0)
         intro.set_line_wrap(True)
@@ -74,8 +76,8 @@ class Window(Gtk.ApplicationWindow):
         warning = Gtk.InfoBar()
         warning.set_message_type(Gtk.MessageType.WARNING)
         warning_label = Gtk.Label(label=(
-            "Experimental hardware scope: Ubuntu 20.04+ casper or Debian live-boot, GPT/UEFI, FAT32-safe files, "
-            "and a matching fallback EFI loader. A real boot and reboot qualification is still required."
+            "This feature supports recognized Ubuntu 20.04 or newer and Debian live images. Some images or computers "
+            "may not be compatible; RufusArm64 checks the ISO before writing anything to the USB."
         ))
         warning_label.set_xalign(0)
         warning_label.set_line_wrap(True)
@@ -103,54 +105,63 @@ class Window(Gtk.ApplicationWindow):
         self.refresh_button.connect("clicked", lambda *_: self.refresh_devices())
         grid.attach(self.refresh_button, 2, 1, 1, 1)
 
-        self._label(grid, "Persistent storage", 2)
+        self._label(grid, "Space for saved changes", 2)
         size_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.size = Gtk.SpinButton.new_with_range(0, 1024, 1)
-        self.size.set_value(16)
+        self.size.set_value(0)
         self.size.connect("value-changed", self.selection_changed)
         size_row.pack_start(self.size, False, False, 0)
-        size_row.pack_start(Gtk.Label(label="GiB (0 = suitable remaining space)"), False, False, 0)
+        size_help = Gtk.Label(label="GiB — leave at 0 to use the recommended available space")
+        size_help.set_line_wrap(True)
+        size_row.pack_start(size_help, False, False, 0)
         grid.attach(size_row, 1, 2, 2, 1)
 
-        self._label(grid, "Boot volume label", 3)
+        advanced = Gtk.Expander(label="Advanced options")
+        advanced_grid = Gtk.Grid(column_spacing=12, row_spacing=10)
+        advanced_grid.set_border_width(10)
+        advanced.add(advanced_grid)
+        outer.pack_start(advanced, False, False, 0)
+
+        self._label(advanced_grid, "USB name", 0)
         self.volume_label = Gtk.Entry()
         self.volume_label.set_max_length(11)
         self.volume_label.set_text("RUFUS-LIVE")
+        self.volume_label.set_tooltip_text("The short name shown for the writable boot partition.")
         self.volume_label.connect("changed", self.selection_changed)
-        grid.attach(self.volume_label, 1, 3, 2, 1)
+        advanced_grid.attach(self.volume_label, 1, 0, 2, 1)
 
-        self._label(grid, "Boot-time validation", 4)
+        self._label(advanced_grid, "Development validation", 1)
         runtime_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        self.runtime_uefi_validation = Gtk.CheckButton(label="Validate media at UEFI boot")
+        self.runtime_uefi_validation = Gtk.CheckButton(label="Validate media at UEFI boot (development only)")
         self.runtime_uefi_validation.set_active(False)
         self.runtime_uefi_validation.set_sensitive(False)
         self.runtime_uefi_validation.connect("toggled", self.selection_changed)
         runtime_box.pack_start(self.runtime_uefi_validation, False, False, 0)
         runtime_warning = Gtk.Label(label=(
-            "Unsigned development loader — Secure Boot compatibility is not established"
+            "Unsigned development loader — Secure Boot compatibility is not established. Development testing only."
         ))
         runtime_warning.set_xalign(0)
         runtime_warning.set_line_wrap(True)
         runtime_box.pack_start(runtime_warning, False, False, 0)
-        grid.attach(runtime_box, 1, 4, 2, 1)
+        advanced_grid.attach(runtime_box, 1, 1, 2, 1)
 
-        frame = Gtk.Frame(label="Mandatory compatibility analysis")
+        frame = Gtk.Frame(label="Check compatibility")
         frame_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         frame_box.set_border_width(12)
         frame.add(frame_box)
         outer.pack_start(frame, False, False, 0)
         note = Gtk.Label(label=(
-            "Analysis mounts only the identity-bound ISO in a private read-only workspace. The USB is not opened. "
-            "Creation remains disabled until the current image, target capacity, and requested size pass."
+            "This check reads the ISO without changing the USB. It confirms that the selected image supports "
+            "persistence and that the USB has enough space."
         ))
         note.set_xalign(0)
         note.set_line_wrap(True)
         frame_box.pack_start(note, False, False, 0)
-        self.analyze_button = Gtk.Button(label="Analyze selected image")
+        self.analyze_button = Gtk.Button(label="Check ISO and USB")
         self.analyze_button.set_halign(Gtk.Align.START)
         self.analyze_button.connect("clicked", self.analyze)
         frame_box.pack_start(self.analyze_button, False, False, 0)
-        self.summary = Gtk.Label(label="Choose an ISO and removable USB, then run the mandatory analysis.")
+        self.summary = Gtk.Label(label="Choose an ISO and USB drive, then check compatibility.")
         self.summary.set_xalign(0)
         self.summary.set_line_wrap(True)
         self.summary.set_selectable(True)
@@ -159,7 +170,7 @@ class Window(Gtk.ApplicationWindow):
         self.progress = Gtk.ProgressBar(show_text=True)
         self.progress.set_text("Ready")
         outer.pack_start(self.progress, False, False, 0)
-        self.detail = Gtk.Label(label="No destructive action is available until analysis succeeds.")
+        self.detail = Gtk.Label(label="The USB cannot be erased until the compatibility check succeeds.")
         self.detail.set_xalign(0)
         self.detail.set_line_wrap(True)
         outer.pack_start(self.detail, False, False, 0)
@@ -179,7 +190,7 @@ class Window(Gtk.ApplicationWindow):
         self.cancel_button.set_sensitive(False)
         self.cancel_button.connect("clicked", self.cancel)
         buttons.pack_start(self.cancel_button, False, False, 0)
-        self.create_button = Gtk.Button(label="Erase and create persistent USB")
+        self.create_button = Gtk.Button(label="Create persistent USB")
         self.create_button.get_style_context().add_class("destructive-action")
         self.create_button.set_sensitive(False)
         self.create_button.connect("clicked", self.create)
@@ -205,7 +216,7 @@ class Window(Gtk.ApplicationWindow):
             self.plan = self.plan_key = None
             self.create_button.set_sensitive(False)
             self.runtime_uefi_validation.set_sensitive(False)
-            self.summary.set_text("Selection changed. Run compatibility analysis again before creation.")
+            self.summary.set_text("Selection changed. Check compatibility again before creating the USB.")
 
     def selection(self):
         image = self.image.get_filename() or ""
@@ -349,9 +360,9 @@ class Window(Gtk.ApplicationWindow):
                 error = str(exc)
             else:
                 self.plan, self.plan_key = plan, key
-                text = plan_summary(plan, human_bytes)
+                text = user_plan_summary(plan, human_bytes)
                 self.summary.set_text(text)
-                self.append_log(text)
+                self.append_log(technical_plan_summary(plan, human_bytes))
                 self.create_button.set_sensitive(True)
                 self.runtime_uefi_validation.set_sensitive(True)
                 self.progress.set_fraction(1)
@@ -401,12 +412,12 @@ class Window(Gtk.ApplicationWindow):
             )
         dialog.format_secondary_text(
             f"ALL DATA on {device.get('path')} ({human_bytes(target_size)}) will be permanently erased.\n\n"
-            f"{plan_summary(self.plan, human_bytes)}"
+            f"{user_plan_summary(self.plan, human_bytes)}"
             f"{runtime_confirmation}\n\n"
             "This is a persistent live system, not a conventional installed OS. Software checks cannot guarantee firmware boot. "
             "After creation, boot this exact USB and complete start/reboot/verify qualification."
         )
-        dialog.add_button("Erase and create persistent USB", Gtk.ResponseType.OK)
+        dialog.add_button("Erase USB and create", Gtk.ResponseType.OK)
         dialog.set_default_response(Gtk.ResponseType.CANCEL)
         response = dialog.run()
         dialog.destroy()
@@ -420,7 +431,7 @@ class Window(Gtk.ApplicationWindow):
         self.log.get_buffer().set_text("")
         self.append_log(f"Image: {image}")
         self.append_log(f"Target: {device_label(device)}")
-        self.append_log(plan_summary(self.plan, human_bytes))
+        self.append_log(technical_plan_summary(self.plan, human_bytes))
         if runtime_validation:
             self.append_log(
                 "Boot-time UEFI validation requested: package-owned unsigned loader; original fallback will be preserved."
@@ -502,11 +513,14 @@ class Window(Gtk.ApplicationWindow):
             else:
                 self.detail.set_text("Internal checks passed. Boot the USB, then qualify persistence across one reboot.")
                 runtime_note = ""
+            self.append_log(
+                "Optional technical qualification commands are documented in the persistent live USB user guide."
+            )
             self.message(
                 "Persistent live media was created and checked."
-                f"{runtime_note}\n\nBoot it and run:\n\n"
-                "sudo rufusarm64-cli qualify start --record /cdrom/.rufusarm64/creation.json --output ~/rufusarm64-initial.json\n\n"
-                "Reboot the same USB, then run qualify verify with a new output file. Until that passes, treat this image/hardware combination as unqualified.",
+                f"{runtime_note}\n\nTest persistence with these steps:\n\n"
+                f"{completion_checklist()}\n\n"
+                "Keep important files backed up elsewhere; a persistent live USB is not a normal installation.",
                 Gtk.MessageType.INFO,
             )
         elif cancelled:
