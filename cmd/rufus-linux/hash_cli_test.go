@@ -99,6 +99,12 @@ func TestHashCLIRejectsEmptyFile(t *testing.T) {
 	}
 }
 
+func TestHashCLIRejectsNilContext(t *testing.T) {
+	if err := runHashWithContext(nil, []string{checksumFixture(t)}); err == nil || !strings.Contains(err.Error(), "context") {
+		t.Fatalf("nil-context error = %v", err)
+	}
+}
+
 func TestHashCLICancellation(t *testing.T) {
 	path := checksumFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
