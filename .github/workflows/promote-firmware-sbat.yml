@@ -1,0 +1,63 @@
+name: Promote firmware SBAT acquisition
+
+on:
+  pull_request:
+    branches:
+      - develop/0.11.0
+    paths:
+      - '.github/firmware-sbat.trigger'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-firmware-sbat
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: github.head_ref == 'feature/0.11-firmware-sbat'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/0.11-firmware-sbat
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.22.x'
+      - name: Apply firmware SBAT acquisition change
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/apply-firmware-sbat.py
+          gofmt -w \
+            internal/secureboot/sbat_firmware_linux.go \
+            internal/secureboot/sbat_firmware_test.go \
+            cmd/rufus-linux/main.go \
+            cmd/rufus-linux/main_test.go
+          python3 -m json.tool docs/upstream-rufus-parity.json >/dev/null
+          git diff --check
+      - name: Run focused Secure Boot and CLI race tests
+        run: go test -race -count=1 ./internal/secureboot ./cmd/rufus-linux
+      - name: Vet changed Go packages
+        run: go vet ./internal/secureboot ./cmd/rufus-linux
+      - name: Run complete Go suite
+        run: go test ./...
+      - name: Commit validated production changes
+        run: |
+          set -euo pipefail
+          git add \
+            internal/secureboot/sbat_firmware_linux.go \
+            internal/secureboot/sbat_firmware_test.go \
+            cmd/rufus-linux/main.go \
+            cmd/rufus-linux/main_test.go \
+            docs/rufusarm64-cli.1 \
+            README.md \
+            docs/upstream-rufus-parity.json
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m '0.11: acquire the enforced SBAT level from firmware'
+          git push origin 'HEAD:feature/0.11-firmware-sbat'
