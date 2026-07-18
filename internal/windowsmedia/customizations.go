@@ -12,9 +12,9 @@ import (
 // CustomizationPreparation is the authoritative result shared by the writer,
 // CLI inspection, and graphical interface.
 type CustomizationPreparation struct {
-	Metadata     windowsconfig.MediaMetadata    `json:"metadata"`
+	Metadata     windowsconfig.MediaMetadata     `json:"metadata"`
 	Capabilities windowsconfig.CapabilityProfile `json:"capabilities"`
-	AnswerFile   []byte                          `json:"-"`
+	AnswerFile   []byte                           `json:"-"`
 }
 
 // PrepareCustomizations reads bounded metadata from a Windows installation
@@ -26,6 +26,13 @@ func PrepareCustomizations(ctx context.Context, imagePath, answerArchitecture st
 	if err != nil {
 		return CustomizationPreparation{}, fmt.Errorf("inspect Windows setup capabilities: %w", err)
 	}
+	return PrepareCustomizationsForMetadata(metadata, answerArchitecture, options)
+}
+
+// PrepareCustomizationsForMetadata applies the exact same fail-closed policy
+// to already-inspected metadata. Keeping this policy-only half separate makes
+// it straightforward for inspection clients and tests to consume one contract.
+func PrepareCustomizationsForMetadata(metadata windowsconfig.MediaMetadata, answerArchitecture string, options windowsconfig.Options) (CustomizationPreparation, error) {
 	profile := windowsconfig.Capabilities(metadata)
 	result := CustomizationPreparation{Metadata: metadata, Capabilities: profile}
 	if err := windowsconfig.ValidateForMedia(metadata, options); err != nil {
