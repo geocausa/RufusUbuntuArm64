@@ -53,6 +53,15 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def require_asset_directory(path: Path) -> None:
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        fail(f"downloaded asset directory does not exist: {path}")
+    if not stat.S_ISDIR(info.st_mode):
+        fail(f"downloaded asset path is not a directory: {path}")
+
+
 def require_regular_file(path: Path) -> os.stat_result:
     try:
         info = path.lstat()
@@ -126,6 +135,14 @@ def main(argv: list[str]) -> int:
         fail(
             "published asset inventory mismatch: "
             f"expected {sorted(expected)!r}, got {sorted(by_name)!r}"
+        )
+
+    require_asset_directory(asset_dir)
+    downloaded = tuple(sorted(entry.name for entry in asset_dir.iterdir()))
+    if downloaded != tuple(sorted(expected)):
+        fail(
+            "downloaded asset inventory mismatch: "
+            f"expected {sorted(expected)!r}, got {list(downloaded)!r}"
         )
 
     for name in expected:
