@@ -22,7 +22,15 @@ jobs:
         with:
           go-version: '1.22.x'
       - name: Apply runtime integrity foundation
-        run: python3 tools/apply_runtime_integrity_manifest.py
+        run: |
+          set -o pipefail
+          python3 tools/apply_runtime_integrity_manifest.py 2>&1 | tee runtime-integrity-apply.log
+      - name: Upload staging diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: runtime-integrity-staging
+          path: runtime-integrity-apply.log
       - name: Check formatting
         run: test -z "$(gofmt -l internal/runtimeintegrity)"
       - name: Run focused race tests
