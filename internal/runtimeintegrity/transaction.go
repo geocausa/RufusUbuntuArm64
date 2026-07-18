@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -40,19 +41,19 @@ type TransactionOptions struct {
 // hash covers the canonical manifest without this comment, avoiding a
 // self-referential digest while binding every listed file and total byte count.
 type InstallationRecord struct {
-	Schema                       int    `json:"schema"`
-	Architecture                 string `json:"architecture"`
-	FallbackPath                 string `json:"fallback_path"`
-	OriginalPath                 string `json:"original_path"`
-	OriginalSHA256               string `json:"original_sha256"`
-	OriginalSize                 uint64 `json:"original_size"`
-	OriginalMode                 uint32 `json:"original_mode"`
-	WrapperSHA256                string `json:"wrapper_sha256"`
-	WrapperSize                  uint64 `json:"wrapper_size"`
-	WrapperSourceCommit          string `json:"wrapper_source_commit,omitempty"`
-	WrapperProvenance            string `json:"wrapper_provenance,omitempty"`
-	WrapperSecureBootCompatible  bool   `json:"wrapper_secure_boot_compatible"`
-	ManifestRecordsSHA256        string `json:"manifest_records_sha256"`
+	Schema                      int    `json:"schema"`
+	Architecture                string `json:"architecture"`
+	FallbackPath                string `json:"fallback_path"`
+	OriginalPath                string `json:"original_path"`
+	OriginalSHA256              string `json:"original_sha256"`
+	OriginalSize                uint64 `json:"original_size"`
+	OriginalMode                uint32 `json:"original_mode"`
+	WrapperSHA256               string `json:"wrapper_sha256"`
+	WrapperSize                 uint64 `json:"wrapper_size"`
+	WrapperSourceCommit         string `json:"wrapper_source_commit,omitempty"`
+	WrapperProvenance           string `json:"wrapper_provenance,omitempty"`
+	WrapperSecureBootCompatible bool   `json:"wrapper_secure_boot_compatible"`
+	ManifestRecordsSHA256       string `json:"manifest_records_sha256"`
 }
 
 // InstallResult reports the exact post-transaction state.
@@ -134,7 +135,8 @@ func parseInstallationRecord(data []byte) (InstallationRecord, []byte, error) {
 			if err := decoder.Decode(&record); err != nil {
 				return InstallationRecord{}, nil, fmt.Errorf("parse manifest installation record: %w", err)
 			}
-			if decoder.More() {
+			var trailing any
+			if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 				return InstallationRecord{}, nil, errors.New("manifest installation record contains trailing JSON")
 			}
 			found = true

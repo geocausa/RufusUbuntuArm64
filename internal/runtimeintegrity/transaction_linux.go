@@ -603,8 +603,8 @@ func ensureRootIdentity(root *os.File, expected fileIdentity) error {
 	if err != nil {
 		return err
 	}
-	if !sameStableObject(expected, actual) {
-		return errors.New("media root changed during the transaction")
+	if !sameKernelObject(expected, actual) {
+		return errors.New("media root was substituted during the transaction")
 	}
 	return nil
 }
@@ -705,6 +705,14 @@ func generateFromOpenRoot(ctx context.Context, root *os.File, rootIdentity fileI
 }
 
 func verifyFromOpenRoot(ctx context.Context, root *os.File, rootIdentity fileIdentity, maxFiles int) (VerificationResult, error) {
+	currentRoot, err := identityFromOpenFile(root)
+	if err != nil {
+		return VerificationResult{}, err
+	}
+	if !sameKernelObject(rootIdentity, currentRoot) {
+		return VerificationResult{}, errors.New("media root was substituted before verification")
+	}
+	rootIdentity = currentRoot
 	scan, err := reopenDirectory(root)
 	if err != nil {
 		return VerificationResult{}, err
