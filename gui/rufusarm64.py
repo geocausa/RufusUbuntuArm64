@@ -1332,34 +1332,21 @@ class RufusWindow(Gtk.ApplicationWindow):
     def set_busy(self, busy):
         self.busy = bool(busy)
         background_idle = not self.inspection_running and not self.device_refreshing
-        usable = not busy and background_idle and bool(self.devices) and bool(self.inspection.get("recognized"))
-        self.start_button.set_sensitive(usable)
-        for widget in (
-            self.image_chooser,
-            self.download_button,
-            self.target_combo,
-            self.verify,
-            self.open_persistence_button,
-            self.uefi_validation_button,
-        ):
+        for widget in (self.image_chooser, self.target_combo, self.uefi_validation_button):
             widget.set_sensitive(not busy)
+        # Direct operating-system downloads are intentionally not implemented.
+        self.download_button.set_sensitive(False)
         selected_image = self.image_chooser.get_filename() or ""
         self.checksum_button.set_sensitive(
             not busy and background_idle and bool(selected_image) and os.path.isfile(selected_image)
         )
         self.refresh_button.set_sensitive(not busy and not self.device_refreshing)
-        self.persistence_button.set_sensitive(
-            not busy
-            and background_idle
-            and bool(self.devices)
-            and bool(self.inspection.get("recognized"))
-            and self.inspection.get("mode") == "raw"
-        )
         windows_controls = not busy and self.inspection.get("mode") == "windows"
         for widget in (self.partition_combo, self.target_system_combo, self.filesystem_combo, self.cluster_combo, self.volume_label, self.driver_chooser, self.dbx_chooser, self.dbx_update_button, self.quick_format, self.bad_block_check):
             widget.set_sensitive(windows_controls)
         if not busy:
             self.bad_block_toggled()
+        self.update_layout(self.inspection)
         self.cancel_button.set_sensitive(busy and self.active_job in {"writer", "download", "persistence-plan"})
 
     def on_delete_event(self, *_):
@@ -1499,6 +1486,12 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.layout_note.set_text(info.get("description") or "Settings will be selected after the image is inspected.")
         raw_ready = bool(self.devices) and bool(info.get("recognized")) and info.get("mode") == "raw"
         persistence_on = self.persistence_enabled.get_active()
+        if persistence_on and not raw_ready:
+            self.persistence_enabled.set_active(False)
+            persistence_on = False
+            self.persistence_plan = None
+            self.persistence_plan_key = None
+            self.persistence_source_identity = ""
         self.persistence_enabled.set_sensitive(not self.busy and raw_ready)
         self.persistence_size.set_sensitive(not self.busy and raw_ready and persistence_on)
         self.persistence_button.set_sensitive(not self.busy and raw_ready and persistence_on)
