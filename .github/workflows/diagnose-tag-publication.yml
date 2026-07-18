@@ -15,24 +15,57 @@ jobs:
   diagnose:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    env:
+      RELEASE_TAG: v0.11.0
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Check out the proposed contract revision
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: feature/release-published-contract
+          path: contract-tree
           persist-credentials: false
-      - name: Validate the live release with the proposed contract
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Check out the immutable release tag
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          path: release-tree
+          persist-credentials: false
+      - name: Validate the complete older-release recovery path
         run: |
           set -euo pipefail
+          ref_json="$(gh api "/repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")"
+          ref_type="$(jq -r '.object.type' <<<"${ref_json}")"
+          ref_sha="$(jq -r '.object.sha' <<<"${ref_json}")"
+          case "${ref_type}" in
+            commit)
+              commit_sha="${ref_sha}"
+              ;;
+            tag)
+              tag_json="$(gh api "/repos/${GITHUB_REPOSITORY}/git/tags/${ref_sha}")"
+              target_type="$(jq -r '.object.type' <<<"${tag_json}")"
+              test "${target_type}" = "commit"
+              commit_sha="$(jq -r '.object.sha' <<<"${tag_json}")"
+              ;;
+            *)
+              exit 1
+              ;;
+          esac
+          test "$(git -C release-tree rev-parse HEAD)" = "${commit_sha}"
           release_json="${RUNNER_TEMP}/release.json"
           asset_dir="${RUNNER_TEMP}/published-assets"
           mkdir -p "${asset_dir}"
-          gh release view v0.11.0 \
+          gh release view "${RELEASE_TAG}" \
             --repo "${GITHUB_REPOSITORY}" \
             --json tagName,targetCommitish,isDraft,isPrerelease,publishedAt,url,assets \
             > "${release_json}"
-          gh release download v0.11.0 \
+          gh release download "${RELEASE_TAG}" \
             --repo "${GITHUB_REPOSITORY}" \
             --dir "${asset_dir}"
-          python3 scripts/check-published-release.py "${release_json}" "${asset_dir}"
+          validator="${GITHUB_WORKSPACE}/release-tree/scripts/check-published-release.py"
+          test ! -f "${validator}"
+          validator="${GITHUB_WORKSPACE}/contract-tree/scripts/check-published-release.py"
+          (
+            cd release-tree
+            python3 "${validator}" "${release_json}" "${asset_dir}"
+          )
