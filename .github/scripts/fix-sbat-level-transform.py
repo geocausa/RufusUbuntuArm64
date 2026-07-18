@@ -21,4 +21,25 @@ if source.count(old_revocations) != 1:
     raise SystemExit(f'expected one SBAT revocation source literal, found {source.count(old_revocations)}')
 source = source.replace(old_revocations, new_revocations, 1)
 
+old_blank = '''\tdata = bytes.TrimRight(data, "\\r\\n")
+\tif len(data) == 0 {
+\t\treturn nil, errors.New("SBAT level is empty")
+\t}
+\treader := csv.NewReader(bytes.NewReader(data))
+'''
+new_blank = '''\tdata = bytes.TrimRight(data, "\\r\\n")
+\tif len(data) == 0 {
+\t\treturn nil, errors.New("SBAT level is empty")
+\t}
+\tfor index, line := range strings.Split(string(data), "\\n") {
+\t\tif strings.TrimSuffix(line, "\\r") == "" {
+\t\t\treturn nil, fmt.Errorf("SBAT level row %d is empty", index+1)
+\t\t}
+\t}
+\treader := csv.NewReader(bytes.NewReader(data))
+'''
+if source.count(old_blank) != 1:
+    raise SystemExit(f'expected one SBAT blank-line parser insertion point, found {source.count(old_blank)}')
+source = source.replace(old_blank, new_blank, 1)
+
 path.write_text(source)
