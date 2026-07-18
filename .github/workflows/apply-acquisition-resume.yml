@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - scripts/apply-acquisition-resume.py
+      - scripts/fix-acquisition-resume-applicator.py
       - .github/workflows/apply-acquisition-resume.yml
 
 permissions:
@@ -24,14 +25,16 @@ jobs:
           go-version: '1.22.x'
       - name: Apply and validate resumable acquisition
         run: |
+          python3 scripts/fix-acquisition-resume-applicator.py
           python3 scripts/apply-acquisition-resume.py
           gofmt -w internal/acquisition/download.go internal/acquisition/resume.go internal/acquisition/resume_test.go cmd/rufus-linux/main.go
           go test ./internal/acquisition ./cmd/rufus-linux
           go vet ./internal/acquisition ./cmd/rufus-linux
           python3 -m py_compile gui/*.py
           bash -n scripts/*.sh
-          rm scripts/apply-acquisition-resume.py .github/workflows/apply-acquisition-resume.yml
+          rm scripts/apply-acquisition-resume.py scripts/fix-acquisition-resume-applicator.py .github/workflows/apply-acquisition-resume.yml
           test ! -e scripts/apply-acquisition-resume.py
+          test ! -e scripts/fix-acquisition-resume-applicator.py
           test ! -e .github/workflows/apply-acquisition-resume.yml
       - name: Commit validated product diff
         run: |
