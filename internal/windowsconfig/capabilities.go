@@ -26,19 +26,19 @@ type OptionCapability struct {
 // CapabilityProfile is the normalized eligibility decision shared by the CLI,
 // graphical interface, and answer-file generator.
 type CapabilityProfile struct {
-	Recognized              bool             `json:"recognized"`
-	Generation              string           `json:"generation,omitempty"`
-	Family                  string           `json:"family,omitempty"`
-	Architecture            string           `json:"architecture,omitempty"`
-	Reason                  string           `json:"reason,omitempty"`
-	BypassHardwareChecks    OptionCapability `json:"bypass_hardware_checks"`
-	BypassOnlineAccount     OptionCapability `json:"bypass_online_account"`
-	LocalAccount            OptionCapability `json:"local_account"`
-	ReduceDataCollection    OptionCapability `json:"reduce_data_collection"`
-	DisableBitLocker        OptionCapability `json:"disable_bitlocker"`
-	LoadDrivers             OptionCapability `json:"load_drivers"`
-	Locale                  OptionCapability `json:"locale"`
-	TimeZone                OptionCapability `json:"time_zone"`
+	Recognized           bool             `json:"recognized"`
+	Generation           string           `json:"generation,omitempty"`
+	Family               string           `json:"family,omitempty"`
+	Architecture         string           `json:"architecture,omitempty"`
+	Reason               string           `json:"reason,omitempty"`
+	BypassHardwareChecks OptionCapability `json:"bypass_hardware_checks"`
+	BypassOnlineAccount  OptionCapability `json:"bypass_online_account"`
+	LocalAccount         OptionCapability `json:"local_account"`
+	ReduceDataCollection OptionCapability `json:"reduce_data_collection"`
+	DisableBitLocker     OptionCapability `json:"disable_bitlocker"`
+	LoadDrivers          OptionCapability `json:"load_drivers"`
+	Locale               OptionCapability `json:"locale"`
+	TimeZone             OptionCapability `json:"time_zone"`
 }
 
 // Capabilities derives a conservative setup-option profile. Windows 11-only
@@ -102,7 +102,7 @@ func ValidateForMedia(metadata MediaMetadata, options Options) error {
 	}
 	profile := Capabilities(metadata)
 	if !profile.Recognized {
-		return fmt.Errorf("Windows setup options are unavailable: %s", profile.Reason)
+		return fmt.Errorf("windows setup options are unavailable: %s", profile.Reason)
 	}
 	checks := []struct {
 		selected bool
@@ -120,7 +120,7 @@ func ValidateForMedia(metadata MediaMetadata, options Options) error {
 	}
 	for _, check := range checks {
 		if check.selected && !check.cap.Enabled {
-			return fmt.Errorf("Windows setup option %s is unavailable: %s", check.name, check.cap.Reason)
+			return fmt.Errorf("windows setup option %s is unavailable: %s", check.name, check.cap.Reason)
 		}
 	}
 	return nil
