@@ -4,9 +4,11 @@ RufusArm64 can create a persistent live USB for a deliberately narrow set of Ubu
 
 ## Use the persistent-media workflow
 
-The **Create USB** button in the ordinary RufusArm64 writer performs a normal image write. For a Linux ISOHybrid image, it preserves the image byte-for-byte and therefore creates a non-persistent live USB.
+RufusArm64 does not maintain or scrape operating-system download links. Download the ISO from the distribution's official website, then select the local file in RufusArm64.
 
-RufusArm64 presents persistence in the main application window. Select the ISO and USB drive, expand **Persistent storage**, turn on saved changes, check compatibility, and use the same **Create USB** button. The restricted persistence helper remains separate internally so the ordinary writer does not silently gain persistence privileges.
+The **Create USB** button performs a normal image write unless persistence is explicitly enabled. For a Linux ISOHybrid image, the normal mode preserves the image byte-for-byte and creates a non-persistent live USB.
+
+Persistence is presented in the same main application window. Select the ISO and USB drive, expand **Persistent storage**, turn on saved changes, check compatibility, and use the same **Create USB** button. The restricted persistence helper remains separate internally so the ordinary writer does not silently gain persistence privileges.
 
 ## What persistence means
 
@@ -18,7 +20,7 @@ Ordinary files, many settings, and packages installed inside the live session ca
 
 ## Current supported scope
 
-The graphical wizard accepts only media that pass all preflight checks:
+The main application enables persistent creation only for media that pass all preflight checks:
 
 - a plain, recognized, raw-bootable Linux ISOHybrid image;
 - Ubuntu 20.04 or newer using casper, including modern daily images that identify the casper kernel through `/casper/vmlinuz` and provide `casper/install-sources.yaml`, or Debian using live-boot;
@@ -40,15 +42,16 @@ Compressed images, virtual disks, MBR persistence, BIOS-only media, files too la
 
 ## Creation workflow
 
-1. Open RufusArm64.
-2. Choose the Ubuntu or Debian ISO.
+1. Download the Ubuntu or Debian ISO from its official website.
+2. Open RufusArm64 and choose the downloaded ISO.
 3. Select the exact removable USB drive.
-4. Choose how much space to keep for saved files and settings. Leave the value at zero to use the recommended available space.
-5. Expand **Persistent storage**, enable saved changes, and select **Check compatibility**. This read-only check does not open or modify the USB.
-6. When RufusArm64 reports that the image is supported, select the normal **Create USB** button.
-7. Confirm the exact USB in the final erase warning, then keep it connected until creation completes.
+4. Expand **Persistent storage** and enable **Keep files and settings across reboots**.
+5. Choose how much space to keep for saved files and settings. Leave the value at zero to use the recommended available space.
+6. Select **Check compatibility**. This read-only check does not open or modify the USB.
+7. When RufusArm64 reports that the image is supported, select the normal **Create USB** button.
+8. Confirm the exact USB in the final erase warning, then keep it connected until creation completes.
 
-Advanced options are collapsed by default. Most users should leave the USB name unchanged and leave development boot-time validation disabled. The privileged helper still repeats all source and target identity checks, removable-drive checks, filesystem verification, and final buffer flushing before reporting success.
+The privileged helper repeats all source and target identity checks, removable-drive checks, filesystem verification, and final buffer flushing before reporting success.
 
 After creation, boot from the USB, create a small test file in the live system's Home folder, restart from the same USB, and confirm that the file is still present. This simple reboot test is the practical confirmation that persistence works on that computer.
 
