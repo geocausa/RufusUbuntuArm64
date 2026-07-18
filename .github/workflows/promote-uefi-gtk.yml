@@ -27,11 +27,20 @@ jobs:
           persist-credentials: true
       - name: Apply read-only GTK validation dialog
         run: |
-          set -euo pipefail
-          python3 .github/scripts/apply-uefi-gtk.py
-          python3 -m json.tool docs/upstream-rufus-parity.json >/dev/null
-          python3 -m py_compile gui/*.py
-          git diff --check
+          set -o pipefail
+          {
+            python3 .github/scripts/apply-uefi-gtk.py
+            python3 -m json.tool docs/upstream-rufus-parity.json >/dev/null
+            python3 -m py_compile gui/*.py
+            git diff --check
+          } 2>&1 | tee /tmp/uefi-gtk-apply.log
+      - name: Upload transformation diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: uefi-gtk-apply-${{ github.run_id }}
+          path: /tmp/uefi-gtk-apply.log
+          if-no-files-found: error
       - name: Run complete GUI logic suite
         env:
           PYTHONPATH: ${{ github.workspace }}/gui
