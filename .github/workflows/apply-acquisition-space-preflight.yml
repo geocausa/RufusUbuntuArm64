@@ -1,0 +1,52 @@
+name: Apply acquisition space-preflight tranche
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/apply-acquisition-space-preflight.py
+      - .github/workflows/apply-acquisition-space-preflight.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-acquisition-space-preflight
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.head_ref == 'feature/acquisition-space-preflight'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/acquisition-space-preflight
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.22.x'
+      - name: Apply and validate storage preflight
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/apply-acquisition-space-preflight.py
+          python3 scripts/apply-acquisition-space-preflight.py
+          gofmt -w \
+            internal/acquisition/download.go \
+            internal/acquisition/space.go \
+            internal/acquisition/space_test.go
+          go test ./internal/acquisition ./cmd/rufus-linux
+          go vet ./internal/acquisition ./cmd/rufus-linux
+          bash -n scripts/test.sh
+          git diff --check
+          rm -f scripts/apply-acquisition-space-preflight.py \
+            .github/workflows/apply-acquisition-space-preflight.yml
+      - name: Commit validated product diff
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'Acquisition: preflight destination storage before network'
+          git push origin HEAD:feature/acquisition-space-preflight
