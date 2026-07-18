@@ -23,6 +23,8 @@ class UnifiedPersistenceUISourceTests(unittest.TestCase):
         self.assertIn('PERSISTENCE_HELPER', self.source)
         self.assertIn('self.active_mode = "linux-persistent"', self.source)
         self.assertIn('completion_checklist()', self.source)
+        self.assertNotIn('self.apply_inspection(', self.source)
+        self.assertGreaterEqual(self.source.count('self.update_layout(self.inspection)'), 2)
 
 
 if __name__ == "__main__":

@@ -1714,7 +1714,7 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.persistence_plan_key = None
             self.persistence_source_identity = ""
         if getattr(self, "inspection", {}).get("recognized"):
-            self.apply_inspection(self.inspection)
+            self.update_layout(self.inspection)
 
     def analyze_persistence(self, *_):
         image = self.image_chooser.get_filename()
@@ -1829,7 +1829,7 @@ class RufusWindow(Gtk.ApplicationWindow):
                 self.progress.set_text("Persistence compatibility confirmed")
                 self.progress_detail.set_text("The read-only check is complete. The same Create USB button is now ready for persistent media.")
                 self.append_log(technical_plan_summary(plan, human_bytes))
-                self.apply_inspection(self.inspection)
+                self.update_layout(self.inspection)
                 return False
         if was_cancelled:
             self.progress.set_text("Persistence analysis cancelled")
