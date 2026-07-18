@@ -11,8 +11,8 @@ required_once = {
     "loader job": "  uefi-md5sum-loader:\n",
     "release dependency": "    needs: [wim-engine, uefi-md5sum-loader]\n",
     "loader artifact download": "          name: uefi-md5sum-arm64\n          path: vendor/uefi-md5sum/arm64\n",
-    "deterministic loader source asset": 'dist/RufusArm64-${{ steps.version.outputs.version }}-uefi-md5sum-v1.2-source.tar.gz',
-    "deterministic loader source checksum asset": 'dist/RufusArm64-${{ steps.version.outputs.version }}-uefi-md5sum-v1.2-source.tar.gz.sha256',
+    "deterministic loader source asset": "            dist/RufusArm64-${{ steps.version.outputs.version }}-uefi-md5sum-v1.2-source.tar.gz\n",
+    "deterministic loader source checksum asset": "            dist/RufusArm64-${{ steps.version.outputs.version }}-uefi-md5sum-v1.2-source.tar.gz.sha256\n",
     "generated loader source-ZIP exclusion": "'vendor/uefi-md5sum/arm64/*'",
     "unsigned disclosure": "The loader is unsigned and is not claimed Secure Boot compatible.",
 }
