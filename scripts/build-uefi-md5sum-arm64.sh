@@ -45,8 +45,10 @@ git -C "${edk2_dir}" submodule update --init --recursive --depth 1
 mkdir -p "${OUTPUT_DIR}"
 git -C "${source_dir}" archive --format=tar --prefix=uefi-md5sum-v1.2/ "${UEFI_MD5SUM_COMMIT}" \
   | gzip -n > "${OUTPUT_DIR}/uefi-md5sum-v1.2-source.tar.gz"
-sha256sum "${OUTPUT_DIR}/uefi-md5sum-v1.2-source.tar.gz" \
-  > "${OUTPUT_DIR}/uefi-md5sum-v1.2-source.tar.gz.sha256"
+(
+  cd "${OUTPUT_DIR}"
+  sha256sum uefi-md5sum-v1.2-source.tar.gz > uefi-md5sum-v1.2-source.tar.gz.sha256
+)
 
 make -C "${edk2_dir}/BaseTools" -j"$(nproc)"
 (
@@ -62,7 +64,10 @@ make -C "${edk2_dir}/BaseTools" -j"$(nproc)"
 built_loader="${source_dir}/Build/RELEASE_GCC/AARCH64/Md5Sum.efi"
 test -f "${built_loader}"
 install -m 0644 "${built_loader}" "${OUTPUT_DIR}/bootaa64.efi"
-sha256sum "${OUTPUT_DIR}/bootaa64.efi" > "${OUTPUT_DIR}/bootaa64.efi.sha256"
+(
+  cd "${OUTPUT_DIR}"
+  sha256sum bootaa64.efi > bootaa64.efi.sha256
+)
 
 printf '%s\n' \
   "uefi-md5sum repository: ${UEFI_MD5SUM_REPOSITORY}" \
