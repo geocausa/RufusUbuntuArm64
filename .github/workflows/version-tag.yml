@@ -41,7 +41,19 @@ jobs:
           version="$(tr -d '\r\n' < VERSION)"
           tag="v${version}"
           test -f "docs/release-${version}.md"
-          existing="$(gh api "/repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --jq '.object.sha' 2>/dev/null || true)"
+          existing="$(
+            gh api "/repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/${tag}" |
+              jq -r --arg ref "refs/tags/${tag}" '
+                [.[] | select(.ref == $ref)] |
+                if length == 0 then
+                  ""
+                elif length == 1 then
+                  .[0].object.sha
+                else
+                  error("multiple exact tag references returned")
+                end
+              '
+          )"
           if [[ -n "${existing}" ]]; then
             test "${existing}" = "${GITHUB_SHA}" || {
               echo "Refusing to move existing ${tag} from ${existing} to ${GITHUB_SHA}" >&2
