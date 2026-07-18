@@ -1,0 +1,27 @@
+name: Diagnose canonical tag publication
+
+on:
+  push:
+    branches:
+      - diagnostic/0.11-tag-publication
+    paths:
+      - .diagnose-tag-publication-trigger
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Print only the failed canonical-tag step log
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run view 29642458299 \
+            --repo "${GITHUB_REPOSITORY}" \
+            --log-failed \
+            | tail -n 80
