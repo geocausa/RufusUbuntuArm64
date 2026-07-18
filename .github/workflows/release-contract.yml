@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/release.yml
       - .github/workflows/release-contract.yml
+      - .github/workflows/version-tag.yml
       - VERSION
       - CHANGELOG.md
       - README.md
@@ -26,6 +27,7 @@ on:
     paths:
       - .github/workflows/release.yml
       - .github/workflows/release-contract.yml
+      - .github/workflows/version-tag.yml
       - VERSION
       - CHANGELOG.md
       - README.md

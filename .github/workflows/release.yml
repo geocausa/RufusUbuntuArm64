@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      expected_version:
+        description: Canonical VERSION value at the selected tag
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -104,15 +110,27 @@ jobs:
           echo "${audit_bin}" >> "${GITHUB_PATH}"
       - name: Run pinned static, workflow, and vulnerability checks
         run: bash ./scripts/static-audit.sh
-      - name: Verify tag matches canonical version
+      - name: Verify selected tag matches canonical version
         id: version
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
         run: |
-          tag_version="${GITHUB_REF_NAME#v}"
           project_version="$(tr -d '\r\n' < VERSION)"
+          test "${GITHUB_REF_TYPE}" = "tag" || {
+            echo "Release workflow must execute at a tag ref, not ${GITHUB_REF}" >&2
+            exit 1
+          }
+          tag_version="${GITHUB_REF_NAME#v}"
           test "${tag_version}" = "${project_version}" || {
             echo "Tag version ${tag_version} does not match repository VERSION ${project_version}" >&2
             exit 1
           }
+          if [[ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]]; then
+            test "${EXPECTED_VERSION}" = "${project_version}" || {
+              echo "Dispatched version ${EXPECTED_VERSION} does not match repository VERSION ${project_version}" >&2
+              exit 1
+            }
+          fi
           echo "VERSION=${project_version}" >> "$GITHUB_ENV"
           echo "version=${project_version}" >> "$GITHUB_OUTPUT"
       - name: Full test, audit, and ARM64 package pass
@@ -146,6 +164,7 @@ jobs:
           )
       - uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
+          tag_name: v${{ steps.version.outputs.version }}
           body_path: docs/release-${{ steps.version.outputs.version }}.md
           files: |
             dist/rufusarm64_${{ steps.version.outputs.version }}_arm64.deb
