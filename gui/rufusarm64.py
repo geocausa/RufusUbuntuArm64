@@ -22,6 +22,13 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import GLib, Gtk
 
 from rufusarm64_checksums import ChecksumDialog
+from rufusarm64_persistence_logic import (
+    build_create_command as build_persistence_create_command,
+    completion_checklist,
+    normalize_plan as normalize_persistence_plan,
+    technical_plan_summary,
+    user_plan_summary,
+)
 
 from rufusarm64_logic import (
     acquisition_image_label,
@@ -60,7 +67,7 @@ APP_NAME = "RufusArm64"
 VERSION = "development"
 INSTALLED_HELPER = "/usr/lib/rufusarm64/rufusarm64-helper"
 BUNDLED_WIMLIB = "/usr/lib/rufusarm64/wimlib-imagex"
-PERSISTENCE_LAUNCHER = "/usr/bin/rufusarm64-persistence"
+PERSISTENCE_HELPER = "/usr/lib/rufusarm64/rufusarm64-persistence-helper"
 PKEXEC = "/usr/bin/pkexec"
 ACQUISITION_CHANNEL_CONFIG = os.environ.get(
     "RUFUSARM64_CHANNEL_CONFIG", "/usr/share/rufusarm64/acquisition/channel.json"
@@ -69,15 +76,6 @@ ACQUISITION_CHANNEL_CONFIG = os.environ.get(
 
 def helper_path():
     return INSTALLED_HELPER
-
-
-def persistence_launcher_path():
-    if os.path.isfile(PERSISTENCE_LAUNCHER) and os.access(PERSISTENCE_LAUNCHER, os.X_OK):
-        return PERSISTENCE_LAUNCHER
-    development = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rufusarm64_persistence.py")
-    if os.path.isfile(development) and os.access(development, os.X_OK):
-        return development
-    raise FileNotFoundError("The guarded persistence creator is not installed.")
 
 
 def config_path():
@@ -875,6 +873,9 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.active_job = ""
         self.operation_started_at = None
         self.download_result = {}
+        self.persistence_plan = None
+        self.persistence_plan_key = None
+        self.persistence_source_identity = ""
         self.settings = self.load_settings()
         width = max(600, int(self.settings.get("width", 820)))
         height = max(430, int(self.settings.get("height", 700)))
@@ -936,9 +937,9 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.image_chooser.add_filter(image_filter)
         image_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         image_row.pack_start(self.image_chooser, True, True, 0)
-        self.download_button = Gtk.Button(label="Download…")
-        self.download_button.set_tooltip_text("Choose an image from a locally supplied, Ed25519-signed catalog")
-        self.download_button.connect("clicked", self.open_acquisition)
+        self.download_button = Gtk.Button(label="Download unavailable")
+        self.download_button.set_sensitive(False)
+        self.download_button.set_tooltip_text("Direct operating-system downloads are not implemented. Download the ISO from its official website, then select it here.")
         image_row.pack_start(self.download_button, False, False, 0)
         self.checksum_button = Gtk.Button(label="Checksums…")
         self.checksum_button.set_sensitive(False)
@@ -950,6 +951,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.attach_label(grid, "USB drive", 1)
         self.target_combo = Gtk.ComboBoxText()
         self.target_combo.set_hexpand(True)
+        self.target_combo.connect("changed", self.persistence_selection_changed)
         grid.attach(self.target_combo, 1, 1, 1, 1)
         self.refresh_button = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
         self.refresh_button.set_tooltip_text("Refresh connected USB drives")
@@ -980,25 +982,33 @@ class RufusWindow(Gtk.ApplicationWindow):
         advanced.add(adv_grid)
         outer.pack_start(advanced, False, False, 0)
 
-        persistence = Gtk.Expander(label="Persistent Linux media (guarded creator)")
+        persistence = Gtk.Expander(label="Persistent storage")
         persistence_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         persistence_box.set_margin_top(8)
+        self.persistence_enabled = Gtk.CheckButton(label="Keep files and settings across reboots")
+        self.persistence_enabled.set_active(False)
+        self.persistence_enabled.connect("toggled", self.persistence_selection_changed)
+        persistence_box.pack_start(self.persistence_enabled, False, False, 0)
         persistence_intro = Gtk.Label(label=(
-            "The ordinary Create USB button preserves Linux images byte-for-byte and does not add persistence. "
-            "Check compatibility here, then open the guarded creator to build a writable FAT32 plus ext4 persistent USB."
+            "Available for supported Ubuntu and Debian live ISOs. RufusArm64 checks compatibility before the same Create USB button can use the guarded persistent-media writer."
         ))
         persistence_intro.set_xalign(0)
         persistence_intro.set_line_wrap(True)
+        persistence_intro.set_margin_start(28)
+        persistence_intro.get_style_context().add_class("dim-label")
         persistence_box.pack_start(persistence_intro, False, False, 0)
         persistence_actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.persistence_button = Gtk.Button(label="Check persistence compatibility…")
+        self.persistence_size = Gtk.SpinButton.new_with_range(0, 1024, 1)
+        self.persistence_size.set_value(int(self.settings.get("persistence_size_gib", 0) or 0))
+        self.persistence_size.connect("value-changed", self.persistence_selection_changed)
+        persistence_actions.pack_start(Gtk.Label(label="Saved-change space"), False, False, 0)
+        persistence_actions.pack_start(self.persistence_size, False, False, 0)
+        persistence_actions.pack_start(Gtk.Label(label="GiB (0 = recommended available space)"), False, False, 0)
+        self.persistence_button = Gtk.Button(label="Check compatibility")
         self.persistence_button.connect("clicked", self.analyze_persistence)
         persistence_actions.pack_start(self.persistence_button, False, False, 0)
-        self.open_persistence_button = Gtk.Button(label="Open Persistent USB Creator…")
-        self.open_persistence_button.connect("clicked", self.open_persistence_creator)
-        persistence_actions.pack_start(self.open_persistence_button, False, False, 0)
         persistence_box.pack_start(persistence_actions, False, False, 0)
-        self.persistence_summary = Gtk.Label(label="Select a recognized Linux ISOHybrid image and USB drive.")
+        self.persistence_summary = Gtk.Label(label="Persistence is off. The image will be written in its normal mode.")
         self.persistence_summary.set_xalign(0)
         self.persistence_summary.set_line_wrap(True)
         self.persistence_summary.set_selectable(True)
@@ -1229,6 +1239,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.settings["dbx_file"] = self.dbx_chooser.get_filename() or ""
         self.settings["quick_format"] = self.quick_format.get_active()
         self.settings["bad_block_check"] = self.bad_block_check.get_active()
+        self.settings["persistence_size_gib"] = self.persistence_size.get_value_as_int()
         try:
             self.settings["volume_label"] = normalize_volume_label(
                 self.volume_label.get_text(), self.windows_filesystem
@@ -1486,10 +1497,18 @@ class RufusWindow(Gtk.ApplicationWindow):
             )
         else:
             self.layout_note.set_text(info.get("description") or "Settings will be selected after the image is inspected.")
-        self.start_button.set_sensitive(not self.busy and bool(self.devices) and bool(info.get("recognized")))
-        self.persistence_button.set_sensitive(not self.busy and bool(self.devices) and bool(info.get("recognized")) and info.get("mode") == "raw")
-        if info.get("mode") != "raw":
-            self.persistence_summary.set_text("Select a recognized Linux ISOHybrid image and USB drive.")
+        raw_ready = bool(self.devices) and bool(info.get("recognized")) and info.get("mode") == "raw"
+        persistence_on = self.persistence_enabled.get_active()
+        self.persistence_enabled.set_sensitive(not self.busy and raw_ready)
+        self.persistence_size.set_sensitive(not self.busy and raw_ready and persistence_on)
+        self.persistence_button.set_sensitive(not self.busy and raw_ready and persistence_on)
+        plan_ready = self.persistence_plan is not None and self.persistence_plan_key == self.current_persistence_key(allow_missing=True)
+        self.start_button.set_sensitive(not self.busy and bool(self.devices) and bool(info.get("recognized")) and (not persistence_on or plan_ready))
+        self.verify.set_sensitive(not self.busy and not persistence_on)
+        if persistence_on and not plan_ready:
+            self.persistence_summary.set_text("Check compatibility for the current ISO, USB drive, and saved-change size before creating the USB.")
+        elif not persistence_on:
+            self.persistence_summary.set_text("Persistence is off. The image will be written in its normal mode.")
         self.update_verify_warning()
 
     def verify_changed(self, *_):
@@ -1676,13 +1695,26 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.message("The image could not be downloaded or verified. No unverified file was installed.", Gtk.MessageType.ERROR)
         return False
 
-    def open_persistence_creator(self, *_):
-        if self.busy:
-            return
-        try:
-            subprocess.Popen([persistence_launcher_path()], start_new_session=True)
-        except OSError as exc:
-            self.message(f"Could not open the persistent USB creator: {exc}", Gtk.MessageType.ERROR)
+    def current_persistence_key(self, allow_missing=False):
+        image = self.image_chooser.get_filename() or ""
+        index = self.target_combo.get_active()
+        if not image or not (0 <= index < len(self.devices)):
+            return None if allow_missing else ()
+        device = self.devices[index]
+        return (
+            os.path.realpath(os.path.abspath(image)),
+            str(device.get("identity") or ""),
+            int(device.get("size") or 0),
+            self.persistence_size.get_value_as_int(),
+        )
+
+    def persistence_selection_changed(self, *_):
+        if getattr(self, "persistence_plan", None) is not None and self.persistence_plan_key != self.current_persistence_key(allow_missing=True):
+            self.persistence_plan = None
+            self.persistence_plan_key = None
+            self.persistence_source_identity = ""
+        if getattr(self, "inspection", {}).get("recognized"):
+            self.apply_inspection(self.inspection)
 
     def analyze_persistence(self, *_):
         image = self.image_chooser.get_filename()
@@ -1690,12 +1722,10 @@ class RufusWindow(Gtk.ApplicationWindow):
         if not image or self.inspection.get("mode") != "raw" or not (0 <= index < len(self.devices)):
             self.message("Choose a recognized Linux ISOHybrid image and a USB drive first.", Gtk.MessageType.INFO)
             return
-        dialog = PersistencePlanDialog(self, self.settings)
-        response = dialog.run()
-        size_gib = dialog.values() if response == Gtk.ResponseType.OK else None
-        dialog.destroy()
-        if size_gib is None:
+        if not self.persistence_enabled.get_active():
+            self.message("Turn on Keep files and settings across reboots first.", Gtk.MessageType.INFO)
             return
+        size_gib = self.persistence_size.get_value_as_int()
         self.settings["persistence_size_gib"] = size_gib
         self.save_settings()
         try:
@@ -1725,6 +1755,7 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.cancel_path = None
             self.message(str(exc), Gtk.MessageType.ERROR)
             return
+        plan_key = self.current_persistence_key()
         self.active_job = "persistence-plan"
         self.cancel_requested = False
         self.operation_started_at = datetime.now(timezone.utc)
@@ -1735,7 +1766,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.progress.set_text("Requesting permission for read-only analysis…")
         self.progress_detail.set_text("Waiting for Ubuntu authentication. The USB drive will not be opened or modified.")
         GLib.timeout_add_seconds(1, self.pulse_persistence_analysis)
-        threading.Thread(target=self.run_persistence_plan, args=(command,), daemon=True).start()
+        threading.Thread(target=self.run_persistence_plan, args=(command, plan_key, source_identity), daemon=True).start()
 
     def pulse_persistence_analysis(self):
         if not self.busy or self.active_job != "persistence-plan":
@@ -1754,7 +1785,7 @@ class RufusWindow(Gtk.ApplicationWindow):
             )
         return True
 
-    def run_persistence_plan(self, command):
+    def run_persistence_plan(self, command, plan_key, source_identity):
         process = None
         try:
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
@@ -1763,14 +1794,14 @@ class RufusWindow(Gtk.ApplicationWindow):
             return_code = process.returncode
             payload = json.loads(stdout) if return_code == 0 else {}
             error = stderr.strip() or stdout.strip() if return_code != 0 else ""
-            GLib.idle_add(self.finish_persistence_plan, return_code, payload, error)
+            GLib.idle_add(self.finish_persistence_plan, return_code, payload, error, plan_key, source_identity)
         except Exception as exc:
-            GLib.idle_add(self.finish_persistence_plan, 1, {}, str(exc))
+            GLib.idle_add(self.finish_persistence_plan, 1, {}, str(exc), plan_key, source_identity)
         finally:
             if self.process is process:
                 self.process = None
 
-    def finish_persistence_plan(self, return_code, payload, error):
+    def finish_persistence_plan(self, return_code, payload, error, plan_key, source_identity):
         was_cancelled = self.cancel_requested
         self.set_busy(False)
         self.active_job = ""
@@ -1783,15 +1814,22 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.cancel_path = None
         if return_code == 0:
             try:
-                summary = persistence_plan_summary(payload)
+                plan = normalize_persistence_plan(payload)
+                if plan_key != self.current_persistence_key(allow_missing=True):
+                    raise ValueError("The ISO, USB drive, or persistence size changed while compatibility was being checked.")
+                summary = user_plan_summary(plan, human_bytes)
             except ValueError as exc:
                 error = str(exc)
             else:
+                self.persistence_plan = plan
+                self.persistence_plan_key = plan_key
+                self.persistence_source_identity = source_identity
                 self.persistence_summary.set_text(summary)
                 self.progress.set_fraction(1.0)
                 self.progress.set_text("Persistence compatibility confirmed")
-                self.progress_detail.set_text("The private read-only ISO mount was removed. Open the guarded persistent USB creator to continue.")
-                self.append_log(summary)
+                self.progress_detail.set_text("The read-only check is complete. The same Create USB button is now ready for persistent media.")
+                self.append_log(technical_plan_summary(plan, human_bytes))
+                self.apply_inspection(self.inspection)
                 return False
         if was_cancelled:
             self.progress.set_text("Persistence analysis cancelled")
@@ -1932,6 +1970,14 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.message("Connect and select a USB drive first.", Gtk.MessageType.INFO)
             return
 
+        persistence_requested = self.persistence_enabled.get_active()
+        if persistence_requested:
+            if self.inspection.get("mode") != "raw":
+                self.message("Persistence is available only for supported Ubuntu or Debian live ISOs.", Gtk.MessageType.ERROR)
+                return
+            if self.persistence_plan is None or self.persistence_plan_key != self.current_persistence_key(allow_missing=True):
+                self.message("Check persistence compatibility for the current ISO, USB drive, and size first.", Gtk.MessageType.INFO)
+                return
         options = {}
         if self.inspection.get("windows_options"):
             options = self.choose_windows_options()
@@ -1971,7 +2017,7 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.message("The selected drive has no safety identity. Refresh the drive list and try again.", Gtk.MessageType.ERROR)
             return
         model = " ".join(value for value in (device.get("vendor", ""), device.get("model", "")) if value).strip() or "USB drive"
-        summary = self.inspection.get("description", "Bootable media")
+        summary = user_plan_summary(self.persistence_plan, human_bytes) if persistence_requested else self.inspection.get("description", "Bootable media")
         selected_options = [
             name
             for enabled, name in (
@@ -1986,7 +2032,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         ]
         if selected_options:
             summary += "\nWindows options: " + ", ".join(selected_options)
-        verify_requested = self.verify.get_active()
+        verify_requested = True if persistence_requested else self.verify.get_active()
         if self.inspection.get("mode") == "windows" and dbx_file:
             summary += "\nSecure Boot: EFI boot files will be checked against " + os.path.basename(dbx_file)
         if self.inspection.get("mode") == "windows" and not verify_requested:
@@ -2016,11 +2062,13 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.cancel_requested = False
         self.last_status_key = None
         self.active_verify_requested = verify_requested
-        self.active_mode = self.inspection.get("mode", "")
+        self.active_mode = "linux-persistent" if persistence_requested else self.inspection.get("mode", "")
         self.active_filesystem = filesystem
         self.append_log(f"Image: {image}")
         self.append_log(f"Target: {path} — {model} — {human_bytes(device.get('size'))}")
-        if self.inspection.get("mode") == "windows":
+        if persistence_requested:
+            layout_summary = f"GPT / UEFI / FAT32 boot + {human_bytes(self.persistence_plan["size"])} ext4 persistence"
+        elif self.inspection.get("mode") == "windows":
             layout_summary = f"{partition_scheme.upper()} / {self.target_system_combo.get_active_text()} / {filesystem.upper()} / {self.cluster_combo.get_active_text()} clusters"
         else:
             layout_summary = "From image / From image / From image"
@@ -2048,25 +2096,42 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.message("Ubuntu administrator authentication (pkexec) is not installed.", Gtk.MessageType.ERROR)
             return
         try:
-            command = build_writer_command(
-                PKEXEC,
-                helper_path(),
-                image,
-                path,
-                identity,
-                verify_requested,
-                self.cancel_path,
-                label,
-                options,
-                partition_scheme,
-                target_system,
-                filesystem,
-                cluster_size,
-                driver_folder,
-                dbx_file,
-                quick_format,
-                bad_block_check,
-            )
+            if persistence_requested:
+                resolved_image, source_identity = inspect_source_identity(image)
+                if source_identity != self.persistence_source_identity:
+                    raise ValueError("The selected ISO changed after persistence compatibility was checked. Check compatibility again.")
+                command = build_persistence_create_command(
+                    PKEXEC,
+                    PERSISTENCE_HELPER,
+                    resolved_image,
+                    source_identity,
+                    path,
+                    identity,
+                    self.persistence_size.get_value_as_int(),
+                    "RUFUS-LIVE",
+                    self.cancel_path,
+                    False,
+                )
+            else:
+                command = build_writer_command(
+                    PKEXEC,
+                    helper_path(),
+                    image,
+                    path,
+                    identity,
+                    verify_requested,
+                    self.cancel_path,
+                    label,
+                    options,
+                    partition_scheme,
+                    target_system,
+                    filesystem,
+                    cluster_size,
+                    driver_folder,
+                    dbx_file,
+                    quick_format,
+                    bad_block_check,
+                )
         except ValueError as exc:
             self.active_job = ""
             self.set_busy(False)
@@ -2162,7 +2227,10 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.progress.set_fraction(1.0)
             self.progress.set_text("USB media creation completed")
             self.progress_detail.set_text("Software checks completed. Firmware boot still requires testing on the intended computer.")
-            self.message(success_message(self.active_mode, self.active_verify_requested, self.active_filesystem), Gtk.MessageType.INFO)
+            if self.active_mode == "linux-persistent":
+                self.message("Persistent live USB created and checked.\n\nTest it with these steps:\n\n" + completion_checklist(), Gtk.MessageType.INFO)
+            else:
+                self.message(success_message(self.active_mode, self.active_verify_requested, self.active_filesystem), Gtk.MessageType.INFO)
         elif was_cancelled:
             self.progress.set_text("Cancelled safely")
             self.progress_detail.set_text("Writing has stopped. The incomplete USB should be recreated before use.")

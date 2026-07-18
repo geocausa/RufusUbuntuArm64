@@ -6,19 +6,7 @@ RufusArm64 can create a persistent live USB for a deliberately narrow set of Ubu
 
 The **Create USB** button in the ordinary RufusArm64 writer performs a normal image write. For a Linux ISOHybrid image, it preserves the image byte-for-byte and therefore creates a non-persistent live USB.
 
-RufusArm64 installs one visible desktop application entry. Open its **Create Persistent Live USB** action to start the guarded persistence wizard, or run:
-
-```text
-rufusarm64 --persistence
-```
-
-The implementation-only command remains available as:
-
-```text
-rufusarm64-persistence
-```
-
-Only the guarded persistence wizard presents **Create persistent USB** and invokes the restricted persistence helper. Keeping that helper separate internally prevents the ordinary writer from silently gaining persistence privileges.
+RufusArm64 presents persistence in the main application window. Select the ISO and USB drive, expand **Persistent storage**, turn on saved changes, check compatibility, and use the same **Create USB** button. The restricted persistence helper remains separate internally so the ordinary writer does not silently gain persistence privileges.
 
 ## What persistence means
 
@@ -52,12 +40,12 @@ Compressed images, virtual disks, MBR persistence, BIOS-only media, files too la
 
 ## Creation workflow
 
-1. Open **Create Persistent Live USB** from the RufusArm64 application entry, or run `rufusarm64 --persistence`.
+1. Open RufusArm64.
 2. Choose the Ubuntu or Debian ISO.
 3. Select the exact removable USB drive.
 4. Choose how much space to keep for saved files and settings. Leave the value at zero to use the recommended available space.
-5. Select **Check ISO and USB**. This read-only check does not open or modify the USB.
-6. When RufusArm64 reports that the image is supported, select **Create persistent USB**.
+5. Expand **Persistent storage**, enable saved changes, and select **Check compatibility**. This read-only check does not open or modify the USB.
+6. When RufusArm64 reports that the image is supported, select the normal **Create USB** button.
 7. Confirm the exact USB in the final erase warning, then keep it connected until creation completes.
 
 Advanced options are collapsed by default. Most users should leave the USB name unchanged and leave development boot-time validation disabled. The privileged helper still repeats all source and target identity checks, removable-drive checks, filesystem verification, and final buffer flushing before reporting success.
