@@ -1,0 +1,57 @@
+name: Stage 0.11.0 release metadata
+
+on:
+  push:
+    branches:
+      - release/0.11.0
+    paths:
+      - .release-0.11-trigger
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stage-release-0.11
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+          ref: release/0.11.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - name: Apply atomic release metadata transformation
+        run: python3 scripts/stage-release-0.11.py
+      - name: Validate synchronized release contract
+        run: |
+          python3 -m py_compile scripts/stage-release-0.11.py scripts/check-version-sync.py scripts/check-release-runtime-integrity.py
+          python3 scripts/check-version-sync.py
+          python3 scripts/check-release-runtime-integrity.py
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          ET.parse('packaging/io.github.geocausa.RufusArm64.metainfo.xml')
+          PY
+          bash -n scripts/test.sh scripts/build-deb.sh
+      - name: Run complete source suites
+        run: |
+          go test ./...
+          python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_logic.py gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py
+          PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
+      - name: Commit validated production metadata
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            VERSION CHANGELOG.md README.md ROADMAP.md \
+            packaging/io.github.geocausa.RufusArm64.metainfo.xml \
+            docs/rufusarm64.1 docs/rufusarm64-cli.1 docs/rufusarm64-persistence.1 \
+            docs/release-0.11.0.md scripts/check-version-sync.py scripts/test.sh
+          git diff --cached --check
+          git commit -m 'release: prepare RufusArm64 0.11.0'
+          git push origin HEAD:release/0.11.0
