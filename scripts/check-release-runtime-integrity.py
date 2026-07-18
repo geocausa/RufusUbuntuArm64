@@ -77,13 +77,18 @@ required_published_once = {
     "contents read permission": "  contents: read\n",
     "repository ownership guard": "    if: github.repository == 'geocausa/RufusUbuntuArm64'\n",
     "event-or-input tag binding": "      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}\n",
+    "contract revision checkout": "          ref: ${{ github.workflow_sha }}\n",
+    "contract tree path": "          path: contract-tree\n",
     "exact tag checkout": "          ref: ${{ env.RELEASE_TAG }}\n",
+    "release tree path": "          path: release-tree\n",
     "annotated tag resolution": '              tag_json="$(gh api "/repos/${GITHUB_REPOSITORY}/git/tags/${ref_sha}")"\n',
     "annotated tag commit requirement": '              test "${target_type}" = "commit" || {\n',
-    "checked-out SHA binding": '          test "$(git rev-parse HEAD)" = "${commit_sha}" || {\n',
+    "checked-out SHA binding": '          test "$(git -C release-tree rev-parse HEAD)" = "${commit_sha}" || {\n',
     "release metadata query": '          gh release view "${RELEASE_TAG}" \\\n',
     "release asset download": '          gh release download "${RELEASE_TAG}" \\\n',
-    "published asset validator": '          python3 scripts/check-published-release.py "${release_json}" "${asset_dir}"\n',
+    "tag-pinned validator": '          validator="${GITHUB_WORKSPACE}/release-tree/scripts/check-published-release.py"\n',
+    "pinned fallback validator": '            validator="${GITHUB_WORKSPACE}/contract-tree/scripts/check-published-release.py"\n',
+    "published asset validator": '            python3 "${validator}" "${release_json}" "${asset_dir}"\n',
 }
 for description, marker in required_published_once.items():
     count = published_text.count(marker)
