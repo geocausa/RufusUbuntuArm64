@@ -3,10 +3,13 @@
 package windowsmedia
 
 import (
+	"bytes"
+	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
+	"os/exec"
 	"strings"
 
 	"github.com/geocausa/RufusArm64/internal/windowsconfig"
@@ -34,6 +37,40 @@ type wimVersionXML struct {
 	Major string `xml:"MAJOR"`
 	Minor string `xml:"MINOR"`
 	Build string `xml:"BUILD"`
+}
+
+type boundedBuffer struct {
+	buffer bytes.Buffer
+	limit  int
+}
+
+func (b *boundedBuffer) Write(data []byte) (int, error) {
+	if b.buffer.Len()+len(data) > b.limit {
+		return 0, errors.New("WIM metadata exceeds the safe size limit")
+	}
+	return b.buffer.Write(data)
+}
+
+// inspectWIMMetadata executes the pinned or system wimlib engine without a
+// shell and caps XML output before parsing it.
+func inspectWIMMetadata(ctx context.Context, imagePath string) (windowsconfig.MediaMetadata, error) {
+	wimlib, err := wimlibExecutable()
+	if err != nil {
+		return windowsconfig.MediaMetadata{}, err
+	}
+	stdout := &boundedBuffer{limit: maxWIMMetadataBytes}
+	stderr := &boundedBuffer{limit: 64 * 1024}
+	command := exec.CommandContext(ctx, wimlib, "info", imagePath, "--xml")
+	command.Stdout = stdout
+	command.Stderr = stderr
+	if err := command.Run(); err != nil {
+		detail := strings.TrimSpace(stderr.buffer.String())
+		if detail != "" {
+			return windowsconfig.MediaMetadata{}, fmt.Errorf("inspect Windows image metadata: %w: %s", err, detail)
+		}
+		return windowsconfig.MediaMetadata{}, fmt.Errorf("inspect Windows image metadata: %w", err)
+	}
+	return parseWIMMetadata(bytes.NewReader(stdout.buffer.Bytes()))
 }
 
 // parseWIMMetadata converts bounded wimlib XML output into the conservative
