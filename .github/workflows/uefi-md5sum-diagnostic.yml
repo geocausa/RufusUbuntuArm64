@@ -1,8 +1,8 @@
 name: Diagnose ARM64 uefi-md5sum build
 
 on:
-  push:
-    branches: [feature/0.11-uefi-md5sum-build]
+  pull_request:
+    branches: [develop/0.11.0]
     paths:
       - .github/uefi-md5sum-diagnostic-trigger
 
