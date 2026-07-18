@@ -1,0 +1,97 @@
+name: Verify published release
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing canonical release tag to verify
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: >-
+      github.repository == 'geocausa/RufusUbuntuArm64' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      RELEASE_TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha || '' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out the exact workflow contract revision
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: contract-tree
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Check out the immutable release tag
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          path: release-tree
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Bind checkout to the exact release tag commit
+        run: |
+          set -euo pipefail
+          ref_json="$(gh api "/repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")"
+          ref_type="$(jq -r '.object.type' <<<"${ref_json}")"
+          ref_sha="$(jq -r '.object.sha' <<<"${ref_json}")"
+          case "${ref_type}" in
+            commit)
+              commit_sha="${ref_sha}"
+              ;;
+            tag)
+              tag_json="$(gh api "/repos/${GITHUB_REPOSITORY}/git/tags/${ref_sha}")"
+              target_type="$(jq -r '.object.type' <<<"${tag_json}")"
+              test "${target_type}" = "commit" || {
+                echo "Annotated release tag ${RELEASE_TAG} must point directly to a commit" >&2
+                exit 1
+              }
+              commit_sha="$(jq -r '.object.sha' <<<"${tag_json}")"
+              ;;
+            *)
+              echo "Release tag ${RELEASE_TAG} has unsupported target type ${ref_type}" >&2
+              exit 1
+              ;;
+          esac
+          test "$(git -C release-tree rev-parse HEAD)" = "${commit_sha}" || {
+            echo "Checked-out commit does not match immutable release tag ${RELEASE_TAG}" >&2
+            exit 1
+          }
+          if [[ -n "${RELEASE_SHA}" ]]; then
+            test "${commit_sha}" = "${RELEASE_SHA}" || {
+              echo "Completed Release workflow SHA does not match ${RELEASE_TAG}" >&2
+              exit 1
+            }
+          fi
+      - name: Download and validate the exact published asset graph
+        run: |
+          set -euo pipefail
+          release_json="${RUNNER_TEMP}/release.json"
+          asset_dir="${RUNNER_TEMP}/published-assets"
+          mkdir -p "${asset_dir}"
+          gh release view "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json tagName,targetCommitish,isDraft,isPrerelease,publishedAt,url,assets \
+            > "${release_json}"
+          gh release download "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir "${asset_dir}"
+          validator="${GITHUB_WORKSPACE}/release-tree/scripts/check-published-release.py"
+          if [[ ! -f "${validator}" ]]; then
+            validator="${GITHUB_WORKSPACE}/contract-tree/scripts/check-published-release.py"
+          fi
+          (
+            cd release-tree
+            python3 "${validator}" "${release_json}" "${asset_dir}"
+          )

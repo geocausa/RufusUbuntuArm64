@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail closed when tagged releases drift from the packaged runtime loader contract."""
+"""Fail closed when tagged and published releases drift from their contracts."""
 from pathlib import Path
 
 
@@ -7,6 +7,7 @@ RELEASE_WORKFLOW = Path(".github/workflows/release.yml")
 release_text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
 required_release_once = {
+    "release workflow name": "name: Release\n",
     "workflow-dispatch recovery path": "  workflow_dispatch:\n",
     "dispatch version input": "      expected_version:\n",
     "loader job": "  uefi-md5sum-loader:\n",
@@ -68,4 +69,70 @@ if "persist-credentials: true" in tag_text:
 if "force" in tag_text.lower():
     raise SystemExit("canonical tagging workflow must never force-move a tag")
 
-print("Tagged-release runtime-integrity and canonical-tag publication contracts are complete.")
+PUBLISHED_WORKFLOW = Path(".github/workflows/release-published.yml")
+published_text = PUBLISHED_WORKFLOW.read_text(encoding="utf-8")
+required_published_once = {
+    "release-workflow completion trigger": "  workflow_run:\n",
+    "audited release workflow name": "    workflows: [Release]\n",
+    "completed workflow activity": "    types: [completed]\n",
+    "manual recovery dispatch": "  workflow_dispatch:\n",
+    "manual tag input": "      tag:\n",
+    "contents read permission": "  contents: read\n",
+    "successful-release condition": "github.event.workflow_run.conclusion == 'success'",
+    "event-or-input tag binding": "      RELEASE_TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}\n",
+    "triggering SHA binding": "      RELEASE_SHA: ${{ github.event.workflow_run.head_sha || '' }}\n",
+    "contract revision checkout": "          ref: ${{ github.workflow_sha }}\n",
+    "contract tree path": "          path: contract-tree\n",
+    "exact tag checkout": "          ref: ${{ env.RELEASE_TAG }}\n",
+    "release tree path": "          path: release-tree\n",
+    "annotated tag resolution": '              tag_json="$(gh api "/repos/${GITHUB_REPOSITORY}/git/tags/${ref_sha}")"\n',
+    "annotated tag commit requirement": '              test "${target_type}" = "commit" || {\n',
+    "checked-out SHA binding": '          test "$(git -C release-tree rev-parse HEAD)" = "${commit_sha}" || {\n',
+    "completed-workflow SHA binding": '            test "${commit_sha}" = "${RELEASE_SHA}" || {\n',
+    "release metadata query": '          gh release view "${RELEASE_TAG}" \\\n',
+    "release asset download": '          gh release download "${RELEASE_TAG}" \\\n',
+    "tag-pinned validator": '          validator="${GITHUB_WORKSPACE}/release-tree/scripts/check-published-release.py"\n',
+    "pinned fallback validator": '            validator="${GITHUB_WORKSPACE}/contract-tree/scripts/check-published-release.py"\n',
+    "published asset validator": '            python3 "${validator}" "${release_json}" "${asset_dir}"\n',
+}
+for description, marker in required_published_once.items():
+    count = published_text.count(marker)
+    if count != 1:
+        raise SystemExit(f"{PUBLISHED_WORKFLOW}: {description} marker occurred {count} times")
+
+if "\n  release:\n" in published_text:
+    raise SystemExit("published verification must use workflow_run because GITHUB_TOKEN release events are suppressed")
+for forbidden in ("contents: write", "actions: write", "secrets.", "persist-credentials: true"):
+    if forbidden in published_text:
+        raise SystemExit(f"{PUBLISHED_WORKFLOW}: forbidden mutable credential marker: {forbidden}")
+for forbidden_command in ("gh release create", "gh release edit", "gh release upload", "gh release delete"):
+    if forbidden_command in published_text:
+        raise SystemExit(f"{PUBLISHED_WORKFLOW}: published-release verification must remain read-only")
+
+CONTRACT_WORKFLOW = Path(".github/workflows/release-contract.yml")
+contract_text = CONTRACT_WORKFLOW.read_text(encoding="utf-8")
+if contract_text.count("    branches: [main]\n") != 2:
+    raise SystemExit("release contracts must run on both main pull requests and main pushes")
+required_contract_once = {
+    "manual contract dispatch": "  workflow_dispatch:\n",
+    "published workflow path": "      - .github/workflows/release-published.yml\n",
+    "published validator path": "      - scripts/check-published-release.py\n",
+    "published validator test path": "      - scripts/test-check-published-release.py\n",
+    "published validator compilation": "            scripts/check-published-release.py \\\n",
+    "published validator test execution": "          python3 scripts/test-check-published-release.py\n",
+}
+for description, marker in required_contract_once.items():
+    count = contract_text.count(marker)
+    expected = 2 if description in {
+        "published workflow path",
+        "published validator path",
+        "published validator test path",
+    } else 1
+    if count != expected:
+        raise SystemExit(
+            f"{CONTRACT_WORKFLOW}: {description} marker occurred {count} times, expected {expected}"
+        )
+if "develop/0.11.0" in contract_text:
+    raise SystemExit("release contracts must not depend on the retired 0.11 development branch")
+
+print("Tagged, canonical-tag, and published-release contracts are complete.")
