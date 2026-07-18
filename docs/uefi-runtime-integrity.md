@@ -2,7 +2,7 @@
 
 Rufus upstream's **Enable runtime UEFI media validation** option installs [`uefi-md5sum`](https://github.com/pbatard/uefi-md5sum), which verifies a root `md5sum.txt` at boot and then chainloads the original removable-media fallback loader. This differs from RufusArm64's read-only UEFI structural, SBAT, DBX, and Secure Boot analyzer.
 
-## Implemented in the 0.11 development line
+## Implemented in 0.11.0
 
 The `internal/runtimeintegrity` package generates, parses, and verifies the strict interoperable subset of `md5sum.txt` used by `uefi-md5sum`. It uses descriptor-rooted, no-symlink traversal, stable inode/type/size/time checks, deterministic `./path` ordering, lowercase MD5 records, and the `md5sum_totalbytes` progress extension. Verification reports changed, missing, unexpected, and total-byte mismatches.
 
@@ -42,4 +42,4 @@ Upstream test mode suppresses the normal interactive `Continue with boot? [y/n]`
 
 The current loader has no Authenticode certificate table. QEMU qualification runs with Secure Boot disabled and does **not** establish Secure Boot compatibility. A future signed path would require certificate-chain, SBAT, DBX, and target-firmware trust qualification.
 
-Release readiness still requires physical ARM64 boot and persistence start/reboot/verify evidence on the intended device. Software, QEMU, and PE checks cannot guarantee that a particular firmware will accept or correctly boot the media.
+RufusArm64 0.11.0 publishes the software and QEMU-qualified feature without claiming universal firmware or hardware compatibility. Support for a particular machine still requires physical ARM64 boot and persistence start/reboot/verify evidence for the exact image, USB media, controller, firmware, and Secure Boot state.
