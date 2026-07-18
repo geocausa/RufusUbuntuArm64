@@ -156,6 +156,15 @@ func Download(ctx context.Context, image Image, options DownloadOptions) (Downlo
 		}
 		return DownloadResult{}, fmt.Errorf("download %s: completed partial size %d does not match signed size %d", image.ID, info.Size(), image.Size)
 	}
+	currentPartial, err := os.Lstat(partialPath)
+	if err != nil || !currentPartial.Mode().IsRegular() || !os.SameFile(info, currentPartial) {
+		keepPartial = false
+		cleanup(true)
+		if err != nil {
+			return DownloadResult{}, fmt.Errorf("reinspect completed partial path: %w", err)
+		}
+		return DownloadResult{}, errors.New("resumable partial path changed before atomic installation")
+	}
 	actual := hex.EncodeToString(digest.Sum(nil))
 	if actual != image.SHA256 {
 		keepPartial = false

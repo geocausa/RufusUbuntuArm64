@@ -15,7 +15,7 @@ import (
 )
 
 func resumePartialPath(destination string, image Image) string {
-	return filepath.Join(filepath.Dir(destination), "."+filepath.Base(destination)+"."+image.SHA256[:16]+".rufus.part")
+	return filepath.Join(filepath.Dir(destination), "."+filepath.Base(destination)+"."+image.SHA256+".rufus.part")
 }
 
 func openDownloadPartial(destination string, image Image, resume bool) (*os.File, uint64, hash.Hash, error) {

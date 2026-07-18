@@ -119,3 +119,39 @@ func TestContentRangeValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestResumableDownloadRejectsPartialPathReplacement(t *testing.T) {
+	data := []byte("signed resumable content")
+	started := make(chan struct{})
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+	image := testImage(server.URL, data)
+	destination := filepath.Join(t.TempDir(), image.Filename)
+	partial := resumePartialPath(destination, image)
+	done := make(chan error, 1)
+	go func() {
+		_, err := Download(context.Background(), image, DownloadOptions{Destination: destination, Resume: true, AllowHTTP: true})
+		done <- err
+	}()
+	<-started
+	moved := partial + ".moved"
+	if err := os.Rename(partial, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(partial, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	err := <-done
+	if err == nil || !strings.Contains(err.Error(), "partial path changed") {
+		t.Fatalf("replacement error=%v", err)
+	}
+	if _, statErr := os.Stat(destination); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("destination installed after partial replacement: %v", statErr)
+	}
+}
