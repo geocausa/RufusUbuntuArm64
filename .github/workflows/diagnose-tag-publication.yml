@@ -34,5 +34,7 @@ jobs:
             --dir "${release_dir}"
           cd "${release_dir}"
           cat rufusarm64_0.11.0_arm64.deb.sha256
-          sha256sum --check --strict rufusarm64_0.11.0_arm64.deb.sha256
+          grep '  rufusarm64_0.11.0_arm64.deb$' \
+            rufusarm64_0.11.0_arm64.deb.sha256 \
+            | sha256sum --check --strict -
           stat --format='Downloaded package size: %s bytes' rufusarm64_0.11.0_arm64.deb
