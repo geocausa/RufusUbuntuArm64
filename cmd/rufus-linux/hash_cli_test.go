@@ -100,6 +100,7 @@ func TestHashCLIRejectsEmptyFile(t *testing.T) {
 }
 
 func TestHashCLIRejectsNilContext(t *testing.T) {
+	//lint:ignore SA1012 This regression test deliberately verifies that nil contexts fail closed.
 	if err := runHashWithContext(nil, []string{checksumFixture(t)}); err == nil || !strings.Contains(err.Error(), "context") {
 		t.Fatalf("nil-context error = %v", err)
 	}
