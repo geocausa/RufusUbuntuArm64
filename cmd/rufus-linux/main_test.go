@@ -453,3 +453,40 @@ func TestUEFIValidateRejectsMalformedSBATLevel(t *testing.T) {
 		t.Fatalf("malformed SBAT level error = %v", err)
 	}
 }
+
+func TestLoadUEFISBATLevelSelection(t *testing.T) {
+	firmwareLevel := &secureboot.SBATLevel{Source: "firmware"}
+	called := false
+	got, err := loadUEFISBATLevel("", true, func() (*secureboot.SBATLevel, error) {
+		called = true
+		return firmwareLevel, nil
+	})
+	if err != nil || got != firmwareLevel || !called {
+		t.Fatalf("firmware selection got=%#v called=%t err=%v", got, called, err)
+	}
+	if _, err := loadUEFISBATLevel("/tmp/SbatLevel.csv", true, func() (*secureboot.SBATLevel, error) {
+		t.Fatal("conflicting sources must fail before loading firmware")
+		return nil, nil
+	}); err == nil || !strings.Contains(err.Error(), "at most one") {
+		t.Fatalf("conflicting SBAT sources error = %v", err)
+	}
+	got, err = loadUEFISBATLevel("", false, func() (*secureboot.SBATLevel, error) {
+		t.Fatal("unused firmware loader was called")
+		return nil, nil
+	})
+	if err != nil || got != nil {
+		t.Fatalf("empty SBAT selection got=%#v err=%v", got, err)
+	}
+}
+
+func TestUEFIValidateRejectsConflictingSBATSources(t *testing.T) {
+	err := runUEFIValidate([]string{
+		"--directory", t.TempDir(),
+		"--arch", "arm64",
+		"--sbat-level", "/tmp/SbatLevel.csv",
+		"--firmware-sbat",
+	})
+	if err == nil || !strings.Contains(err.Error(), "at most one") {
+		t.Fatalf("conflicting SBAT source error = %v", err)
+	}
+}
