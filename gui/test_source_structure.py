@@ -149,6 +149,32 @@ class SourceStructureTests(unittest.TestCase):
                             failures.append(f"{filename}:{class_name}.{method_name} lacks {fragment!r}")
         self.assertEqual(failures, [], "\n" + "\n".join(failures))
 
+    def test_windows_capabilities_use_read_only_worker_and_dialog_gating(self):
+        source = (GUI_ROOT / "rufusarm64.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="rufusarm64.py")
+        classes = {
+            node.name: {
+                child.name: ast.get_source_segment(source, child) or ""
+                for child in node.body
+                if isinstance(child, ast.FunctionDef)
+            }
+            for node in tree.body
+            if isinstance(node, ast.ClassDef)
+        }
+        window = classes.get("RufusWindow", {})
+        dialog = classes.get("WindowsOptionsDialog", {})
+        failures = []
+        for fragment in ("threading.Thread(", '"windows"', '"analyze"', "--expected-source-identity", "--json"):
+            if fragment not in source:
+                failures.append(f"rufusarm64.py lacks {fragment!r}")
+        for fragment in ("normalize_windows_capability_analysis", "unavailable_windows_capability_analysis"):
+            if fragment not in window.get("analyze_windows_capabilities", ""):
+                failures.append(f"RufusWindow.analyze_windows_capabilities lacks {fragment!r}")
+        for fragment in ("apply_option_capability", "bypass_hardware_checks", "bypass_online_account", "local_account"):
+            if fragment not in dialog.get("apply_capabilities", ""):
+                failures.append(f"WindowsOptionsDialog.apply_capabilities lacks {fragment!r}")
+        self.assertEqual(failures, [], "\n" + "\n".join(failures))
+
     def test_audit_commands_and_package_assertions_are_not_duplicated(self):
         test_script = (REPOSITORY_ROOT / "scripts" / "test.sh").read_text(encoding="utf-8")
         unique_lines = (

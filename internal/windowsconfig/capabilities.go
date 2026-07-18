@@ -10,10 +10,10 @@ import (
 // installation media. Empty or conflicting facts deliberately produce a
 // fail-closed capability profile.
 type MediaMetadata struct {
-	ProductName      string
-	Version          string
-	Architecture     string
-	InstallationType string
+	ProductName      string `json:"product_name,omitempty"`
+	Version          string `json:"version,omitempty"`
+	Architecture     string `json:"architecture,omitempty"`
+	InstallationType string `json:"installation_type,omitempty"`
 }
 
 // OptionCapability explains whether one setup option is safe for the detected

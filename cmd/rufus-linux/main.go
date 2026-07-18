@@ -89,6 +89,8 @@ func run(args []string) error {
 		return runAcquire(args[1:])
 	case "persistence":
 		return runPersistence(args[1:])
+	case "windows":
+		return runWindows(args[1:])
 	case "qualify":
 		return runQualify(args[1:])
 	case "version", "--version", "-v":
@@ -127,6 +129,7 @@ Usage:
   rufusarm64-cli acquire channel download --id ID [--output FILE] [--offline]
   rufusarm64-cli persistence plan --image FILE --media-root DIR --target-size SIZE [--size SIZE] [--json]
   sudo rufusarm64-cli persistence analyze --image FILE --expected-source-identity ID --target-size SIZE [--size SIZE] [--json]
+  sudo rufusarm64-cli windows analyze --image FILE --expected-source-identity ID [--json]
   sudo rufusarm64-cli qualify start --record FILE --output FILE [--state-dir DIR] [--json]
   sudo rufusarm64-cli qualify verify --record FILE --output FILE [--state-dir DIR] [--json]
 
@@ -893,6 +896,89 @@ func runPersistencePlan(args []string) error {
 	}
 	if len(plan.PatchPaths) > 0 {
 		fmt.Printf("  Boot configurations requiring an edit: %s\n", strings.Join(plan.PatchPaths, ", "))
+	}
+	return nil
+}
+
+func runWindows(args []string) error {
+	if len(args) == 0 {
+		return errors.New("windows requires analyze")
+	}
+	switch args[0] {
+	case "analyze":
+		return runWindowsAnalyze(args[1:])
+	default:
+		return fmt.Errorf("unknown windows command %q", args[0])
+	}
+}
+
+func newWindowsAnalysisContext(parent context.Context, cancelFile string) (context.Context, context.CancelFunc, error) {
+	timeoutCtx, timeoutCancel := context.WithTimeout(parent, 2*time.Minute)
+	ctx, cancelCleanup, err := safety.CancellationContext(timeoutCtx, cancelFile)
+	if err != nil {
+		timeoutCancel()
+		return nil, nil, err
+	}
+	cleanup := func() {
+		cancelCleanup()
+		timeoutCancel()
+	}
+	return ctx, cleanup, nil
+}
+
+func runWindowsAnalyze(args []string) error {
+	fsFlags := flag.NewFlagSet("windows analyze", flag.ContinueOnError)
+	imagePath := fsFlags.String("image", "", "plain Windows installation ISO")
+	expectedSourceText := fsFlags.String("expected-source-identity", "", "identity recorded by the unprivileged graphical application")
+	cancelFile := fsFlags.String("cancel-file", "", "per-user cancellation marker used by the graphical app")
+	asJSON := fsFlags.Bool("json", false, "output JSON")
+	if err := fsFlags.Parse(args); err != nil {
+		return err
+	}
+	if fsFlags.NArg() != 0 {
+		return errors.New("windows analyze does not accept positional arguments")
+	}
+	if *imagePath == "" || *expectedSourceText == "" {
+		return errors.New("--image and --expected-source-identity are required")
+	}
+	if os.Getenv("PKEXEC_UID") != "" && (!*asJSON || *cancelFile == "") {
+		return errors.New("graphical Windows capability analysis requires --json and a trusted --cancel-file")
+	}
+	expectedSource, err := sourcefile.ParseIdentity(*expectedSourceText)
+	if err != nil {
+		return fmt.Errorf("parse --expected-source-identity: %w", err)
+	}
+	absoluteImage, err := filepath.Abs(*imagePath)
+	if err != nil {
+		return fmt.Errorf("make image path absolute: %w", err)
+	}
+	resolvedImage, err := filepath.EvalSymlinks(absoluteImage)
+	if err != nil {
+		return fmt.Errorf("resolve image path: %w", err)
+	}
+	if err := safety.RequireRoot(); err != nil {
+		return err
+	}
+	setTrustedSystemPath()
+	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancelCleanup, err := newWindowsAnalysisContext(signalCtx, *cancelFile)
+	if err != nil {
+		return err
+	}
+	defer cancelCleanup()
+	result, err := windowsmedia.AnalyzeCapabilities(ctx, resolvedImage, expectedSource)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(result)
+	}
+	fmt.Printf("Windows %s %s (%s)\n", result.Capabilities.Generation, result.Capabilities.Family, result.Capabilities.Architecture)
+	if !result.Capabilities.Recognized {
+		fmt.Printf("Setup options unavailable: %s\n", result.Capabilities.Reason)
 	}
 	return nil
 }
