@@ -19,7 +19,15 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
       - name: Apply GTK firmware SBAT selector
-        run: python3 tools/apply_gtk_firmware_sbat.py
+        run: |
+          set -o pipefail
+          python3 tools/apply_gtk_firmware_sbat.py 2>&1 | tee gtk-sbat-apply.log
+      - name: Upload transformation diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: gtk-sbat-transformation
+          path: gtk-sbat-apply.log
       - name: Compile GTK sources
         run: python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_logic.py gui/test_logic.py
       - name: Run GUI logic tests
