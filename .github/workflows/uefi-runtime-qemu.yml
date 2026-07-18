@@ -37,9 +37,17 @@ jobs:
             qemu-system-arm gdisk dosfstools mtools shellcheck
       - name: Validate scripts and test package
         run: |
-          shellcheck scripts/qualify-runtime-integrity-qemu.sh scripts/build-uefi-md5sum-arm64.sh
+          set -o pipefail
+          shellcheck scripts/qualify-runtime-integrity-qemu.sh scripts/build-uefi-md5sum-arm64.sh 2>&1 | tee qemu-static-validation.log
           grep -Fq 'MODULE_TYPE                    = UEFI_APPLICATION' tests/uefi-chainload/RufusChainloadTest.inf
           grep -Fq 'ORIGINAL ARM64 FALLBACK CHAINLOADED' tests/uefi-chainload/chainload_test.c
+      - name: Upload static diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: arm64-runtime-uefi-qemu-static
+          path: qemu-static-validation.log
+          if-no-files-found: warn
       - name: Build pinned firmware and qualify success/corruption chainload
         run: bash scripts/qualify-runtime-integrity-qemu.sh artifacts/uefi-runtime-qemu
       - name: Require complete qualification evidence
