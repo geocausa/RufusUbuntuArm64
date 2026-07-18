@@ -1,12 +1,15 @@
 package acquisition
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"syscall"
 )
 
 const downloadSpaceReserve uint64 = 64 * 1024 * 1024
+
+var ErrInsufficientSpace = errors.New("insufficient free space for verified download")
 
 type spaceProbe func(string) (uint64, error)
 
@@ -25,6 +28,10 @@ func (err *InsufficientSpaceError) Error() string {
 		err.Required,
 		err.Available,
 	)
+}
+
+func (err *InsufficientSpaceError) Unwrap() error {
+	return ErrInsufficientSpace
 }
 
 func preflightDownloadSpace(destination string, imageSize uint64, probe spaceProbe) error {
@@ -74,5 +81,6 @@ func availableDownloadBytes(path string) (uint64, error) {
 	if stats.Bavail > maxUint64/blockSize {
 		return 0, fmt.Errorf("filesystem available-byte count overflows")
 	}
+	// Bavail intentionally excludes blocks reserved from unprivileged callers.
 	return stats.Bavail * blockSize, nil
 }
