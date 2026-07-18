@@ -46,6 +46,8 @@ required_tag_once = {
     "repository ownership guard": "    if: github.repository == 'geocausa/RufusUbuntuArm64'\n",
     "version synchronization gate": "python3 scripts/check-version-sync.py",
     "release artifact gate": "python3 scripts/check-release-runtime-integrity.py",
+    "missing-tag-safe lookup": 'git/matching-refs/tags/${tag}',
+    "exact matching tag filter": 'select(.ref == \\"refs/tags/${tag}\\")',
     "exact tag ref creation": '-f ref="refs/tags/${tag}"',
     "exact release commit binding": '-f sha="${GITHUB_SHA}" >/dev/null',
     "release workflow dispatch": "gh workflow run release.yml",
@@ -57,6 +59,8 @@ for description, marker in required_tag_once.items():
     if count != 1:
         raise SystemExit(f"{TAG_WORKFLOW}: {description} marker occurred {count} times")
 
+if 'git/ref/tags/${tag}' in tag_text:
+    raise SystemExit("canonical tag lookup must not treat a 404 response body as an existing ref")
 if "secrets." in tag_text:
     raise SystemExit("canonical tagging must use the repository token, not an undeclared secret or PAT")
 if "persist-credentials: true" in tag_text:
