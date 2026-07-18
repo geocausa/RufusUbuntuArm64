@@ -82,6 +82,8 @@ func run(args []string) error {
 		return runHash(args[1:])
 	case "dbx":
 		return runDBX(args[1:])
+	case "uefi":
+		return runUEFI(args[1:])
 	case "acquire":
 		return runAcquire(args[1:])
 	case "persistence":
@@ -110,6 +112,7 @@ Usage:
   sudo rufusarm64-cli write --mode linux-persistent --experimental-persistence --image FILE --device /dev/DEVICE [--persistence-size SIZE]
   sudo rufusarm64-cli verify --image FILE --device /dev/DEVICE
   rufusarm64-cli hash FILE
+  rufusarm64-cli uefi validate --directory DIR [--arch ARCH] [--dbx FILE | --firmware] [--json]
   rufusarm64-cli dbx inspect (--file FILE | --firmware) [--json]
   rufusarm64-cli dbx update [--arch ARCH] [--output FILE] [--json]
   rufusarm64-cli dbx check --dbx FILE --efi FILE [--json]
@@ -1042,6 +1045,127 @@ func runVerify(args []string) error {
 
 func setTrustedSystemPath() {
 	_ = os.Setenv("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
+}
+
+func runUEFI(args []string) error {
+	if len(args) == 0 {
+		return errors.New("uefi requires validate")
+	}
+	switch args[0] {
+	case "validate":
+		return runUEFIValidate(args[1:])
+	default:
+		return fmt.Errorf("unknown uefi command %q", args[0])
+	}
+}
+
+func resolveUEFIArchitecture(value string) (string, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value != "" && value != "native" {
+		return value, nil
+	}
+	switch runtime.GOARCH {
+	case "386", "amd64", "arm", "arm64", "riscv64":
+		return runtime.GOARCH, nil
+	case "loong64":
+		return "loongarch64", nil
+	default:
+		return "", fmt.Errorf("the native architecture %q is not supported for UEFI validation", runtime.GOARCH)
+	}
+}
+
+func runUEFIValidate(args []string) error {
+	fs := flag.NewFlagSet("uefi validate", flag.ContinueOnError)
+	directory := fs.String("directory", "", "mounted or extracted UEFI media root")
+	architecture := fs.String("arch", "native", "native, 386, amd64, arm, arm64, riscv64, or loongarch64")
+	maxFiles := fs.Int("max-files", 512, "maximum EFI executables to validate")
+	requireFallback := fs.Bool("require-fallback", true, "require the architecture removable-media fallback loader")
+	dbxPath := fs.String("dbx", "", "optional DBXUpdate.bin or raw DBX file")
+	firmware := fs.Bool("firmware", false, "use the running firmware DBX variable")
+	asJSON := fs.Bool("json", false, "output JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("uefi validate does not accept positional arguments")
+	}
+	if strings.TrimSpace(*directory) == "" {
+		return errors.New("--directory is required")
+	}
+	if *maxFiles <= 0 {
+		return errors.New("--max-files must be greater than zero")
+	}
+	if *dbxPath != "" && *firmware {
+		return errors.New("select at most one of --dbx or --firmware")
+	}
+	resolvedArchitecture, err := resolveUEFIArchitecture(*architecture)
+	if err != nil {
+		return err
+	}
+	var dbx *secureboot.Database
+	if *dbxPath != "" || *firmware {
+		dbx, err = loadDBX(*dbxPath, *firmware)
+		if err != nil {
+			return err
+		}
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	result, err := secureboot.ValidateUEFIMedia(ctx, *directory, secureboot.UEFIValidationOptions{
+		Architecture:    resolvedArchitecture,
+		MaxFiles:        *maxFiles,
+		DBX:             dbx,
+		RequireFallback: *requireFallback,
+	})
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		printUEFIValidation(result)
+	}
+	if !result.Valid {
+		return errors.New("UEFI media validation failed")
+	}
+	return nil
+}
+
+func printUEFIValidation(result secureboot.UEFIMediaValidation) {
+	status := "VALID"
+	if !result.Valid {
+		status = "INVALID"
+	}
+	fmt.Printf("%s UEFI media for %s\n", status, result.Architecture)
+	fmt.Printf("Root: %s\nFallback: %s (found: %t)\nDBX checked: %t\n", result.Root, result.FallbackPath, result.FallbackFound, result.DBXChecked)
+	for _, file := range result.Files {
+		fileStatus := "OK"
+		switch {
+		case file.DirectHashRevoked || file.X509CertificateRevoked:
+			fileStatus = "REVOKED"
+		case file.Error != "":
+			fileStatus = "ERROR"
+		case len(file.Warnings) > 0:
+			fileStatus = "WARNING"
+		}
+		fmt.Printf("%-8s %s [%s; %s; SBAT records: %d]\n", fileStatus, file.Path, file.MachineName, file.SubsystemName, len(file.SBAT))
+		for _, warning := range file.Warnings {
+			fmt.Printf("  warning: %s\n", warning)
+		}
+		if file.Error != "" {
+			fmt.Printf("  error: %s\n", file.Error)
+		}
+	}
+	for _, warning := range result.Warnings {
+		fmt.Printf("Warning: %s\n", warning)
+	}
+	for _, validationError := range result.Errors {
+		fmt.Printf("Error: %s\n", validationError)
+	}
 }
 
 func runDBX(args []string) error {

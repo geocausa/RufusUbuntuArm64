@@ -49,7 +49,7 @@
       "id": "uefi-runtime-validation",
       "upstream_feature": "Perform runtime validation of UEFI bootable media",
       "status": "in_progress",
-      "notes": "The 0.11 branch validates fallback loaders, PE architecture and EFI subsystem fields, bounded SBAT metadata, and optional DBX hash/certificate revocations. Boot-chain reference resolution, trusted SBAT-level comparison, post-write media integration, and GTK reporting remain planned."
+      "notes": "The 0.11 development line exposes descriptor-rooted CLI validation of fallback loaders, PE architecture and EFI subsystem fields, bounded SBAT metadata, and optional DBX hash/certificate revocations. Boot-chain reference resolution and trusted SBAT-level comparison remain planned."
     },
     {
       "id": "image-checksums",
