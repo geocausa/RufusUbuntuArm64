@@ -1,8 +1,9 @@
 name: Verify published release
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -15,11 +16,14 @@ permissions:
 
 jobs:
   verify:
-    if: github.repository == 'geocausa/RufusUbuntuArm64'
+    if: >-
+      github.repository == 'geocausa/RufusUbuntuArm64' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
-      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      RELEASE_TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha || '' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Check out the exact workflow contract revision
@@ -64,6 +68,12 @@ jobs:
             echo "Checked-out commit does not match immutable release tag ${RELEASE_TAG}" >&2
             exit 1
           }
+          if [[ -n "${RELEASE_SHA}" ]]; then
+            test "${commit_sha}" = "${RELEASE_SHA}" || {
+              echo "Completed Release workflow SHA does not match ${RELEASE_TAG}" >&2
+              exit 1
+            }
+          fi
       - name: Download and validate the exact published asset graph
         run: |
           set -euo pipefail
