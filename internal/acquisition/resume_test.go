@@ -72,16 +72,18 @@ func TestResumableCancellationRetainsPartialButDefaultRemovesIt(t *testing.T) {
 	data := bytesOf("cancel-resume", 8192)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		flusher, _ := w.(http.Flusher)
-		for i := 0; i < len(data); i += 1024 {
-			end := i + 1024
-			if end > len(data) {
-				end = len(data)
-			}
-			_, _ = w.Write(data[i:end])
-			if flusher != nil {
-				flusher.Flush()
-			}
-			time.Sleep(5 * time.Millisecond)
+		_, _ = w.Write(data[:1024])
+		if flusher != nil {
+			flusher.Flush()
+		}
+		// Keep the response incomplete until the client cancels. This avoids a
+		// scheduler race where a fast runner can finish the entire local transfer
+		// before the progress callback's cancellation is observed.
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(5 * time.Second):
+			return
 		}
 	}))
 	defer server.Close()
