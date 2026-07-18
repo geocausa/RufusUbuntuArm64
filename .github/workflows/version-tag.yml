@@ -1,0 +1,70 @@
+name: Publish canonical version tag
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - VERSION
+      - CHANGELOG.md
+      - docs/release-*.md
+      - packaging/io.github.geocausa.RufusArm64.metainfo.xml
+      - .github/workflows/version-tag.yml
+      - .github/workflows/release.yml
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: canonical-version-tag
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'geocausa/RufusUbuntuArm64'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Validate the canonical release commit
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          python3 scripts/check-version-sync.py
+          python3 scripts/check-release-runtime-integrity.py
+          version="$(tr -d '\r\n' < VERSION)"
+          tag="v${version}"
+          test -f "docs/release-${version}.md"
+          existing="$(gh api --silent "/repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --jq '.object.sha' 2>/dev/null || true)"
+          if [[ -n "${existing}" ]]; then
+            test "${existing}" = "${GITHUB_SHA}" || {
+              echo "Refusing to move existing ${tag} from ${existing} to ${GITHUB_SHA}" >&2
+              exit 1
+            }
+            echo "${tag} already points to the canonical release commit; no new dispatch is needed."
+            echo "created=false" >> "${GITHUB_OUTPUT}"
+          else
+            gh api --method POST "/repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${tag}" \
+              -f sha="${GITHUB_SHA}" >/dev/null
+            echo "created=true" >> "${GITHUB_OUTPUT}"
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+      - name: Dispatch the audited release workflow at the new tag
+        if: steps.version.outputs.created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh workflow run release.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref "${TAG}" \
+            -f expected_version="${VERSION}"
