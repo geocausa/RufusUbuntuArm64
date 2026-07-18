@@ -71,12 +71,15 @@ if "force" in tag_text.lower():
 PUBLISHED_WORKFLOW = Path(".github/workflows/release-published.yml")
 published_text = PUBLISHED_WORKFLOW.read_text(encoding="utf-8")
 required_published_once = {
-    "published-release trigger": "    types: [published]\n",
+    "release-workflow completion trigger": "  workflow_run:\n",
+    "audited release workflow name": "    workflows: [Release]\n",
+    "completed workflow activity": "    types: [completed]\n",
     "manual recovery dispatch": "  workflow_dispatch:\n",
     "manual tag input": "      tag:\n",
     "contents read permission": "  contents: read\n",
-    "repository ownership guard": "    if: github.repository == 'geocausa/RufusUbuntuArm64'\n",
-    "event-or-input tag binding": "      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}\n",
+    "successful-release condition": "github.event.workflow_run.conclusion == 'success'",
+    "event-or-input tag binding": "      RELEASE_TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}\n",
+    "triggering SHA binding": "      RELEASE_SHA: ${{ github.event.workflow_run.head_sha || '' }}\n",
     "contract revision checkout": "          ref: ${{ github.workflow_sha }}\n",
     "contract tree path": "          path: contract-tree\n",
     "exact tag checkout": "          ref: ${{ env.RELEASE_TAG }}\n",
@@ -84,6 +87,7 @@ required_published_once = {
     "annotated tag resolution": '              tag_json="$(gh api "/repos/${GITHUB_REPOSITORY}/git/tags/${ref_sha}")"\n',
     "annotated tag commit requirement": '              test "${target_type}" = "commit" || {\n',
     "checked-out SHA binding": '          test "$(git -C release-tree rev-parse HEAD)" = "${commit_sha}" || {\n',
+    "completed-workflow SHA binding": '            test "${commit_sha}" = "${RELEASE_SHA}" || {\n',
     "release metadata query": '          gh release view "${RELEASE_TAG}" \\\n',
     "release asset download": '          gh release download "${RELEASE_TAG}" \\\n',
     "tag-pinned validator": '          validator="${GITHUB_WORKSPACE}/release-tree/scripts/check-published-release.py"\n',
@@ -95,6 +99,8 @@ for description, marker in required_published_once.items():
     if count != 1:
         raise SystemExit(f"{PUBLISHED_WORKFLOW}: {description} marker occurred {count} times")
 
+if "\n  release:\n" in published_text:
+    raise SystemExit("published verification must use workflow_run because GITHUB_TOKEN release events are suppressed")
 for forbidden in ("contents: write", "actions: write", "secrets.", "persist-credentials: true"):
     if forbidden in published_text:
         raise SystemExit(f"{PUBLISHED_WORKFLOW}: forbidden mutable credential marker: {forbidden}")
