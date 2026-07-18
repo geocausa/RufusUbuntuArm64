@@ -151,7 +151,7 @@ dist/rufusarm64_0.10.6_arm64.deb
 rufusarm64-cli list
 rufusarm64-cli inspect --image Windows.iso.xz --json
 rufusarm64-cli acquire channel list --json
-rufusarm64-cli uefi validate --directory /mnt/usb --arch arm64 --sbat-level ./SbatLevel.csv --json
+rufusarm64-cli uefi validate --directory /mnt/usb --arch arm64 --firmware-sbat --json
 rufusarm64-cli persistence plan \
   --image ubuntu.iso --media-root /mnt/ubuntu \
   --target-size 64G --size 16G --json

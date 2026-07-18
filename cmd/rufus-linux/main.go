@@ -112,7 +112,7 @@ Usage:
   sudo rufusarm64-cli write --mode linux-persistent --experimental-persistence --image FILE --device /dev/DEVICE [--persistence-size SIZE]
   sudo rufusarm64-cli verify --image FILE --device /dev/DEVICE
   rufusarm64-cli hash FILE
-  rufusarm64-cli uefi validate --directory DIR [--arch ARCH] [--dbx FILE | --firmware] [--sbat-level FILE] [--json]
+  rufusarm64-cli uefi validate --directory DIR [--arch ARCH] [--dbx FILE | --firmware] [--sbat-level FILE | --firmware-sbat] [--json]
   rufusarm64-cli dbx inspect (--file FILE | --firmware) [--json]
   rufusarm64-cli dbx update [--arch ARCH] [--output FILE] [--json]
   rufusarm64-cli dbx check --dbx FILE --efi FILE [--json]
@@ -1074,6 +1074,23 @@ func resolveUEFIArchitecture(value string) (string, error) {
 	}
 }
 
+func loadUEFISBATLevel(path string, firmware bool, firmwareLoader func() (*secureboot.SBATLevel, error)) (*secureboot.SBATLevel, error) {
+	path = strings.TrimSpace(path)
+	if path != "" && firmware {
+		return nil, errors.New("select at most one of --sbat-level or --firmware-sbat")
+	}
+	if firmware {
+		if firmwareLoader == nil {
+			return nil, errors.New("firmware SBAT loader is unavailable")
+		}
+		return firmwareLoader()
+	}
+	if path != "" {
+		return secureboot.LoadSBATLevelFile(path)
+	}
+	return nil, nil
+}
+
 func runUEFIValidate(args []string) error {
 	fs := flag.NewFlagSet("uefi validate", flag.ContinueOnError)
 	directory := fs.String("directory", "", "mounted or extracted UEFI media root")
@@ -1083,6 +1100,7 @@ func runUEFIValidate(args []string) error {
 	dbxPath := fs.String("dbx", "", "optional DBXUpdate.bin or raw DBX file")
 	firmware := fs.Bool("firmware", false, "use the running firmware DBX variable")
 	sbatLevelPath := fs.String("sbat-level", "", "optional trusted local shim-compatible SbatLevel CSV file")
+	firmwareSBAT := fs.Bool("firmware-sbat", false, "use the SBAT level exposed by the running shim through efivarfs")
 	asJSON := fs.Bool("json", false, "output JSON")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -1103,12 +1121,9 @@ func runUEFIValidate(args []string) error {
 	if err != nil {
 		return err
 	}
-	var sbatLevel *secureboot.SBATLevel
-	if strings.TrimSpace(*sbatLevelPath) != "" {
-		sbatLevel, err = secureboot.LoadSBATLevelFile(*sbatLevelPath)
-		if err != nil {
-			return err
-		}
+	sbatLevel, err := loadUEFISBATLevel(*sbatLevelPath, *firmwareSBAT, secureboot.FirmwareSBATLevel)
+	if err != nil {
+		return err
 	}
 	var dbx *secureboot.Database
 	if *dbxPath != "" || *firmware {
