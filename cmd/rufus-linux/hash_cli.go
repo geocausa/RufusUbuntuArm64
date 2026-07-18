@@ -51,6 +51,9 @@ func runHashCommand(args []string) error {
 }
 
 func runHashWithContext(ctx context.Context, args []string) error {
+	if ctx == nil {
+		return errors.New("hash context is nil")
+	}
 	flags := flag.NewFlagSet("hash", flag.ContinueOnError)
 	var requested digestAlgorithmFlags
 	flags.Var(&requested, "algorithm", "checksum algorithm: md5, sha1, sha256, or sha512; repeat to select more than one")
