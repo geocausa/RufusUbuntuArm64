@@ -16,25 +16,23 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Verify published 0.11.0 assets and package checksum
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/release-published-contract
+          persist-credentials: false
+      - name: Validate the live release with the proposed contract
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          release_json="${RUNNER_TEMP}/release.json"
+          asset_dir="${RUNNER_TEMP}/published-assets"
+          mkdir -p "${asset_dir}"
           gh release view v0.11.0 \
             --repo "${GITHUB_REPOSITORY}" \
             --json tagName,targetCommitish,isDraft,isPrerelease,publishedAt,url,assets \
-            --jq '{tagName,targetCommitish,isDraft,isPrerelease,publishedAt,url,assets:[.assets[]|{name,size,state,digest,url}]}'
-          release_dir="$(mktemp -d)"
-          trap 'rm -rf "${release_dir}"' EXIT
+            > "${release_json}"
           gh release download v0.11.0 \
             --repo "${GITHUB_REPOSITORY}" \
-            --pattern 'rufusarm64_0.11.0_arm64.deb' \
-            --pattern 'rufusarm64_0.11.0_arm64.deb.sha256' \
-            --dir "${release_dir}"
-          cd "${release_dir}"
-          cat rufusarm64_0.11.0_arm64.deb.sha256
-          grep '  rufusarm64_0.11.0_arm64.deb$' \
-            rufusarm64_0.11.0_arm64.deb.sha256 \
-            | sha256sum --check --strict -
-          stat --format='Downloaded package size: %s bytes' rufusarm64_0.11.0_arm64.deb
+            --dir "${asset_dir}"
+          python3 scripts/check-published-release.py "${release_json}" "${asset_dir}"
