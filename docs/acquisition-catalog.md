@@ -8,8 +8,9 @@ RufusUbuntuArm64 0.9 introduces a security-first foundation for future ISO and i
 2. RufusUbuntuArm64 verifies the detached signature over the **exact catalog bytes** before parsing any URL.
 3. The catalog must be unexpired and use the supported schema.
 4. Every entry is validated for a safe filename, absolute HTTPS URL, bounded size, SHA-256 digest, and explicitly signed redirect hosts.
-5. The image is written to a private temporary file, size-bounded, hashed while downloading, synchronized, and atomically installed only after the signed size and SHA-256 both match.
-6. Existing files are reused only when their complete SHA-256 and size already match. Different files are never overwritten without `--replace`.
+5. Before any image request is sent, the destination filesystem must report enough unprivileged available space for the complete signed image plus a 64 MiB safety reserve. Replacement downloads retain the same full requirement because the old destination remains until atomic installation.
+6. The image is written to a private temporary file, size-bounded, hashed while downloading, synchronized, and atomically installed only after the signed size and SHA-256 both match.
+7. Existing files are reused only when their complete SHA-256 and size already match. Different files are never overwritten without `--replace`.
 
 The public key and catalog distribution policy are outside the JSON schema. Production catalogs should be distributed with a public key obtained through an independent trusted channel or embedded in a signed application release.
 
@@ -92,7 +93,7 @@ rufusarm64-cli acquire download \
   --output ~/Downloads
 ```
 
-`--json-progress` emits the same byte/rate progress events used by the graphical application. `--json` emits the final result object. Cancellation through `SIGINT` or `SIGTERM` removes the temporary partial file.
+`--json-progress` emits the same byte/rate progress events used by the graphical application. `--json` emits the final result object. CLI and graphical downloads both fail before contacting the image server when the exact destination filesystem cannot prove the signed image size plus the 64 MiB reserve. Cancellation through `SIGINT` or `SIGTERM` removes the temporary partial file.
 
 ## Deliberate exclusions in this tranche
 

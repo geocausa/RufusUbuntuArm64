@@ -32,6 +32,8 @@ type DownloadOptions struct {
 	Progress    func(Progress)
 	// AllowHTTP is only for isolated tests. Production callers must leave it false.
 	AllowHTTP bool
+	// spaceAvailable is an isolated-test seam. Production callers always use statfs.
+	spaceAvailable spaceProbe
 }
 
 type DownloadResult struct {
@@ -55,6 +57,9 @@ func Download(ctx context.Context, image Image, options DownloadOptions) (Downlo
 	}
 	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
 		return DownloadResult{}, fmt.Errorf("create download directory: %w", err)
+	}
+	if err := preflightDownloadSpace(destination, image.Size, options.spaceAvailable); err != nil {
+		return DownloadResult{}, err
 	}
 	client := secureHTTPClient(image, options.AllowHTTP)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, image.URL, nil)
