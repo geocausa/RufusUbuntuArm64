@@ -29,6 +29,7 @@ from rufusarm64_logic import (
     build_acquisition_download_command,
     build_acquisition_list_command,
     build_persistence_analyze_command,
+    build_uefi_validate_command,
     build_writer_command,
     device_label,
     human_bytes,
@@ -42,8 +43,10 @@ from rufusarm64_logic import (
     normalize_filesystem,
     normalize_partition_scheme,
     normalize_target_system,
+    normalize_uefi_validation,
     normalize_volume_label,
     success_message,
+    uefi_validation_summary,
     normalize_windows_locale,
     supported_image_name,
     validate_local_username,
@@ -599,6 +602,216 @@ class PersistencePlanDialog(Gtk.Dialog):
         return int(self.size.get_value())
 
 
+class UEFIValidationDialog(Gtk.Dialog):
+    """Run the descriptor-safe UEFI validator without entering a write path."""
+
+    def __init__(self, parent, settings):
+        super().__init__(title="Validate UEFI media", transient_for=parent, modal=True)
+        self.parent_window = parent
+        self.settings = settings
+        self.running = False
+        self.closed = False
+        self.generation = 0
+        self.set_default_size(760, 620)
+        self.add_button("Close", Gtk.ResponseType.CLOSE)
+        self.close_button = self.get_widget_for_response(Gtk.ResponseType.CLOSE)
+        self.connect("delete-event", self.on_delete_event)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_border_width(18)
+        self.get_content_area().pack_start(box, True, True, 0)
+
+        intro = Gtk.Label(label=(
+            "Check a mounted or extracted UEFI media folder. Validation is read-only and unprivileged; "
+            "it does not mount images, open a USB device, or change whether Create USB is available."
+        ))
+        intro.set_xalign(0)
+        intro.set_line_wrap(True)
+        box.pack_start(intro, False, False, 0)
+
+        grid = Gtk.Grid(column_spacing=12, row_spacing=10)
+        box.pack_start(grid, False, False, 0)
+        self._attach_label(grid, "Media folder", 0)
+        self.directory = Gtk.FileChooserButton(
+            title="Choose mounted or extracted UEFI media",
+            action=Gtk.FileChooserAction.SELECT_FOLDER,
+        )
+        saved_directory = settings.get("uefi_validation_directory", "")
+        if saved_directory and os.path.isdir(saved_directory):
+            self.directory.set_filename(saved_directory)
+        grid.attach(self.directory, 1, 0, 1, 1)
+
+        self._attach_label(grid, "Architecture", 1)
+        self.architecture = Gtk.ComboBoxText()
+        for identifier, label in (
+            ("native", "Native architecture"),
+            ("arm64", "ARM64"),
+            ("amd64", "x86-64"),
+            ("386", "x86"),
+            ("arm", "ARM"),
+            ("riscv64", "RISC-V 64"),
+            ("loongarch64", "LoongArch 64"),
+        ):
+            self.architecture.append(identifier, label)
+        saved_arch = settings.get("uefi_validation_architecture", "native")
+        self.architecture.set_active_id(saved_arch if saved_arch else "native")
+        grid.attach(self.architecture, 1, 1, 1, 1)
+
+        self.require_fallback = Gtk.CheckButton(label="Require the removable-media fallback loader")
+        self.require_fallback.set_active(bool(settings.get("uefi_validation_require_fallback", True)))
+        grid.attach(self.require_fallback, 1, 2, 1, 1)
+
+        self._attach_label(grid, "Local DBX", 3)
+        self.dbx = Gtk.FileChooserButton(
+            title="Choose an optional DBXUpdate.bin file",
+            action=Gtk.FileChooserAction.OPEN,
+        )
+        dbx_filter = Gtk.FileFilter()
+        dbx_filter.set_name("UEFI DBX files")
+        dbx_filter.add_pattern("*.bin")
+        self.dbx.add_filter(dbx_filter)
+        saved_dbx = settings.get("uefi_validation_dbx", "")
+        if saved_dbx and os.path.isfile(saved_dbx):
+            self.dbx.set_filename(saved_dbx)
+        grid.attach(self.dbx, 1, 3, 1, 1)
+
+        self.firmware = Gtk.CheckButton(label="Use the running firmware DBX instead")
+        self.firmware.set_active(bool(settings.get("uefi_validation_firmware", False)))
+        self.firmware.connect("toggled", self.firmware_toggled)
+        grid.attach(self.firmware, 1, 4, 1, 1)
+        self.firmware_toggled()
+
+        action_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.validate_button = Gtk.Button(label="Validate")
+        self.validate_button.get_style_context().add_class("suggested-action")
+        self.validate_button.connect("clicked", self.start_validation)
+        action_row.pack_start(self.validate_button, False, False, 0)
+        self.spinner = Gtk.Spinner()
+        action_row.pack_start(self.spinner, False, False, 0)
+        self.status = Gtk.Label(label="Choose a media folder, then validate.")
+        self.status.set_xalign(0)
+        self.status.set_line_wrap(True)
+        action_row.pack_start(self.status, True, True, 0)
+        box.pack_start(action_row, False, False, 0)
+
+        result_scroll = Gtk.ScrolledWindow()
+        result_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        result_scroll.set_hexpand(True)
+        result_scroll.set_vexpand(True)
+        self.result_view = Gtk.TextView(
+            editable=False,
+            cursor_visible=False,
+            monospace=True,
+            wrap_mode=Gtk.WrapMode.WORD_CHAR,
+        )
+        self.result_view.get_buffer().set_text(
+            "No validation has been run.\n\nThis check does not prove that the intended computer will boot the media."
+        )
+        result_scroll.add(self.result_view)
+        box.pack_start(result_scroll, True, True, 0)
+        self.show_all()
+
+    @staticmethod
+    def _attach_label(grid, text, row):
+        label = Gtk.Label(label=text)
+        label.set_xalign(0)
+        label.set_valign(Gtk.Align.CENTER)
+        grid.attach(label, 0, row, 1, 1)
+
+    def firmware_toggled(self, *_):
+        self.dbx.set_sensitive(not self.running and not self.firmware.get_active())
+
+    def on_delete_event(self, *_):
+        if self.running:
+            self.status.set_text("Validation is still running. Wait for it to finish before closing this dialog.")
+            return True
+        self.closed = True
+        self.generation += 1
+        return False
+
+    def set_running(self, running):
+        self.running = bool(running)
+        self.validate_button.set_sensitive(not self.running)
+        self.close_button.set_sensitive(not self.running)
+        self.directory.set_sensitive(not self.running)
+        self.architecture.set_sensitive(not self.running)
+        self.require_fallback.set_sensitive(not self.running)
+        self.firmware.set_sensitive(not self.running)
+        self.firmware_toggled()
+        if self.running:
+            self.spinner.start()
+        else:
+            self.spinner.stop()
+
+    def start_validation(self, *_):
+        if self.running:
+            return
+        try:
+            command = build_uefi_validate_command(
+                helper_path(),
+                self.directory.get_filename(),
+                self.architecture.get_active_id() or "native",
+                512,
+                self.require_fallback.get_active(),
+                self.dbx.get_filename() or "",
+                self.firmware.get_active(),
+            )
+        except ValueError as exc:
+            self.status.set_text(str(exc))
+            return
+        self.settings["uefi_validation_directory"] = self.directory.get_filename() or ""
+        self.settings["uefi_validation_architecture"] = self.architecture.get_active_id() or "native"
+        self.settings["uefi_validation_require_fallback"] = self.require_fallback.get_active()
+        self.settings["uefi_validation_dbx"] = self.dbx.get_filename() or ""
+        self.settings["uefi_validation_firmware"] = self.firmware.get_active()
+        self.generation += 1
+        generation = self.generation
+        self.set_running(True)
+        self.status.set_text("Validating EFI executables, fallback loader, SBAT metadata, and optional DBX revocations…")
+        self.result_view.get_buffer().set_text("Validation in progress…")
+        threading.Thread(target=self._run_validation, args=(command, generation), daemon=True).start()
+
+    def _run_validation(self, command, generation):
+        payload = None
+        failure = ""
+        try:
+            completed = subprocess.run(
+                command,
+                check=False,
+                text=True,
+                capture_output=True,
+                timeout=120,
+            )
+            if completed.stdout.strip():
+                payload = json.loads(completed.stdout)
+                normalize_uefi_validation(payload)
+            if payload is None:
+                failure = completed.stderr.strip() or "The UEFI validator returned no result."
+        except subprocess.TimeoutExpired:
+            failure = "UEFI validation exceeded the two-minute safety limit."
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            failure = str(exc)
+        GLib.idle_add(self._finish_validation, generation, payload, failure)
+
+    def _finish_validation(self, generation, payload, failure):
+        if self.closed or generation != self.generation:
+            return False
+        self.set_running(False)
+        if failure:
+            self.status.set_text("Validation could not be completed.")
+            self.result_view.get_buffer().set_text(failure)
+            self.parent_window.append_log(f"UEFI validation failed to run: {failure}")
+            return False
+        normalized = normalize_uefi_validation(payload)
+        summary = uefi_validation_summary(payload)
+        self.result_view.get_buffer().set_text(summary)
+        self.status.set_text("Validation passed." if normalized["valid"] else "Validation found problems.")
+        self.parent_window.append_log(
+            "UEFI media validation result:\n" + json.dumps(payload, indent=2, sort_keys=True)
+        )
+        return False
+
+
 class RufusWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app)
@@ -640,6 +853,12 @@ class RufusWindow(Gtk.ApplicationWindow):
         about_button.set_tooltip_text("About RufusArm64")
         about_button.connect("clicked", self.show_about)
         header.pack_end(about_button)
+        self.uefi_validation_button = Gtk.Button(label="Validate UEFI Media…")
+        self.uefi_validation_button.set_tooltip_text(
+            "Run a read-only validation of a mounted or extracted UEFI media folder"
+        )
+        self.uefi_validation_button.connect("clicked", self.open_uefi_validator)
+        header.pack_start(self.uefi_validation_button)
 
         root_scroll = Gtk.ScrolledWindow()
         root_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
@@ -1060,7 +1279,14 @@ class RufusWindow(Gtk.ApplicationWindow):
         background_idle = not self.inspection_running and not self.device_refreshing
         usable = not busy and background_idle and bool(self.devices) and bool(self.inspection.get("recognized"))
         self.start_button.set_sensitive(usable)
-        for widget in (self.image_chooser, self.download_button, self.target_combo, self.verify, self.open_persistence_button):
+        for widget in (
+            self.image_chooser,
+            self.download_button,
+            self.target_combo,
+            self.verify,
+            self.open_persistence_button,
+            self.uefi_validation_button,
+        ):
             widget.set_sensitive(not busy)
         self.refresh_button.set_sensitive(not busy and not self.device_refreshing)
         self.persistence_button.set_sensitive(
@@ -1089,6 +1315,17 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.device_generation += 1
         self.save_settings()
         return False
+
+
+    def open_uefi_validator(self, *_):
+        if self.busy:
+            return
+        dialog = UEFIValidationDialog(self, self.settings)
+        dialog.run()
+        dialog.closed = True
+        dialog.generation += 1
+        dialog.destroy()
+        self.save_settings()
 
     def image_changed(self, *_):
         path = self.image_chooser.get_filename()

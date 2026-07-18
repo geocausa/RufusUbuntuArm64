@@ -11,6 +11,7 @@ from rufusarm64_logic import (
     build_acquisition_list_command,
     build_persistence_analyze_command,
     build_persistence_plan_command,
+    build_uefi_validate_command,
     build_writer_command,
     device_label,
     human_bytes,
@@ -25,8 +26,10 @@ from rufusarm64_logic import (
     normalize_filesystem,
     normalize_partition_scheme,
     normalize_target_system,
+    normalize_uefi_validation,
     normalize_volume_label,
     success_message,
+    uefi_validation_summary,
     normalize_windows_locale,
     supported_image_name,
     validate_local_username,
@@ -291,6 +294,52 @@ class LogicTests(unittest.TestCase):
     def test_writer_command_refuses_missing_identity(self):
         with self.assertRaises(ValueError):
             build_writer_command("pkexec", "/helper", "/image.iso", "/dev/sda", "", True, "/tmp/cancel")
+
+
+    def test_uefi_validation_command_is_read_only(self):
+        command = build_uefi_validate_command(
+            "/helper", "/mnt/usb", "aarch64", 1024, True, "/cache/dbx.bin", False
+        )
+        self.assertEqual(command[:3], ["/helper", "uefi", "validate"])
+        self.assertEqual(command[command.index("--arch") + 1], "arm64")
+        self.assertEqual(command[command.index("--max-files") + 1], "1024")
+        self.assertIn("--require-fallback=true", command)
+        self.assertIn("--dbx", command)
+        self.assertEqual(command[-1], "--json")
+        self.assertNotIn("pkexec", command)
+        self.assertNotIn("write", command)
+        with self.assertRaises(ValueError):
+            build_uefi_validate_command("/helper", "/mnt/usb", dbx_file="dbx.bin", firmware=True)
+        with self.assertRaises(ValueError):
+            build_uefi_validate_command("/helper", "/mnt/usb", max_files=4097)
+
+    def test_uefi_validation_normalization_and_summary(self):
+        payload = {
+            "root": "/mnt/usb",
+            "architecture": "arm64",
+            "fallback_path": "EFI/BOOT/BOOTAA64.EFI",
+            "fallback_found": True,
+            "dbx_checked": True,
+            "valid": True,
+            "revoked": False,
+            "files": [{
+                "path": "EFI/BOOT/BOOTAA64.EFI",
+                "machine_name": "ARM64",
+                "subsystem_name": "EFI application",
+                "fallback": True,
+                "embedded_certificates": 2,
+                "sbat": [{"component": "shim"}],
+            }],
+        }
+        normalized = normalize_uefi_validation(payload)
+        self.assertTrue(normalized["valid"])
+        self.assertEqual(normalized["files"][0]["sbat_records"], 1)
+        summary = uefi_validation_summary(payload)
+        self.assertIn("Validation passed", summary)
+        self.assertIn("BOOTAA64.EFI", summary)
+        self.assertIn("does not prove", summary)
+        with self.assertRaises(ValueError):
+            normalize_uefi_validation({"root": "/mnt/usb", "files": []})
 
 
 if __name__ == "__main__":
