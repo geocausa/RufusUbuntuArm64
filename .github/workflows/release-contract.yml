@@ -31,5 +31,7 @@ jobs:
           bash -n scripts/build-uefi-md5sum-arm64.sh scripts/build-deb.sh
       - name: Confirm the existing complete test harness is unchanged
         run: |
+          git fetch --no-tags --depth=1 origin \
+            develop/0.11.0:refs/remotes/origin/develop/0.11.0
           test "$(git show origin/develop/0.11.0:scripts/test.sh | sha256sum | awk '{print $1}')" = \
                "$(sha256sum scripts/test.sh | awk '{print $1}')"
