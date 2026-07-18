@@ -1,9 +1,9 @@
 name: Apply PR 96 writer integration
 
 on:
-  push:
+  pull_request:
     branches:
-      - feature/windows-option-eligibility
+      - feature/unified-persistence-ui
 
 permissions:
   contents: write
