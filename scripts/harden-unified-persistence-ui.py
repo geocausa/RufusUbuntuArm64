@@ -87,7 +87,7 @@ insert = '''
     def test_busy_state_cannot_reenable_download_or_reference_removed_button(self):
         self.assertNotIn("self.open_persistence_button", self.source)
         self.assertIn("self.download_button.set_sensitive(False)", self.source)
-        self.assertNotIn("self.download_button,\n", self.source)
+        self.assertNotIn("self.download_button,\\n", self.source)
 
     def test_unsupported_image_turns_persistence_off(self):
         self.assertIn("if persistence_on and not raw_ready:", self.source)
