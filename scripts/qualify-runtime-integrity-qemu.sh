@@ -92,13 +92,11 @@ mkdir -p "${app_workspace}/RufusChainloadTestPkg"
 cp "${ROOT_DIR}/tests/uefi-chainload/"* "${app_workspace}/RufusChainloadTestPkg/"
 run_edk2_build "${app_workspace}" "${app_workspace}:${edk2_dir}" \
   "RufusChainloadTestPkg/RufusChainloadTestPkg.dsc"
-mapfile -t app_candidates < <(find "${app_workspace}/Build" -type f -name RufusChainloadTest.efi -print)
-[[ "${#app_candidates[@]}" -eq 1 ]] || {
-  printf 'Expected one RufusChainloadTest.efi, found %d\n' "${#app_candidates[@]}" >&2
-  printf '%s\n' "${app_candidates[@]}" >&2
+chainload_app="${app_workspace}/Build/RufusChainloadTest/RELEASE_GCC/AARCH64/RufusChainloadTest.efi"
+[[ -f "${chainload_app}" ]] || {
+  echo "Canonical RufusChainloadTest.efi build output is missing" >&2
   exit 1
 }
-chainload_app="${app_candidates[0]}"
 
 cli="${work_dir}/rufusarm64-cli"
 (
