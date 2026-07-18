@@ -13,6 +13,7 @@ export LC_ALL=C
 export TZ=UTC
 export SOURCE_DATE_EPOCH
 export PYTHONHASHSEED=0
+export PYTHON_COMMAND=python3
 
 for command in git make python3 aarch64-linux-gnu-gcc aarch64-linux-gnu-ld sha256sum gzip; do
   command -v "${command}" >/dev/null 2>&1 || {
@@ -56,8 +57,12 @@ make -C "${edk2_dir}/BaseTools" -j"$(nproc)"
   export WORKSPACE="${source_dir}"
   export PACKAGES_PATH="${source_dir}:${edk2_dir}"
   export GCC_AARCH64_PREFIX="aarch64-linux-gnu-"
+  # EDK2's legacy setup script probes optional unset variables. Keep the
+  # surrounding build strict while containing that behavior to this source.
+  set +u
   # shellcheck source=/dev/null
   source "${edk2_dir}/edksetup.sh" BaseTools
+  set -u
   build -a AARCH64 -b RELEASE -t GCC -p Md5SumPkg.dsc
 )
 
