@@ -39,38 +39,65 @@ type wimVersionXML struct {
 	Build string `xml:"BUILD"`
 }
 
-type boundedBuffer struct {
+// BoundedBuffer collects command output while enforcing a hard byte limit.
+// It is exported so callers that need the same bounded command contract can
+// reuse it without silently falling back to unbounded CombinedOutput calls.
+type BoundedBuffer struct {
 	buffer bytes.Buffer
 	limit  int
 }
 
-func (b *boundedBuffer) Write(data []byte) (int, error) {
+// NewBoundedBuffer creates a bounded command-output collector.
+func NewBoundedBuffer(limit int) *BoundedBuffer {
+	return &BoundedBuffer{limit: limit}
+}
+
+func (b *BoundedBuffer) Write(data []byte) (int, error) {
+	if b == nil || b.limit <= 0 {
+		return 0, errors.New("bounded buffer has no positive size limit")
+	}
 	if b.buffer.Len()+len(data) > b.limit {
 		return 0, errors.New("WIM metadata exceeds the safe size limit")
 	}
 	return b.buffer.Write(data)
 }
 
-// inspectWIMMetadata executes the pinned or system wimlib engine without a
+// Bytes returns the collected bytes.
+func (b *BoundedBuffer) Bytes() []byte {
+	if b == nil {
+		return nil
+	}
+	return b.buffer.Bytes()
+}
+
+// String returns the collected output as text.
+func (b *BoundedBuffer) String() string {
+	if b == nil {
+		return ""
+	}
+	return b.buffer.String()
+}
+
+// InspectWIMMetadata executes the pinned or system wimlib engine without a
 // shell and caps XML output before parsing it.
-func inspectWIMMetadata(ctx context.Context, imagePath string) (windowsconfig.MediaMetadata, error) {
+func InspectWIMMetadata(ctx context.Context, imagePath string) (windowsconfig.MediaMetadata, error) {
 	wimlib, err := wimlibExecutable()
 	if err != nil {
 		return windowsconfig.MediaMetadata{}, err
 	}
-	stdout := &boundedBuffer{limit: maxWIMMetadataBytes}
-	stderr := &boundedBuffer{limit: 64 * 1024}
+	stdout := NewBoundedBuffer(maxWIMMetadataBytes)
+	stderr := NewBoundedBuffer(64 * 1024)
 	command := exec.CommandContext(ctx, wimlib, "info", imagePath, "--xml")
 	command.Stdout = stdout
 	command.Stderr = stderr
 	if err := command.Run(); err != nil {
-		detail := strings.TrimSpace(stderr.buffer.String())
+		detail := strings.TrimSpace(stderr.String())
 		if detail != "" {
 			return windowsconfig.MediaMetadata{}, fmt.Errorf("inspect Windows image metadata: %w: %s", err, detail)
 		}
 		return windowsconfig.MediaMetadata{}, fmt.Errorf("inspect Windows image metadata: %w", err)
 	}
-	return parseWIMMetadata(bytes.NewReader(stdout.buffer.Bytes()))
+	return parseWIMMetadata(bytes.NewReader(stdout.Bytes()))
 }
 
 // parseWIMMetadata converts bounded wimlib XML output into the conservative
