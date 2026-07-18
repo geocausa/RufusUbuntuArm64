@@ -106,13 +106,14 @@ cli="${work_dir}/rufusarm64-cli"
 
 make_tree() {
   local tree="$1"
+  local verification_json="${work_dir}/tree-verification.json"
   mkdir -p "${tree}/EFI/BOOT"
   install -m 0644 "${loader_dir}/bootaa64.efi" "${tree}/EFI/BOOT/BOOTAA64.EFI"
   install -m 0644 "${chainload_app}" "${tree}/EFI/BOOT/bootaa64_original.efi"
   printf 'RufusArm64 deterministic runtime integrity payload\n' > "${tree}/payload.bin"
   "${cli}" uefi integrity manifest --directory "${tree}" > "${tree}/md5sum.txt"
-  "${cli}" uefi integrity verify --directory "${tree}" --json > "${tree}/verification.json"
-  rm "${tree}/verification.json"
+  "${cli}" uefi integrity verify --directory "${tree}" --json > "${verification_json}"
+  rm -f "${verification_json}"
 }
 
 make_disk() {
