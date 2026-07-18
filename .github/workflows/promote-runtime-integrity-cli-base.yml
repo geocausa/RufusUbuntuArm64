@@ -23,6 +23,18 @@ jobs:
           go-version: '1.22.x'
       - name: Apply runtime integrity CLI
         run: python3 tools/apply_runtime_integrity_cli.py
+      - name: Update existing dispatcher expectation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('cmd/rufus-linux/main_test.go')
+          text = path.read_text(encoding='utf-8')
+          old = 'err.Error() != "uefi requires validate"'
+          new = 'err.Error() != "uefi requires validate or integrity"'
+          if text.count(old) != 1:
+              raise SystemExit(f'dispatcher expectation matched {text.count(old)} times')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Check formatting
         run: test -z "$(gofmt -l cmd/rufus-linux)"
       - name: Run focused command and integrity race tests
