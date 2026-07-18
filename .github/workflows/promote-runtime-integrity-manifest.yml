@@ -1,0 +1,49 @@
+name: Promote runtime integrity manifest foundation
+
+on:
+  push:
+    branches: [feature/0.11-runtime-integrity-manifest]
+    paths:
+      - .github/runtime-integrity-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+      - name: Apply runtime integrity foundation
+        run: python3 tools/apply_runtime_integrity_manifest.py
+      - name: Check formatting
+        run: test -z "$(gofmt -l internal/runtimeintegrity)"
+      - name: Run focused race tests
+        run: go test -race ./internal/runtimeintegrity
+      - name: Vet runtime integrity package
+        run: go vet ./internal/runtimeintegrity
+      - name: Run complete Go suite
+        run: go test ./...
+      - name: Compile Python and validate parity inventory
+        run: |
+          python3 -m py_compile gui/*.py
+          python3 -m json.tool docs/upstream-rufus-parity.json >/dev/null
+      - name: Confirm manifest interoperability contract
+        run: |
+          go test ./internal/runtimeintegrity -run 'TestManifestMarshalParseRoundTrip|TestGenerateAndVerifyDeterministically' -count=5
+          grep -F '# md5sum_totalbytes = 0x' internal/runtimeintegrity/manifest.go >/dev/null
+      - name: Commit validated production changes
+        run: |
+          rm -f tools/apply_runtime_integrity_manifest.py .github/runtime-integrity-trigger .github/workflows/promote-runtime-integrity-manifest.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add internal/runtimeintegrity README.md docs/upstream-rufus-parity.json docs/uefi-runtime-integrity.md
+          git add -u tools/apply_runtime_integrity_manifest.py .github/runtime-integrity-trigger .github/workflows/promote-runtime-integrity-manifest.yml
+          git commit -m '0.11: add runtime media integrity manifest foundation'
+          git push origin HEAD:feature/0.11-runtime-integrity-manifest
