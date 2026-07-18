@@ -34,6 +34,18 @@ jobs:
         run: |
           set -o pipefail
           python3 tools/apply_gtk_firmware_sbat.py 2>&1 | tee gtk-sbat-apply.log
+      - name: Correct generated summary structure
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('gui/rufusarm64_logic.py')
+          text = path.read_text(encoding='utf-8')
+          old = '    lines.extend([\n    ]\n    for item in result["files"]:'
+          new = '    for item in result["files"]:'
+          if text.count(old) != 1:
+              raise SystemExit(f'generated summary correction matched {text.count(old)} times')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Upload transformation diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
