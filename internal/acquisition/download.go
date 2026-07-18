@@ -29,6 +29,7 @@ type Progress struct {
 type DownloadOptions struct {
 	Destination string
 	Replace     bool
+	Resume      bool
 	Progress    func(Progress)
 	// AllowHTTP is only for isolated tests. Production callers must leave it false.
 	AllowHTTP bool
@@ -37,14 +38,18 @@ type DownloadOptions struct {
 }
 
 type DownloadResult struct {
-	Path   string `json:"path"`
-	URL    string `json:"url"`
-	SHA256 string `json:"sha256"`
-	Size   uint64 `json:"size"`
-	Reused bool   `json:"reused"`
+	Path    string `json:"path"`
+	URL     string `json:"url"`
+	SHA256  string `json:"sha256"`
+	Size    uint64 `json:"size"`
+	Reused  bool   `json:"reused"`
+	Resumed uint64 `json:"resumed_bytes,omitempty"`
 }
 
 func Download(ctx context.Context, image Image, options DownloadOptions) (DownloadResult, error) {
+	if ctx == nil {
+		return DownloadResult{}, errors.New("download context is nil")
+	}
 	if err := image.validateWithPolicy(options.AllowHTTP); err != nil {
 		return DownloadResult{}, err
 	}
@@ -55,91 +60,131 @@ func Download(ctx context.Context, image Image, options DownloadOptions) (Downlo
 	if result, handled, err := existingDownload(destination, image, options.Replace); handled || err != nil {
 		return result, err
 	}
-	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+	directory := filepath.Dir(destination)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return DownloadResult{}, fmt.Errorf("create download directory: %w", err)
 	}
-	if err := preflightDownloadSpace(destination, image.Size, options.spaceAvailable); err != nil {
+
+	partial, offset, digest, err := openDownloadPartial(destination, image, options.Resume)
+	if err != nil {
 		return DownloadResult{}, err
 	}
-	client := secureHTTPClient(image, options.AllowHTTP)
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, image.URL, nil)
-	if err != nil {
-		return DownloadResult{}, fmt.Errorf("create image request: %w", err)
+	partialPath := partial.Name()
+	keepPartial := options.Resume
+	cleanup := func(remove bool) {
+		_ = partial.Close()
+		if remove {
+			_ = os.Remove(partialPath)
+		}
 	}
-	request.Header.Set("User-Agent", "RufusUbuntuArm64-acquisition/1")
-	request.Header.Set("Accept", "application/octet-stream")
-	request.Header.Set("Accept-Encoding", "identity")
-	response, err := client.Do(request)
-	if err != nil {
-		return DownloadResult{}, fmt.Errorf("download %s: %w", image.ID, err)
+	defer func() {
+		_ = partial.Close()
+		if !keepPartial {
+			_ = os.Remove(partialPath)
+		}
+	}()
+
+	remaining := image.Size - offset
+	preflightSize := image.Size
+	if options.Resume && !options.Replace {
+		preflightSize = remaining
 	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return DownloadResult{}, fmt.Errorf("download %s: HTTP %s", image.ID, response.Status)
+	if remaining > 0 {
+		if err := preflightDownloadSpace(destination, preflightSize, options.spaceAvailable); err != nil {
+			cleanup(!options.Resume)
+			return DownloadResult{}, err
+		}
+		client := secureHTTPClient(image, options.AllowHTTP)
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, image.URL, nil)
+		if err != nil {
+			cleanup(!options.Resume)
+			return DownloadResult{}, fmt.Errorf("create image request: %w", err)
+		}
+		request.Header.Set("User-Agent", "RufusUbuntuArm64-acquisition/1")
+		request.Header.Set("Accept", "application/octet-stream")
+		request.Header.Set("Accept-Encoding", "identity")
+		if offset > 0 {
+			request.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
+		}
+		response, err := client.Do(request)
+		if err != nil {
+			_ = partial.Sync()
+			cleanup(!options.Resume)
+			return DownloadResult{}, fmt.Errorf("download %s: %w", image.ID, err)
+		}
+		protocolErr := validateDownloadResponse(response, image.Size, offset)
+		if protocolErr != nil {
+			_ = response.Body.Close()
+			keepPartial = false
+			cleanup(true)
+			return DownloadResult{}, fmt.Errorf("download %s: %w", image.ID, protocolErr)
+		}
+		tracker := &progressReader{
+			reader:   io.LimitReader(response.Body, int64(remaining)+1),
+			total:    image.Size,
+			done:     offset,
+			callback: options.Progress,
+			started:  time.Now(),
+			lastEmit: time.Now(),
+		}
+		writer := io.MultiWriter(partial, digest)
+		written, copyErr := io.CopyBuffer(writer, tracker, make([]byte, downloadBufferSize))
+		closeErr := response.Body.Close()
+		if copyErr != nil {
+			_ = partial.Sync()
+			cleanup(!options.Resume)
+			return DownloadResult{}, fmt.Errorf("download %s: %w", image.ID, copyErr)
+		}
+		if closeErr != nil {
+			_ = partial.Sync()
+			cleanup(!options.Resume)
+			return DownloadResult{}, fmt.Errorf("close download response: %w", closeErr)
+		}
+		if uint64(written) != remaining {
+			keepPartial = false
+			cleanup(true)
+			return DownloadResult{}, fmt.Errorf("download %s: received %d resumed bytes, expected %d", image.ID, written, remaining)
+		}
 	}
-	if response.ContentLength >= 0 && uint64(response.ContentLength) != image.Size {
-		return DownloadResult{}, fmt.Errorf("download %s: server size %d does not match signed catalog size %d", image.ID, response.ContentLength, image.Size)
-	}
-	temp, err := os.CreateTemp(filepath.Dir(destination), ".rufus-download-*.part")
-	if err != nil {
-		return DownloadResult{}, fmt.Errorf("create temporary download: %w", err)
-	}
-	tempName := temp.Name()
-	// This also removes the second hard-link name used by the no-replace install
-	// path. os.Rename removes the temporary name itself on the replacement path.
-	defer os.Remove(tempName) // best effort
-	cleanup := func() {
-		_ = temp.Close()
-		_ = os.Remove(tempName)
-	}
-	if err := temp.Chmod(0o600); err != nil {
-		cleanup()
-		return DownloadResult{}, fmt.Errorf("secure temporary download: %w", err)
-	}
-	digest := sha256.New()
-	writer := io.MultiWriter(temp, digest)
-	tracker := &progressReader{
-		reader:   io.LimitReader(response.Body, int64(image.Size)+1),
-		total:    image.Size,
-		callback: options.Progress,
-		started:  time.Now(),
-		lastEmit: time.Now(),
-	}
-	written, err := io.CopyBuffer(writer, tracker, make([]byte, downloadBufferSize))
-	if err != nil {
-		cleanup()
-		return DownloadResult{}, fmt.Errorf("download %s: %w", image.ID, err)
-	}
-	if uint64(written) != image.Size {
-		cleanup()
-		return DownloadResult{}, fmt.Errorf("download %s: received %d bytes, expected %d", image.ID, written, image.Size)
+
+	info, err := partial.Stat()
+	if err != nil || !info.Mode().IsRegular() || uint64(info.Size()) != image.Size {
+		keepPartial = false
+		cleanup(true)
+		if err != nil {
+			return DownloadResult{}, fmt.Errorf("inspect completed partial download: %w", err)
+		}
+		return DownloadResult{}, fmt.Errorf("download %s: completed partial size %d does not match signed size %d", image.ID, info.Size(), image.Size)
 	}
 	actual := hex.EncodeToString(digest.Sum(nil))
 	if actual != image.SHA256 {
-		cleanup()
+		keepPartial = false
+		cleanup(true)
 		return DownloadResult{}, fmt.Errorf("download %s: SHA-256 mismatch (expected %s, got %s)", image.ID, image.SHA256, actual)
 	}
-	if err := temp.Sync(); err != nil {
-		cleanup()
+	if err := partial.Sync(); err != nil {
+		cleanup(!options.Resume)
 		return DownloadResult{}, fmt.Errorf("sync temporary download: %w", err)
 	}
-	if err := temp.Chmod(0o644); err != nil {
-		cleanup()
+	if err := partial.Chmod(0o644); err != nil {
+		cleanup(!options.Resume)
 		return DownloadResult{}, fmt.Errorf("set downloaded image permissions: %w", err)
 	}
-	if err := temp.Close(); err != nil {
+	if err := partial.Close(); err != nil {
 		return DownloadResult{}, fmt.Errorf("close temporary download: %w", err)
 	}
-	if err := installDownloadedFile(tempName, destination, options.Replace); err != nil {
+	if err := installDownloadedFile(partialPath, destination, options.Replace); err != nil {
 		return DownloadResult{}, fmt.Errorf("install downloaded image: %w", err)
 	}
-	if err := syncDirectory(filepath.Dir(destination)); err != nil {
+	_ = os.Remove(partialPath)
+	keepPartial = true
+	if err := syncDirectory(directory); err != nil {
 		return DownloadResult{}, err
 	}
 	if options.Progress != nil {
-		options.Progress(Progress{Done: image.Size, Total: image.Size, BytesPerSec: tracker.rate()})
+		options.Progress(Progress{Done: image.Size, Total: image.Size})
 	}
-	return DownloadResult{Path: destination, URL: image.URL, SHA256: actual, Size: image.Size}, nil
+	return DownloadResult{Path: destination, URL: image.URL, SHA256: actual, Size: image.Size, Resumed: offset}, nil
 }
 
 func resolveDestination(value, filename string) (string, error) {

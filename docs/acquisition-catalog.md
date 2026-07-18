@@ -93,7 +93,7 @@ rufusarm64-cli acquire download \
   --output ~/Downloads
 ```
 
-`--json-progress` emits the same byte/rate progress events used by the graphical application. `--json` emits the final result object. CLI and graphical downloads both fail before contacting the image server when the exact destination filesystem cannot prove the signed image size plus the 64 MiB reserve. Cancellation through `SIGINT` or `SIGTERM` removes the temporary partial file.
+`--resume` opts into a deterministic owner-only partial file keyed by the signed image SHA-256. A resumed server must return an exact HTTP 206 range; the complete file is rehashed before atomic installation. Without `--resume`, cancellation continues to remove temporary partials. `--json-progress` emits the same byte/rate progress events used by the graphical application. `--json` emits the final result object, including `resumed_bytes` when applicable. CLI and graphical downloads both fail before contacting the image server when the exact destination filesystem cannot prove the signed image size plus the 64 MiB reserve. Cancellation through `SIGINT` or `SIGTERM` removes the temporary partial file.
 
 ## Deliberate exclusions in this tranche
 
