@@ -2,6 +2,7 @@
 """Unprivileged GTK dialog for descriptor-bound selected-image checksums."""
 
 import json
+import os
 import subprocess
 import threading
 
@@ -142,7 +143,12 @@ class ChecksumDialog(Gtk.Dialog):
             elif not completed.stdout.strip():
                 failure = "The checksum helper returned no result."
             else:
-                payload = normalize_checksum_result(json.loads(completed.stdout))
+                normalized = normalize_checksum_result(json.loads(completed.stdout))
+                expected_path = os.path.realpath(os.path.abspath(self.image_path))
+                if normalized["path"] != expected_path:
+                    failure = "The checksum helper result does not match the selected image."
+                else:
+                    payload = normalized
         except subprocess.TimeoutExpired:
             failure = "Checksum calculation exceeded the fifteen-minute safety limit."
         except (OSError, ValueError, json.JSONDecodeError) as exc:
