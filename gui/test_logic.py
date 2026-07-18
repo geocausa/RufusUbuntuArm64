@@ -6,6 +6,7 @@ from rufusarm64_logic import (
     acquisition_image_label,
     atomic_write_json,
     build_acquisition_channel_download_command,
+    build_checksum_command,
     build_acquisition_channel_list_command,
     build_acquisition_download_command,
     build_acquisition_list_command,
@@ -13,6 +14,7 @@ from rufusarm64_logic import (
     build_persistence_plan_command,
     build_uefi_validate_command,
     build_writer_command,
+    checksum_summary,
     device_label,
     human_bytes,
     human_duration,
@@ -20,6 +22,7 @@ from rufusarm64_logic import (
     inspect_source_identity,
     normalize_acquisition_channel,
     normalize_acquisition_images,
+    normalize_checksum_result,
     persistence_plan_summary,
     progress_status,
     normalize_cluster_size,
@@ -70,6 +73,53 @@ class LogicTests(unittest.TestCase):
         self.assertIn("256 B/s", text)
         self.assertIn("0:02 remaining", text)
         self.assertEqual(progress_status("prepare", 0, 0), "Prepare")
+
+    def test_checksum_command_and_normalization_are_read_only(self):
+        command = build_checksum_command("/helper", "/images/ubuntu.iso")
+        self.assertEqual(command, ["/helper", "hash", "--all", "--json", "/images/ubuntu.iso"])
+        self.assertNotIn("pkexec", command)
+        self.assertNotIn("write", command)
+        payload = normalize_checksum_result({
+            "path": "/images/ubuntu.iso",
+            "size": 4096,
+            "digests": [
+                {"algorithm": "md5", "hex": "a" * 32},
+                {"algorithm": "sha1", "hex": "b" * 40},
+                {"algorithm": "sha256", "hex": "c" * 64},
+                {"algorithm": "sha512", "hex": "d" * 128},
+            ],
+        })
+        self.assertEqual([item["algorithm"] for item in payload["digests"]], ["md5", "sha1", "sha256", "sha512"])
+        summary = checksum_summary(payload)
+        self.assertIn("MD5: " + "a" * 32, summary)
+        self.assertIn("SHA-512: " + "d" * 128, summary)
+        self.assertIn("legacy published checksums", summary)
+
+    def test_checksum_normalization_rejects_incomplete_or_ambiguous_results(self):
+        valid = {
+            "path": "/images/ubuntu.iso",
+            "size": 1,
+            "digests": [
+                {"algorithm": "md5", "hex": "a" * 32},
+                {"algorithm": "sha1", "hex": "b" * 40},
+                {"algorithm": "sha256", "hex": "c" * 64},
+                {"algorithm": "sha512", "hex": "d" * 128},
+            ],
+        }
+        for payload in (
+            None,
+            {**valid, "path": "relative.iso"},
+            {**valid, "size": 0},
+            {**valid, "digests": valid["digests"][:-1]},
+            {**valid, "digests": [valid["digests"][1], valid["digests"][0], *valid["digests"][2:]]},
+            {**valid, "digests": [{**valid["digests"][0], "hex": "A" * 32}, *valid["digests"][1:]]},
+        ):
+            with self.assertRaises(ValueError):
+                normalize_checksum_result(payload)
+        with self.assertRaises(ValueError):
+            build_checksum_command("", "/images/ubuntu.iso")
+        with self.assertRaises(ValueError):
+            build_checksum_command("/helper", "")
 
     def test_acquisition_commands_and_catalog_normalization(self):
         command = build_acquisition_list_command("/helper", "catalog.json", "catalog.sig", "catalog.pub")

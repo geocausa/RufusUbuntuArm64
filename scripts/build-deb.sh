@@ -73,8 +73,11 @@ PYVERSION
 grep -Fxq "VERSION = \"${VERSION}\"" "${GUI_TARGET}"
 grep -Fq "Persistent Linux media (guarded creator)" "${GUI_TARGET}"
 grep -Fq "Open Persistent USB Creator" "${GUI_TARGET}"
+grep -Fq "Checksums…" "${GUI_TARGET}"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_logic.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_logic.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_checksums.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_checksums.py"
 install -Dm755 "${ROOT_DIR}/gui/rufusarm64_persistence.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_persistence.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_persistence_logic.py" \

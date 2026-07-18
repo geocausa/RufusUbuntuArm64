@@ -21,6 +21,8 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import GLib, Gtk
 
+from rufusarm64_checksums import ChecksumDialog
+
 from rufusarm64_logic import (
     acquisition_image_label,
     atomic_write_json,
@@ -938,6 +940,11 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.download_button.set_tooltip_text("Choose an image from a locally supplied, Ed25519-signed catalog")
         self.download_button.connect("clicked", self.open_acquisition)
         image_row.pack_start(self.download_button, False, False, 0)
+        self.checksum_button = Gtk.Button(label="Checksums…")
+        self.checksum_button.set_sensitive(False)
+        self.checksum_button.set_tooltip_text("Calculate MD5, SHA-1, SHA-256, and SHA-512 for the selected image")
+        self.checksum_button.connect("clicked", self.open_checksum_dialog)
+        image_row.pack_start(self.checksum_button, False, False, 0)
         grid.attach(image_row, 1, 0, 2, 1)
 
         self.attach_label(grid, "USB drive", 1)
@@ -1325,6 +1332,10 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.uefi_validation_button,
         ):
             widget.set_sensitive(not busy)
+        selected_image = self.image_chooser.get_filename() or ""
+        self.checksum_button.set_sensitive(
+            not busy and background_idle and bool(selected_image) and os.path.isfile(selected_image)
+        )
         self.refresh_button.set_sensitive(not busy and not self.device_refreshing)
         self.persistence_button.set_sensitive(
             not busy
@@ -1353,6 +1364,19 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.save_settings()
         return False
 
+
+    def open_checksum_dialog(self, *_):
+        if self.busy:
+            return
+        image_path = self.image_chooser.get_filename() or ""
+        if not image_path or not os.path.isfile(image_path):
+            self.progress_detail.set_text("Choose an image before calculating checksums.")
+            return
+        dialog = ChecksumDialog(self, helper_path(), image_path)
+        dialog.run()
+        dialog.closed = True
+        dialog.generation += 1
+        dialog.destroy()
 
     def open_uefi_validator(self, *_):
         if self.busy:

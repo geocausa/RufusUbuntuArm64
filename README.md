@@ -174,7 +174,7 @@ sudo rufusarm64-cli write \
   --image ubuntu.iso --device /dev/sdX --persistence-size 16G
 ```
 
-The single visible graphical application entry supplies the ordinary writer and the persistent-live action while retaining separate guarded helpers internally. The main window also provides a read-only **Validate UEFI Media…** dialog for mounted or extracted media; it reports fallback-loader, PE/EFI, DBX, and SBAT results, and can compare against either a trusted local SbatLevel CSV or the running shim firmware SBAT level without changing the write path.
+The single visible graphical application entry supplies the ordinary writer and the persistent-live action while retaining separate guarded helpers internally. The selected-image **Checksums…** action calculates MD5, SHA-1, SHA-256, and SHA-512 through the unprivileged descriptor-bound helper without changing writer state; MD5 and SHA-1 are legacy comparison values only. The main window also provides a read-only **Validate UEFI Media…** dialog for mounted or extracted media; it reports fallback-loader, PE/EFI, DBX, and SBAT results, and can compare against either a trusted local SbatLevel CSV or the running shim firmware SBAT level without changing the write path.
 
 That pre-boot structural/Secure Boot analysis is separate from the boot-time media-integrity option. Version 0.11.0 also provides descriptor-safe manifest generation and verification through the unprivileged CLI and an opt-in transactional ARM64 wrapper in the guarded persistent-media workflow; the wrapper is unsigned and is not offered by other writer modes.
 
