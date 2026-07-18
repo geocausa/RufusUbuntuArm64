@@ -2,8 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROJECT_VERSION="$(tr -d '
-' < "${ROOT_DIR}/VERSION")"
+PROJECT_VERSION="$(tr -d '\r\n' < "${ROOT_DIR}/VERSION")"
 VERSION="${VERSION:-${PROJECT_VERSION}}"
 RUFUS_ALLOW_NONRELEASE_VERSION="${RUFUS_ALLOW_NONRELEASE_VERSION:-0}"
 if [[ "${VERSION}" != "${PROJECT_VERSION}" && "${RUFUS_ALLOW_NONRELEASE_VERSION}" != "1" ]]; then

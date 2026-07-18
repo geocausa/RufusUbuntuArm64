@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-PROJECT_VERSION="$(tr -d '
-' < VERSION)"
+PROJECT_VERSION="$(tr -d '\r\n' < VERSION)"
 VERSION="${VERSION:-${PROJECT_VERSION}}"
 RUFUS_ALLOW_NONRELEASE_VERSION="${RUFUS_ALLOW_NONRELEASE_VERSION:-0}"
 if [[ "${VERSION}" != "${PROJECT_VERSION}" && "${RUFUS_ALLOW_NONRELEASE_VERSION}" != "1" ]]; then
@@ -18,7 +17,7 @@ PACKAGE="dist/rufusarm64_${VERSION}_arm64.deb"
 
 grep -Fq "RufusArm64 ${PROJECT_VERSION}" docs/rufusarm64-cli.1
 grep -Fq "## ${PROJECT_VERSION} —" CHANGELOG.md
-grep -Fq "release version="${PROJECT_VERSION}"" packaging/io.github.geocausa.RufusArm64.metainfo.xml
+grep -Fq "release version=\"${PROJECT_VERSION}\"" packaging/io.github.geocausa.RufusArm64.metainfo.xml
 grep -Fq "rufusarm64_${PROJECT_VERSION}_arm64.deb" README.md
 python3 scripts/check-version-sync.py
 
