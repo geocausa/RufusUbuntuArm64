@@ -16,21 +16,23 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          ref: fix/0.11-canonical-tag-lookup
-          persist-credentials: false
-      - name: Validate fixed publication contract and missing-tag lookup
+      - name: Verify published 0.11.0 assets and package checksum
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python3 scripts/check-version-sync.py
-          python3 scripts/check-release-runtime-integrity.py
-          tag="v0.11.0"
-          existing="$(
-            gh api "/repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/${tag}" \
-              --jq ".[] | select(.ref == \"refs/tags/${tag}\") | .object.sha"
-          )"
-          test -z "${existing}"
-          echo "Fixed publication contract passed and exact missing-tag lookup returned empty."
+          gh release view v0.11.0 \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json tagName,targetCommitish,isDraft,isPrerelease,publishedAt,url,assets \
+            --jq '{tagName,targetCommitish,isDraft,isPrerelease,publishedAt,url,assets:[.assets[]|{name,size,state,digest,url}]}'
+          release_dir="$(mktemp -d)"
+          trap 'rm -rf "${release_dir}"' EXIT
+          gh release download v0.11.0 \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern 'rufusarm64_0.11.0_arm64.deb' \
+            --pattern 'rufusarm64_0.11.0_arm64.deb.sha256' \
+            --dir "${release_dir}"
+          cd "${release_dir}"
+          cat rufusarm64_0.11.0_arm64.deb.sha256
+          sha256sum --check --strict rufusarm64_0.11.0_arm64.deb.sha256
+          stat --format='Downloaded package size: %s bytes' rufusarm64_0.11.0_arm64.deb
