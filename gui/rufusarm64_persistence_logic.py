@@ -155,7 +155,7 @@ def normalize_plan(payload):
     }
 
 
-def plan_summary(plan, human_bytes):
+def technical_plan_summary(plan, human_bytes):
     lines = [
         f"Compatible media: {plan['name']}",
         f"Persistent storage: {human_bytes(plan['size'])} ext4 labelled \"{plan['label']}\"",
@@ -165,3 +165,20 @@ def plan_summary(plan, human_bytes):
         lines.append("Boot files to update: " + ", ".join(plan["patch_paths"]))
     lines.append("The live operating system remains on the FAT32 boot partition; changes are stored separately and survive reboots.")
     return "\n".join(lines)
+
+
+def user_plan_summary(plan, human_bytes):
+    return "\n".join([
+        f"Supported live system: {plan['name']}",
+        f"Space for saved files and settings: {human_bytes(plan['size'])}",
+        "RufusArm64 will prepare the USB so supported changes can survive a reboot.",
+    ])
+
+
+def completion_checklist():
+    return "\n".join([
+        "1. Restart the computer and boot from the new USB.",
+        "2. In the live system, create a small test file in your Home folder.",
+        "3. Restart and boot from the same USB again.",
+        "4. Confirm that the test file is still present.",
+    ])

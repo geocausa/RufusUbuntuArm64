@@ -52,17 +52,19 @@ Compressed images, virtual disks, MBR persistence, BIOS-only media, files too la
 
 ## Creation workflow
 
-1. Open the **Create Persistent Live USB** action from the RufusArm64 application entry, or run `rufusarm64 --persistence`.
-2. Select the plain Linux ISO and the exact removable USB drive.
-3. Choose the persistence size. Zero uses all suitable capacity remaining after the live-media partition.
-4. Run **Analyze selected image**. This step is mandatory and read-only: it mounts only the identity-bound ISO in a private workspace and supplies only the USB's reported capacity. It does not open the USB device.
-5. Review the detected distribution, ext4 label, boot parameter, fresh GPT layout, required FAT32 capacity, and boot files that will be updated.
-6. Select **Erase and create persistent USB** and verify the exact device in the final warning. All existing data on that USB is destroyed.
-7. Keep the USB connected until RufusArm64 reports completion or confirms cancellation cleanup. Copying, filesystem checks, and final buffer flushing can take several minutes on slower flash drives.
+1. Open **Create Persistent Live USB** from the RufusArm64 application entry, or run `rufusarm64 --persistence`.
+2. Choose the Ubuntu or Debian ISO.
+3. Select the exact removable USB drive.
+4. Choose how much space to keep for saved files and settings. Leave the value at zero to use the recommended available space.
+5. Select **Check ISO and USB**. This read-only check does not open or modify the USB.
+6. When RufusArm64 reports that the image is supported, select **Create persistent USB**.
+7. Confirm the exact USB in the final erase warning, then keep it connected until creation completes.
 
-The privileged creation helper repeats the pre-authentication source and target identity checks, revalidates the removable-drive policy immediately before destructive work, copies and hashes the live-media tree, patches only detector-approved boot files, checks FAT32 and ext4, and flushes the target before success.
+Advanced options are collapsed by default. Most users should leave the USB name unchanged and leave development boot-time validation disabled. The privileged helper still repeats all source and target identity checks, removable-drive checks, filesystem verification, and final buffer flushing before reporting success.
 
-## Qualification after creation
+After creation, boot from the USB, create a small test file in the live system's Home folder, restart from the same USB, and confirm that the file is still present. This simple reboot test is the practical confirmation that persistence works on that computer.
+
+## Optional technical qualification after creation
 
 Automated verification cannot prove that a particular firmware will boot the result. Boot the new USB on the intended computer and locate the creation record on the writable boot partition, commonly at `/cdrom/.rufusarm64/creation.json` on Ubuntu.
 

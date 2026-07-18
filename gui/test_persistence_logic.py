@@ -9,6 +9,9 @@ from rufusarm64_persistence_logic import (
     inspect_source_identity,
     normalize_boot_label,
     normalize_plan,
+    technical_plan_summary,
+    user_plan_summary,
+    completion_checklist,
 )
 
 
@@ -102,6 +105,28 @@ class PersistenceLogicTests(unittest.TestCase):
         base["plan"]["patch_paths"] = ["boot/grub/grub.cfg", "boot/grub/grub.cfg"]
         with self.assertRaisesRegex(ValueError, "duplicate boot-file edits"):
             normalize_plan(base)
+
+    def test_user_summary_hides_boot_internals(self):
+        plan = {
+            "name": "Ubuntu 24.04", "family": "ubuntu-casper", "filesystem": "ext4",
+            "label": "casper-rw", "parameter": "persistent", "size": 16 * 1024**3,
+            "target_size": 64 * 1024**3, "patch_paths": ["boot/grub/grub.cfg"],
+        }
+        summary = user_plan_summary(plan, lambda value: f"{value // 1024**3} GiB")
+        self.assertIn("Ubuntu 24.04", summary)
+        self.assertIn("16 GiB", summary)
+        self.assertNotIn("casper-rw", summary)
+        self.assertNotIn("grub.cfg", summary)
+        technical = technical_plan_summary(plan, lambda value: f"{value // 1024**3} GiB")
+        self.assertIn("casper-rw", technical)
+        self.assertIn("grub.cfg", technical)
+
+    def test_completion_checklist_is_plain_language(self):
+        checklist = completion_checklist()
+        self.assertIn("boot from the new USB", checklist)
+        self.assertIn("test file", checklist)
+        self.assertIn("still present", checklist)
+        self.assertNotIn("rufusarm64-cli", checklist)
 
 
 if __name__ == "__main__":
