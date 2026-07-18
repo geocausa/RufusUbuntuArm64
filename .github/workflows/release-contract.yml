@@ -1,0 +1,35 @@
+name: Tagged release contract
+
+on:
+  pull_request:
+    branches: [develop/0.11.0]
+    paths:
+      - .github/workflows/release.yml
+      - .github/workflows/release-contract.yml
+      - scripts/check-release-runtime-integrity.py
+      - scripts/build-uefi-md5sum-arm64.sh
+      - scripts/build-deb.sh
+  push:
+    branches:
+      - fix/0.11-release-runtime-integrity
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Validate tagged-release artifact graph
+        run: |
+          python3 -m py_compile scripts/check-release-runtime-integrity.py
+          python3 scripts/check-release-runtime-integrity.py
+          bash -n scripts/build-uefi-md5sum-arm64.sh scripts/build-deb.sh
+      - name: Confirm the existing complete test harness is unchanged
+        run: |
+          test "$(git show origin/develop/0.11.0:scripts/test.sh | sha256sum | awk '{print $1}')" = \
+               "$(sha256sum scripts/test.sh | awk '{print $1}')"
