@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-PROJECT_VERSION="$(tr -d '\r\n' < VERSION)"
+PROJECT_VERSION="$(tr -d '
+' < VERSION)"
 VERSION="${VERSION:-${PROJECT_VERSION}}"
-if [[ "${VERSION}" != "${PROJECT_VERSION}" ]]; then
-  echo "Requested version ${VERSION} does not match repository VERSION ${PROJECT_VERSION}" >&2
+RUFUS_ALLOW_NONRELEASE_VERSION="${RUFUS_ALLOW_NONRELEASE_VERSION:-0}"
+if [[ "${VERSION}" != "${PROJECT_VERSION}" && "${RUFUS_ALLOW_NONRELEASE_VERSION}" != "1" ]]; then
+  echo "Non-release version ${VERSION} requires RUFUS_ALLOW_NONRELEASE_VERSION=1" >&2
   exit 1
 fi
-export VERSION
+if ! dpkg --validate-version "${VERSION}" >/dev/null 2>&1; then
+  echo "Invalid Debian package version: ${VERSION}" >&2
+  exit 1
+fi
+export VERSION RUFUS_ALLOW_NONRELEASE_VERSION
 PACKAGE="dist/rufusarm64_${VERSION}_arm64.deb"
 
-grep -Fq "RufusArm64 ${VERSION}" docs/rufusarm64-cli.1
-grep -Fq "## ${VERSION} —" CHANGELOG.md
-grep -Fq "release version=\"${VERSION}\"" packaging/io.github.geocausa.RufusArm64.metainfo.xml
-grep -Fq "rufusarm64_${VERSION}_arm64.deb" README.md
+grep -Fq "RufusArm64 ${PROJECT_VERSION}" docs/rufusarm64-cli.1
+grep -Fq "## ${PROJECT_VERSION} —" CHANGELOG.md
+grep -Fq "release version="${PROJECT_VERSION}"" packaging/io.github.geocausa.RufusArm64.metainfo.xml
+grep -Fq "rufusarm64_${PROJECT_VERSION}_arm64.deb" README.md
 python3 scripts/check-version-sync.py
 
 unformatted="$(gofmt -l cmd internal)"

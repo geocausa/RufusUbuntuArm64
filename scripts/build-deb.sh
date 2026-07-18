@@ -2,15 +2,21 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROJECT_VERSION="$(tr -d '\r\n' < "${ROOT_DIR}/VERSION")"
+PROJECT_VERSION="$(tr -d '
+' < "${ROOT_DIR}/VERSION")"
 VERSION="${VERSION:-${PROJECT_VERSION}}"
-if [[ "${VERSION}" != "${PROJECT_VERSION}" ]]; then
-  echo "Requested version ${VERSION} does not match repository VERSION ${PROJECT_VERSION}" >&2
+RUFUS_ALLOW_NONRELEASE_VERSION="${RUFUS_ALLOW_NONRELEASE_VERSION:-0}"
+if [[ "${VERSION}" != "${PROJECT_VERSION}" && "${RUFUS_ALLOW_NONRELEASE_VERSION}" != "1" ]]; then
+  echo "Non-release version ${VERSION} requires RUFUS_ALLOW_NONRELEASE_VERSION=1" >&2
+  exit 1
+fi
+if ! dpkg --validate-version "${VERSION}" >/dev/null 2>&1; then
+  echo "Invalid Debian package version: ${VERSION}" >&2
   exit 1
 fi
 ARCH="arm64"
 OUTPUT_DIR="${OUTPUT_DIR:-${ROOT_DIR}/dist}"
-SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(python3 - "${ROOT_DIR}/CHANGELOG.md" "${VERSION}" <<'PYDATE'
+SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(python3 - "${ROOT_DIR}/CHANGELOG.md" "${PROJECT_VERSION}" <<'PYDATE'
 import datetime
 import pathlib
 import re
