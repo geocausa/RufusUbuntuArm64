@@ -22,6 +22,22 @@ on:
     branches:
       - fix/0.11-release-runtime-integrity
       - release/0.11.0
+      - main
+    paths:
+      - .github/workflows/release.yml
+      - .github/workflows/release-contract.yml
+      - VERSION
+      - CHANGELOG.md
+      - README.md
+      - ROADMAP.md
+      - docs/release-*.md
+      - docs/rufusarm64*.1
+      - packaging/io.github.geocausa.RufusArm64.metainfo.xml
+      - scripts/check-version-sync.py
+      - scripts/check-release-runtime-integrity.py
+      - scripts/build-uefi-md5sum-arm64.sh
+      - scripts/build-deb.sh
+      - scripts/test.sh
 
 permissions:
   contents: read
@@ -42,7 +58,7 @@ jobs:
           python3 scripts/check-version-sync.py
           python3 scripts/check-release-runtime-integrity.py
           bash -n scripts/build-uefi-md5sum-arm64.sh scripts/build-deb.sh scripts/test.sh
-      - name: Confirm the complete test harness changed only by the version-sync gate
+      - name: Confirm the complete test harness is unchanged except for initial version-sync adoption
         run: |
           git fetch --no-tags --depth=1 origin \
             develop/0.11.0:refs/remotes/origin/develop/0.11.0
@@ -50,19 +66,19 @@ jobs:
           import subprocess
           from pathlib import Path
 
+          invocation = 'python3 scripts/check-version-sync.py\n'
+          insertion = 'grep -Fq "rufusarm64_${VERSION}_arm64.deb" README.md\n'
           base = subprocess.check_output(
               ["git", "show", "origin/develop/0.11.0:scripts/test.sh"],
               text=True,
           )
-          expected = base.replace(
-              'grep -Fq "rufusarm64_${VERSION}_arm64.deb" README.md\n',
-              'grep -Fq "rufusarm64_${VERSION}_arm64.deb" README.md\n'
-              'python3 scripts/check-version-sync.py\n',
-              1,
-          )
-          if expected == base:
-              raise SystemExit("could not locate the canonical insertion point in the base test harness")
+          if invocation in base:
+              expected = base
+          else:
+              expected = base.replace(insertion, insertion + invocation, 1)
+              if expected == base:
+                  raise SystemExit("could not locate the canonical insertion point in the base test harness")
           actual = Path("scripts/test.sh").read_text(encoding="utf-8")
           if actual != expected:
-              raise SystemExit("scripts/test.sh changed beyond the single release version-sync invocation")
+              raise SystemExit("scripts/test.sh changed beyond the established version-sync contract")
           PY

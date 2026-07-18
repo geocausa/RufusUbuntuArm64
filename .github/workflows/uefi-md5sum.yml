@@ -12,6 +12,13 @@ on:
   push:
     branches:
       - feature/0.11-uefi-md5sum-build
+      - main
+    paths:
+      - .github/workflows/uefi-md5sum.yml
+      - scripts/build-uefi-md5sum-arm64.sh
+      - scripts/inspect-uefi-pe.py
+      - docs/uefi-md5sum-build.md
+      - docs/uefi-runtime-integrity.md
 
 permissions:
   contents: read
