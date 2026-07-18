@@ -21,6 +21,18 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: '1.22.x'
+      - name: Normalize compressed staging payloads
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/apply_runtime_integrity_manifest.py')
+          text = path.read_text(encoding='utf-8')
+          old = 'base64.b64decode(encoded)'
+          new = "base64.b64decode(encoded + '=' * (-len(encoded) % 4))"
+          if text.count(old) != 1:
+              raise SystemExit(f'padding correction matched {text.count(old)} times')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Apply runtime integrity foundation
         run: |
           set -o pipefail
