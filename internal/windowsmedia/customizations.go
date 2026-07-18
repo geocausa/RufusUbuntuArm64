@@ -14,7 +14,7 @@ import (
 type CustomizationPreparation struct {
 	Metadata     windowsconfig.MediaMetadata     `json:"metadata"`
 	Capabilities windowsconfig.CapabilityProfile `json:"capabilities"`
-	AnswerFile   []byte                           `json:"-"`
+	AnswerFile   []byte                          `json:"-"`
 }
 
 // PrepareCustomizations reads bounded metadata from a Windows installation
