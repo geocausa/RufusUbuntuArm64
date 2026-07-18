@@ -34,7 +34,7 @@ if [[ "${BUILD_ROOT}" == "/" || -e "${BUILD_ROOT}" ]]; then
   echo "Deterministic build root must be absent and must not be /: ${BUILD_ROOT}" >&2
   exit 1
 fi
-mkdir -m 0700 -p "${BUILD_ROOT}"
+mkdir -m 0700 "${BUILD_ROOT}"
 work_dir="${BUILD_ROOT}"
 trap 'rm -rf -- "${work_dir}"' EXIT
 source_dir="${work_dir}/uefi-md5sum"
