@@ -1,11 +1,12 @@
-name: Tagged release contract
+name: Release contracts
 
 on:
   pull_request:
-    branches: [develop/0.11.0]
+    branches: [main]
     paths:
       - .github/workflows/release.yml
       - .github/workflows/release-contract.yml
+      - .github/workflows/release-published.yml
       - .github/workflows/version-tag.yml
       - VERSION
       - CHANGELOG.md
@@ -16,17 +17,17 @@ on:
       - packaging/io.github.geocausa.RufusArm64.metainfo.xml
       - scripts/check-version-sync.py
       - scripts/check-release-runtime-integrity.py
+      - scripts/check-published-release.py
+      - scripts/test-check-published-release.py
       - scripts/build-uefi-md5sum-arm64.sh
       - scripts/build-deb.sh
       - scripts/test.sh
   push:
-    branches:
-      - fix/0.11-release-runtime-integrity
-      - release/0.11.0
-      - main
+    branches: [main]
     paths:
       - .github/workflows/release.yml
       - .github/workflows/release-contract.yml
+      - .github/workflows/release-published.yml
       - .github/workflows/version-tag.yml
       - VERSION
       - CHANGELOG.md
@@ -37,9 +38,12 @@ on:
       - packaging/io.github.geocausa.RufusArm64.metainfo.xml
       - scripts/check-version-sync.py
       - scripts/check-release-runtime-integrity.py
+      - scripts/check-published-release.py
+      - scripts/test-check-published-release.py
       - scripts/build-uefi-md5sum-arm64.sh
       - scripts/build-deb.sh
       - scripts/test.sh
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -52,35 +56,15 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
-      - name: Validate tagged-release artifact and metadata graph
+      - name: Validate release metadata, publication, and asset contracts
         run: |
+          set -euo pipefail
           python3 -m py_compile \
             scripts/check-version-sync.py \
-            scripts/check-release-runtime-integrity.py
+            scripts/check-release-runtime-integrity.py \
+            scripts/check-published-release.py \
+            scripts/test-check-published-release.py
           python3 scripts/check-version-sync.py
           python3 scripts/check-release-runtime-integrity.py
+          python3 scripts/test-check-published-release.py
           bash -n scripts/build-uefi-md5sum-arm64.sh scripts/build-deb.sh scripts/test.sh
-      - name: Confirm the complete test harness is unchanged except for initial version-sync adoption
-        run: |
-          git fetch --no-tags --depth=1 origin \
-            develop/0.11.0:refs/remotes/origin/develop/0.11.0
-          python3 - <<'PY'
-          import subprocess
-          from pathlib import Path
-
-          invocation = 'python3 scripts/check-version-sync.py\n'
-          insertion = 'grep -Fq "rufusarm64_${VERSION}_arm64.deb" README.md\n'
-          base = subprocess.check_output(
-              ["git", "show", "origin/develop/0.11.0:scripts/test.sh"],
-              text=True,
-          )
-          if invocation in base:
-              expected = base
-          else:
-              expected = base.replace(insertion, insertion + invocation, 1)
-              if expected == base:
-                  raise SystemExit("could not locate the canonical insertion point in the base test harness")
-          actual = Path("scripts/test.sh").read_text(encoding="utf-8")
-          if actual != expected:
-              raise SystemExit("scripts/test.sh changed beyond the established version-sync contract")
-          PY
