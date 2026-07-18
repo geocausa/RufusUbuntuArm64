@@ -27,17 +27,31 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
           fetch-depth: 1
-      - name: Bind checkout to the exact lightweight release tag
+      - name: Bind checkout to the exact release tag commit
         run: |
           set -euo pipefail
           ref_json="$(gh api "/repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")"
           ref_type="$(jq -r '.object.type' <<<"${ref_json}")"
           ref_sha="$(jq -r '.object.sha' <<<"${ref_json}")"
-          test "${ref_type}" = "commit" || {
-            echo "Release tag ${RELEASE_TAG} must be a lightweight commit ref, not ${ref_type}" >&2
-            exit 1
-          }
-          test "$(git rev-parse HEAD)" = "${ref_sha}" || {
+          case "${ref_type}" in
+            commit)
+              commit_sha="${ref_sha}"
+              ;;
+            tag)
+              tag_json="$(gh api "/repos/${GITHUB_REPOSITORY}/git/tags/${ref_sha}")"
+              target_type="$(jq -r '.object.type' <<<"${tag_json}")"
+              test "${target_type}" = "commit" || {
+                echo "Annotated release tag ${RELEASE_TAG} must point directly to a commit" >&2
+                exit 1
+              }
+              commit_sha="$(jq -r '.object.sha' <<<"${tag_json}")"
+              ;;
+            *)
+              echo "Release tag ${RELEASE_TAG} has unsupported target type ${ref_type}" >&2
+              exit 1
+              ;;
+          esac
+          test "$(git rev-parse HEAD)" = "${commit_sha}" || {
             echo "Checked-out commit does not match immutable release tag ${RELEASE_TAG}" >&2
             exit 1
           }
