@@ -1,0 +1,28 @@
+name: Export PR 96 UI source
+
+on:
+  pull_request:
+    branches:
+      - feature/unified-persistence-ui
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr96-ui-source-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            cmd/rufus-linux/main.go
+            gui/rufusarm64.py
+            gui/test_source_structure.py
+            internal/windowsmedia/customizations.go
+            internal/windowsconfig/capabilities.go
