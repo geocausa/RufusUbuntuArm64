@@ -53,7 +53,16 @@ jobs:
           path: /tmp/sbat-level-apply.log
           if-no-files-found: error
       - name: Run focused Secure Boot and CLI race tests
-        run: go test -race -count=1 ./internal/secureboot ./cmd/rufus-linux
+        run: |
+          set -o pipefail
+          go test -race -count=1 ./internal/secureboot ./cmd/rufus-linux 2>&1 | tee /tmp/sbat-level-focused.log
+      - name: Upload focused test diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbat-level-focused-${{ github.run_id }}
+          path: /tmp/sbat-level-focused.log
+          if-no-files-found: error
       - name: Vet changed Go packages
         run: go vet ./internal/secureboot ./cmd/rufus-linux
       - name: Run complete Go suite
