@@ -17,12 +17,14 @@ type CustomizationPreparation struct {
 	AnswerFile   []byte                          `json:"-"`
 }
 
+var inspectCustomizationWIMMetadata = InspectWIMMetadata
+
 // PrepareCustomizations reads bounded metadata from a Windows installation
 // image, validates every selected setup option against that media, and only
 // then generates autounattend.xml. No selected options remains a no-op, but the
 // metadata and capability profile are still returned for inspection clients.
 func PrepareCustomizations(ctx context.Context, imagePath, answerArchitecture string, options windowsconfig.Options) (CustomizationPreparation, error) {
-	metadata, err := InspectWIMMetadata(ctx, imagePath)
+	metadata, err := inspectCustomizationWIMMetadata(ctx, imagePath)
 	if err != nil {
 		return CustomizationPreparation{}, fmt.Errorf("inspect Windows setup capabilities: %w", err)
 	}
@@ -44,4 +46,37 @@ func PrepareCustomizationsForMetadata(metadata windowsconfig.MediaMetadata, answ
 	}
 	result.AnswerFile = answer
 	return result, nil
+}
+
+// customizationPreparer keeps the writer integration testable without invoking
+// an external WIM engine. Production callers pass PrepareCustomizations.
+type customizationPreparer func(context.Context, string, string, windowsconfig.Options) (CustomizationPreparation, error)
+
+// preparePlanAnswerFile preserves the historical zero-option no-op. Metadata is
+// required only when at least one customization is selected; this keeps ordinary
+// Windows media creation compatible with images whose product metadata cannot be
+// classified while failing closed before any customized answer file is produced.
+func preparePlanAnswerFile(ctx context.Context, plan mediaPlan, options windowsconfig.Options, prepare customizationPreparer) ([]byte, error) {
+	if !options.Enabled() {
+		return windowsconfig.Generate(plan.Architecture, options)
+	}
+	imagePath, err := customizationImagePath(plan)
+	if err != nil {
+		return nil, err
+	}
+	result, err := prepare(ctx, imagePath, plan.Architecture, options)
+	if err != nil {
+		return nil, err
+	}
+	return result.AnswerFile, nil
+}
+
+func customizationImagePath(plan mediaPlan) (string, error) {
+	if plan.InstallPath != "" {
+		return plan.InstallPath, nil
+	}
+	if len(plan.ExistingSplitFiles) > 0 {
+		return plan.ExistingSplitFiles[0], nil
+	}
+	return "", fmt.Errorf("windows installation payload path is unavailable for setup capability inspection")
 }
