@@ -1,0 +1,52 @@
+name: Promote GTK UEFI validation
+
+on:
+  pull_request:
+    branches:
+      - develop/0.11.0
+    paths:
+      - '.github/uefi-gtk.trigger'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-uefi-gtk
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: github.head_ref == 'feature/0.11-uefi-gtk'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/0.11-uefi-gtk
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Apply read-only GTK validation dialog
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/apply-uefi-gtk.py
+          python3 -m json.tool docs/upstream-rufus-parity.json >/dev/null
+          python3 -m py_compile gui/*.py
+          git diff --check
+      - name: Run complete GUI logic suite
+        env:
+          PYTHONPATH: ${{ github.workspace }}/gui
+        run: python3 -m unittest discover -s gui -p 'test_*.py'
+      - name: Commit validated production changes
+        run: |
+          set -euo pipefail
+          git add \
+            gui/rufusarm64.py \
+            gui/rufusarm64_logic.py \
+            gui/test_logic.py \
+            README.md \
+            docs/upstream-rufus-parity.json
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m '0.11: add a read-only GTK UEFI validation dialog'
+          git push origin 'HEAD:feature/0.11-uefi-gtk'
