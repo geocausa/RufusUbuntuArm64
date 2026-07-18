@@ -1,0 +1,45 @@
+name: Promote runtime integrity transaction tests
+
+on:
+  pull_request:
+    branches: [develop/0.11.0]
+    paths:
+      - .github/runtime-wrap-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    if: github.event.pull_request.head.ref == 'feature/0.11-runtime-integrity-wrap'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+      - name: Apply transaction regression suite
+        run: python3 tools/apply_runtime_wrap_tests.py
+      - name: Check formatting
+        run: test -z "$(gofmt -l internal/runtimeintegrity internal/secureboot)"
+      - name: Run focused race tests
+        run: go test -race ./internal/runtimeintegrity ./internal/secureboot
+      - name: Vet transaction packages
+        run: go vet ./internal/runtimeintegrity ./internal/secureboot
+      - name: Run complete Go suite
+        run: go test ./...
+      - name: Confirm no writer or privilege dependency
+        run: |
+          ! grep -R -nE 'pkexec|ResolveDevice|/dev/' internal/runtimeintegrity/transaction*.go
+      - name: Commit validated transaction source and tests
+        run: |
+          rm -f tools/apply_runtime_wrap_tests.py .github/runtime-wrap-trigger
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add internal/runtimeintegrity/transaction.go internal/runtimeintegrity/transaction_linux.go internal/runtimeintegrity/transaction_test.go internal/secureboot/inspect.go
+          git add -u tools/apply_runtime_wrap_tests.py .github/runtime-wrap-trigger
+          git commit -m '0.11: add transactional runtime integrity wrapping'
+          git push origin HEAD:feature/0.11-runtime-integrity-wrap
