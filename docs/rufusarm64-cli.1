@@ -28,6 +28,7 @@ rufusarm64-cli \- safely create bootable USB media on Linux
 .RI [ --max-files " N" ]
 .RI [ --require-fallback=true|false ]
 .RI [ --dbx " FILE" | --firmware ]
+.RI [ --sbat-level " FILE" ]
 .RI [ --json ]
 .PP
 .B rufusarm64-cli persistence plan
@@ -96,6 +97,12 @@ Apply a local DBXUpdate.bin or raw EFI signature-list file.
 .TP
 .B --firmware
 Apply the running firmware DBX instead of a local file.
+.TP
+.BI --sbat-level " FILE"
+Apply a caller-trusted local shim-compatible SbatLevel CSV payload. A matching
+image component is revoked only when its generation is lower than the trusted
+minimum. The file is read once from a pinned regular-file descriptor; firmware
+SbatLevel acquisition is not performed by this option.
 .PP
 JSON output is emitted before an invalid-media failure status, allowing callers
 to inspect the complete result while still relying on the process exit code.

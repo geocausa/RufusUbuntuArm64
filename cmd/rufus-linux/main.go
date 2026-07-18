@@ -112,7 +112,7 @@ Usage:
   sudo rufusarm64-cli write --mode linux-persistent --experimental-persistence --image FILE --device /dev/DEVICE [--persistence-size SIZE]
   sudo rufusarm64-cli verify --image FILE --device /dev/DEVICE
   rufusarm64-cli hash FILE
-  rufusarm64-cli uefi validate --directory DIR [--arch ARCH] [--dbx FILE | --firmware] [--json]
+  rufusarm64-cli uefi validate --directory DIR [--arch ARCH] [--dbx FILE | --firmware] [--sbat-level FILE] [--json]
   rufusarm64-cli dbx inspect (--file FILE | --firmware) [--json]
   rufusarm64-cli dbx update [--arch ARCH] [--output FILE] [--json]
   rufusarm64-cli dbx check --dbx FILE --efi FILE [--json]
@@ -1082,6 +1082,7 @@ func runUEFIValidate(args []string) error {
 	requireFallback := fs.Bool("require-fallback", true, "require the architecture removable-media fallback loader")
 	dbxPath := fs.String("dbx", "", "optional DBXUpdate.bin or raw DBX file")
 	firmware := fs.Bool("firmware", false, "use the running firmware DBX variable")
+	sbatLevelPath := fs.String("sbat-level", "", "optional trusted local shim-compatible SbatLevel CSV file")
 	asJSON := fs.Bool("json", false, "output JSON")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -1102,6 +1103,13 @@ func runUEFIValidate(args []string) error {
 	if err != nil {
 		return err
 	}
+	var sbatLevel *secureboot.SBATLevel
+	if strings.TrimSpace(*sbatLevelPath) != "" {
+		sbatLevel, err = secureboot.LoadSBATLevelFile(*sbatLevelPath)
+		if err != nil {
+			return err
+		}
+	}
 	var dbx *secureboot.Database
 	if *dbxPath != "" || *firmware {
 		dbx, err = loadDBX(*dbxPath, *firmware)
@@ -1115,6 +1123,7 @@ func runUEFIValidate(args []string) error {
 		Architecture:    resolvedArchitecture,
 		MaxFiles:        *maxFiles,
 		DBX:             dbx,
+		SBATLevel:       sbatLevel,
 		RequireFallback: *requireFallback,
 	})
 	if err != nil {
@@ -1141,11 +1150,14 @@ func printUEFIValidation(result secureboot.UEFIMediaValidation) {
 		status = "INVALID"
 	}
 	fmt.Printf("%s UEFI media for %s\n", status, result.Architecture)
-	fmt.Printf("Root: %s\nFallback: %s (found: %t)\nDBX checked: %t\n", result.Root, result.FallbackPath, result.FallbackFound, result.DBXChecked)
+	fmt.Printf("Root: %s\nFallback: %s (found: %t)\nDBX checked: %t\nSBAT level checked: %t\n", result.Root, result.FallbackPath, result.FallbackFound, result.DBXChecked, result.SBATLevelChecked)
+	if result.SBATLevelChecked {
+		fmt.Printf("SBAT level: %s (datestamp %s)\n", result.SBATLevelSource, result.SBATLevelDatestamp)
+	}
 	for _, file := range result.Files {
 		fileStatus := "OK"
 		switch {
-		case file.DirectHashRevoked || file.X509CertificateRevoked:
+		case file.DirectHashRevoked || file.X509CertificateRevoked || file.SBATRevoked:
 			fileStatus = "REVOKED"
 		case file.Error != "":
 			fileStatus = "ERROR"
@@ -1153,6 +1165,9 @@ func printUEFIValidation(result secureboot.UEFIMediaValidation) {
 			fileStatus = "WARNING"
 		}
 		fmt.Printf("%-8s %s [%s; %s; SBAT records: %d]\n", fileStatus, file.Path, file.MachineName, file.SubsystemName, len(file.SBAT))
+		for _, revocation := range file.SBATRevocations {
+			fmt.Printf("  SBAT revoked: %s generation %d is below trusted minimum %d\n", revocation.Component, revocation.ImageGeneration, revocation.MinimumGeneration)
+		}
 		for _, warning := range file.Warnings {
 			fmt.Printf("  warning: %s\n", warning)
 		}

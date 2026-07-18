@@ -95,7 +95,10 @@ struct.pack_into('<H', data, optional + 68, 10)
 data[optional + 0xf0:optional + 0xf0 + 5] = b'.text'
 open(path, 'wb').write(data)
 PYUEFI
-"${native_helper}" uefi validate --directory "${native_dir}/uefi-media" --arch arm64 --json | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["valid"] and d["fallback_found"] and d["architecture"] == "arm64"'
+printf 'sbat,1,2025051000
+shim,4
+' > "${native_dir}/SbatLevel.csv"
+"${native_helper}" uefi validate --directory "${native_dir}/uefi-media" --arch arm64 --sbat-level "${native_dir}/SbatLevel.csv" --json | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["valid"] and d["fallback_found"] and d["architecture"] == "arm64" and d["sbat_level_checked"] and d["sbat_level_datestamp"] == "2025051000"'
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/helper-arm64" ./cmd/rufus-linux
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/helper-amd64" ./cmd/rufus-linux
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/persistence-helper-arm64" ./cmd/rufus-persistence-helper
