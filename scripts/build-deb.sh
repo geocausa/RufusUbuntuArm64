@@ -71,8 +71,12 @@ if count != 1:
 path.write_text(text, encoding="utf-8")
 PYVERSION
 grep -Fxq "VERSION = \"${VERSION}\"" "${GUI_TARGET}"
-grep -Fq "Persistent Linux media (guarded creator)" "${GUI_TARGET}"
-grep -Fq "Open Persistent USB Creator" "${GUI_TARGET}"
+grep -Fq 'Gtk.Expander(label="Persistent storage")' "${GUI_TARGET}"
+grep -Fq "Keep files and settings across reboots" "${GUI_TARGET}"
+if grep -Fq "Open Persistent USB Creator" "${GUI_TARGET}"; then
+  echo "Packaged GUI must not expose the removed secondary persistence window" >&2
+  exit 1
+fi
 grep -Fq "Checksums…" "${GUI_TARGET}"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_logic.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_logic.py"
