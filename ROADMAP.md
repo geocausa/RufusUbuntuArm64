@@ -66,6 +66,15 @@
 - Production offline-root provisioning, published signed catalog, download resumption, and mirror operations
 - Broader Syslinux/GRUB compatibility workarounds
 
+## 0.11 — UEFI analysis and runtime media integrity (completed)
+
+- Descriptor-rooted fallback-loader, PE/COFF, DBX, SBAT, and firmware-policy analysis with CLI and GTK reporting
+- Rufus-compatible `md5sum.txt` generation, parsing, and full-tree verification
+- Reproducibly built, source-retained ARM64 `uefi-md5sum` loader with transactional installation and rollback
+- Guarded persistent-writer and GUI integration with explicit unsigned disclosure and unsupported-mode refusal
+- Pinned AArch64 QEMU success, corruption, and original-loader chainload qualification
+- Physical Surface Pro 11 and broader hardware qualification remains tracked under 0.5
+
 ## 1.0 — supportable stable release
 
 - Signed release artifacts

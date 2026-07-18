@@ -1,0 +1,85 @@
+name: ARM64 runtime UEFI qualification
+
+on:
+  pull_request:
+    branches: [develop/0.11.0]
+    paths:
+      - .github/workflows/uefi-runtime-qemu.yml
+      - scripts/qualify-runtime-integrity-qemu.sh
+      - scripts/build-uefi-md5sum-arm64.sh
+      - tests/uefi-chainload/**
+      - internal/runtimeintegrity/**
+      - cmd/rufus-linux/**
+      - docs/uefi-runtime-integrity.md
+  push:
+    branches:
+      - feature/0.11-runtime-integrity-qemu
+      - main
+    paths:
+      - .github/workflows/uefi-runtime-qemu.yml
+      - scripts/qualify-runtime-integrity-qemu.sh
+      - scripts/build-uefi-md5sum-arm64.sh
+      - tests/uefi-chainload/**
+      - internal/runtimeintegrity/**
+      - cmd/rufus-linux/**
+      - docs/uefi-runtime-integrity.md
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    name: QEMU AArch64 validation and chainload
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Install pinned build and QEMU dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            acpica-tools build-essential device-tree-compiler git gzip libssl-dev nasm \
+            python3 python3-setuptools uuid-dev \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            qemu-system-arm gdisk dosfstools mtools shellcheck
+      - name: Validate scripts and test package
+        run: |
+          set -o pipefail
+          shellcheck scripts/qualify-runtime-integrity-qemu.sh scripts/build-uefi-md5sum-arm64.sh 2>&1 | tee qemu-static-validation.log
+          grep -Fq 'MODULE_TYPE                    = UEFI_APPLICATION' tests/uefi-chainload/RufusChainloadTest.inf
+          grep -Fq 'ORIGINAL ARM64 FALLBACK CHAINLOADED' tests/uefi-chainload/chainload_test.c
+      - name: Upload static diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: arm64-runtime-uefi-qemu-static
+          path: qemu-static-validation.log
+          if-no-files-found: warn
+      - name: Build pinned firmware and qualify success/corruption chainload
+        run: |
+          set -o pipefail
+          bash scripts/qualify-runtime-integrity-qemu.sh artifacts/uefi-runtime-qemu 2>&1 | tee qemu-qualification.log
+      - name: Upload complete QEMU diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: arm64-runtime-uefi-qemu-diagnostics
+          path: |
+            qemu-qualification.log
+            artifacts/uefi-runtime-qemu/
+          if-no-files-found: warn
+      - name: Require complete qualification evidence
+        run: |
+          grep -Fq 'Secure Boot: disabled' artifacts/uefi-runtime-qemu/QUALIFICATION.txt
+          grep -Fq 'ORIGINAL ARM64 FALLBACK CHAINLOADED' artifacts/uefi-runtime-qemu/success-serial.log
+          grep -F 'payload.bin' artifacts/uefi-runtime-qemu/corrupt-serial.log | grep -Fq 'Checksum Error'
+          test -s artifacts/uefi-runtime-qemu/runtime-success.img.gz
+          test -s artifacts/uefi-runtime-qemu/runtime-corrupt.img.gz
+          sha256sum -c artifacts/uefi-runtime-qemu/SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: arm64-runtime-uefi-qemu-qualification
+          path: artifacts/uefi-runtime-qemu/
+          if-no-files-found: error

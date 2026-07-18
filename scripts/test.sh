@@ -14,6 +14,7 @@ grep -Fq "RufusArm64 ${VERSION}" docs/rufusarm64-cli.1
 grep -Fq "## ${VERSION} —" CHANGELOG.md
 grep -Fq "release version=\"${VERSION}\"" packaging/io.github.geocausa.RufusArm64.metainfo.xml
 grep -Fq "rufusarm64_${VERSION}_arm64.deb" README.md
+python3 scripts/check-version-sync.py
 
 unformatted="$(gofmt -l cmd internal)"
 if [[ -n "${unformatted}" ]]; then
@@ -77,6 +78,28 @@ PYSECURE
 gzip -n -c "${native_dir}/windows.iso" > "${native_dir}/windows.iso.gz"
 "${native_helper}" inspect --image "${native_dir}/windows.iso.gz" --json | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["mode"] == "windows" and d["windows_options"] and d["container_format"] == "gzip"'
 "${native_helper}" dbx inspect --file "${native_dir}/test.dbx" --json | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["sha256_hashes"] == 1 and d["signatures"] == 1'
+python3 - "${native_dir}/uefi-media/EFI/BOOT/BOOTAA64.EFI" <<'PYUEFI'
+import os, struct, sys
+path = sys.argv[1]
+os.makedirs(os.path.dirname(path), exist_ok=True)
+data = bytearray(0x400)
+data[0:2] = b'MZ'
+struct.pack_into('<I', data, 0x3c, 0x80)
+data[0x80:0x84] = b'PE\0\0'
+coff = 0x84
+struct.pack_into('<H', data, coff, 0xaa64)
+struct.pack_into('<H', data, coff + 2, 1)
+struct.pack_into('<H', data, coff + 16, 0xf0)
+optional = coff + 20
+struct.pack_into('<H', data, optional, 0x20b)
+struct.pack_into('<H', data, optional + 68, 10)
+data[optional + 0xf0:optional + 0xf0 + 5] = b'.text'
+open(path, 'wb').write(data)
+PYUEFI
+printf 'sbat,1,2025051000
+shim,4
+' > "${native_dir}/SbatLevel.csv"
+"${native_helper}" uefi validate --directory "${native_dir}/uefi-media" --arch arm64 --sbat-level "${native_dir}/SbatLevel.csv" --json | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["valid"] and d["fallback_found"] and d["architecture"] == "arm64" and d["sbat_level_checked"] and d["sbat_level_datestamp"] == "2025051000"'
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/helper-arm64" ./cmd/rufus-linux
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/helper-amd64" ./cmd/rufus-linux
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/persistence-helper-arm64" ./cmd/rufus-persistence-helper
@@ -220,6 +243,21 @@ done < <(readelf -d "${wim_engine}" | sed -n 's/.*Shared library: \[\(.*\)\].*/\
 expected_wim_hash="$(awk '{print $1}' vendor/wimlib/arm64/wimlib-imagex.sha256)"
 actual_wim_hash="$(sha256sum "${wim_engine}" | awk '{print $1}')"
 [[ "${actual_wim_hash}" == "${expected_wim_hash}" ]]
+runtime_loader="${extract_dir}/usr/lib/rufusarm64/bootaa64-uefi-md5sum.efi"
+[[ -f "${runtime_loader}" ]]
+[[ "$(stat -c %s "${runtime_loader}")" -eq 40960 ]]
+[[ "$(sha256sum "${runtime_loader}" | awk '{print $1}')" == "543615a8e97fed1cb5293bee7bdfe10f9feb6979f191b20ab32dafdcf097b502" ]]
+for file in bootaa64.efi.sha256 provenance.json SOURCE-COMMITS.txt REPRODUCIBILITY.txt \
+  uefi-md5sum-v1.2-source.tar.gz uefi-md5sum-v1.2-source.tar.gz.sha256; do
+  [[ -f "${extract_dir}/usr/share/doc/rufusarm64/uefi-md5sum/${file}" ]]
+done
+python3 - "${extract_dir}/usr/share/doc/rufusarm64/uefi-md5sum/provenance.json" <<'PYUEFIPKG'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    data = json.load(handle)
+assert data["artifact"]["authenticode"]["present"] is False
+assert data["artifact"]["secure_boot"]["compatibility_established"] is False
+PYUEFIPKG
 uefi_image="${extract_dir}/usr/lib/rufusarm64/uefi-ntfs.img"
 [[ -f "${uefi_image}" ]]
 [[ "$(stat -c %s "${uefi_image}")" -eq 1048576 ]]

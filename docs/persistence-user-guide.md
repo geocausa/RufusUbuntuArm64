@@ -87,3 +87,8 @@ A passing verification confirms that the expected persistence parameter and over
 ## Practical cautions
 
 Keep important files backed up elsewhere. Flash media can fail, and a persistent live overlay is not a replacement for a normally installed and maintained operating system. Avoid treating an unqualified USB as your only recovery environment. Secure Boot and firmware behavior remain properties of the selected image and the tested machine, not guarantees made solely by successful media creation.
+
+
+## Development option: boot-time UEFI media validation
+
+The privileged persistent-media helper accepts `--runtime-uefi-validation` for the ARM64 writable-copy path. It installs the package-owned, reproducibly built upstream `uefi-md5sum` loader transactionally, preserves the original fallback loader as `EFI/BOOT/bootaa64_original.efi`, and writes a verified root `md5sum.txt`. The current loader is unsigned; enabling this option does not establish Secure Boot compatibility. Raw-image, Windows, NTFS, compressed-stream, and virtual-disk writers do not accept this option.

@@ -36,26 +36,33 @@ type PersistentEvent struct {
 type PersistentEventFunc func(PersistentEvent)
 
 type PersistentCreateOptions struct {
-	TargetSize         uint64
-	ExpectedDeviceID   uint64
-	ExpectedSource     sourcefile.Identity
-	Architecture       string
-	PersistenceSize    uint64
-	VolumeLabel        string
-	WorkDirectory      string
-	BeforeDestructive  func(source *os.File) error
-	ManifestMaxEntries int
-	ManifestMaxBytes   uint64
-	CreatorVersion     string
+	TargetSize                      uint64
+	ExpectedDeviceID                uint64
+	ExpectedSource                  sourcefile.Identity
+	Architecture                    string
+	PersistenceSize                 uint64
+	VolumeLabel                     string
+	WorkDirectory                   string
+	BeforeDestructive               func(source *os.File) error
+	ManifestMaxEntries              int
+	ManifestMaxBytes                uint64
+	CreatorVersion                  string
+	RuntimeUEFIValidation           bool
+	RuntimeUEFILoaderPath           string
+	RuntimeUEFILoaderSHA256         string
+	RuntimeUEFILoaderSourceCommit   string
+	RuntimeUEFILoaderProvenance     string
+	RuntimeUEFIUnsignedAcknowledged bool
 }
 
 type PersistentCreateResult struct {
-	Layout                    PersistentLayout      `json:"layout"`
-	Detection                 persistence.Detection `json:"detection"`
-	Manifest                  Manifest              `json:"manifest"`
-	PatchedPaths              []string              `json:"patched_paths"`
-	QualificationRecordPath   string                `json:"qualification_record_path"`
-	QualificationRecordSHA256 string                `json:"qualification_record_sha256"`
+	Layout                    PersistentLayout        `json:"layout"`
+	Detection                 persistence.Detection   `json:"detection"`
+	Manifest                  Manifest                `json:"manifest"`
+	PatchedPaths              []string                `json:"patched_paths"`
+	QualificationRecordPath   string                  `json:"qualification_record_path"`
+	QualificationRecordSHA256 string                  `json:"qualification_record_sha256"`
+	RuntimeIntegrity          *RuntimeIntegrityResult `json:"runtime_integrity,omitempty"`
 }
 
 // CreatePersistent creates a fresh GPT/FAT32/ext4 persistent Linux USB. It is
@@ -75,6 +82,10 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 	sourceDigest, err := hashPersistentSource(ctx, isoFile, opts.ExpectedSource, emit, "hash_source", "Hashing the selected Linux image…")
 	if err != nil {
 		return result, fmt.Errorf("hash selected Linux image: %w", err)
+	}
+	preparedRuntimeIntegrity, err := preparePersistentRuntimeIntegrity(ctx, opts)
+	if err != nil {
+		return result, fmt.Errorf("prepare runtime UEFI media validation: %w", err)
 	}
 	for _, name := range []string{"mount", "umount", "findmnt", "lsblk", "wipefs", "sync", "blockdev", "mkfs.vfat", "fsck.vfat", "mkfs.ext4", "e2fsck"} {
 		if _, err := exec.LookPath(name); err != nil {
@@ -333,6 +344,20 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 	if creator == "" {
 		creator = "RufusArm64"
 	}
+	properties := map[string]string{
+		"qualification_contract": "start-reboot-verify",
+	}
+	if preparedRuntimeIntegrity != nil {
+		originalSHA256, err := hashPersistentRuntimeFallback(ctx, destinationRoot)
+		if err != nil {
+			return result, err
+		}
+		properties["runtime_uefi_validation"] = "enabled"
+		properties["runtime_uefi_original_sha256"] = originalSHA256
+		properties["runtime_uefi_wrapper_sha256"] = preparedRuntimeIntegrity.asset.ExpectedSHA256
+		properties["runtime_uefi_source_commit"] = preparedRuntimeIntegrity.asset.SourceCommit
+		properties["runtime_uefi_secure_boot_compatible"] = "false"
+	}
 	record, err := qualification.WriteRecord(destinationRoot, qualification.CreationRecord{
 		Creator:       creator,
 		CreatedAt:     time.Now().UTC(),
@@ -355,9 +380,7 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 		ManifestEntries: len(manifest.Entries),
 		ManifestBytes:   manifest.TotalBytes,
 		PatchedPaths:    append([]string(nil), patched...),
-		Properties: map[string]string{
-			"qualification_contract": "start-reboot-verify",
-		},
+		Properties:      properties,
 	})
 	if err != nil {
 		return result, fmt.Errorf("write persistence qualification record: %w", err)
@@ -365,6 +388,22 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 	result.QualificationRecordPath = record.Path
 	result.QualificationRecordSHA256 = record.SHA256
 	sendPersistent(emit, PersistentEvent{Stage: "qualification", Message: "Stored the persistence qualification record", Path: record.Path})
+	if preparedRuntimeIntegrity != nil {
+		sendPersistent(emit, PersistentEvent{Stage: "runtime_integrity", Message: "Installing the unsigned ARM64 runtime media validator transactionally…"})
+		installed, err := installPersistentRuntimeIntegrity(ctx, destinationRoot, preparedRuntimeIntegrity, opts.ManifestMaxEntries)
+		if err != nil {
+			return result, fmt.Errorf("install runtime UEFI media validation: %w", err)
+		}
+		result.RuntimeIntegrity = &RuntimeIntegrityResult{
+			OriginalSHA256:       installed.Record.OriginalSHA256,
+			WrapperSHA256:        installed.Record.WrapperSHA256,
+			ManifestSHA256:       installed.ManifestSHA256,
+			SourceCommit:         installed.Record.WrapperSourceCommit,
+			SecureBootCompatible: installed.Record.WrapperSecureBootCompatible,
+			VerificationValid:    installed.Verification.Valid,
+		}
+		sendPersistent(emit, PersistentEvent{Stage: "runtime_integrity_verify", Message: "Verified the boot-time media manifest and ARM64 chainload wrapper", Path: "md5sum.txt"})
+	}
 	if err := runPersistent(ctx, emit, "sync", "-f", destinationRoot); err != nil {
 		return result, fmt.Errorf("sync writable boot files: %w", err)
 	}

@@ -1,0 +1,126 @@
+name: Pinned ARM64 uefi-md5sum
+
+on:
+  pull_request:
+    branches: [develop/0.11.0]
+    paths:
+      - .github/workflows/uefi-md5sum.yml
+      - scripts/build-uefi-md5sum-arm64.sh
+      - scripts/inspect-uefi-pe.py
+      - docs/uefi-md5sum-build.md
+      - docs/uefi-runtime-integrity.md
+  push:
+    branches:
+      - feature/0.11-uefi-md5sum-build
+      - main
+    paths:
+      - .github/workflows/uefi-md5sum.yml
+      - scripts/build-uefi-md5sum-arm64.sh
+      - scripts/inspect-uefi-pe.py
+      - docs/uefi-md5sum-build.md
+      - docs/uefi-runtime-integrity.md
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Independent build ${{ matrix.instance }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        instance: [a, b]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Install pinned-build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git gzip nasm python3 python3-setuptools uuid-dev \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu shellcheck sbsigntool
+      - name: Check build tooling
+        run: |
+          shellcheck scripts/build-uefi-md5sum-arm64.sh
+          python3 -m py_compile scripts/inspect-uefi-pe.py
+      - name: Build exact ARM64 loader and provenance
+        run: bash scripts/build-uefi-md5sum-arm64.sh "dist/uefi-md5sum-${{ matrix.instance }}"
+      - name: Validate artifact contract
+        run: |
+          output="dist/uefi-md5sum-${{ matrix.instance }}"
+          (
+            cd "${output}"
+            sha256sum -c bootaa64.efi.sha256
+            sha256sum -c uefi-md5sum-v1.2-source.tar.gz.sha256
+          )
+          python3 -m json.tool "${output}/provenance.json" >/dev/null
+          python3 - "${output}/provenance.json" <<'PY'
+          import json
+          import sys
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              data = json.load(handle)
+          artifact = data["artifact"]
+          assert artifact["pe"]["machine"] == 0xAA64
+          assert artifact["pe"]["subsystem"] == 10
+          assert artifact["authenticode"]["present"] is False
+          assert artifact["secure_boot"]["compatibility_established"] is False
+          assert data["sources"]["uefi_md5sum"]["commit"] == "6195f2ef754c2ad390bda6590628708f410d55f6"
+          assert data["sources"]["edk2"]["commit"] == "3d244c3b364bd4e21261380662186d064659161c"
+          assert data["chainload_contract"]["original_loader"] == "EFI/BOOT/bootaa64_original.efi"
+          PY
+          sbverify --list "${output}/bootaa64.efi" >"${output}/sbverify.txt" 2>&1 || true
+          grep -Ei 'no signature|no.*certificate|not signed' "${output}/sbverify.txt" >/dev/null || {
+            echo "Unrecognized sbverify result" >&2
+            cat "${output}/sbverify.txt" >&2
+            exit 1
+          }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: uefi-md5sum-arm64-${{ matrix.instance }}
+          path: dist/uefi-md5sum-${{ matrix.instance }}/
+          if-no-files-found: error
+
+  reproduce:
+    name: Reproduce and publish provenance
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: uefi-md5sum-arm64-a
+          path: artifacts/a
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: uefi-md5sum-arm64-b
+          path: artifacts/b
+      - name: Require byte-for-byte reproducibility
+        run: |
+          for file in \
+            bootaa64.efi \
+            bootaa64.efi.sha256 \
+            provenance.json \
+            SOURCE-COMMITS.txt \
+            uefi-md5sum-v1.2-source.tar.gz \
+            uefi-md5sum-v1.2-source.tar.gz.sha256; do
+            cmp "artifacts/a/${file}" "artifacts/b/${file}"
+          done
+          (
+            cd artifacts/a
+            sha256sum -c bootaa64.efi.sha256
+            sha256sum -c uefi-md5sum-v1.2-source.tar.gz.sha256
+          )
+      - name: Record reproducibility result
+        run: |
+          printf '%s\n' \
+            'Two independent Ubuntu 24.04 builds produced byte-for-byte identical artifacts.' \
+            'The loader is unsigned and is not claimed Secure Boot compatible.' \
+            > artifacts/a/REPRODUCIBILITY.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: uefi-md5sum-arm64-pinned
+          path: artifacts/a/
+          if-no-files-found: error

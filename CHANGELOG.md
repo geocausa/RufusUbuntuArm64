@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.11.0 — 2026-07-18
+
+- Added a descriptor-rooted, bounded UEFI media analyzer for fallback-loader architecture, PE/COFF structure, DBX revocations, SBAT metadata, trusted local or firmware SBAT levels, and structured CLI/GTK reporting.
+- Added Rufus-compatible `md5sum.txt` generation and verification plus an opt-in boot-time ARM64 media-integrity option for the guarded Ubuntu/Debian persistent writable-copy path.
+- Reproducibly built the package-private `uefi-md5sum` v1.2 ARM64 loader from exact upstream and EDK2 commits, retained corresponding source and provenance, and kept the loader explicitly unsigned.
+- Added transactional fallback-loader wrapping and rollback, exact post-install manifest verification, qualification-record hashes, guarded GUI disclosure, and refusal in raw-image, Windows, NTFS, compressed-stream, and virtual-disk writers.
+- Qualified unchanged and intentionally corrupted GPT/FAT32 media under pinned AArch64 QEMU firmware, including original-loader chainload and complete serial, image, firmware, provenance, and checksum evidence.
+- Kept Secure Boot compatibility and universal hardware compatibility explicitly unclaimed; physical Surface Pro 11 boot and persistence start/reboot/verify evidence remains a separate per-hardware qualification gate.
+- Hardened tagged releases so the ARM64 package, deterministic project source, pinned WIM source, and deterministic `uefi-md5sum` corresponding source are produced from one synchronized version contract.
+
 ## 0.10.6 — 2026-07-17
 
 - Marked both fresh persistent-live GPT partitions with attribute bit 63 before the kernel publishes them, preventing desktop automount services from racing FAT32 and ext4 creation.

@@ -1,4 +1,4 @@
-.TH RUFUSARM64-CLI 1 "17 July 2026" "RufusArm64 0.10.6" "User Commands"
+.TH RUFUSARM64-CLI 1 "18 July 2026" "RufusArm64 0.11.0" "User Commands"
 .SH NAME
 rufusarm64-cli \- safely create bootable USB media on Linux
 .SH SYNOPSIS
@@ -21,6 +21,25 @@ rufusarm64-cli \- safely create bootable USB media on Linux
 .BI --image " FILE"
 .BI --device " /dev/DEVICE"
 .RI [ --persistence-size " SIZE" ]
+.PP
+.B rufusarm64-cli uefi validate
+.BI --directory " DIRECTORY"
+.RI [ --arch " ARCH" ]
+.RI [ --max-files " N" ]
+.RI [ --require-fallback=true|false ]
+.RI [ --dbx " FILE" | --firmware ]
+.RI [ --sbat-level " FILE" | --firmware-sbat ]
+.RI [ --json ]
+.PP
+.B rufusarm64-cli uefi integrity manifest
+.BI --directory " DIRECTORY"
+.RI [ --max-files " N" ]
+.RI [ --json ]
+.PP
+.B rufusarm64-cli uefi integrity verify
+.BI --directory " DIRECTORY"
+.RI [ --max-files " N" ]
+.RI [ --json ]
 .PP
 .B rufusarm64-cli persistence plan
 .BI --image " FILE"
@@ -61,6 +80,67 @@ opens the ordinary writer normally and exposes a Create Persistent Live USB
 desktop action. The persistence path performs identity-bound read-only analysis,
 exact target confirmation, fresh Polkit authorization, destructive creation
 through a separate narrow helper, and post-creation qualification.
+.SH UEFI MEDIA VALIDATION
+.B uefi validate
+performs a bounded, descriptor-rooted, read-only scan of a mounted or extracted
+UEFI media tree. It validates the architecture fallback loader, PE machine and
+EFI subsystem fields, bounded SBAT metadata, and optional DBX image-hash and
+embedded-certificate revocations. It does not modify firmware or media.
+.TP
+.BI --directory " DIRECTORY"
+Select the mounted or extracted media root. Every directory and EFI executable
+is opened relative to a retained descriptor with no-follow semantics.
+.TP
+.BI --arch " ARCH"
+Select native, 386, amd64, arm, arm64, riscv64, or loongarch64. Native is the
+default.
+.TP
+.BI --max-files " N"
+Set the bounded EFI executable count. The default is 512 and the library safety
+maximum remains 4096.
+.TP
+.B --require-fallback=true|false
+Require the architecture removable-media fallback loader. The default is true.
+.TP
+.BI --dbx " FILE"
+Apply a local DBXUpdate.bin or raw EFI signature-list file.
+.TP
+.B --firmware
+Apply the running firmware DBX instead of a local file.
+.TP
+.BI --sbat-level " FILE"
+Apply a caller-trusted local shim-compatible SbatLevel CSV payload. A matching
+image component is revoked only when its generation is lower than the trusted
+minimum. The file is read once from a pinned regular-file descriptor.
+.TP
+.B --firmware-sbat
+Use the SBAT level exposed by the running shim through efivarfs. The runtime
+SbatLevelRT mirror is preferred and must have exact boot-service/runtime
+attributes. A readable persistent SbatLevel fallback must have shim-compatible
+boot-service/non-volatile attributes; readable copies must have identical
+payloads. Firmware is never modified.
+.PP
+JSON output is emitted before an invalid-media failure status, allowing callers
+to inspect the complete result while still relying on the process exit code.
+.SH UEFI RUNTIME MEDIA INTEGRITY MANIFESTS
+.B uefi integrity manifest
+performs a descriptor-rooted read-only scan and writes exact uefi-md5sum-compatible
+manifest text to standard output. It never writes the media tree. With
+.B --json
+it emits the same manifest text, total byte count, and ordered records in a
+structured document.
+.PP
+.B uefi integrity verify
+reads the exact root
+.B md5sum.txt
+and reports changed, missing, unexpected, and total-byte mismatches. JSON is
+emitted before a non-zero invalid-media status. The default and maximum file
+limit is 100000; manifest size is bounded to 64 MiB and paths to 512 bytes.
+.PP
+These commands are unprivileged. They do not mount images, open block devices,
+invoke Polkit, access firmware, or install a bootloader. MD5 is used solely for
+interoperability with the upstream boot-time validator; RufusArm64 continues to
+use SHA-256 for source identity, downloads, and destructive-write assurance.
 .SH COMMON WRITE OPTIONS
 .TP
 .B --verify
