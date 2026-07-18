@@ -141,14 +141,29 @@ class PublishedReleaseContractTests(unittest.TestCase):
         self.write_metadata()
         self.assert_failure("published asset inventory mismatch")
 
+    def test_extra_downloaded_asset_fails(self) -> None:
+        (self.assets / "unexpected.bin").write_bytes(b"unexpected\n")
+        self.assert_failure("downloaded asset inventory mismatch")
+
+    def test_missing_downloaded_asset_fails(self) -> None:
+        (self.assets / self.source).unlink()
+        self.assert_failure("downloaded asset inventory mismatch")
+
     def test_malformed_metadata_digest_fails(self) -> None:
         self.metadata["assets"][0]["digest"] = "sha256:not-a-digest"  # type: ignore[index]
         self.write_metadata()
         self.assert_failure("malformed SHA-256 digest")
 
-    def test_downloaded_asset_substitution_fails(self) -> None:
+    def test_downloaded_asset_size_substitution_fails(self) -> None:
         (self.assets / self.package).write_bytes(b"substituted package\n")
         self.assert_failure(f"release asset size mismatch for {self.package}")
+
+    def test_downloaded_asset_equal_size_substitution_fails(self) -> None:
+        original = (self.assets / self.package).read_bytes()
+        replacement = bytes(byte ^ 1 for byte in original)
+        self.assertEqual(len(replacement), len(original))
+        (self.assets / self.package).write_bytes(replacement)
+        self.assert_failure(f"release asset digest mismatch for {self.package}")
 
     def test_malformed_checksum_record_fails(self) -> None:
         (self.assets / self.loader_sidecar).write_text(
@@ -169,9 +184,9 @@ class PublishedReleaseContractTests(unittest.TestCase):
     @unittest.skipUnless(hasattr(os, "symlink"), "symlinks unavailable")
     def test_symlink_asset_fails(self) -> None:
         package_path = self.assets / self.package
-        target = self.assets / "package-target"
+        target = self.root / "package-target"
         package_path.rename(target)
-        package_path.symlink_to(target.name)
+        package_path.symlink_to(target)
         self.assert_failure(f"published asset is not a regular file: {self.package}")
 
 
