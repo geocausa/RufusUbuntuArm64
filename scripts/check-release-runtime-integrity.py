@@ -7,6 +7,7 @@ RELEASE_WORKFLOW = Path(".github/workflows/release.yml")
 release_text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
 required_release_once = {
+    "release workflow name": "name: Release\n",
     "workflow-dispatch recovery path": "  workflow_dispatch:\n",
     "dispatch version input": "      expected_version:\n",
     "loader job": "  uefi-md5sum-loader:\n",
