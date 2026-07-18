@@ -8,9 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -112,6 +109,10 @@ type parsedUEFIImage struct {
 // fallback loader, PE/COFF machine and EFI subsystem fields, bounded .sbat CSV
 // metadata, and optional DBX revocation state.
 func ValidateUEFIMedia(ctx context.Context, root string, opts UEFIValidationOptions) (UEFIMediaValidation, error) {
+	return validateUEFIMedia(ctx, root, opts, nil)
+}
+
+func validateUEFIMedia(ctx context.Context, root string, opts UEFIValidationOptions, hook uefiTraversalHook) (UEFIMediaValidation, error) {
 	if ctx == nil {
 		return UEFIMediaValidation{}, errors.New("UEFI validation context is nil")
 	}
@@ -125,23 +126,9 @@ func ValidateUEFIMedia(ctx context.Context, root string, opts UEFIValidationOpti
 	if opts.MaxFiles > maximumUEFIMaxFiles {
 		return UEFIMediaValidation{}, fmt.Errorf("UEFI file limit %d exceeds the %d-file safety maximum", opts.MaxFiles, maximumUEFIMaxFiles)
 	}
-	if strings.TrimSpace(root) == "" {
-		return UEFIMediaValidation{}, errors.New("UEFI media root is required")
-	}
-	absolute, err := filepath.Abs(root)
+	resolved, mediaFiles, warnings, err := openUEFIMediaTree(ctx, root, opts.MaxFiles, hook)
 	if err != nil {
-		return UEFIMediaValidation{}, fmt.Errorf("make UEFI media root absolute: %w", err)
-	}
-	resolved, err := filepath.EvalSymlinks(absolute)
-	if err != nil {
-		return UEFIMediaValidation{}, fmt.Errorf("resolve UEFI media root: %w", err)
-	}
-	info, err := os.Stat(resolved)
-	if err != nil {
-		return UEFIMediaValidation{}, fmt.Errorf("stat UEFI media root: %w", err)
-	}
-	if !info.IsDir() {
-		return UEFIMediaValidation{}, errors.New("UEFI media root is not a directory")
+		return UEFIMediaValidation{}, fmt.Errorf("scan UEFI media tree: %w", err)
 	}
 
 	result := UEFIMediaValidation{
@@ -149,63 +136,19 @@ func ValidateUEFIMedia(ctx context.Context, root string, opts UEFIValidationOpti
 		Architecture: architecture.name,
 		FallbackPath: architecture.fallbackPath,
 		DBXChecked:   opts.DBX != nil,
+		Warnings:     warnings,
 	}
-	var paths []string
-	err = filepath.WalkDir(resolved, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if path == resolved {
-			return nil
-		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			relative, _ := filepath.Rel(resolved, path)
-			result.Warnings = append(result.Warnings, "ignored symbolic link "+filepath.ToSlash(relative))
-			return nil
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		if !strings.EqualFold(filepath.Ext(entry.Name()), ".efi") {
-			return nil
-		}
-		entryInfo, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if !entryInfo.Mode().IsRegular() {
-			relative, _ := filepath.Rel(resolved, path)
-			result.Warnings = append(result.Warnings, "ignored non-regular EFI path "+filepath.ToSlash(relative))
-			return nil
-		}
-		paths = append(paths, path)
-		if len(paths) > opts.MaxFiles {
-			return fmt.Errorf("more than %d EFI executables found; refusing an unbounded scan", opts.MaxFiles)
-		}
-		return nil
-	})
-	if err != nil {
-		return UEFIMediaValidation{}, fmt.Errorf("scan UEFI media tree: %w", err)
-	}
-	sort.Strings(paths)
-	if len(paths) == 0 {
+	if len(mediaFiles) == 0 {
 		result.Errors = append(result.Errors, "media tree contains no EFI executables")
 	}
 
-	for _, path := range paths {
+	for _, mediaFile := range mediaFiles {
 		if err := ctx.Err(); err != nil {
 			return UEFIMediaValidation{}, err
 		}
-		relative, err := filepath.Rel(resolved, path)
-		if err != nil || !filepath.IsLocal(relative) {
-			return UEFIMediaValidation{}, fmt.Errorf("derive safe EFI relative path for %q", path)
-		}
-		relative = filepath.ToSlash(relative)
+		relative := mediaFile.relative
 		isFallback := strings.EqualFold(relative, architecture.fallbackPath)
-		fileResult := validateUEFIFile(path, relative, isFallback, architecture, opts.DBX)
+		fileResult := validateUEFIFile(mediaFile.data, relative, isFallback, architecture, opts.DBX)
 		if isFallback {
 			result.FallbackFound = true
 		}
@@ -226,10 +169,9 @@ func ValidateUEFIMedia(ctx context.Context, root string, opts UEFIValidationOpti
 	result.Valid = len(result.Errors) == 0
 	return result, nil
 }
-
-func validateUEFIFile(path, relative string, fallback bool, architecture uefiArchitecture, dbx *Database) UEFIFileValidation {
+func validateUEFIFile(data []byte, relative string, fallback bool, architecture uefiArchitecture, dbx *Database) UEFIFileValidation {
 	result := UEFIFileValidation{Path: relative, Fallback: fallback}
-	parsed, err := parseUEFIImageFile(path)
+	parsed, err := parseUEFIImage(data)
 	if err != nil {
 		result.Error = err.Error()
 		return result
@@ -261,7 +203,7 @@ func validateUEFIFile(path, relative string, fallback bool, architecture uefiArc
 	}
 
 	if dbx != nil {
-		checked := CheckPEFile(path, dbx)
+		checked := checkPEData(relative, data, dbx)
 		result.AuthenticodeSHA256 = checked.AuthenticodeSHA256
 		result.DirectHashRevoked = checked.DirectHashRevoked
 		result.X509CertificateRevoked = checked.X509CertificateRevoked
@@ -271,26 +213,6 @@ func validateUEFIFile(path, relative string, fallback bool, architecture uefiArc
 		}
 	}
 	return result
-}
-
-func parseUEFIImageFile(path string) (parsedUEFIImage, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return parsedUEFIImage{}, fmt.Errorf("open EFI executable: %w", err)
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return parsedUEFIImage{}, fmt.Errorf("stat EFI executable: %w", err)
-	}
-	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maximumUEFIFileSize {
-		return parsedUEFIImage{}, fmt.Errorf("EFI executable must be a non-empty regular file no larger than %d bytes", maximumUEFIFileSize)
-	}
-	data, err := io.ReadAll(file)
-	if err != nil {
-		return parsedUEFIImage{}, fmt.Errorf("read EFI executable: %w", err)
-	}
-	return parseUEFIImage(data)
 }
 
 func parseUEFIImage(data []byte) (parsedUEFIImage, error) {
