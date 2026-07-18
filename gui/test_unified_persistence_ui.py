@@ -42,6 +42,14 @@ class UnifiedPersistenceUISourceTests(unittest.TestCase):
     def test_layout_fstring_uses_python_310_compatible_quotes(self):
         self.assertIn("self.persistence_plan['size']", self.source)
 
+    def test_packaged_launcher_keeps_one_application(self):
+        launcher = pathlib.Path("packaging/rufusarm64").read_text(encoding="utf-8")
+        desktop = pathlib.Path("packaging/io.github.geocausa.RufusArm64.desktop").read_text(encoding="utf-8")
+        self.assertNotIn("rufusarm64_persistence.py", launcher)
+        self.assertIn("rufusarm64.py", launcher)
+        self.assertIn("Exec=rufusarm64\n", desktop)
+        self.assertNotIn("Exec=rufusarm64 --persistence", desktop)
+
 
 if __name__ == "__main__":
     unittest.main()

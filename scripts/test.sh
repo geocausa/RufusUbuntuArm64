@@ -295,7 +295,17 @@ if ! grep -q '^Actions=.*PersistentLiveUSB' "${extract_dir}/usr/share/applicatio
   echo "Main desktop entry must expose the PersistentLiveUSB action" >&2
   exit 1
 fi
-grep -q 'Open Persistent USB Creator' "${installed_gui}"
+grep -q 'Gtk.Expander(label="Persistent storage")' "${installed_gui}"
+grep -q 'Keep files and settings across reboots' "${installed_gui}"
+if grep -q 'Open Persistent USB Creator' "${installed_gui}"; then
+  echo "Packaged GUI must not expose the removed secondary persistence window" >&2
+  exit 1
+fi
+if grep -q 'rufusarm64_persistence.py' "${extract_dir}/usr/bin/rufusarm64"; then
+  echo "Installed launcher must keep persistence in the main application" >&2
+  exit 1
+fi
+grep -q '^Exec=rufusarm64$' "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.desktop"
 for page in rufusarm64 rufusarm64-cli rufusarm64-persistence; do
   [[ -f "${extract_dir}/usr/share/man/man1/${page}.1.gz" ]]
   gzip -t "${extract_dir}/usr/share/man/man1/${page}.1.gz"
