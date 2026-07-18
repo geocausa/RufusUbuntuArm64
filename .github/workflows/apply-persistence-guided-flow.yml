@@ -1,0 +1,38 @@
+name: Apply persistence guided flow
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/apply-persistence-guided-flow.py
+      - .github/workflows/apply-persistence-guided-flow.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/persistence-guided-flow'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: feature/persistence-guided-flow
+          fetch-depth: 0
+      - name: Apply and validate guided persistence flow
+        run: |
+          python3 scripts/apply-persistence-guided-flow.py
+          python3 -m unittest discover -s gui -p 'test_*.py'
+          python3 -m py_compile gui/*.py
+          bash -n scripts/*.sh
+          git diff --check
+          rm scripts/apply-persistence-guided-flow.py .github/workflows/apply-persistence-guided-flow.yml
+          test ! -e scripts/apply-persistence-guided-flow.py
+          test ! -e .github/workflows/apply-persistence-guided-flow.yml
+      - name: Commit validated product diff
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'gui: simplify persistent live USB workflow'
+          git push origin HEAD:feature/persistence-guided-flow
