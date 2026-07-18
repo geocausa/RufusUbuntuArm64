@@ -31,6 +31,16 @@ rufusarm64-cli \- safely create bootable USB media on Linux
 .RI [ --sbat-level " FILE" | --firmware-sbat ]
 .RI [ --json ]
 .PP
+.B rufusarm64-cli uefi integrity manifest
+.BI --directory " DIRECTORY"
+.RI [ --max-files " N" ]
+.RI [ --json ]
+.PP
+.B rufusarm64-cli uefi integrity verify
+.BI --directory " DIRECTORY"
+.RI [ --max-files " N" ]
+.RI [ --json ]
+.PP
 .B rufusarm64-cli persistence plan
 .BI --image " FILE"
 .BI --media-root " DIRECTORY"
@@ -112,6 +122,25 @@ payloads. Firmware is never modified.
 .PP
 JSON output is emitted before an invalid-media failure status, allowing callers
 to inspect the complete result while still relying on the process exit code.
+.SH UEFI RUNTIME MEDIA INTEGRITY MANIFESTS
+.B uefi integrity manifest
+performs a descriptor-rooted read-only scan and writes exact uefi-md5sum-compatible
+manifest text to standard output. It never writes the media tree. With
+.B --json
+it emits the same manifest text, total byte count, and ordered records in a
+structured document.
+.PP
+.B uefi integrity verify
+reads the exact root
+.B md5sum.txt
+and reports changed, missing, unexpected, and total-byte mismatches. JSON is
+emitted before a non-zero invalid-media status. The default and maximum file
+limit is 100000; manifest size is bounded to 64 MiB and paths to 512 bytes.
+.PP
+These commands are unprivileged. They do not mount images, open block devices,
+invoke Polkit, access firmware, or install a bootloader. MD5 is used solely for
+interoperability with the upstream boot-time validator; RufusArm64 continues to
+use SHA-256 for source identity, downloads, and destructive-write assurance.
 .SH COMMON WRITE OPTIONS
 .TP
 .B --verify

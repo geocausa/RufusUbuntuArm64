@@ -23,6 +23,7 @@ import (
 	"github.com/geocausa/RufusArm64/internal/linuxmedia"
 	"github.com/geocausa/RufusArm64/internal/persistence"
 	"github.com/geocausa/RufusArm64/internal/qualification"
+	"github.com/geocausa/RufusArm64/internal/runtimeintegrity"
 	"github.com/geocausa/RufusArm64/internal/safety"
 	"github.com/geocausa/RufusArm64/internal/secureboot"
 	"github.com/geocausa/RufusArm64/internal/sourcefile"
@@ -113,6 +114,8 @@ Usage:
   sudo rufusarm64-cli verify --image FILE --device /dev/DEVICE
   rufusarm64-cli hash FILE
   rufusarm64-cli uefi validate --directory DIR [--arch ARCH] [--dbx FILE | --firmware] [--sbat-level FILE | --firmware-sbat] [--json]
+  rufusarm64-cli uefi integrity manifest --directory DIR [--max-files N] [--json]
+  rufusarm64-cli uefi integrity verify --directory DIR [--max-files N] [--json]
   rufusarm64-cli dbx inspect (--file FILE | --firmware) [--json]
   rufusarm64-cli dbx update [--arch ARCH] [--output FILE] [--json]
   rufusarm64-cli dbx check --dbx FILE --efi FILE [--json]
@@ -1049,13 +1052,148 @@ func setTrustedSystemPath() {
 
 func runUEFI(args []string) error {
 	if len(args) == 0 {
-		return errors.New("uefi requires validate")
+		return errors.New("uefi requires validate or integrity")
 	}
 	switch args[0] {
 	case "validate":
 		return runUEFIValidate(args[1:])
+	case "integrity":
+		return runUEFIIntegrity(args[1:])
 	default:
 		return fmt.Errorf("unknown uefi command %q", args[0])
+	}
+}
+
+type runtimeIntegrityManifestOutput struct {
+	Root       string                   `json:"root"`
+	Manifest   string                   `json:"manifest"`
+	TotalBytes uint64                   `json:"total_bytes"`
+	Entries    []runtimeintegrity.Entry `json:"entries"`
+}
+
+func runUEFIIntegrity(args []string) error {
+	if len(args) == 0 {
+		return errors.New("uefi integrity requires manifest or verify")
+	}
+	switch args[0] {
+	case "manifest":
+		return runUEFIIntegrityManifest(args[1:])
+	case "verify":
+		return runUEFIIntegrityVerify(args[1:])
+	default:
+		return fmt.Errorf("unknown uefi integrity command %q", args[0])
+	}
+}
+
+func parseRuntimeIntegrityFlags(name string, args []string) (*flag.FlagSet, *string, *int, *bool, error) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	directory := fs.String("directory", "", "mounted or materialized media root")
+	maxFiles := fs.Int("max-files", runtimeintegrity.DefaultMaximumFiles, "maximum regular files to hash")
+	asJSON := fs.Bool("json", false, "output JSON")
+	if err := fs.Parse(args); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	if fs.NArg() != 0 {
+		return nil, nil, nil, nil, fmt.Errorf("%s does not accept positional arguments", name)
+	}
+	if strings.TrimSpace(*directory) == "" {
+		return nil, nil, nil, nil, errors.New("--directory is required")
+	}
+	if *maxFiles <= 0 || *maxFiles > runtimeintegrity.MaximumManifestLines {
+		return nil, nil, nil, nil, fmt.Errorf("--max-files must be between 1 and %d", runtimeintegrity.MaximumManifestLines)
+	}
+	return fs, directory, maxFiles, asJSON, nil
+}
+
+func resolvedIntegrityRoot(directory string) string {
+	absolute, err := filepath.Abs(directory)
+	if err != nil {
+		return directory
+	}
+	resolved, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return absolute
+	}
+	return resolved
+}
+
+func runUEFIIntegrityManifest(args []string) error {
+	_, directory, maxFiles, asJSON, err := parseRuntimeIntegrityFlags("uefi integrity manifest", args)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	manifest, err := runtimeintegrity.Generate(ctx, *directory, runtimeintegrity.Options{MaxFiles: *maxFiles})
+	if err != nil {
+		return err
+	}
+	data, err := manifest.MarshalText()
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(runtimeIntegrityManifestOutput{
+			Root:       resolvedIntegrityRoot(*directory),
+			Manifest:   string(data),
+			TotalBytes: manifest.TotalBytes,
+			Entries:    manifest.Entries,
+		})
+	}
+	_, err = os.Stdout.Write(data)
+	return err
+}
+
+func runUEFIIntegrityVerify(args []string) error {
+	_, directory, maxFiles, asJSON, err := parseRuntimeIntegrityFlags("uefi integrity verify", args)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	result, err := runtimeintegrity.Verify(ctx, *directory, runtimeintegrity.Options{MaxFiles: *maxFiles})
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		printRuntimeIntegrityVerification(result)
+	}
+	if !result.Valid {
+		return errors.New("runtime media integrity verification failed")
+	}
+	return nil
+}
+
+func printRuntimeIntegrityVerification(result runtimeintegrity.VerificationResult) {
+	status := "VALID"
+	if !result.Valid {
+		status = "INVALID"
+	}
+	fmt.Printf("%s runtime media integrity\n", status)
+	fmt.Printf("Root: %s\nManifest: %s\nDeclared bytes: %d\nActual bytes: %d\n", result.Root, result.ManifestPath, result.DeclaredTotalBytes, result.ActualTotalBytes)
+	for _, file := range result.Files {
+		if file.Status == "ok" {
+			continue
+		}
+		fmt.Printf("%-10s %s", strings.ToUpper(file.Status), file.Path)
+		if file.Error != "" {
+			fmt.Printf(": %s", file.Error)
+		}
+		fmt.Println()
+	}
+	for _, path := range result.Unexpected {
+		fmt.Printf("UNEXPECTED %s\n", path)
+	}
+	for _, verificationError := range result.Errors {
+		fmt.Printf("Error: %s\n", verificationError)
 	}
 }
 

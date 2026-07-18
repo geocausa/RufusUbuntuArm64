@@ -16,6 +16,7 @@ import (
 
 	"github.com/geocausa/RufusArm64/internal/acquisition"
 	"github.com/geocausa/RufusArm64/internal/imaging"
+	"github.com/geocausa/RufusArm64/internal/runtimeintegrity"
 	"github.com/geocausa/RufusArm64/internal/secureboot"
 )
 
@@ -47,6 +48,114 @@ func TestSelectWriteMode(t *testing.T) {
 				t.Fatalf("got=%q want=%q", got, tc.want)
 			}
 		})
+	}
+}
+
+func captureStdout(t *testing.T, operation func() error) (string, error) {
+	t.Helper()
+	old := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = writer
+	defer func() { os.Stdout = old }()
+	operationErr := operation()
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, readErr := io.ReadAll(reader)
+	if closeErr := reader.Close(); readErr == nil {
+		readErr = closeErr
+	}
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	return string(data), operationErr
+}
+
+func TestRuntimeIntegrityCLIManifestAndVerify(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "EFI", "BOOT"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	loader := filepath.Join(root, "EFI", "BOOT", "BOOTAA64.EFI")
+	if err := os.WriteFile(loader, []byte("arm64 loader"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "README"), []byte("media"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plain, err := captureStdout(t, func() error {
+		return runUEFIIntegrity([]string{"manifest", "--directory", root})
+	})
+	if err != nil {
+		t.Fatalf("manifest command: %v", err)
+	}
+	manifest, err := runtimeintegrity.Parse([]byte(plain))
+	if err != nil || len(manifest.Entries) != 2 {
+		t.Fatalf("parse generated manifest: entries=%d err=%v", len(manifest.Entries), err)
+	}
+	if _, err := os.Stat(filepath.Join(root, runtimeintegrity.ManifestName)); !os.IsNotExist(err) {
+		t.Fatalf("manifest command unexpectedly wrote to the media tree: %v", err)
+	}
+	jsonText, err := captureStdout(t, func() error {
+		return runUEFIIntegrity([]string{"manifest", "--directory", root, "--json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var generated runtimeIntegrityManifestOutput
+	if err := json.Unmarshal([]byte(jsonText), &generated); err != nil {
+		t.Fatal(err)
+	}
+	if generated.Manifest != plain || generated.TotalBytes != manifest.TotalBytes || len(generated.Entries) != 2 {
+		t.Fatalf("unexpected JSON manifest output: %#v", generated)
+	}
+	if err := os.WriteFile(filepath.Join(root, runtimeintegrity.ManifestName), []byte(plain), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	verified, err := captureStdout(t, func() error {
+		return runUEFIIntegrity([]string{"verify", "--directory", root, "--json"})
+	})
+	if err != nil {
+		t.Fatalf("verify command: %v", err)
+	}
+	var result runtimeintegrity.VerificationResult
+	if err := json.Unmarshal([]byte(verified), &result); err != nil || !result.Valid {
+		t.Fatalf("valid verification result=%#v err=%v", result, err)
+	}
+	if err := os.WriteFile(loader, []byte("changed loader"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	invalid, err := captureStdout(t, func() error {
+		return runUEFIIntegrity([]string{"verify", "--directory", root, "--json"})
+	})
+	if err == nil || !strings.Contains(err.Error(), "verification failed") {
+		t.Fatalf("invalid verification error = %v", err)
+	}
+	if err := json.Unmarshal([]byte(invalid), &result); err != nil || result.Valid {
+		t.Fatalf("invalid JSON result=%#v err=%v", result, err)
+	}
+	changed := false
+	for _, file := range result.Files {
+		changed = changed || file.Status == "changed"
+	}
+	if !changed {
+		t.Fatalf("changed file was not reported: %#v", result.Files)
+	}
+}
+
+func TestRuntimeIntegrityCLIRejectsInvalidArguments(t *testing.T) {
+	for _, args := range [][]string{
+		{"manifest"},
+		{"verify", "--directory", t.TempDir(), "unexpected"},
+		{"manifest", "--directory", t.TempDir(), "--max-files", "0"},
+		{"manifest", "--directory", t.TempDir(), "--max-files", "100001"},
+	} {
+		if err := runUEFIIntegrity(args); err == nil {
+			t.Fatalf("invalid arguments accepted: %v", args)
+		}
 	}
 }
 
@@ -390,7 +499,7 @@ func TestUEFIValidateInvalidJSONPrecedesFailureStatus(t *testing.T) {
 }
 
 func TestUEFIValidateCommandValidation(t *testing.T) {
-	if err := run([]string{"uefi"}); err == nil || err.Error() != "uefi requires validate" {
+	if err := run([]string{"uefi"}); err == nil || err.Error() != "uefi requires validate or integrity" {
 		t.Fatalf("missing UEFI subcommand error = %v", err)
 	}
 	if err := run([]string{"uefi", "unknown"}); err == nil || err.Error() != "unknown uefi command \"unknown\"" {
