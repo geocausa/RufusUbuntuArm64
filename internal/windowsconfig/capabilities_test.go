@@ -18,43 +18,43 @@ func TestCapabilities(t *testing.T) {
 		reasonContains string
 	}{
 		{
-			name: "Windows 11 ARM64 client",
-			metadata: MediaMetadata{ProductName: "Windows 11 Pro", Version: "10.0", Architecture: "ARM64", InstallationType: "Client"},
+			name:       "Windows 11 ARM64 client",
+			metadata:   MediaMetadata{ProductName: "Windows 11 Pro", Version: "10.0", Architecture: "ARM64", InstallationType: "Client"},
 			recognized: true, generation: "11", family: "client", architecture: "arm64", win11Only: true, generic: true,
 		},
 		{
-			name: "Windows 11 amd64 client",
-			metadata: MediaMetadata{ProductName: "Microsoft Windows 11 Enterprise", Version: "10.0.26100", Architecture: "x64", InstallationType: "Client"},
+			name:       "Windows 11 amd64 client",
+			metadata:   MediaMetadata{ProductName: "Microsoft Windows 11 Enterprise", Version: "10.0.26100", Architecture: "x64", InstallationType: "Client"},
 			recognized: true, generation: "11", family: "client", architecture: "amd64", win11Only: true, generic: true,
 		},
 		{
-			name: "Windows 10 x86 client",
-			metadata: MediaMetadata{ProductName: "Windows 10 Pro", Version: "10.0.19045", Architecture: "x86", InstallationType: "Client"},
+			name:       "Windows 10 x86 client",
+			metadata:   MediaMetadata{ProductName: "Windows 10 Pro", Version: "10.0.19045", Architecture: "x86", InstallationType: "Client"},
 			recognized: true, generation: "10", family: "client", architecture: "x86", generic: true,
 		},
 		{
-			name: "Windows Server without positive generation fails closed",
+			name:     "Windows Server without positive generation fails closed",
 			metadata: MediaMetadata{ProductName: "Windows Server 2025 Standard", Version: "10.0", Architecture: "amd64", InstallationType: "Server"},
-			family: "server", architecture: "amd64", reasonContains: "version could not be identified",
+			family:   "server", architecture: "amd64", reasonContains: "version could not be identified",
 		},
 		{
-			name: "unknown NT 10 media fails closed",
-			metadata: MediaMetadata{Version: "10.0.26100", Architecture: "arm64", InstallationType: "Client"},
+			name:         "unknown NT 10 media fails closed",
+			metadata:     MediaMetadata{Version: "10.0.26100", Architecture: "arm64", InstallationType: "Client"},
 			architecture: "arm64", family: "client", reasonContains: "version could not be identified",
 		},
 		{
-			name: "missing architecture fails closed",
-			metadata: MediaMetadata{ProductName: "Windows 11 Pro", Version: "10.0", InstallationType: "Client"},
+			name:       "missing architecture fails closed",
+			metadata:   MediaMetadata{ProductName: "Windows 11 Pro", Version: "10.0", InstallationType: "Client"},
 			generation: "11", family: "client", reasonContains: "architecture",
 		},
 		{
-			name: "conflicting generation fails closed",
-			metadata: MediaMetadata{ProductName: "Windows 10 Pro", Version: "11.0", Architecture: "amd64", InstallationType: "Client"},
+			name:         "conflicting generation fails closed",
+			metadata:     MediaMetadata{ProductName: "Windows 10 Pro", Version: "11.0", Architecture: "amd64", InstallationType: "Client"},
 			architecture: "amd64", family: "client", reasonContains: "conflicting",
 		},
 		{
-			name: "conflicting family fails closed",
-			metadata: MediaMetadata{ProductName: "Windows Server 2025", Version: "11.0", Architecture: "amd64", InstallationType: "Client"},
+			name:       "conflicting family fails closed",
+			metadata:   MediaMetadata{ProductName: "Windows Server 2025", Version: "11.0", Architecture: "amd64", InstallationType: "Client"},
 			generation: "11", architecture: "amd64", reasonContains: "family metadata is conflicting",
 		},
 	}
