@@ -1,2 +1,6 @@
 #!/bin/sh
+if [ "${1:-}" = "--persistence" ]; then
+  shift
+  exec /usr/bin/python3 /usr/lib/rufusarm64/rufusarm64_persistence.py "$@"
+fi
 exec /usr/bin/python3 /usr/lib/rufusarm64/rufusarm64.py "$@"

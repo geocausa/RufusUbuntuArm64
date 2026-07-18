@@ -1,0 +1,42 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: RufusArm64
+Upstream-Contact: geocausa <noreply@github.com>
+Source: https://github.com/geocausa/RufusUbuntuArm64
+
+Files: *
+Copyright: 2026 geocausa and contributors
+License: GPL-3+
+ This program is free software: you can redistribute it and/or modify it
+ under the terms of the GNU General Public License as published by the Free
+ Software Foundation, either version 3 of the License, or (at your option)
+ any later version.
+ .
+ On Debian systems, the complete text of the GNU General Public License
+ version 3 is available in /usr/share/common-licenses/GPL-3.
+
+Files: vendor/wimlib/*
+Copyright: wimlib contributors
+License: GPL-3+
+ The bundled wimlib-imagex command-line program is distributed under the GNU
+ General Public License version 3 or later. The complete corresponding source,
+ upstream notices, and licence files are installed under
+ /usr/share/doc/rufusarm64/wimlib/.
+ .
+ On Debian systems, the complete text of the GNU General Public License
+ version 3 is available in /usr/share/common-licenses/GPL-3.
+
+Files: vendor/ms-sys/*
+Copyright: ms-sys and Rufus contributors
+License: GPL-2+
+ The pinned source fragments carry their upstream GPL-2.0-or-later notices and
+ are installed under /usr/share/doc/rufusarm64/ms-sys/.
+ .
+ On Debian systems, the complete text of the GNU General Public License
+ version 2 is available in /usr/share/common-licenses/GPL-2.
+
+Files: vendor/uefi-ntfs/*
+Copyright: Rufus, UEFI:NTFS, EfiFs, and ntfs-3g contributors
+License: GPL-3+ and other free-software licences
+ Component provenance and the applicable upstream licences are documented in
+ /usr/share/doc/rufusarm64/uefi-ntfs/README-RUFUS-UEFI-NTFS.txt and in the
+ files contained by the checksum-pinned UEFI:NTFS image.

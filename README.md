@@ -2,156 +2,149 @@
 
 RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on ARM64 computers**, including Snapdragon X devices such as Surface Pro 11 X1E. It is a native Linux implementation inspired by Rufus; it is not a Wine wrapper and is not endorsed by the official Rufus project.
 
-## What it supports
+## Highlights
 
-- Direct, byte-for-byte writing of recognized Linux ISOHybrid images and GPT/MBR raw disk images.
-- Safe preparation of ZIP, gzip, bzip2, XZ, LZMA, and Zstandard-compressed images.
-- VHD, VHDX, QCOW2, and VMDK restoration through validated `qemu-img` conversion with backing-file and encryption rejection.
-- Windows installation media using GPT or MBR and **Automatic, FAT32, or NTFS** filesystem selection.
-- Native FAT32 UEFI boot with automatic splitting of oversized `install.wim` or `install.esd` files.
-- Checksum-pinned Rufus 4.15 UEFI:NTFS media for Windows NTFS/UEFI boot on ARM64, x86-64, and x86 firmware.
-- True Windows legacy BIOS/CSM media for x86 and x86-64 ISOs using an active MBR partition and BOOTMGR-compatible MBR/PBR boot code.
-- Optional Windows Setup customizations through a generated `autounattend.xml`.
-- Optional Windows driver staging and Windows PE auto-loading, with the normal **Load driver** button retained as a fallback.
-- Optional Microsoft Secure Boot DBX download and pre-write EFI revocation scanning.
-- Signed acquisition-catalog verification, threshold-root channel support, rollback protection, and checksum-gated atomic image downloads.
-- Ubuntu casper and Debian live-boot persistence planning plus an explicit CLI-only experimental GPT/UEFI creation path with verified writable-tree copying and ext4 initialization.
-- Full copied-file verification plus FAT32/NTFS consistency checks.
-- Optional full zero-write formatting and a one-pass zero-pattern media check.
+- Direct writing of recognized Linux ISOHybrid images and GPT/MBR raw disk images.
+- Safe preparation of ZIP, gzip, bzip2, XZ, LZMA, Zstandard, VHD, VHDX, QCOW2, and VMDK inputs.
+- Windows installation media using GPT or MBR, UEFI or x86-family BIOS/CSM, and Automatic, FAT32, or NTFS selection.
+- Native FAT32 UEFI media with automatic WIM/ESD splitting, plus checksum-pinned Rufus UEFI:NTFS support.
+- Optional Windows Setup customizations, driver staging, and Microsoft Secure Boot DBX scanning.
+- Signed image-catalog verification, threshold-root channel foundations, rollback protection, and checksum-gated downloads.
+- A guarded graphical workflow for persistent Ubuntu casper and Debian live-boot USB media, exposed through the single RufusArm64 application entry.
+- Descriptor-safe UEFI, DBX, and SBAT analysis plus optional ARM64 boot-time media-integrity validation for the supported persistent writable-copy path.
+- Whole-device, source-identity, target-identity, mount, system-disk, cancellation, filesystem, and post-copy verification safeguards.
 
 ## Install on Ubuntu ARM64
 
 ```bash
-sudo apt install ./rufusarm64_0.9.0_arm64.deb
+sudo apt install ./rufusarm64_0.11.0_arm64.deb
 ```
 
-The package upgrades older `rufusarm64` versions in place. Open **RufusArm64** from the application menu afterward.
+The package upgrades older `rufusarm64` installations in place. One visible **RufusArm64** application entry is installed. Its normal launch opens the ordinary writer, and its **Create Persistent Live USB** desktop action opens the guarded persistence wizard.
 
-## Basic use
+## Create ordinary boot media
 
-1. Connect the USB drive.
-2. Choose an ISO/raw image, a supported compressed image, or a VHD/VHDX/QCOW2/VMDK virtual disk.
-3. Select the removable USB device.
-4. For a Windows ISO, review **Partition scheme**, **Target system**, **File system**, and optional Windows Setup choices.
-5. Leave copied-file verification enabled for qualification runs.
-6. Click **Create USB**, carefully confirm the selected drive, and authenticate with Ubuntu.
+1. Connect a removable USB drive.
+2. Open **RufusArm64** normally.
+3. Choose an ISO, raw image, supported compressed image, or supported virtual disk.
+4. Select the exact USB device.
+5. For Windows media, review the partition scheme, target system, filesystem, and optional Setup choices.
+6. Keep copied-file verification enabled for qualification runs.
+7. Select **Create USB**, verify the destructive warning, and authenticate.
 
 Everything on the selected USB is permanently erased.
 
-## Windows layouts
+The **Create USB** button in the ordinary writer always performs the normal image-writing workflow. It does not turn a live ISO into persistent media.
 
-### ARM64 systems such as Surface Pro 11 X1E
+## Persistent Linux media
 
-Use an official Windows ARM64 ISO with:
+Version 0.11.0 retains the separate guarded persistence wizard internally while presenting only one desktop application icon. Open it from the same RufusArm64 application entry using the **Create Persistent Live USB** action. The direct command remains available for troubleshooting:
+
+```text
+rufusarm64 --persistence
+```
+
+The wizard currently supports a deliberately narrow contract:
+
+- plain raw-bootable ISOHybrid media;
+- Ubuntu 20.04+ casper or Debian live-boot;
+- GPT/UEFI;
+- an architecture-matching fallback loader in `EFI/BOOT`;
+- a FAT32-compatible live-media tree;
+- bounded in-tree file and directory symbolic links that can be safely materialized as ordinary FAT32 entries;
+- harmless direct root-self aliases such as the official Ubuntu 26.04 `ubuntu -> .` link, which are omitted rather than recursively copied;
+- a writable FAT32 boot partition and separate ext4 persistence partition;
+- at least 1 GiB of persistence capacity.
+
+Ubuntu media use the `persistent` kernel parameter and ext4 label `casper-rw`. Debian media use `persistence`, ext4 label `persistence`, and a root `persistence.conf` containing `/ union`.
+
+### Modern Ubuntu casper layouts
+
+RufusArm64 accepts both traditional commands containing `boot=casper` and newer commands that identify the live kernel structurally, for example:
+
+```text
+linux /casper/vmlinuz $cmdline --- quiet splash
+```
+
+For the structural form, the analyzer also requires modern casper metadata such as `casper/install-sources.yaml`. The patcher inserts `persistent` before `---`, changes only detector-approved kernel lines, and rechecks the copied boot tree afterward. Unversioned derivatives without sufficient metadata remain refused.
+
+### Persistence workflow
+
+1. Open the **Create Persistent Live USB** action from the RufusArm64 application entry, or run `rufusarm64 --persistence`.
+2. Select the Linux ISO and exact removable USB.
+3. Choose a persistence size; zero uses the suitable remaining space.
+4. Optionally select **Validate media at UEFI boot**. The current package-owned ARM64 loader is unsigned, so Secure Boot compatibility is not established.
+5. Run **Analyze selected image**. This identity-bound step mounts only the ISO read-only and never opens the USB device; changing the option afterward requires analysis again.
+6. Review the detected family, filesystem label, boot parameter, fresh GPT layout, required FAT32 capacity, and boot files to be changed.
+7. Confirm **Erase and create persistent USB**.
+8. Keep the drive connected while data are copied, flushed, and checked. Slow flash drives may spend several minutes committing cached writes.
+
+Persistence analysis and creation intentionally ignore the ISO's embedded hybrid MBR geometry. Like upstream Rufus, the creator builds a fresh target GPT containing a writable FAT32 boot partition and a separate ext4 persistence partition, then copies and verifies the approved live-media tree.
+
+Relative directory links used by Debian/Ubuntu repository metadata, such as `dists/stable`, are copied as real directories because FAT32 has no symbolic-link representation. Their files are hashed, counted again for capacity planning, copied through the same verified path, and rehashed on the destination. A direct root-self alias such as `ubuntu -> .` is omitted because reproducing it on FAT32 would require recursively duplicating the complete image. Nested links back to the media root, links outside the ISO, cycles, device nodes, and unbounded expansions remain refused.
+
+Creation is not final qualification. Boot the USB and run:
+
+```bash
+sudo rufusarm64-cli qualify start \
+  --record /cdrom/.rufusarm64/creation.json \
+  --output "$HOME/rufusarm64-initial.json"
+```
+
+Make a harmless persistent change, reboot the same USB, confirm the change survived, then run:
+
+```bash
+sudo rufusarm64-cli qualify verify \
+  --record /cdrom/.rufusarm64/creation.json \
+  --output "$HOME/rufusarm64-verified.json"
+```
+
+A passing report qualifies only that exact ISO, USB, controller, firmware, and computer for the observed reboot. It is not a universal firmware guarantee.
+
+Compressed images, virtual disks, MBR/BIOS persistence, encrypted persistence, oversized FAT32 files, unknown boot layouts, arbitrary bootloader replacement, kernel/initramfs replacement, and major distribution upgrades remain outside this persistence contract. The only fallback-loader wrapping is the explicit, transactional ARM64 runtime-integrity option described below.
+
+See `docs/persistence-user-guide.md` and `docs/persistence-qualification.md`.
+
+
+### Optional boot-time UEFI media validation
+
+For compatible ARM64 persistent writable-copy media, the wizard can transactionally preserve the image's original `EFI/BOOT/BOOTAA64.EFI` as `EFI/BOOT/bootaa64_original.efi`, install the package-owned `uefi-md5sum` wrapper, and generate a verified root `md5sum.txt`. At boot, the wrapper checks the covered media tree and then chainloads the original fallback loader.
+
+The canonical loader is built twice from pinned `uefi-md5sum` v1.2 and EDK2 commits and accepted only when the binaries and provenance are byte-for-byte identical. It is **unsigned**. Secure Boot compatibility is not established, and the option is off by default. Raw-image, Windows, NTFS, compressed-stream, and virtual-disk writers do not expose it.
+
+The unchanged-media and intentional-corruption paths, including original-loader chainload, are qualified under pinned AArch64 QEMU firmware. That evidence does not replace physical qualification of the exact USB, controller, firmware, Secure Boot state, and computer.
+
+## Windows ARM64 media
+
+For systems such as Surface Pro 11 X1E, use an official Windows ARM64 ISO with:
 
 ```text
 GPT / UEFI / Automatic or FAT32
 ```
 
-Automatic prefers FAT32 and splits a large Windows image. NTFS is available through the pinned UEFI:NTFS loader, but native FAT32 remains the most firmware-compatible recovery choice.
+Automatic prefers FAT32 and splits a large Windows installation payload. NTFS is available through the pinned UEFI:NTFS loader, but native FAT32 remains the most firmware-compatible recovery path. Windows ARM64 does not support legacy PC BIOS/CSM boot.
 
-Windows ARM64 does **not** support legacy PC BIOS/CSM boot. Selecting BIOS with an ARM64-only ISO is rejected before the USB partition table is erased.
+x86 and x86-64 media may additionally use MBR/BIOS when the ISO contains compatible boot files and a root `bootmgr`.
 
-### x86 and x86-64 PCs
+## Safety model
 
-Supported combinations include:
+The privileged helpers:
 
-```text
-GPT / UEFI / FAT32 or NTFS
-MBR / UEFI / FAT32 or NTFS
-MBR / BIOS or UEFI-CSM / FAT32 or NTFS
-```
+- accept only whole block devices beneath `/dev`;
+- refuse partitions, read-only targets, and the disk backing the running system;
+- hide internal MMC/eMMC and normal fixed disks from the default list;
+- bind the selected source and target to refreshed identities;
+- hash the already-open source before destructive work and recheck it later;
+- revalidate the target immediately before destructive phases;
+- reject unsafe symbolic-link traversal while allowing only bounded in-tree materialization and the explicit omission of a direct root-self alias for FAT32 live-media copying;
+- hold target locks, flush block buffers, verify copied files, and check filesystems;
+- require fresh Polkit authorization and support protected cancellation.
 
-BIOS/CSM mode installs an active MBR partition, a pinned Windows 7-compatible MBR bootstrap, and the matching FAT32 or NTFS BOOTMGR partition boot record. The ISO must contain a root `bootmgr` file and x86/x86-64 boot files.
-
-## Filesystem behavior
-
-**Automatic** prefers FAT32 when every ISO path is FAT-compatible and all oversized Windows payloads can be represented safely. It selects NTFS when another file or filename cannot be represented on FAT32.
-
-**FAT32** uses the firmware-native UEFI path. An oversized `install.wim` or `install.esd` is prepared as numbered `.swm` parts before the USB is erased.
-
-**NTFS** keeps the installation image intact. UEFI mode creates a small, checksum-verified `RUFUS_BOOT` partition containing Rufus 4.15's architecture-aware UEFI:NTFS loader. BIOS mode uses the standard Windows NTFS BOOTMGR boot record instead.
-
-## Optional Windows drivers
-
-Choose a folder containing complete signed Windows driver packages, including their `.inf`, `.sys`, `.cat`, and related files. RufusArm64:
-
-- rejects symbolic links and non-regular files;
-- copies the folder to `USB\drivers`;
-- writes a root marker used to locate the installation media in Windows PE;
-- generates a windowsPE command that recursively calls `drvload` for the `.inf` files before disk selection;
-- leaves the files available for manual **Load driver** selection if automatic loading does not match the hardware.
-
-The drivers are not injected into Microsoft's signed `boot.wim` or `install.wim` images.
-
-## Windows Setup options
-
-Every change is opt-in. Available choices include:
-
-- bypassing TPM 2.0, Secure Boot, and minimum-RAM checks;
-- hiding the online-account screens where supported;
-- creating a named local administrator account;
-- reducing initial data collection and consumer-content settings;
-- disabling automatic BitLocker device-encryption provisioning;
-- applying a validated locale and mapped Windows time zone.
-
-The source ISO is not modified. RufusArm64 writes or replaces `autounattend.xml` only on the created USB.
-
-## Safety design
-
-The privileged helper:
-
-- accepts whole block devices beneath `/dev`, not partitions;
-- refuses read-only devices and the disk backing the running Ubuntu system;
-- hides internal MMC/eMMC and normal fixed disks from the default GUI list;
-- binds the selected source and target to refreshed device identities;
-- holds the selected source through an open descriptor and hashes its bytes before destructive work;
-- rejects source mutation during raw and Windows-media writes;
-- revalidates the target before each destructive phase;
-- uses descriptor-relative, no-symlink traversal for untrusted driver folders;
-- flushes block buffers before verification and uses aligned direct I/O when supported;
-- verifies embedded UEFI:NTFS and legacy BIOS boot assets against pinned SHA-256 values;
-- reads back generated partition tables and boot-code patches;
-- requires fresh Polkit authorization for each graphical write;
-- prevents the window from closing during an active write and supports protected cancellation.
-
-## Bundled components
-
-The ARM64 package includes a package-private `wimlib-imagex` 1.14.5 binary built for AArch64. Its upstream source archive, exact commit, build configuration, notices, and checksum are installed under `/usr/share/doc/rufusarm64/wimlib/`.
-
-The package also includes Rufus 4.15's pinned `uefi-ntfs.img` and GPL ms-sys-derived Windows MBR/PBR byte arrays. The corresponding upstream source files, pin metadata, and checksums are installed under `/usr/share/doc/rufusarm64/`.
-
-## Secure Boot DBX checks
-
-The **Update** button downloads the architecture-specific `DBXUpdate.bin` from Microsoft’s public `secureboot_objects` repository into the current user’s cache. Selecting that file makes Windows-media creation scan EFI boot files before the USB is erased. RufusArm64 checks the Authenticode image hash and exact X.509 certificates embedded in the signature against DBX entries.
-
-This is a media-safety check. It does not write the DBX into firmware, change Secure Boot settings, or claim to perform online certificate revocation. The downloaded file must use the authenticated UEFI variable-update structure, but version 0.9.0 trusts Microsoft’s HTTPS/GitHub distribution channel rather than independently validating the PKCS#7 update signature.
-
-## Secure image acquisition foundation
-
-Version 0.9.0 added strict local signed-catalog verification and checksum-gated downloads. The 0.10 graphical workflow now prefers a package-owned built-in channel with canonical metadata, threshold Ed25519 root and catalog roles, dual-authorized sequential root rotation, monotonic version and clock-rollback protection, expiry/freeze checks, owner-only atomic state, and verified offline cache fallback. Image payloads retain exact-size, signed redirect-host, SHA-256, cancellation, and atomic-install enforcement. See `docs/acquisition-catalog.md` and `docs/acquisition-channel.md`.
-
-The package channel intentionally remains disabled until real offline root keys and the first reviewed catalog are provisioned. The GUI reports that boundary clearly and keeps the local catalog/signature/public-key workflow as an advanced recovery path. No private signing key is included in source, CI, packages, or artifacts.
-
-The source tree also contains `cmd/rufus-channel-admin`, an offline-safe public-metadata administration tool. It derives public key IDs, exports exact canonical signing payloads and manifests, assembles externally generated detached signatures, verifies root/catalog chains, validates the public channel configuration, and creates deterministic publication directories. It has no private-key option or signing implementation and is not installed as an application binary. See `docs/acquisition-admin.md`.
-
-## Linux persistence planning foundation
-
-Version 0.9.0 can inspect a plain ISOHybrid image plus a read-only mounted or extracted media tree and produce a non-destructive persistence plan. The 0.10 graphical path can instead ask the privileged helper to mount the identity-bound ISO privately with read-only, no-suid, no-device, and no-exec restrictions; only target capacity is supplied and no target device is opened. The initial scope is Ubuntu 20.04+ casper media (`persistent`, ext4 label `casper-rw`) and Debian live-boot media (`persistence`, ext4 label `persistence`, root `persistence.conf` containing `/ union`). MBR and GPT metadata are validated before a plan is returned, including both GPT copies and their CRCs. See `docs/persistence-planning.md`.
-
-The codebase also contains separately tested primitives for applying exact partition plans, atomically patching writable boot trees without following symbolic links, creating/checking ext4 persistence filesystems, and building plus copying SHA-256 manifests from read-only Linux media trees. The copy layer checks FAT32 names, case collisions, file-size limits and architecture-specific fallback UEFI loaders, and only dereferences file links that resolve beneath the source root. See `docs/linux-media-copy.md`.
-
-A CLI-only experimental writer now connects these foundations for supported GPT/UEFI media. It creates a fresh FAT32 EFI System Partition and ext4 persistence partition under one target lock, verifies both GPT copies, copies and rehashes the media tree, patches only approved boot configurations, re-detects the activated contract, and checks both filesystems. The graphical path rejects this mode. See `docs/persistence-create.md`. Each created USB also receives a canonical creation record and checksum for the two-stage `qualify start` / reboot / `qualify verify` workflow described in `docs/persistence-qualification.md`. This evidence confirms one successful persistent reboot; it does not replace a published physical-hardware matrix.
-
-## Current limitations
-
-RufusArm64 is not yet feature-equivalent to every official Rufus mode. Version 0.9.0 still does not include Windows To Go, stable GUI-supported Linux persistence, FreeDOS creation, a provisioned production remote ISO catalog, or FFU restoration. FFU remains explicit rather than deceptive: official Rufus uses Windows’ FFU provider, and a safe Linux-native restore provider has not been integrated.
-
-Full Authenticode signer-chain construction, every Linux ISO-specific Syslinux/GRUB workaround, and broad physical-hardware qualification remain ongoing. Passing automated tests cannot prove that every firmware or storage controller will boot.
+No private acquisition signing key is included in source, CI, packages, or artifacts. The production built-in acquisition channel remains disabled until reviewed offline trust metadata is provisioned.
 
 ## Build and test
 
-Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, and the verified ARM64 WIM engine in `vendor/wimlib/arm64/`.
+Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, the verified ARM64 WIM engine under `vendor/wimlib/arm64/`, and the reproducible package-private ARM64 `uefi-md5sum` artifact under `vendor/uefi-md5sum/arm64/`. Regenerating the loader additionally requires the pinned EDK2 toolchain dependencies documented in `docs/uefi-md5sum-build.md`.
 
 ```bash
 ./scripts/test.sh
@@ -160,35 +153,29 @@ Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, and the
 The installer is produced at:
 
 ```text
-dist/rufusarm64_0.9.0_arm64.deb
+dist/rufusarm64_0.11.0_arm64.deb
 ```
 
-## Command line
+## Command-line examples
 
 ```bash
 rufusarm64-cli list
 rufusarm64-cli inspect --image Windows.iso.xz --json
-rufusarm64-cli dbx update --arch arm64 --json
-rufusarm64-cli dbx inspect --file ~/.cache/rufusarm64/dbx/arm64-DBXUpdate.bin
-rufusarm64-cli acquire verify --catalog catalog.json --signature catalog.json.sig --public-key catalog.pub
-rufusarm64-cli acquire list --catalog catalog.json --signature catalog.json.sig --public-key catalog.pub
 rufusarm64-cli acquire channel list --json
-rufusarm64-cli acquire channel download --id ubuntu-24.04-arm64 --output ~/Downloads --json-progress
-rufusarm64-cli persistence plan --image ubuntu.iso --media-root /mnt/ubuntu --target-size 64G --size 16G --json
-# The GTK app uses the identity-bound, private read-only form after authentication:
-sudo rufusarm64-cli persistence analyze --image ubuntu.iso --expected-source-identity DEV:INO:SIZE:MTIME:CTIME --target-size 64G --size 16G --json
-sudo rufusarm64-cli write --mode linux-persistent --experimental-persistence --image ubuntu.iso --device /dev/sdX --persistence-size 16G
-sudo rufusarm64-cli qualify start --record /cdrom/.rufusarm64/creation.json --output ~/rufusarm64-initial.json
-# Reboot the same persistent USB, then:
-sudo rufusarm64-cli qualify verify --record /cdrom/.rufusarm64/creation.json --output ~/rufusarm64-verified.json
+rufusarm64-cli uefi validate --directory /mnt/usb --arch arm64 --firmware-sbat --json
+rufusarm64-cli uefi integrity manifest --directory /mnt/usb > md5sum.txt
+rufusarm64-cli uefi integrity verify --directory /mnt/usb --json
+rufusarm64-cli persistence plan \
+  --image ubuntu.iso --media-root /mnt/ubuntu \
+  --target-size 64G --size 16G --json
 sudo rufusarm64-cli write \
-  --image Windows.iso --device /dev/sdX \
-  --partition-scheme mbr --target-system bios \
-  --filesystem ntfs \
-  --dbx-file ~/.cache/rufusarm64/dbx/arm64-DBXUpdate.bin --verify
+  --mode linux-persistent --experimental-persistence \
+  --image ubuntu.iso --device /dev/sdX --persistence-size 16G
 ```
 
-The GUI supplies device-identity binding and protected cancellation automatically and is recommended for normal use.
+The single visible graphical application entry supplies the ordinary writer and the persistent-live action while retaining separate guarded helpers internally. The main window also provides a read-only **Validate UEFI Media…** dialog for mounted or extracted media; it reports fallback-loader, PE/EFI, DBX, and SBAT results, and can compare against either a trusted local SbatLevel CSV or the running shim firmware SBAT level without changing the write path.
+
+That pre-boot structural/Secure Boot analysis is separate from the boot-time media-integrity option. Version 0.11.0 also provides descriptor-safe manifest generation and verification through the unprivileged CLI and an opt-in transactional ARM64 wrapper in the guarded persistent-media workflow; the wrapper is unsigned and is not offered by other writer modes.
 
 ## License
 

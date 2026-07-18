@@ -1,0 +1,5 @@
+# The privileged helpers are small CGO-disabled Go binaries. Static linking is
+# deliberate: it removes mutable shared-library dependencies from the raw-disk
+# and persistence privilege boundaries. Their source is shipped with the package.
+rufusarm64: statically-linked-binary [usr/lib/rufusarm64/rufusarm64-helper]
+rufusarm64: statically-linked-binary [usr/lib/rufusarm64/rufusarm64-persistence-helper]

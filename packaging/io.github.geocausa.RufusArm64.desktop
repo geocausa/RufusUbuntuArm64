@@ -2,11 +2,17 @@
 Type=Application
 Name=RufusArm64
 GenericName=Bootable USB Creator
-Comment=Create bootable USB drives from Linux images and Windows installation ISOs
+Comment=Create ordinary or persistent bootable USB drives from Linux images and Windows installation ISOs
 Exec=rufusarm64
 Icon=io.github.geocausa.RufusArm64
 Terminal=false
-Categories=Utility;System;
-Keywords=USB;ISO;boot;Windows;Linux;installer;ARM64;
+Categories=Utility;
+Keywords=USB;ISO;boot;Windows;Linux;installer;ARM64;persistence;
 StartupNotify=true
 StartupWMClass=io.github.geocausa.RufusArm64
+Actions=PersistentLiveUSB;
+
+[Desktop Action PersistentLiveUSB]
+Name=Create Persistent Live USB
+Exec=rufusarm64 --persistence
+Icon=io.github.geocausa.RufusArm64

@@ -4,12 +4,14 @@ import unittest
 
 from rufusarm64_logic import (
     acquisition_image_label,
+    atomic_write_json,
     build_acquisition_channel_download_command,
     build_acquisition_channel_list_command,
     build_acquisition_download_command,
     build_acquisition_list_command,
     build_persistence_analyze_command,
     build_persistence_plan_command,
+    build_uefi_validate_command,
     build_writer_command,
     device_label,
     human_bytes,
@@ -24,8 +26,10 @@ from rufusarm64_logic import (
     normalize_filesystem,
     normalize_partition_scheme,
     normalize_target_system,
+    normalize_uefi_validation,
     normalize_volume_label,
     success_message,
+    uefi_validation_summary,
     normalize_windows_locale,
     supported_image_name,
     validate_local_username,
@@ -34,6 +38,25 @@ from rufusarm64_logic import (
 
 
 class LogicTests(unittest.TestCase):
+    def test_atomic_write_json_is_owner_only_and_replaces(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "settings.json")
+            atomic_write_json(path, {"value": 1})
+            atomic_write_json(path, {"value": 2})
+            with open(path, "r", encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), '{\n  "value": 2\n}')
+            self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+            self.assertEqual(sorted(os.listdir(directory)), ["settings.json"])
+
+    def test_atomic_write_json_rejects_symlink_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            real = os.path.join(directory, "real")
+            linked = os.path.join(directory, "linked")
+            os.mkdir(real)
+            os.symlink(real, linked)
+            with self.assertRaises(OSError):
+                atomic_write_json(os.path.join(linked, "settings.json"), {"unsafe": True})
+
     def test_human_bytes(self):
         self.assertEqual(human_bytes(1024), "1.0 KiB")
 
@@ -154,7 +177,7 @@ class LogicTests(unittest.TestCase):
         })
         self.assertIn("Compatible media", summary)
         self.assertIn("16.0 GiB", summary)
-        self.assertIn("command-line only", summary)
+        self.assertIn("guarded persistent USB creator", summary)
 
     def test_supported_image_name(self):
         self.assertTrue(supported_image_name("Windows.ISO"))
@@ -178,12 +201,15 @@ class LogicTests(unittest.TestCase):
 
 
     def test_success_message_matches_verification_mode(self):
-        self.assertIn("verified successfully", success_message("windows", True))
-        windows_skipped = success_message("windows", False)
-        self.assertIn("filesystem check passed", windows_skipped)
-        self.assertIn("verification was skipped", windows_skipped)
+        verified = success_message("windows", True)
+        self.assertIn("Copied-data verification passed", verified)
+        self.assertIn("does not prove firmware boot", verified)
+        windows_skipped = success_message("windows", False, "ntfs")
+        self.assertIn("NTFS filesystem consistency check passed", windows_skipped)
+        self.assertIn("copied-file verification was skipped", windows_skipped)
         raw_skipped = success_message("raw", False)
-        self.assertIn("Verification was skipped", raw_skipped)
+        self.assertIn("Copied-data verification was skipped", raw_skipped)
+        self.assertIn("Secure Boot acceptance", raw_skipped)
 
     def test_writer_command_carries_windows_options(self):
         command = build_writer_command(
@@ -268,6 +294,75 @@ class LogicTests(unittest.TestCase):
     def test_writer_command_refuses_missing_identity(self):
         with self.assertRaises(ValueError):
             build_writer_command("pkexec", "/helper", "/image.iso", "/dev/sda", "", True, "/tmp/cancel")
+
+
+    def test_uefi_validation_command_is_read_only(self):
+        command = build_uefi_validate_command(
+            "/helper", "/mnt/usb", "aarch64", 1024, True, "/cache/dbx.bin", False
+        )
+        self.assertEqual(command[:3], ["/helper", "uefi", "validate"])
+        self.assertEqual(command[command.index("--arch") + 1], "arm64")
+        self.assertEqual(command[command.index("--max-files") + 1], "1024")
+        self.assertIn("--require-fallback=true", command)
+        self.assertIn("--dbx", command)
+        self.assertEqual(command[-1], "--json")
+        self.assertNotIn("pkexec", command)
+        self.assertNotIn("write", command)
+        with self.assertRaises(ValueError):
+            build_uefi_validate_command("/helper", "/mnt/usb", dbx_file="dbx.bin", firmware=True)
+        with self.assertRaises(ValueError):
+            build_uefi_validate_command("/helper", "/mnt/usb", max_files=4097)
+        firmware_sbat = build_uefi_validate_command(
+            "/helper", "/mnt/usb", firmware_sbat=True
+        )
+        self.assertIn("--firmware-sbat", firmware_sbat)
+        local_sbat = build_uefi_validate_command(
+            "/helper", "/mnt/usb", sbat_level_file="/trust/SbatLevel.csv"
+        )
+        self.assertEqual(local_sbat[local_sbat.index("--sbat-level") + 1], "/trust/SbatLevel.csv")
+        with self.assertRaises(ValueError):
+            build_uefi_validate_command(
+                "/helper", "/mnt/usb", sbat_level_file="local.csv", firmware_sbat=True
+            )
+
+    def test_uefi_validation_normalization_and_summary(self):
+        payload = {
+            "root": "/mnt/usb",
+            "architecture": "arm64",
+            "fallback_path": "EFI/BOOT/BOOTAA64.EFI",
+            "fallback_found": True,
+            "dbx_checked": True,
+            "sbat_level_checked": True,
+            "sbat_level_source": "/sys/firmware/efi/efivars/SbatLevelRT-605dab50-e046-4300-abb6-3dd810dd8b23",
+            "sbat_level_datestamp": "2025051000",
+            "valid": True,
+            "revoked": False,
+            "files": [{
+                "path": "EFI/BOOT/BOOTAA64.EFI",
+                "machine_name": "ARM64",
+                "subsystem_name": "EFI application",
+                "fallback": True,
+                "embedded_certificates": 2,
+                "sbat": [{"component": "shim"}],
+                "sbat_revoked": True,
+                "sbat_revocations": [{
+                    "component": "shim",
+                    "image_generation": 3,
+                    "minimum_generation": 4,
+                }],
+            }],
+        }
+        normalized = normalize_uefi_validation(payload)
+        self.assertTrue(normalized["valid"])
+        self.assertEqual(normalized["files"][0]["sbat_records"], 1)
+        summary = uefi_validation_summary(payload)
+        self.assertIn("Validation passed", summary)
+        self.assertIn("BOOTAA64.EFI", summary)
+        self.assertIn("SBAT source:", summary)
+        self.assertIn("SBAT revoked: shim generation 3", summary)
+        self.assertIn("does not prove", summary)
+        with self.assertRaises(ValueError):
+            normalize_uefi_validation({"root": "/mnt/usb", "files": []})
 
 
 if __name__ == "__main__":

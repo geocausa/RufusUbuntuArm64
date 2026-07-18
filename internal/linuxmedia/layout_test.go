@@ -4,6 +4,7 @@ package linuxmedia
 
 import (
 	"bytes"
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"strings"
@@ -102,6 +103,18 @@ func TestWritePersistentGPTWritesAndVerifiesBothCopies(t *testing.T) {
 	if sector[510] != 0x55 || sector[511] != 0xaa || sector[450] != 0xee || string(sector[512:520]) != "EFI PART" {
 		file.Close()
 		t.Fatalf("invalid primary GPT bytes")
+	}
+	entries := make([]byte, 2*layoutGPTEntrySize)
+	if _, err := file.ReadAt(entries, int64(2*layout.SectorSize)); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	for index := 0; index < 2; index++ {
+		entry := entries[index*layoutGPTEntrySize : (index+1)*layoutGPTEntrySize]
+		if attributes := binary.LittleEndian.Uint64(entry[48:56]); attributes != layoutGPTNoAutomount {
+			file.Close()
+			t.Fatalf("partition %d attributes=%#x want=%#x", index+1, attributes, layoutGPTNoAutomount)
+		}
 	}
 	backup := make([]byte, 8)
 	if _, err := file.ReadAt(backup, int64(layout.TargetSize-layout.SectorSize)); err != nil {

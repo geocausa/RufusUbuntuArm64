@@ -1,13 +1,72 @@
 # Changelog
 
-## Unreleased — 0.10 development
+## 0.11.0 — 2026-07-18
+
+- Added a descriptor-rooted, bounded UEFI media analyzer for fallback-loader architecture, PE/COFF structure, DBX revocations, SBAT metadata, trusted local or firmware SBAT levels, and structured CLI/GTK reporting.
+- Added Rufus-compatible `md5sum.txt` generation and verification plus an opt-in boot-time ARM64 media-integrity option for the guarded Ubuntu/Debian persistent writable-copy path.
+- Reproducibly built the package-private `uefi-md5sum` v1.2 ARM64 loader from exact upstream and EDK2 commits, retained corresponding source and provenance, and kept the loader explicitly unsigned.
+- Added transactional fallback-loader wrapping and rollback, exact post-install manifest verification, qualification-record hashes, guarded GUI disclosure, and refusal in raw-image, Windows, NTFS, compressed-stream, and virtual-disk writers.
+- Qualified unchanged and intentionally corrupted GPT/FAT32 media under pinned AArch64 QEMU firmware, including original-loader chainload and complete serial, image, firmware, provenance, and checksum evidence.
+- Kept Secure Boot compatibility and universal hardware compatibility explicitly unclaimed; physical Surface Pro 11 boot and persistence start/reboot/verify evidence remains a separate per-hardware qualification gate.
+- Hardened tagged releases so the ARM64 package, deterministic project source, pinned WIM source, and deterministic `uefi-md5sum` corresponding source are produced from one synchronized version contract.
+
+## 0.10.6 — 2026-07-17
+
+- Marked both fresh persistent-live GPT partitions with attribute bit 63 before the kernel publishes them, preventing desktop automount services from racing FAT32 and ext4 creation.
+- Included the do-not-automount attribute in exact primary and backup GPT entry-table readback verification and added focused regression coverage for both partitions.
+- Bumped the Debian package and runtime version so systems already on 0.10.5 receive the correction through a normal upgrade.
+
+## 0.10.5 — 2026-07-17
+
+- Completed the pre-parity correctness, destructive-operation, privilege-boundary, parser, arithmetic, concurrency, acquisition, packaging, and supply-chain audit.
+- Retained confirmed source and target identities through destructive revalidation, added checked size and offset arithmetic, and strengthened GPT durability, short-write handling, and exact metadata readback.
+- Bound reused verified downloads to no-follow regular-file descriptors and closed pathname replacement and symbolic-link races.
+- Moved slow image, device, and signed-catalog probes off the GTK thread; added stale-result generations, worker-owned process references, and early cancellation handling.
+- Added Go 1.22 compatibility, Staticcheck, Govulncheck, Actionlint, ShellCheck, Lintian, AppStream, desktop validation, deterministic packaging, and byte-for-byte package reproducibility gates.
+- Corrected Debian metadata, runtime dependencies, copyright, changelog, launcher man pages, and verification wording. Software checks do not claim firmware boot, Secure Boot acceptance, or persistence across reboot without physical qualification.
+- Fixed real-device persistent-media creation by retaining identity-bound, flocked partition descriptors without a kernel-exclusive open, so FAT32/ext4 formatters and filesystem tools can safely reopen inherited `/proc/self/fd/N` targets; added a real loop-device regression gate.
+
+## 0.10.4 — 2026-07-17
+
+- Fixed persistence analysis for the official Ubuntu 26.04 ARM64 desktop ISO root alias `ubuntu -> .`.
+- Omitted only direct root-self aliases that cannot be represented on FAT32 and would otherwise recursively duplicate the complete media tree.
+- Kept nested links back to the media root, host-path escapes, absolute escapes, cycles, special nodes, and unbounded traversal strictly refused.
+- Added regression coverage for analysis, verified copying, omission accounting, and preservation of the ordinary casper payload.
+
+## 0.10.3 — 2026-07-17
+
+- Consolidated the desktop experience to one visible **RufusArm64** application entry.
+- Added a **Create Persistent Live USB** desktop action to that single launcher.
+- Kept the persistence wizard and its narrow privileged helper installed internally while hiding the implementation-only secondary menu entry.
+- Preserved the ordinary writer and persistent writer as distinct guarded workflows without presenting them as duplicate applications.
+
+## 0.10.2 — 2026-07-17
+
+- Fixed persistence analysis for official Canonical live images that contain in-tree directory symbolic links such as `dists/stable`.
+- Materialized accepted directory links as real FAT32 directories and included all duplicated files in entry, byte, and capacity limits.
+- Retained strict refusal of absolute or escaping links, symbolic-link cycles, device nodes, unsupported targets, FAT32 collisions, and unbounded trees.
+- Added end-to-end tests that analyze, copy, hash, and verify a distribution directory exposed through a relative directory link.
+- Kept the ordinary raw/ISOHybrid writer byte-for-byte unchanged; this release repairs only the guarded persistent-live workflow.
+
+## 0.10.1 — 2026-07-16
+
+- Aligned graphical persistence analysis with the actual fresh GPT/FAT32/ext4 creator instead of extending or validating the ISO's embedded hybrid partition table.
+- Fixed compatibility analysis for Canonical Resolute ARM64/X1E concept images whose ISOHybrid MBR contains embedded boot-image mappings that are irrelevant to the writable target layout.
+- Made mandatory analysis perform the same full media-tree, fallback UEFI loader, FAT32 safety, boot-capacity, and requested persistence-size checks used by creation.
+- Preserved strict read-only source mounting, identity pinning, cancellation cleanup, and pre-destructive target revalidation.
+- Added regression tests proving analysis returns the creator's GPT partition 1 boot layout and partition 2 ext4 persistence contract on both x86-64 and native ARM64 CI.
+
+## 0.10.0 — 2026-07-16
 
 - Added a graphical verified-image downloader and read-only Linux persistence compatibility planner.
 - Added automatic identity-bound, private read-only ISO mounting for graphical persistence analysis, with visible elapsed-time progress and complete cleanup.
+- Added a dedicated persistent-live-media wizard with mandatory read-only analysis, pre-authentication source and target identity binding, a separate strict Polkit helper, safe cancellation, and post-creation reboot qualification instructions.
+- Added modern Ubuntu casper detection and boot patching for `/casper/vmlinuz $cmdline` layouts while retaining strict metadata, path, and symlink safety gates.
 - Added a built-in acquisition-channel trust core with canonical metadata, threshold Ed25519 root and catalog roles, dual-authorized root rotation, monotonic rollback protection, expiry/freeze checks, versioned multi-root catch-up, sequential cached root history, clock-rollback detection, and owner-only atomic state.
 - Made the graphical downloader prefer the built-in verified channel while preserving local signed-catalog files as an advanced recovery path.
 - Kept production channel activation disabled until offline root keys and the first reviewed catalog are provisioned; no private signing key is included in source, CI, packages, or artifacts.
 - Added a source-only offline channel-administration toolkit for public-key IDs, canonical signing payloads, detached-signature assembly, sequential chain verification, production configuration validation, and deterministic atomic publication directories; it has no private-key input or signing implementation.
+- Strengthened package tests so the installed GUI, dedicated persistence helper, desktop entry, documentation, and Debian control version are verified from the built artifact.
 
 ## 0.9.0 — 2026-07-16
 

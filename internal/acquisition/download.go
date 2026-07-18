@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -79,6 +80,9 @@ func Download(ctx context.Context, image Image, options DownloadOptions) (Downlo
 		return DownloadResult{}, fmt.Errorf("create temporary download: %w", err)
 	}
 	tempName := temp.Name()
+	// This also removes the second hard-link name used by the no-replace install
+	// path. os.Rename removes the temporary name itself on the replacement path.
+	defer os.Remove(tempName) // best effort
 	cleanup := func() {
 		_ = temp.Close()
 		_ = os.Remove(tempName)
@@ -119,11 +123,9 @@ func Download(ctx context.Context, image Image, options DownloadOptions) (Downlo
 		return DownloadResult{}, fmt.Errorf("set downloaded image permissions: %w", err)
 	}
 	if err := temp.Close(); err != nil {
-		_ = os.Remove(tempName)
 		return DownloadResult{}, fmt.Errorf("close temporary download: %w", err)
 	}
-	if err := os.Rename(tempName, destination); err != nil {
-		_ = os.Remove(tempName)
+	if err := installDownloadedFile(tempName, destination, options.Replace); err != nil {
 		return DownloadResult{}, fmt.Errorf("install downloaded image: %w", err)
 	}
 	if err := syncDirectory(filepath.Dir(destination)); err != nil {
@@ -163,7 +165,7 @@ func existingDownload(path string, image Image, replace bool) (DownloadResult, b
 		return DownloadResult{}, true, errors.New("download destination exists and is not a regular file")
 	}
 	if uint64(info.Size()) == image.Size {
-		digest, hashErr := hashFile(path)
+		digest, hashErr := hashExistingDownload(path, info)
 		if hashErr != nil {
 			return DownloadResult{}, true, hashErr
 		}
@@ -175,6 +177,23 @@ func existingDownload(path string, image Image, replace bool) (DownloadResult, b
 		return DownloadResult{}, true, errors.New("download destination already exists with different content; use --replace to overwrite it")
 	}
 	return DownloadResult{}, false, nil
+}
+
+// installDownloadedFile preserves the no-replace contract at the final atomic
+// boundary. The temporary file is created in the destination directory, so a
+// hard link installs the verified inode without a cross-filesystem copy and
+// fails atomically if another process created the destination during transfer.
+func installDownloadedFile(tempName, destination string, replace bool) error {
+	if replace {
+		return os.Rename(tempName, destination)
+	}
+	if err := os.Link(tempName, destination); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return errors.New("download destination was created while the image was downloading; refusing to replace it")
+		}
+		return err
+	}
+	return nil
 }
 
 func secureHTTPClient(image Image, allowHTTP bool) *http.Client {
@@ -214,15 +233,42 @@ func secureHTTPClient(image Image, allowHTTP bool) *http.Client {
 	}
 }
 
-func hashFile(path string) (string, error) {
-	file, err := os.Open(path)
+func hashExistingDownload(path string, expected os.FileInfo) (string, error) {
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
 	if err != nil {
-		return "", fmt.Errorf("open existing download: %w", err)
+		return "", fmt.Errorf("open existing download without following links: %w", err)
+	}
+	file := os.NewFile(uintptr(fd), path)
+	if file == nil {
+		_ = syscall.Close(fd)
+		return "", errors.New("open existing download returned an invalid file handle")
 	}
 	defer file.Close()
+
+	before, err := file.Stat()
+	if err != nil {
+		return "", fmt.Errorf("inspect opened existing download: %w", err)
+	}
+	if !before.Mode().IsRegular() || !os.SameFile(expected, before) {
+		return "", errors.New("existing download changed before it could be verified")
+	}
 	digest := sha256.New()
 	if _, err := io.CopyBuffer(digest, file, make([]byte, downloadBufferSize)); err != nil {
 		return "", fmt.Errorf("hash existing download: %w", err)
+	}
+	after, err := file.Stat()
+	if err != nil {
+		return "", fmt.Errorf("reinspect opened existing download: %w", err)
+	}
+	if before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
+		return "", errors.New("existing download changed while it was being verified")
+	}
+	current, err := os.Lstat(path)
+	if err != nil {
+		return "", fmt.Errorf("reinspect existing download path: %w", err)
+	}
+	if !current.Mode().IsRegular() || !os.SameFile(after, current) {
+		return "", errors.New("existing download path changed while it was being verified")
 	}
 	return hex.EncodeToString(digest.Sum(nil)), nil
 }

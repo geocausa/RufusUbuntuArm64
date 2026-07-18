@@ -4,15 +4,20 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/geocausa/RufusArm64/internal/acquisition"
 	"github.com/geocausa/RufusArm64/internal/imaging"
+	"github.com/geocausa/RufusArm64/internal/runtimeintegrity"
+	"github.com/geocausa/RufusArm64/internal/secureboot"
 )
 
 func TestSelectWriteMode(t *testing.T) {
@@ -43,6 +48,114 @@ func TestSelectWriteMode(t *testing.T) {
 				t.Fatalf("got=%q want=%q", got, tc.want)
 			}
 		})
+	}
+}
+
+func captureStdout(t *testing.T, operation func() error) (string, error) {
+	t.Helper()
+	old := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = writer
+	defer func() { os.Stdout = old }()
+	operationErr := operation()
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, readErr := io.ReadAll(reader)
+	if closeErr := reader.Close(); readErr == nil {
+		readErr = closeErr
+	}
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	return string(data), operationErr
+}
+
+func TestRuntimeIntegrityCLIManifestAndVerify(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "EFI", "BOOT"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	loader := filepath.Join(root, "EFI", "BOOT", "BOOTAA64.EFI")
+	if err := os.WriteFile(loader, []byte("arm64 loader"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "README"), []byte("media"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plain, err := captureStdout(t, func() error {
+		return runUEFIIntegrity([]string{"manifest", "--directory", root})
+	})
+	if err != nil {
+		t.Fatalf("manifest command: %v", err)
+	}
+	manifest, err := runtimeintegrity.Parse([]byte(plain))
+	if err != nil || len(manifest.Entries) != 2 {
+		t.Fatalf("parse generated manifest: entries=%d err=%v", len(manifest.Entries), err)
+	}
+	if _, err := os.Stat(filepath.Join(root, runtimeintegrity.ManifestName)); !os.IsNotExist(err) {
+		t.Fatalf("manifest command unexpectedly wrote to the media tree: %v", err)
+	}
+	jsonText, err := captureStdout(t, func() error {
+		return runUEFIIntegrity([]string{"manifest", "--directory", root, "--json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var generated runtimeIntegrityManifestOutput
+	if err := json.Unmarshal([]byte(jsonText), &generated); err != nil {
+		t.Fatal(err)
+	}
+	if generated.Manifest != plain || generated.TotalBytes != manifest.TotalBytes || len(generated.Entries) != 2 {
+		t.Fatalf("unexpected JSON manifest output: %#v", generated)
+	}
+	if err := os.WriteFile(filepath.Join(root, runtimeintegrity.ManifestName), []byte(plain), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	verified, err := captureStdout(t, func() error {
+		return runUEFIIntegrity([]string{"verify", "--directory", root, "--json"})
+	})
+	if err != nil {
+		t.Fatalf("verify command: %v", err)
+	}
+	var result runtimeintegrity.VerificationResult
+	if err := json.Unmarshal([]byte(verified), &result); err != nil || !result.Valid {
+		t.Fatalf("valid verification result=%#v err=%v", result, err)
+	}
+	if err := os.WriteFile(loader, []byte("changed loader"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	invalid, err := captureStdout(t, func() error {
+		return runUEFIIntegrity([]string{"verify", "--directory", root, "--json"})
+	})
+	if err == nil || !strings.Contains(err.Error(), "verification failed") {
+		t.Fatalf("invalid verification error = %v", err)
+	}
+	if err := json.Unmarshal([]byte(invalid), &result); err != nil || result.Valid {
+		t.Fatalf("invalid JSON result=%#v err=%v", result, err)
+	}
+	changed := false
+	for _, file := range result.Files {
+		changed = changed || file.Status == "changed"
+	}
+	if !changed {
+		t.Fatalf("changed file was not reported: %#v", result.Files)
+	}
+}
+
+func TestRuntimeIntegrityCLIRejectsInvalidArguments(t *testing.T) {
+	for _, args := range [][]string{
+		{"manifest"},
+		{"verify", "--directory", t.TempDir(), "unexpected"},
+		{"manifest", "--directory", t.TempDir(), "--max-files", "0"},
+		{"manifest", "--directory", t.TempDir(), "--max-files", "100001"},
+	} {
+		if err := runUEFIIntegrity(args); err == nil {
+			t.Fatalf("invalid arguments accepted: %v", args)
+		}
 	}
 }
 
@@ -296,5 +409,193 @@ func TestAcquireChannelDisabledPackageConfiguration(t *testing.T) {
 	err := runAcquireChannelList([]string{"--config", config, "--cache-dir", filepath.Join(directory, "cache"), "--json"})
 	if err == nil || !strings.Contains(err.Error(), "not provisioned") {
 		t.Fatalf("disabled package channel error = %v", err)
+	}
+}
+
+func captureCLIStdout(t *testing.T, operation func() error) (string, error) {
+	t.Helper()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := os.Stdout
+	os.Stdout = writer
+	defer func() { os.Stdout = original }()
+	operationErr := operation()
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, readErr := io.ReadAll(reader)
+	if closeErr := reader.Close(); readErr == nil {
+		readErr = closeErr
+	}
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	return string(data), operationErr
+}
+
+func writeCLIUEFIFallback(t *testing.T, root string, machine uint16) {
+	t.Helper()
+	const (
+		peOffset     = 0x80
+		optionalSize = 0xf0
+		headersSize  = 0x400
+	)
+	data := make([]byte, headersSize)
+	data[0], data[1] = 'M', 'Z'
+	binary.LittleEndian.PutUint32(data[0x3c:0x40], peOffset)
+	copy(data[peOffset:peOffset+4], []byte{'P', 'E', 0, 0})
+	coff := peOffset + 4
+	binary.LittleEndian.PutUint16(data[coff:coff+2], machine)
+	binary.LittleEndian.PutUint16(data[coff+2:coff+4], 1)
+	binary.LittleEndian.PutUint16(data[coff+16:coff+18], optionalSize)
+	optional := coff + 20
+	binary.LittleEndian.PutUint16(data[optional:optional+2], 0x20b)
+	binary.LittleEndian.PutUint16(data[optional+68:optional+70], 10)
+	section := optional + optionalSize
+	copy(data[section:section+8], []byte(".text"))
+	path := filepath.Join(root, "EFI", "BOOT", "BOOTAA64.EFI")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUEFIValidateJSON(t *testing.T) {
+	root := t.TempDir()
+	writeCLIUEFIFallback(t, root, 0xaa64)
+	output, err := captureCLIStdout(t, func() error {
+		return run([]string{"uefi", "validate", "--directory", root, "--arch", "arm64", "--json"})
+	})
+	if err != nil {
+		t.Fatalf("validate UEFI media: %v", err)
+	}
+	var result secureboot.UEFIMediaValidation
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("decode UEFI validation: %v\n%s", err, output)
+	}
+	if !result.Valid || !result.FallbackFound || result.Architecture != "arm64" || len(result.Files) != 1 {
+		t.Fatalf("unexpected UEFI validation: %#v", result)
+	}
+}
+
+func TestUEFIValidateInvalidJSONPrecedesFailureStatus(t *testing.T) {
+	output, err := captureCLIStdout(t, func() error {
+		return runUEFIValidate([]string{"--directory", t.TempDir(), "--arch", "arm64", "--json"})
+	})
+	if err == nil || err.Error() != "UEFI media validation failed" {
+		t.Fatalf("invalid media error = %v", err)
+	}
+	var result secureboot.UEFIMediaValidation
+	if decodeErr := json.Unmarshal([]byte(output), &result); decodeErr != nil {
+		t.Fatalf("decode invalid UEFI result: %v\n%s", decodeErr, output)
+	}
+	if result.Valid || len(result.Errors) == 0 {
+		t.Fatalf("invalid media result = %#v", result)
+	}
+}
+
+func TestUEFIValidateCommandValidation(t *testing.T) {
+	if err := run([]string{"uefi"}); err == nil || err.Error() != "uefi requires validate or integrity" {
+		t.Fatalf("missing UEFI subcommand error = %v", err)
+	}
+	if err := run([]string{"uefi", "unknown"}); err == nil || err.Error() != "unknown uefi command \"unknown\"" {
+		t.Fatalf("unknown UEFI subcommand error = %v", err)
+	}
+	if err := runUEFIValidate(nil); err == nil || err.Error() != "--directory is required" {
+		t.Fatalf("missing directory error = %v", err)
+	}
+	if err := runUEFIValidate([]string{"--directory", t.TempDir(), "--max-files", "0"}); err == nil || !strings.Contains(err.Error(), "greater than zero") {
+		t.Fatalf("invalid max-files error = %v", err)
+	}
+	if err := runUEFIValidate([]string{"--directory", t.TempDir(), "--dbx", "/tmp/dbx", "--firmware"}); err == nil || !strings.Contains(err.Error(), "at most one") {
+		t.Fatalf("conflicting DBX source error = %v", err)
+	}
+}
+
+func TestResolveNativeUEFIArchitecture(t *testing.T) {
+	got, err := resolveUEFIArchitecture("native")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := runtime.GOARCH
+	if want == "loong64" {
+		want = "loongarch64"
+	}
+	if got != want {
+		t.Fatalf("native architecture = %q, want %q", got, want)
+	}
+}
+
+func TestUEFIValidateLoadsTrustedSBATLevel(t *testing.T) {
+	root := t.TempDir()
+	writeCLIUEFIFallback(t, root, 0xaa64)
+	levelPath := filepath.Join(t.TempDir(), "SbatLevel.csv")
+	if err := os.WriteFile(levelPath, []byte("sbat,1,2025051000\nshim,4\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := captureCLIStdout(t, func() error {
+		return runUEFIValidate([]string{"--directory", root, "--arch", "arm64", "--sbat-level", levelPath, "--json"})
+	})
+	if err != nil {
+		t.Fatalf("validate with SBAT level: %v", err)
+	}
+	var result secureboot.UEFIMediaValidation
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("decode UEFI validation: %v\n%s", err, output)
+	}
+	if !result.Valid || !result.SBATLevelChecked || result.SBATLevelDatestamp != "2025051000" || result.SBATRevoked {
+		t.Fatalf("unexpected SBAT-level validation: %#v", result)
+	}
+}
+
+func TestUEFIValidateRejectsMalformedSBATLevel(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bad-sbat.csv")
+	if err := os.WriteFile(path, []byte("shim,4\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := runUEFIValidate([]string{"--directory", t.TempDir(), "--arch", "arm64", "--sbat-level", path})
+	if err == nil || !strings.Contains(err.Error(), "must start with sbat") {
+		t.Fatalf("malformed SBAT level error = %v", err)
+	}
+}
+
+func TestLoadUEFISBATLevelSelection(t *testing.T) {
+	firmwareLevel := &secureboot.SBATLevel{Source: "firmware"}
+	called := false
+	got, err := loadUEFISBATLevel("", true, func() (*secureboot.SBATLevel, error) {
+		called = true
+		return firmwareLevel, nil
+	})
+	if err != nil || got != firmwareLevel || !called {
+		t.Fatalf("firmware selection got=%#v called=%t err=%v", got, called, err)
+	}
+	if _, err := loadUEFISBATLevel("/tmp/SbatLevel.csv", true, func() (*secureboot.SBATLevel, error) {
+		t.Fatal("conflicting sources must fail before loading firmware")
+		return nil, nil
+	}); err == nil || !strings.Contains(err.Error(), "at most one") {
+		t.Fatalf("conflicting SBAT sources error = %v", err)
+	}
+	got, err = loadUEFISBATLevel("", false, func() (*secureboot.SBATLevel, error) {
+		t.Fatal("unused firmware loader was called")
+		return nil, nil
+	})
+	if err != nil || got != nil {
+		t.Fatalf("empty SBAT selection got=%#v err=%v", got, err)
+	}
+}
+
+func TestUEFIValidateRejectsConflictingSBATSources(t *testing.T) {
+	err := runUEFIValidate([]string{
+		"--directory", t.TempDir(),
+		"--arch", "arm64",
+		"--sbat-level", "/tmp/SbatLevel.csv",
+		"--firmware-sbat",
+	})
+	if err == nil || !strings.Contains(err.Error(), "at most one") {
+		t.Fatalf("conflicting SBAT source error = %v", err)
 	}
 }

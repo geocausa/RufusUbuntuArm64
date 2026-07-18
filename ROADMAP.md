@@ -60,11 +60,20 @@
 
 - Rich progress and exportable diagnostics (completed)
 - Strict local signed catalog, threshold-root built-in channel, rollback-protected metadata cache, graphical acquisition workflow, and source-only offline public-metadata administration toolkit (implemented; production offline-key ceremony and publication pending)
-- Linux persistence planner, verified writable-tree copy, CLI-only experimental GPT/UEFI orchestration, and checksum-backed reboot qualification reports (implemented; physical ARM64 matrix and GUI stabilization pending)
+- Linux persistence planner, verified writable-tree copy, guarded GPT/UEFI creator, dedicated identity-bound graphical wizard, and checksum-backed reboot qualification reports (implemented; physical ARM64 qualification matrix pending)
 - FreeDOS creation
 - Windows To Go feasibility and implementation
 - Production offline-root provisioning, published signed catalog, download resumption, and mirror operations
 - Broader Syslinux/GRUB compatibility workarounds
+
+## 0.11 — UEFI analysis and runtime media integrity (completed)
+
+- Descriptor-rooted fallback-loader, PE/COFF, DBX, SBAT, and firmware-policy analysis with CLI and GTK reporting
+- Rufus-compatible `md5sum.txt` generation, parsing, and full-tree verification
+- Reproducibly built, source-retained ARM64 `uefi-md5sum` loader with transactional installation and rollback
+- Guarded persistent-writer and GUI integration with explicit unsigned disclosure and unsupported-mode refusal
+- Pinned AArch64 QEMU success, corruption, and original-loader chainload qualification
+- Physical Surface Pro 11 and broader hardware qualification remains tracked under 0.5
 
 ## 1.0 — supportable stable release
 

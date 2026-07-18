@@ -23,11 +23,13 @@ from gi.repository import GLib, Gtk
 
 from rufusarm64_logic import (
     acquisition_image_label,
+    atomic_write_json,
     build_acquisition_channel_download_command,
     build_acquisition_channel_list_command,
     build_acquisition_download_command,
     build_acquisition_list_command,
     build_persistence_analyze_command,
+    build_uefi_validate_command,
     build_writer_command,
     device_label,
     human_bytes,
@@ -41,8 +43,10 @@ from rufusarm64_logic import (
     normalize_filesystem,
     normalize_partition_scheme,
     normalize_target_system,
+    normalize_uefi_validation,
     normalize_volume_label,
     success_message,
+    uefi_validation_summary,
     normalize_windows_locale,
     supported_image_name,
     validate_local_username,
@@ -51,9 +55,10 @@ from rufusarm64_logic import (
 
 APP_ID = "io.github.geocausa.RufusArm64"
 APP_NAME = "RufusArm64"
-VERSION = "0.9.0"
-INSTALLED_HELPER = os.environ.get("RUFUSARM64_HELPER", "/usr/lib/rufusarm64/rufusarm64-helper")
-BUNDLED_WIMLIB = os.environ.get("RUFUSARM64_WIMLIB", "/usr/lib/rufusarm64/wimlib-imagex")
+VERSION = "development"
+INSTALLED_HELPER = "/usr/lib/rufusarm64/rufusarm64-helper"
+BUNDLED_WIMLIB = "/usr/lib/rufusarm64/wimlib-imagex"
+PERSISTENCE_LAUNCHER = "/usr/bin/rufusarm64-persistence"
 PKEXEC = "/usr/bin/pkexec"
 ACQUISITION_CHANNEL_CONFIG = os.environ.get(
     "RUFUSARM64_CHANNEL_CONFIG", "/usr/share/rufusarm64/acquisition/channel.json"
@@ -62,6 +67,15 @@ ACQUISITION_CHANNEL_CONFIG = os.environ.get(
 
 def helper_path():
     return INSTALLED_HELPER
+
+
+def persistence_launcher_path():
+    if os.path.isfile(PERSISTENCE_LAUNCHER) and os.access(PERSISTENCE_LAUNCHER, os.X_OK):
+        return PERSISTENCE_LAUNCHER
+    development = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rufusarm64_persistence.py")
+    if os.path.isfile(development) and os.access(development, os.X_OK):
+        return development
+    raise FileNotFoundError("The guarded persistence creator is not installed.")
 
 
 def config_path():
@@ -248,6 +262,8 @@ class AcquisitionDialog(Gtk.Dialog):
         self.channel_process = None
         self.channel_started = 0.0
         self.channel_timer_id = 0
+        self.catalog_verifying = False
+        self.catalog_generation = 0
         self.closed = False
         self.connect("destroy", self._destroyed)
         self.get_widget_for_response(Gtk.ResponseType.OK).set_sensitive(False)
@@ -348,7 +364,7 @@ class AcquisitionDialog(Gtk.Dialog):
         return chooser
 
     def refresh_channel(self, *_):
-        if self.channel_refreshing or self.closed:
+        if self.channel_refreshing or self.catalog_verifying or self.closed:
             return False
         try:
             command = build_acquisition_channel_list_command(helper_path(), ACQUISITION_CHANNEL_CONFIG)
@@ -431,23 +447,69 @@ class AcquisitionDialog(Gtk.Dialog):
         return False
 
     def verify_catalog(self, *_):
-        if self.channel_refreshing:
+        if self.channel_refreshing or self.catalog_verifying or self.closed:
             return
+        selection = (
+            self.catalog.get_filename(),
+            self.signature.get_filename(),
+            self.public_key.get_filename(),
+        )
         try:
-            command = build_acquisition_list_command(
-                helper_path(), self.catalog.get_filename(), self.signature.get_filename(), self.public_key.get_filename()
-            )
-            result = subprocess.run(command, check=False, text=True, capture_output=True, timeout=20)
-            if result.returncode != 0:
-                raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Catalog verification failed")
-            images = normalize_acquisition_images(json.loads(result.stdout))
+            command = build_acquisition_list_command(helper_path(), *selection)
         except Exception as exc:
             self.catalog_status.set_text(f"Local catalog rejected: {exc}")
             if self.mode == "manual":
                 self._populate_images([], "", {})
             return
+        self.catalog_generation += 1
+        generation = self.catalog_generation
+        self.catalog_verifying = True
+        self.verify_button.set_sensitive(False)
+        self.channel_button.set_sensitive(False)
+        self.get_widget_for_response(Gtk.ResponseType.OK).set_sensitive(False)
+        self.catalog_status.set_text("Verifying the local signed catalog…")
+        threading.Thread(
+            target=self._run_catalog_verify,
+            args=(command, selection, generation),
+            daemon=True,
+        ).start()
+
+    def _run_catalog_verify(self, command, selection, generation):
+        images = []
+        error = ""
+        try:
+            result = subprocess.run(command, check=False, text=True, capture_output=True, timeout=20)
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Catalog verification failed")
+            images = normalize_acquisition_images(json.loads(result.stdout))
+        except Exception as exc:
+            error = str(exc)
+        GLib.idle_add(self._finish_catalog_verify, images, error, selection, generation)
+
+    def _finish_catalog_verify(self, images, error, selection, generation):
+        if self.closed or generation != self.catalog_generation:
+            return False
+        self.catalog_verifying = False
+        self.verify_button.set_sensitive(not self.channel_refreshing)
+        self.channel_button.set_sensitive(not self.channel_refreshing)
+        current = (
+            self.catalog.get_filename(),
+            self.signature.get_filename(),
+            self.public_key.get_filename(),
+        )
+        if current != selection:
+            self.catalog_status.set_text("Local trust files changed while verification was running. Verify them again.")
+            if self.mode == "manual":
+                self._populate_images([], "", {})
+            return False
+        if error:
+            self.catalog_status.set_text(f"Local catalog rejected: {error}")
+            if self.mode == "manual":
+                self._populate_images([], "", {})
+            return False
         self.catalog_status.set_text(f"Local signature valid. {len(images)} downloadable image(s) are available.")
         self._populate_images(images, "manual", {})
+        return False
 
     def _populate_images(self, images, mode, metadata):
         self.images = list(images)
@@ -465,7 +527,9 @@ class AcquisitionDialog(Gtk.Dialog):
     def image_selected(self, *_):
         image_id = self.image_combo.get_active_id()
         image = next((item for item in self.images if item["id"] == image_id), None)
-        self.get_widget_for_response(Gtk.ResponseType.OK).set_sensitive(bool(image and self.output.get_filename() and not self.channel_refreshing))
+        self.get_widget_for_response(Gtk.ResponseType.OK).set_sensitive(
+            bool(image and self.output.get_filename() and not self.channel_refreshing and not self.catalog_verifying)
+        )
         if image:
             lines = [f"File: {image['filename']}", f"Size: {human_bytes(image['size'])}"]
             if image.get("sha256"):
@@ -526,7 +590,7 @@ class PersistencePlanDialog(Gtk.Dialog):
         grid.attach(size_box, 1, 0, 1, 1)
         note = Gtk.Label(label=(
             "Only the image is mounted, with read-only, no-suid, no-device and no-exec restrictions. "
-            "Persistent USB creation remains experimental and command-line only."
+            "After analysis, return to the main window and open the guarded persistent USB creator."
         ))
         note.set_xalign(0)
         note.set_line_wrap(True)
@@ -538,6 +602,253 @@ class PersistencePlanDialog(Gtk.Dialog):
         return int(self.size.get_value())
 
 
+class UEFIValidationDialog(Gtk.Dialog):
+    """Run the descriptor-safe UEFI validator without entering a write path."""
+
+    def __init__(self, parent, settings):
+        super().__init__(title="Validate UEFI media", transient_for=parent, modal=True)
+        self.parent_window = parent
+        self.settings = settings
+        self.running = False
+        self.closed = False
+        self.generation = 0
+        self.set_default_size(760, 620)
+        self.add_button("Close", Gtk.ResponseType.CLOSE)
+        self.close_button = self.get_widget_for_response(Gtk.ResponseType.CLOSE)
+        self.connect("delete-event", self.on_delete_event)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_border_width(18)
+        self.get_content_area().pack_start(box, True, True, 0)
+
+        intro = Gtk.Label(label=(
+            "Check a mounted or extracted UEFI media folder. Validation is read-only and unprivileged; "
+            "it does not mount images, open a USB device, or change whether Create USB is available."
+        ))
+        intro.set_xalign(0)
+        intro.set_line_wrap(True)
+        box.pack_start(intro, False, False, 0)
+
+        grid = Gtk.Grid(column_spacing=12, row_spacing=10)
+        box.pack_start(grid, False, False, 0)
+        self._attach_label(grid, "Media folder", 0)
+        self.directory = Gtk.FileChooserButton(
+            title="Choose mounted or extracted UEFI media",
+            action=Gtk.FileChooserAction.SELECT_FOLDER,
+        )
+        saved_directory = settings.get("uefi_validation_directory", "")
+        if saved_directory and os.path.isdir(saved_directory):
+            self.directory.set_filename(saved_directory)
+        grid.attach(self.directory, 1, 0, 1, 1)
+
+        self._attach_label(grid, "Architecture", 1)
+        self.architecture = Gtk.ComboBoxText()
+        for identifier, label in (
+            ("native", "Native architecture"),
+            ("arm64", "ARM64"),
+            ("amd64", "x86-64"),
+            ("386", "x86"),
+            ("arm", "ARM"),
+            ("riscv64", "RISC-V 64"),
+            ("loongarch64", "LoongArch 64"),
+        ):
+            self.architecture.append(identifier, label)
+        saved_arch = settings.get("uefi_validation_architecture", "native")
+        self.architecture.set_active_id(saved_arch if saved_arch else "native")
+        grid.attach(self.architecture, 1, 1, 1, 1)
+
+        self.require_fallback = Gtk.CheckButton(label="Require the removable-media fallback loader")
+        self.require_fallback.set_active(bool(settings.get("uefi_validation_require_fallback", True)))
+        grid.attach(self.require_fallback, 1, 2, 1, 1)
+
+        self._attach_label(grid, "Local DBX", 3)
+        self.dbx = Gtk.FileChooserButton(
+            title="Choose an optional DBXUpdate.bin file",
+            action=Gtk.FileChooserAction.OPEN,
+        )
+        dbx_filter = Gtk.FileFilter()
+        dbx_filter.set_name("UEFI DBX files")
+        dbx_filter.add_pattern("*.bin")
+        self.dbx.add_filter(dbx_filter)
+        saved_dbx = settings.get("uefi_validation_dbx", "")
+        if saved_dbx and os.path.isfile(saved_dbx):
+            self.dbx.set_filename(saved_dbx)
+        grid.attach(self.dbx, 1, 3, 1, 1)
+
+        self.firmware = Gtk.CheckButton(label="Use the running firmware DBX instead")
+        self.firmware.set_active(bool(settings.get("uefi_validation_firmware", False)))
+        self.firmware.connect("toggled", self.firmware_toggled)
+        grid.attach(self.firmware, 1, 4, 1, 1)
+        self.firmware_toggled()
+
+        self._attach_label(grid, "SBAT trust", 5)
+        self.sbat_source = Gtk.ComboBoxText()
+        self.sbat_source.append("none", "Do not compare against an SBAT level")
+        self.sbat_source.append("local", "Use a trusted local SbatLevel CSV")
+        self.sbat_source.append("firmware", "Use the running shim firmware SBAT level")
+        saved_sbat_source = settings.get("uefi_validation_sbat_source", "none")
+        if saved_sbat_source not in {"none", "local", "firmware"}:
+            saved_sbat_source = "none"
+        self.sbat_source.set_active_id(saved_sbat_source)
+        self.sbat_source.connect("changed", self.sbat_source_changed)
+        grid.attach(self.sbat_source, 1, 5, 1, 1)
+
+        self._attach_label(grid, "Local SBAT level", 6)
+        self.sbat_level = Gtk.FileChooserButton(
+            title="Choose a trusted shim-compatible SbatLevel CSV",
+            action=Gtk.FileChooserAction.OPEN,
+        )
+        sbat_filter = Gtk.FileFilter()
+        sbat_filter.set_name("SBAT level CSV files")
+        sbat_filter.add_pattern("*.csv")
+        self.sbat_level.add_filter(sbat_filter)
+        saved_sbat = settings.get("uefi_validation_sbat_level", "")
+        if saved_sbat and os.path.isfile(saved_sbat):
+            self.sbat_level.set_filename(saved_sbat)
+        grid.attach(self.sbat_level, 1, 6, 1, 1)
+        self.sbat_source_changed()
+
+        action_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.validate_button = Gtk.Button(label="Validate")
+        self.validate_button.get_style_context().add_class("suggested-action")
+        self.validate_button.connect("clicked", self.start_validation)
+        action_row.pack_start(self.validate_button, False, False, 0)
+        self.spinner = Gtk.Spinner()
+        action_row.pack_start(self.spinner, False, False, 0)
+        self.status = Gtk.Label(label="Choose a media folder, then validate.")
+        self.status.set_xalign(0)
+        self.status.set_line_wrap(True)
+        action_row.pack_start(self.status, True, True, 0)
+        box.pack_start(action_row, False, False, 0)
+
+        result_scroll = Gtk.ScrolledWindow()
+        result_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        result_scroll.set_hexpand(True)
+        result_scroll.set_vexpand(True)
+        self.result_view = Gtk.TextView(
+            editable=False,
+            cursor_visible=False,
+            monospace=True,
+            wrap_mode=Gtk.WrapMode.WORD_CHAR,
+        )
+        self.result_view.get_buffer().set_text(
+            "No validation has been run.\n\nThis check does not prove that the intended computer will boot the media."
+        )
+        result_scroll.add(self.result_view)
+        box.pack_start(result_scroll, True, True, 0)
+        self.show_all()
+
+    @staticmethod
+    def _attach_label(grid, text, row):
+        label = Gtk.Label(label=text)
+        label.set_xalign(0)
+        label.set_valign(Gtk.Align.CENTER)
+        grid.attach(label, 0, row, 1, 1)
+
+    def firmware_toggled(self, *_):
+        self.dbx.set_sensitive(not self.running and not self.firmware.get_active())
+
+    def sbat_source_changed(self, *_):
+        source = self.sbat_source.get_active_id() or "none"
+        self.sbat_level.set_sensitive(not self.running and source == "local")
+
+    def on_delete_event(self, *_):
+        if self.running:
+            self.status.set_text("Validation is still running. Wait for it to finish before closing this dialog.")
+            return True
+        self.closed = True
+        self.generation += 1
+        return False
+
+    def set_running(self, running):
+        self.running = bool(running)
+        self.validate_button.set_sensitive(not self.running)
+        self.close_button.set_sensitive(not self.running)
+        self.directory.set_sensitive(not self.running)
+        self.architecture.set_sensitive(not self.running)
+        self.require_fallback.set_sensitive(not self.running)
+        self.firmware.set_sensitive(not self.running)
+        self.sbat_source.set_sensitive(not self.running)
+        self.firmware_toggled()
+        self.sbat_source_changed()
+        if self.running:
+            self.spinner.start()
+        else:
+            self.spinner.stop()
+
+    def start_validation(self, *_):
+        if self.running:
+            return
+        try:
+            command = build_uefi_validate_command(
+                helper_path(),
+                self.directory.get_filename(),
+                self.architecture.get_active_id() or "native",
+                512,
+                self.require_fallback.get_active(),
+                self.dbx.get_filename() or "",
+                self.firmware.get_active(),
+                self.sbat_level.get_filename() or "" if (self.sbat_source.get_active_id() == "local") else "",
+                self.sbat_source.get_active_id() == "firmware",
+            )
+        except ValueError as exc:
+            self.status.set_text(str(exc))
+            return
+        self.settings["uefi_validation_directory"] = self.directory.get_filename() or ""
+        self.settings["uefi_validation_architecture"] = self.architecture.get_active_id() or "native"
+        self.settings["uefi_validation_require_fallback"] = self.require_fallback.get_active()
+        self.settings["uefi_validation_dbx"] = self.dbx.get_filename() or ""
+        self.settings["uefi_validation_firmware"] = self.firmware.get_active()
+        self.settings["uefi_validation_sbat_source"] = self.sbat_source.get_active_id() or "none"
+        self.settings["uefi_validation_sbat_level"] = self.sbat_level.get_filename() or ""
+        self.generation += 1
+        generation = self.generation
+        self.set_running(True)
+        self.status.set_text("Validating EFI executables, fallback loader, SBAT metadata, and selected trust policies…")
+        self.result_view.get_buffer().set_text("Validation in progress…")
+        threading.Thread(target=self._run_validation, args=(command, generation), daemon=True).start()
+
+    def _run_validation(self, command, generation):
+        payload = None
+        failure = ""
+        try:
+            completed = subprocess.run(
+                command,
+                check=False,
+                text=True,
+                capture_output=True,
+                timeout=120,
+            )
+            if completed.stdout.strip():
+                payload = json.loads(completed.stdout)
+                normalize_uefi_validation(payload)
+            if payload is None:
+                failure = completed.stderr.strip() or "The UEFI validator returned no result."
+        except subprocess.TimeoutExpired:
+            failure = "UEFI validation exceeded the two-minute safety limit."
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            failure = str(exc)
+        GLib.idle_add(self._finish_validation, generation, payload, failure)
+
+    def _finish_validation(self, generation, payload, failure):
+        if self.closed or generation != self.generation:
+            return False
+        self.set_running(False)
+        if failure:
+            self.status.set_text("Validation could not be completed.")
+            self.result_view.get_buffer().set_text(failure)
+            self.parent_window.append_log(f"UEFI validation failed to run: {failure}")
+            return False
+        normalized = normalize_uefi_validation(payload)
+        summary = uefi_validation_summary(payload)
+        self.result_view.get_buffer().set_text(summary)
+        self.status.set_text("Validation passed." if normalized["valid"] else "Validation found problems.")
+        self.parent_window.append_log(
+            "UEFI media validation result:\n" + json.dumps(payload, indent=2, sort_keys=True)
+        )
+        return False
+
+
 class RufusWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app)
@@ -546,6 +857,11 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.devices = []
         self.process = None
         self.busy = False
+        self.closed = False
+        self.inspection_generation = 0
+        self.inspection_running = False
+        self.device_generation = 0
+        self.device_refreshing = False
         self.cancel_requested = False
         self.cancel_path = None
         self.inspection = {}
@@ -574,6 +890,12 @@ class RufusWindow(Gtk.ApplicationWindow):
         about_button.set_tooltip_text("About RufusArm64")
         about_button.connect("clicked", self.show_about)
         header.pack_end(about_button)
+        self.uefi_validation_button = Gtk.Button(label="Validate UEFI Media…")
+        self.uefi_validation_button.set_tooltip_text(
+            "Run a read-only validation of a mounted or extracted UEFI media folder"
+        )
+        self.uefi_validation_button.connect("clicked", self.open_uefi_validator)
+        header.pack_start(self.uefi_validation_button)
 
         root_scroll = Gtk.ScrolledWindow()
         root_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
@@ -651,20 +973,24 @@ class RufusWindow(Gtk.ApplicationWindow):
         advanced.add(adv_grid)
         outer.pack_start(advanced, False, False, 0)
 
-        persistence = Gtk.Expander(label="Linux persistence compatibility (experimental)")
+        persistence = Gtk.Expander(label="Persistent Linux media (guarded creator)")
         persistence_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         persistence_box.set_margin_top(8)
         persistence_intro = Gtk.Label(label=(
-            "Analyze supported Ubuntu casper or Debian live-boot media before using the experimental command-line creator. "
-            "This analysis is read-only."
+            "The ordinary Create USB button preserves Linux images byte-for-byte and does not add persistence. "
+            "Check compatibility here, then open the guarded creator to build a writable FAT32 plus ext4 persistent USB."
         ))
         persistence_intro.set_xalign(0)
         persistence_intro.set_line_wrap(True)
         persistence_box.pack_start(persistence_intro, False, False, 0)
-        self.persistence_button = Gtk.Button(label="Analyze selected image…")
-        self.persistence_button.set_halign(Gtk.Align.START)
+        persistence_actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.persistence_button = Gtk.Button(label="Check persistence compatibility…")
         self.persistence_button.connect("clicked", self.analyze_persistence)
-        persistence_box.pack_start(self.persistence_button, False, False, 0)
+        persistence_actions.pack_start(self.persistence_button, False, False, 0)
+        self.open_persistence_button = Gtk.Button(label="Open Persistent USB Creator…")
+        self.open_persistence_button.connect("clicked", self.open_persistence_creator)
+        persistence_actions.pack_start(self.open_persistence_button, False, False, 0)
+        persistence_box.pack_start(persistence_actions, False, False, 0)
         self.persistence_summary = Gtk.Label(label="Select a recognized Linux ISOHybrid image and USB drive.")
         self.persistence_summary.set_xalign(0)
         self.persistence_summary.set_line_wrap(True)
@@ -903,13 +1229,8 @@ class RufusWindow(Gtk.ApplicationWindow):
         except ValueError:
             pass
         try:
-            os.makedirs(directory, mode=0o700, exist_ok=True)
-            temporary = path + ".tmp"
-            with open(temporary, "w", encoding="utf-8") as handle:
-                json.dump(self.settings, handle, indent=2, sort_keys=True)
-            os.chmod(temporary, 0o600)
-            os.replace(temporary, path)
-        except OSError:
+            atomic_write_json(path, self.settings)
+        except (OSError, TypeError, ValueError):
             pass
 
     def on_configure(self, *_):
@@ -992,12 +1313,22 @@ class RufusWindow(Gtk.ApplicationWindow):
 
     def set_busy(self, busy):
         self.busy = bool(busy)
-        usable = not busy and bool(self.devices) and bool(self.inspection.get("recognized"))
+        background_idle = not self.inspection_running and not self.device_refreshing
+        usable = not busy and background_idle and bool(self.devices) and bool(self.inspection.get("recognized"))
         self.start_button.set_sensitive(usable)
-        for widget in (self.image_chooser, self.download_button, self.target_combo, self.refresh_button, self.verify):
+        for widget in (
+            self.image_chooser,
+            self.download_button,
+            self.target_combo,
+            self.verify,
+            self.open_persistence_button,
+            self.uefi_validation_button,
+        ):
             widget.set_sensitive(not busy)
+        self.refresh_button.set_sensitive(not busy and not self.device_refreshing)
         self.persistence_button.set_sensitive(
             not busy
+            and background_idle
             and bool(self.devices)
             and bool(self.inspection.get("recognized"))
             and self.inspection.get("mode") == "raw"
@@ -1016,19 +1347,45 @@ class RufusWindow(Gtk.ApplicationWindow):
                 Gtk.MessageType.WARNING,
             )
             return True
+        self.closed = True
+        self.inspection_generation += 1
+        self.device_generation += 1
         self.save_settings()
         return False
 
+
+    def open_uefi_validator(self, *_):
+        if self.busy:
+            return
+        dialog = UEFIValidationDialog(self, self.settings)
+        dialog.run()
+        dialog.closed = True
+        dialog.generation += 1
+        dialog.destroy()
+        self.save_settings()
+
     def image_changed(self, *_):
         path = self.image_chooser.get_filename()
+        self.inspection_generation += 1
+        generation = self.inspection_generation
+        self.inspection_running = False
         self.inspection = {}
         self.windows_options = {}
         if not path:
             self.update_layout({})
+            self.set_busy(self.busy)
             return
         if not supported_image_name(path):
             self.update_layout({"description": "Unsupported filename", "recognized": False})
+            self.set_busy(self.busy)
             return
+        self.inspection_running = True
+        self.update_layout({"description": "Inspecting image…", "recognized": False})
+        self.set_busy(self.busy)
+        threading.Thread(target=self._run_image_inspection, args=(path, generation), daemon=True).start()
+
+    def _run_image_inspection(self, path, generation):
+        inspection = {}
         try:
             result = subprocess.run(
                 [helper_path(), "inspect", "--image", path, "--json"],
@@ -1038,12 +1395,21 @@ class RufusWindow(Gtk.ApplicationWindow):
                 timeout=20,
             )
             if result.stdout.strip():
-                self.inspection = json.loads(result.stdout)
-            if result.returncode != 0 and not self.inspection:
+                inspection = json.loads(result.stdout)
+            if result.returncode != 0 and not inspection:
                 raise RuntimeError(result.stderr.strip() or "Image inspection failed")
         except Exception as exc:
-            self.inspection = {"recognized": False, "description": str(exc)}
-        self.update_layout(self.inspection)
+            inspection = {"recognized": False, "description": str(exc)}
+        GLib.idle_add(self._finish_image_inspection, path, generation, inspection)
+
+    def _finish_image_inspection(self, path, generation, inspection):
+        if self.closed or generation != self.inspection_generation or self.image_chooser.get_filename() != path:
+            return False
+        self.inspection_running = False
+        self.inspection = inspection
+        self.update_layout(inspection)
+        self.set_busy(self.busy)
+        return False
 
     def update_layout(self, info):
         description = info.get("description") or "Choose an image"
@@ -1229,10 +1595,17 @@ class RufusWindow(Gtk.ApplicationWindow):
 
     def run_download(self, command):
         result_payload = {}
+        process = None
         try:
-            self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True)
-            assert self.process.stdout is not None
-            for raw in self.process.stdout:
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True)
+            self.process = process
+            assert process.stdout is not None
+            if self.cancel_requested and process.poll() is None:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except (ProcessLookupError, PermissionError, OSError):
+                    pass
+            for raw in process.stdout:
                 line = raw.strip()
                 if not line:
                     continue
@@ -1245,13 +1618,14 @@ class RufusWindow(Gtk.ApplicationWindow):
                     GLib.idle_add(self.handle_event, payload)
                 elif isinstance(payload, dict) and payload.get("path"):
                     result_payload = payload
-            return_code = self.process.wait()
+            return_code = process.wait()
             GLib.idle_add(self.finish_download, return_code, result_payload)
         except Exception as exc:
             GLib.idle_add(self.append_log, f"Verified download failed: {exc}")
             GLib.idle_add(self.finish_download, 1, {})
         finally:
-            self.process = None
+            if self.process is process:
+                self.process = None
 
     def finish_download(self, return_code, payload):
         was_cancelled = self.cancel_requested
@@ -1277,6 +1651,14 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.progress_detail.set_text("No unverified image was installed.")
             self.message("The image could not be downloaded or verified. No unverified file was installed.", Gtk.MessageType.ERROR)
         return False
+
+    def open_persistence_creator(self, *_):
+        if self.busy:
+            return
+        try:
+            subprocess.Popen([persistence_launcher_path()], start_new_session=True)
+        except OSError as exc:
+            self.message(f"Could not open the persistent USB creator: {exc}", Gtk.MessageType.ERROR)
 
     def analyze_persistence(self, *_):
         image = self.image_chooser.get_filename()
@@ -1349,17 +1731,20 @@ class RufusWindow(Gtk.ApplicationWindow):
         return True
 
     def run_persistence_plan(self, command):
+        process = None
         try:
-            self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
-            stdout, stderr = self.process.communicate()
-            return_code = self.process.returncode
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+            self.process = process
+            stdout, stderr = process.communicate()
+            return_code = process.returncode
             payload = json.loads(stdout) if return_code == 0 else {}
             error = stderr.strip() or stdout.strip() if return_code != 0 else ""
             GLib.idle_add(self.finish_persistence_plan, return_code, payload, error)
         except Exception as exc:
             GLib.idle_add(self.finish_persistence_plan, 1, {}, str(exc))
         finally:
-            self.process = None
+            if self.process is process:
+                self.process = None
 
     def finish_persistence_plan(self, return_code, payload, error):
         was_cancelled = self.cancel_requested
@@ -1381,7 +1766,7 @@ class RufusWindow(Gtk.ApplicationWindow):
                 self.persistence_summary.set_text(summary)
                 self.progress.set_fraction(1.0)
                 self.progress.set_text("Persistence compatibility confirmed")
-                self.progress_detail.set_text("The private read-only ISO mount was removed. Creation remains experimental and command-line only.")
+                self.progress_detail.set_text("The private read-only ISO mount was removed. Open the guarded persistent USB creator to continue.")
                 self.append_log(summary)
                 return False
         if was_cancelled:
@@ -1408,8 +1793,13 @@ class RufusWindow(Gtk.ApplicationWindow):
         if not architecture:
             self.message(f"No Microsoft DBX download mapping is available for {machine}.", Gtk.MessageType.ERROR)
             return
-        self.dbx_update_button.set_sensitive(False)
+        self.active_job = "dbx-update"
+        self.cancel_requested = False
+        self.operation_started_at = datetime.now(timezone.utc)
+        self.set_busy(True)
+        self.progress.pulse()
         self.progress.set_text("Downloading Microsoft Secure Boot DBX…")
+        self.progress_detail.set_text("The DBX update is read-only, but other operations remain disabled until it finishes.")
 
         def worker():
             try:
@@ -1430,7 +1820,10 @@ class RufusWindow(Gtk.ApplicationWindow):
         threading.Thread(target=worker, daemon=True).start()
 
     def finish_dbx_update(self, path, digest, error):
-        self.dbx_update_button.set_sensitive(not self.busy and self.inspection.get("mode") == "windows")
+        if self.active_job != "dbx-update":
+            return False
+        self.active_job = ""
+        self.set_busy(False)
         if error:
             self.progress.set_text("Secure Boot DBX update failed")
             self.message(f"Could not update the Secure Boot DBX: {error}", Gtk.MessageType.ERROR)
@@ -1444,23 +1837,47 @@ class RufusWindow(Gtk.ApplicationWindow):
         return False
 
     def refresh_devices(self):
+        if self.busy or self.device_refreshing or self.closed:
+            return
+        self.device_generation += 1
+        generation = self.device_generation
+        self.device_refreshing = True
         self.target_combo.remove_all()
         self.devices = []
+        self.progress.set_text("Scanning removable drives…")
+        self.set_busy(self.busy)
+        threading.Thread(target=self._run_device_refresh, args=(generation,), daemon=True).start()
+
+    def _run_device_refresh(self, generation):
+        devices = []
+        error = ""
         try:
             result = subprocess.run([helper_path(), "list", "--json"], check=True, text=True, capture_output=True, timeout=15)
-            self.devices = json.loads(result.stdout)
-            for device in self.devices:
-                self.target_combo.append_text(device_label(device))
-            if self.devices:
-                self.target_combo.set_active(0)
-                self.progress.set_text("Ready")
-            else:
-                self.progress.set_text("No removable USB drive found")
+            devices = json.loads(result.stdout)
+            if not isinstance(devices, list):
+                raise ValueError("Drive enumeration returned invalid data.")
         except Exception as exc:
-            self.append_log(f"Could not list USB drives: {exc}")
+            error = str(exc)
+        GLib.idle_add(self._finish_device_refresh, generation, devices, error)
+
+    def _finish_device_refresh(self, generation, devices, error):
+        if self.closed or generation != self.device_generation:
+            return False
+        self.device_refreshing = False
+        self.devices = devices if not error else []
+        self.target_combo.remove_all()
+        for device in self.devices:
+            self.target_combo.append_text(device_label(device))
+        if error:
+            self.append_log(f"Could not list USB drives: {error}")
             self.progress.set_text("Drive detection failed")
-        self.start_button.set_sensitive(not self.busy and bool(self.devices) and bool(self.inspection.get("recognized")))
-        self.persistence_button.set_sensitive(not self.busy and bool(self.devices) and self.inspection.get("mode") == "raw" and bool(self.inspection.get("recognized")))
+        elif self.devices:
+            self.target_combo.set_active(0)
+            self.progress.set_text("Ready")
+        else:
+            self.progress.set_text("No removable USB drive found")
+        self.set_busy(self.busy)
+        return False
 
     def choose_windows_options(self):
         dialog = WindowsOptionsDialog(self, self.windows_options)
@@ -1635,8 +2052,9 @@ class RufusWindow(Gtk.ApplicationWindow):
         threading.Thread(target=self.run_writer, args=(command,), daemon=True).start()
 
     def run_writer(self, command):
+        process = None
         try:
-            self.process = subprocess.Popen(
+            process = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -1644,13 +2062,14 @@ class RufusWindow(Gtk.ApplicationWindow):
                 bufsize=1,
                 start_new_session=True,
             )
-            assert self.process.stdout is not None
-            if self.cancel_requested and self.process.poll() is None:
+            self.process = process
+            assert process.stdout is not None
+            if self.cancel_requested and process.poll() is None:
                 try:
-                    os.killpg(self.process.pid, signal.SIGTERM)
-                except (ProcessLookupError, PermissionError):
+                    os.killpg(process.pid, signal.SIGTERM)
+                except (ProcessLookupError, PermissionError, OSError):
                     pass
-            for raw in self.process.stdout:
+            for raw in process.stdout:
                 line = raw.strip()
                 if not line:
                     continue
@@ -1660,13 +2079,14 @@ class RufusWindow(Gtk.ApplicationWindow):
                     GLib.idle_add(self.append_log, line)
                     continue
                 GLib.idle_add(self.handle_event, event)
-            return_code = self.process.wait()
+            return_code = process.wait()
             GLib.idle_add(self.finish, return_code)
         except Exception as exc:
             GLib.idle_add(self.append_log, f"Failed to start the writer: {exc}")
             GLib.idle_add(self.finish, 1)
         finally:
-            self.process = None
+            if self.process is process:
+                self.process = None
 
     def handle_event(self, event):
         message = event.get("message", "")
@@ -1716,8 +2136,8 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.cancel_path = None
         if return_code == 0:
             self.progress.set_fraction(1.0)
-            self.progress.set_text("USB created successfully")
-            self.progress_detail.set_text("The operation completed successfully. A diagnostic report can be saved from Details.")
+            self.progress.set_text("USB media creation completed")
+            self.progress_detail.set_text("Software checks completed. Firmware boot still requires testing on the intended computer.")
             self.message(success_message(self.active_mode, self.active_verify_requested, self.active_filesystem), Gtk.MessageType.INFO)
         elif was_cancelled:
             self.progress.set_text("Cancelled safely")

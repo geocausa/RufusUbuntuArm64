@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=RufusArm64 Persistent Live USB
+Comment=Internal launcher for the RufusArm64 persistent Ubuntu or Debian live-USB workflow
+Exec=rufusarm64-persistence
+Icon=io.github.geocausa.RufusArm64
+Terminal=false
+Type=Application
+Categories=Utility;
+Keywords=USB;ISO;Ubuntu;Debian;Live;Persistence;
+StartupNotify=true
+NoDisplay=true

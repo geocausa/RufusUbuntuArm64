@@ -23,6 +23,7 @@ import (
 	"github.com/geocausa/RufusArm64/internal/linuxmedia"
 	"github.com/geocausa/RufusArm64/internal/persistence"
 	"github.com/geocausa/RufusArm64/internal/qualification"
+	"github.com/geocausa/RufusArm64/internal/runtimeintegrity"
 	"github.com/geocausa/RufusArm64/internal/safety"
 	"github.com/geocausa/RufusArm64/internal/secureboot"
 	"github.com/geocausa/RufusArm64/internal/sourcefile"
@@ -30,7 +31,7 @@ import (
 	"github.com/geocausa/RufusArm64/internal/windowsmedia"
 )
 
-var version = "0.9.0"
+var version = "development"
 
 const defaultAcquisitionChannelConfig = "/usr/share/rufusarm64/acquisition/channel.json"
 
@@ -82,6 +83,8 @@ func run(args []string) error {
 		return runHash(args[1:])
 	case "dbx":
 		return runDBX(args[1:])
+	case "uefi":
+		return runUEFI(args[1:])
 	case "acquire":
 		return runAcquire(args[1:])
 	case "persistence":
@@ -110,6 +113,9 @@ Usage:
   sudo rufusarm64-cli write --mode linux-persistent --experimental-persistence --image FILE --device /dev/DEVICE [--persistence-size SIZE]
   sudo rufusarm64-cli verify --image FILE --device /dev/DEVICE
   rufusarm64-cli hash FILE
+  rufusarm64-cli uefi validate --directory DIR [--arch ARCH] [--dbx FILE | --firmware] [--sbat-level FILE | --firmware-sbat] [--json]
+  rufusarm64-cli uefi integrity manifest --directory DIR [--max-files N] [--json]
+  rufusarm64-cli uefi integrity verify --directory DIR [--max-files N] [--json]
   rufusarm64-cli dbx inspect (--file FILE | --firmware) [--json]
   rufusarm64-cli dbx update [--arch ARCH] [--output FILE] [--json]
   rufusarm64-cli dbx check --dbx FILE --efi FILE [--json]
@@ -483,7 +489,7 @@ func runWrite(args []string) error {
 		TimeZone:             *winTimeZone,
 	}
 	if selectedMode != "windows" && (winOptions.Enabled() || scheme != "gpt" || targetSystemChoice != "uefi" || filesystemChoice != "auto" || clusterSize != 0 || *driverFolder != "" || *dbxFile != "" || *fullFormat || *badBlockCheck) {
-		return errors.New("Windows partition and setup options can only be used with a supported Windows installation ISO")
+		return errors.New("windows partition and setup options can only be used with a supported Windows installation ISO")
 	}
 	if selectedMode == "linux-persistent" {
 		if !*experimentalPersistence {
@@ -507,12 +513,12 @@ func runWrite(args []string) error {
 
 	if strings.TrimSpace(*driverFolder) != "" {
 		if err := safety.EnsurePathNotOnTarget(*driverFolder, resolved); err != nil {
-			return fmt.Errorf("Windows driver folder is on the selected target: %w", err)
+			return fmt.Errorf("windows driver folder is on the selected target: %w", err)
 		}
 	}
 	if strings.TrimSpace(*dbxFile) != "" {
 		if err := safety.EnsurePathNotOnTarget(*dbxFile, resolved); err != nil {
-			return fmt.Errorf("Secure Boot DBX file is on the selected target: %w", err)
+			return fmt.Errorf("secure boot DBX file is on the selected target: %w", err)
 		}
 	}
 	if selectedMode == "raw" && imageSize > dev.Size {
@@ -572,7 +578,7 @@ func runWrite(args []string) error {
 		return targetCheck(source, selectedIdentity)
 	}
 	postWriteTargetCheck := func(source *os.File) error {
-		return targetCheck(source, "")
+		return targetCheck(source, selectedIdentity)
 	}
 
 	if selectedMode == "linux-persistent" {
@@ -1042,6 +1048,292 @@ func runVerify(args []string) error {
 
 func setTrustedSystemPath() {
 	_ = os.Setenv("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
+}
+
+func runUEFI(args []string) error {
+	if len(args) == 0 {
+		return errors.New("uefi requires validate or integrity")
+	}
+	switch args[0] {
+	case "validate":
+		return runUEFIValidate(args[1:])
+	case "integrity":
+		return runUEFIIntegrity(args[1:])
+	default:
+		return fmt.Errorf("unknown uefi command %q", args[0])
+	}
+}
+
+type runtimeIntegrityManifestOutput struct {
+	Root       string                   `json:"root"`
+	Manifest   string                   `json:"manifest"`
+	TotalBytes uint64                   `json:"total_bytes"`
+	Entries    []runtimeintegrity.Entry `json:"entries"`
+}
+
+func runUEFIIntegrity(args []string) error {
+	if len(args) == 0 {
+		return errors.New("uefi integrity requires manifest or verify")
+	}
+	switch args[0] {
+	case "manifest":
+		return runUEFIIntegrityManifest(args[1:])
+	case "verify":
+		return runUEFIIntegrityVerify(args[1:])
+	default:
+		return fmt.Errorf("unknown uefi integrity command %q", args[0])
+	}
+}
+
+func parseRuntimeIntegrityFlags(name string, args []string) (*flag.FlagSet, *string, *int, *bool, error) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	directory := fs.String("directory", "", "mounted or materialized media root")
+	maxFiles := fs.Int("max-files", runtimeintegrity.DefaultMaximumFiles, "maximum regular files to hash")
+	asJSON := fs.Bool("json", false, "output JSON")
+	if err := fs.Parse(args); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	if fs.NArg() != 0 {
+		return nil, nil, nil, nil, fmt.Errorf("%s does not accept positional arguments", name)
+	}
+	if strings.TrimSpace(*directory) == "" {
+		return nil, nil, nil, nil, errors.New("--directory is required")
+	}
+	if *maxFiles <= 0 || *maxFiles > runtimeintegrity.MaximumManifestLines {
+		return nil, nil, nil, nil, fmt.Errorf("--max-files must be between 1 and %d", runtimeintegrity.MaximumManifestLines)
+	}
+	return fs, directory, maxFiles, asJSON, nil
+}
+
+func resolvedIntegrityRoot(directory string) string {
+	absolute, err := filepath.Abs(directory)
+	if err != nil {
+		return directory
+	}
+	resolved, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return absolute
+	}
+	return resolved
+}
+
+func runUEFIIntegrityManifest(args []string) error {
+	_, directory, maxFiles, asJSON, err := parseRuntimeIntegrityFlags("uefi integrity manifest", args)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	manifest, err := runtimeintegrity.Generate(ctx, *directory, runtimeintegrity.Options{MaxFiles: *maxFiles})
+	if err != nil {
+		return err
+	}
+	data, err := manifest.MarshalText()
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(runtimeIntegrityManifestOutput{
+			Root:       resolvedIntegrityRoot(*directory),
+			Manifest:   string(data),
+			TotalBytes: manifest.TotalBytes,
+			Entries:    manifest.Entries,
+		})
+	}
+	_, err = os.Stdout.Write(data)
+	return err
+}
+
+func runUEFIIntegrityVerify(args []string) error {
+	_, directory, maxFiles, asJSON, err := parseRuntimeIntegrityFlags("uefi integrity verify", args)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	result, err := runtimeintegrity.Verify(ctx, *directory, runtimeintegrity.Options{MaxFiles: *maxFiles})
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		printRuntimeIntegrityVerification(result)
+	}
+	if !result.Valid {
+		return errors.New("runtime media integrity verification failed")
+	}
+	return nil
+}
+
+func printRuntimeIntegrityVerification(result runtimeintegrity.VerificationResult) {
+	status := "VALID"
+	if !result.Valid {
+		status = "INVALID"
+	}
+	fmt.Printf("%s runtime media integrity\n", status)
+	fmt.Printf("Root: %s\nManifest: %s\nDeclared bytes: %d\nActual bytes: %d\n", result.Root, result.ManifestPath, result.DeclaredTotalBytes, result.ActualTotalBytes)
+	for _, file := range result.Files {
+		if file.Status == "ok" {
+			continue
+		}
+		fmt.Printf("%-10s %s", strings.ToUpper(file.Status), file.Path)
+		if file.Error != "" {
+			fmt.Printf(": %s", file.Error)
+		}
+		fmt.Println()
+	}
+	for _, path := range result.Unexpected {
+		fmt.Printf("UNEXPECTED %s\n", path)
+	}
+	for _, verificationError := range result.Errors {
+		fmt.Printf("Error: %s\n", verificationError)
+	}
+}
+
+func resolveUEFIArchitecture(value string) (string, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value != "" && value != "native" {
+		return value, nil
+	}
+	switch runtime.GOARCH {
+	case "386", "amd64", "arm", "arm64", "riscv64":
+		return runtime.GOARCH, nil
+	case "loong64":
+		return "loongarch64", nil
+	default:
+		return "", fmt.Errorf("the native architecture %q is not supported for UEFI validation", runtime.GOARCH)
+	}
+}
+
+func loadUEFISBATLevel(path string, firmware bool, firmwareLoader func() (*secureboot.SBATLevel, error)) (*secureboot.SBATLevel, error) {
+	path = strings.TrimSpace(path)
+	if path != "" && firmware {
+		return nil, errors.New("select at most one of --sbat-level or --firmware-sbat")
+	}
+	if firmware {
+		if firmwareLoader == nil {
+			return nil, errors.New("firmware SBAT loader is unavailable")
+		}
+		return firmwareLoader()
+	}
+	if path != "" {
+		return secureboot.LoadSBATLevelFile(path)
+	}
+	return nil, nil
+}
+
+func runUEFIValidate(args []string) error {
+	fs := flag.NewFlagSet("uefi validate", flag.ContinueOnError)
+	directory := fs.String("directory", "", "mounted or extracted UEFI media root")
+	architecture := fs.String("arch", "native", "native, 386, amd64, arm, arm64, riscv64, or loongarch64")
+	maxFiles := fs.Int("max-files", 512, "maximum EFI executables to validate")
+	requireFallback := fs.Bool("require-fallback", true, "require the architecture removable-media fallback loader")
+	dbxPath := fs.String("dbx", "", "optional DBXUpdate.bin or raw DBX file")
+	firmware := fs.Bool("firmware", false, "use the running firmware DBX variable")
+	sbatLevelPath := fs.String("sbat-level", "", "optional trusted local shim-compatible SbatLevel CSV file")
+	firmwareSBAT := fs.Bool("firmware-sbat", false, "use the SBAT level exposed by the running shim through efivarfs")
+	asJSON := fs.Bool("json", false, "output JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("uefi validate does not accept positional arguments")
+	}
+	if strings.TrimSpace(*directory) == "" {
+		return errors.New("--directory is required")
+	}
+	if *maxFiles <= 0 {
+		return errors.New("--max-files must be greater than zero")
+	}
+	if *dbxPath != "" && *firmware {
+		return errors.New("select at most one of --dbx or --firmware")
+	}
+	resolvedArchitecture, err := resolveUEFIArchitecture(*architecture)
+	if err != nil {
+		return err
+	}
+	sbatLevel, err := loadUEFISBATLevel(*sbatLevelPath, *firmwareSBAT, secureboot.FirmwareSBATLevel)
+	if err != nil {
+		return err
+	}
+	var dbx *secureboot.Database
+	if *dbxPath != "" || *firmware {
+		dbx, err = loadDBX(*dbxPath, *firmware)
+		if err != nil {
+			return err
+		}
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	result, err := secureboot.ValidateUEFIMedia(ctx, *directory, secureboot.UEFIValidationOptions{
+		Architecture:    resolvedArchitecture,
+		MaxFiles:        *maxFiles,
+		DBX:             dbx,
+		SBATLevel:       sbatLevel,
+		RequireFallback: *requireFallback,
+	})
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(result); err != nil {
+			return err
+		}
+	} else {
+		printUEFIValidation(result)
+	}
+	if !result.Valid {
+		return errors.New("UEFI media validation failed")
+	}
+	return nil
+}
+
+func printUEFIValidation(result secureboot.UEFIMediaValidation) {
+	status := "VALID"
+	if !result.Valid {
+		status = "INVALID"
+	}
+	fmt.Printf("%s UEFI media for %s\n", status, result.Architecture)
+	fmt.Printf("Root: %s\nFallback: %s (found: %t)\nDBX checked: %t\nSBAT level checked: %t\n", result.Root, result.FallbackPath, result.FallbackFound, result.DBXChecked, result.SBATLevelChecked)
+	if result.SBATLevelChecked {
+		fmt.Printf("SBAT level: %s (datestamp %s)\n", result.SBATLevelSource, result.SBATLevelDatestamp)
+	}
+	for _, file := range result.Files {
+		fileStatus := "OK"
+		switch {
+		case file.DirectHashRevoked || file.X509CertificateRevoked || file.SBATRevoked:
+			fileStatus = "REVOKED"
+		case file.Error != "":
+			fileStatus = "ERROR"
+		case len(file.Warnings) > 0:
+			fileStatus = "WARNING"
+		}
+		fmt.Printf("%-8s %s [%s; %s; SBAT records: %d]\n", fileStatus, file.Path, file.MachineName, file.SubsystemName, len(file.SBAT))
+		for _, revocation := range file.SBATRevocations {
+			fmt.Printf("  SBAT revoked: %s generation %d is below trusted minimum %d\n", revocation.Component, revocation.ImageGeneration, revocation.MinimumGeneration)
+		}
+		for _, warning := range file.Warnings {
+			fmt.Printf("  warning: %s\n", warning)
+		}
+		if file.Error != "" {
+			fmt.Printf("  error: %s\n", file.Error)
+		}
+	}
+	for _, warning := range result.Warnings {
+		fmt.Printf("Warning: %s\n", warning)
+	}
+	for _, validationError := range result.Errors {
+		fmt.Printf("Error: %s\n", validationError)
+	}
 }
 
 func runDBX(args []string) error {

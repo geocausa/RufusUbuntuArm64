@@ -1,4 +1,4 @@
-.TH RUFUSARM64-CLI 1 "16 July 2026" "RufusArm64 0.9.0" "User Commands"
+.TH RUFUSARM64-CLI 1 "18 July 2026" "RufusArm64 0.11.0" "User Commands"
 .SH NAME
 rufusarm64-cli \- safely create bootable USB media on Linux
 .SH SYNOPSIS
@@ -22,28 +22,24 @@ rufusarm64-cli \- safely create bootable USB media on Linux
 .BI --device " /dev/DEVICE"
 .RI [ --persistence-size " SIZE" ]
 .PP
-.B sudo rufusarm64-cli verify
-.BI --image " FILE"
-.BI --device " /dev/DEVICE"
-.PP
-.B rufusarm64-cli hash
-.I FILE
-.PP
-.B rufusarm64-cli acquire channel list
-.RI [ --config " FILE" ]
-.RI [ --cache-dir " DIRECTORY" ]
-.RI [ --offline ]
+.B rufusarm64-cli uefi validate
+.BI --directory " DIRECTORY"
+.RI [ --arch " ARCH" ]
+.RI [ --max-files " N" ]
+.RI [ --require-fallback=true|false ]
+.RI [ --dbx " FILE" | --firmware ]
+.RI [ --sbat-level " FILE" | --firmware-sbat ]
 .RI [ --json ]
 .PP
-.B rufusarm64-cli acquire channel download
-.BI --id " ID"
-.RI [ --output " FILE|DIR" ]
-.RI [ --replace ]
-.RI [ --config " FILE" ]
-.RI [ --cache-dir " DIRECTORY" ]
-.RI [ --offline ]
+.B rufusarm64-cli uefi integrity manifest
+.BI --directory " DIRECTORY"
+.RI [ --max-files " N" ]
 .RI [ --json ]
-.RI [ --json-progress ]
+.PP
+.B rufusarm64-cli uefi integrity verify
+.BI --directory " DIRECTORY"
+.RI [ --max-files " N" ]
+.RI [ --json ]
 .PP
 .B rufusarm64-cli persistence plan
 .BI --image " FILE"
@@ -76,154 +72,215 @@ rufusarm64-cli \- safely create bootable USB media on Linux
 writes recognized GPT/MBR disk images and ISOHybrid Linux images directly, or
 creates extracted Windows installation media. Windows media support GPT or MBR,
 UEFI or x86-family BIOS/CSM, and Automatic, FAT32, or NTFS selection.
-FAT32 media split oversized WIM/ESD files. NTFS/UEFI media add a pinned
-UEFI:NTFS partition. BIOS/CSM media install an active MBR partition and
-BOOTMGR-compatible MBR/PBR boot code. Compressed images are expanded privately before erasure; VHD, VHDX, QCOW2, and VMDK inputs are flattened with qemu-img.
-.SH WRITE OPTIONS
+Compressed and common virtual-disk inputs are prepared before target erasure.
+.PP
+Version 0.10.5 supplies the engine used by the guarded graphical
+persistent-live USB wizard. The single visible RufusArm64 application entry
+opens the ordinary writer normally and exposes a Create Persistent Live USB
+desktop action. The persistence path performs identity-bound read-only analysis,
+exact target confirmation, fresh Polkit authorization, destructive creation
+through a separate narrow helper, and post-creation qualification.
+.SH UEFI MEDIA VALIDATION
+.B uefi validate
+performs a bounded, descriptor-rooted, read-only scan of a mounted or extracted
+UEFI media tree. It validates the architecture fallback loader, PE machine and
+EFI subsystem fields, bounded SBAT metadata, and optional DBX image-hash and
+embedded-certificate revocations. It does not modify firmware or media.
+.TP
+.BI --directory " DIRECTORY"
+Select the mounted or extracted media root. Every directory and EFI executable
+is opened relative to a retained descriptor with no-follow semantics.
+.TP
+.BI --arch " ARCH"
+Select native, 386, amd64, arm, arm64, riscv64, or loongarch64. Native is the
+default.
+.TP
+.BI --max-files " N"
+Set the bounded EFI executable count. The default is 512 and the library safety
+maximum remains 4096.
+.TP
+.B --require-fallback=true|false
+Require the architecture removable-media fallback loader. The default is true.
+.TP
+.BI --dbx " FILE"
+Apply a local DBXUpdate.bin or raw EFI signature-list file.
+.TP
+.B --firmware
+Apply the running firmware DBX instead of a local file.
+.TP
+.BI --sbat-level " FILE"
+Apply a caller-trusted local shim-compatible SbatLevel CSV payload. A matching
+image component is revoked only when its generation is lower than the trusted
+minimum. The file is read once from a pinned regular-file descriptor.
+.TP
+.B --firmware-sbat
+Use the SBAT level exposed by the running shim through efivarfs. The runtime
+SbatLevelRT mirror is preferred and must have exact boot-service/runtime
+attributes. A readable persistent SbatLevel fallback must have shim-compatible
+boot-service/non-volatile attributes; readable copies must have identical
+payloads. Firmware is never modified.
+.PP
+JSON output is emitted before an invalid-media failure status, allowing callers
+to inspect the complete result while still relying on the process exit code.
+.SH UEFI RUNTIME MEDIA INTEGRITY MANIFESTS
+.B uefi integrity manifest
+performs a descriptor-rooted read-only scan and writes exact uefi-md5sum-compatible
+manifest text to standard output. It never writes the media tree. With
+.B --json
+it emits the same manifest text, total byte count, and ordered records in a
+structured document.
+.PP
+.B uefi integrity verify
+reads the exact root
+.B md5sum.txt
+and reports changed, missing, unexpected, and total-byte mismatches. JSON is
+emitted before a non-zero invalid-media status. The default and maximum file
+limit is 100000; manifest size is bounded to 64 MiB and paths to 512 bytes.
+.PP
+These commands are unprivileged. They do not mount images, open block devices,
+invoke Polkit, access firmware, or install a bootloader. MD5 is used solely for
+interoperability with the upstream boot-time validator; RufusArm64 continues to
+use SHA-256 for source identity, downloads, and destructive-write assurance.
+.SH COMMON WRITE OPTIONS
 .TP
 .B --verify
 Flush block buffers and compare copied data after writing. Recommended.
 .TP
-.B --experimental-persistence
-Enable the CLI-only experimental GPT/UEFI persistent Linux writer. This flag is accepted only with
-.BR --mode " linux-persistent"
-and is rejected by the graphical privileged path.
-.TP
-.BI --persistence-size " SIZE"
-Set the ext4 persistence partition size using bytes or K/M/G/T units. Zero uses all aligned space remaining after the writable FAT32 boot partition. The initial implementation requires at least 1 GiB.
-.TP
-.BI --partition-scheme " gpt|mbr"
+.B --partition-scheme gpt|mbr
 Choose the partition table for extracted Windows media. GPT is the default.
-BIOS/CSM requires MBR.
 .TP
-.BI --target-system " uefi|bios"
-Choose UEFI (non-CSM) or legacy BIOS/UEFI-CSM. BIOS is accepted only for MBR
-media made from a compatible x86 or x86-64 Windows ISO containing root
-.BR bootmgr .
-Windows ARM64 is UEFI-only.
+.B --target-system uefi|bios
+Choose UEFI or legacy BIOS/UEFI-CSM. Windows ARM64 is UEFI-only.
 .TP
-.BI --filesystem " auto|fat32|ntfs"
-Choose the Windows-media filesystem. Automatic prefers FAT32 when every path and
-file can be represented safely and otherwise selects NTFS. FAT32 splits an
-oversized Windows installation image. NTFS/UEFI uses the bundled UEFI:NTFS
-loader; NTFS/BIOS uses the Windows BOOTMGR partition boot record.
-.TP
-.BI --cluster-size " auto|4096|8192|16384|32768"
-Choose the allocation-unit size for extracted Windows media.
+.B --filesystem auto|fat32|ntfs
+Choose the Windows-media filesystem. Automatic prefers FAT32 when safe and
+otherwise selects NTFS. FAT32 can split oversized WIM/ESD payloads.
 .TP
 .BI --dbx-file " FILE"
-Parse a Microsoft DBXUpdate.bin or raw EFI signature database and reject Windows EFI boot files whose Authenticode hash or embedded X.509 certificate is revoked. This does not modify firmware.
+Reject Windows EFI boot files revoked by the selected Secure Boot DBX. Firmware
+is not modified.
 .TP
 .BI --driver-folder " DIRECTORY"
-Validate a directory containing complete Windows driver packages and copy it to
-.BR USB\\drivers .
-The generated windowsPE answer file attempts to load each .inf package before
-disk selection. The same folder remains available through Windows Setup's
-.B Load driver
-button. Drivers are not injected into boot.wim.
+Validate and copy complete Windows driver packages for Windows PE and manual
+Setup loading.
 .TP
 .B --full-format
 Zero-write the complete new Windows data partition before formatting.
 .TP
 .B --bad-block-check
 Zero-write and read back the complete new Windows data partition before formatting.
-This is one destructive zero-pattern pass and can take a long time.
 .TP
 .B --yes
-Skip the interactive destructive-operation confirmation.
+Skip interactive destructive-operation confirmation.
 .TP
 .B --allow-fixed
 Permit a non-removable whole disk after all other safety checks pass.
 .TP
-.B --allow-foreign-windows-architecture
-Allow UEFI Windows media whose architecture does not match the ARM64 host. BIOS
-media are architecture-gated separately and require x86-family Windows boot files.
-.TP
-.B --force-raw
-Expert override that forces raw writing of a deliberately unrecognized or plain optical image.
-.TP
-.B --no-unmount
-Do not issue initial unmount commands. The operation is still refused if a
-filesystem is mounted at the final safety check.
-.TP
-.B --dry-run
-Perform discovery, signature, size, source-identity, and target-safety checks without writing.
-.TP
 .BI --expected-identity " TOKEN"
-Require the selected device to match a token returned by the JSON list command.
-The graphical application always supplies this fail-closed check.
-.SH SECURE BOOT DBX COMMANDS
+Require the target to match a refreshed token returned by the JSON list command.
+The graphical workflows always supply this check.
+.SH LINUX PERSISTENCE
 .TP
-.B dbx inspect (--file FILE | --firmware) [--json]
-Parse and summarize an authenticated-update-format or firmware EFI DBX.
+.B --experimental-persistence
+Enable the command-line GPT/UEFI persistent Linux writer. This flag is accepted
+only with
+.BR --mode " linux-persistent" .
+The normal graphical writer still rejects this mode; the guarded persistence
+wizard invokes its own package-owned helper. The wizard is opened from the
+single RufusArm64 application entry or with
+.BR "rufusarm64 --persistence" .
 .TP
-.B dbx update [--arch ARCH] [--output FILE] [--json]
-Download the architecture-specific DBXUpdate.bin from Microsoft’s secureboot_objects repository and cache it with mode 0600.
-.TP
-.B dbx check (--dbx FILE | --firmware) --efi FILE [--json]
-Calculate the PE/COFF Authenticode SHA-256 digest and inspect embedded PKCS#7 certificates. Exit non-zero when the image or an exact embedded certificate is revoked.
-.TP
-.B dbx scan (--dbx FILE | --firmware) --directory DIR [--json]
-Scan bounded EFI boot files beneath a mounted directory.
-.SH SIGNED IMAGE ACQUISITION COMMANDS
-.TP
-.B acquire verify --catalog FILE --signature FILE --public-key FILE [--json]
-Verify the detached Ed25519 signature over the exact catalog bytes, reject expired or malformed metadata, and report the catalog digest and image count.
-.TP
-.B acquire list --catalog FILE --signature FILE --public-key FILE [--json]
-List entries only after the complete signed catalog has passed strict schema, URL, filename, size, digest, redirect-host, and expiry validation.
-.TP
-.B acquire download --catalog FILE --signature FILE --public-key FILE --id ID [--output FILE|DIR] [--replace] [--json] [--json-progress]
-Download one immutable catalog entry over HTTPS. Redirects are limited to hosts named by the signed catalog. The response must match the signed size and SHA-256. Data are written to a private temporary file, synchronized, and atomically installed only after verification. An existing file is reused only when its full size and hash match; a different regular file requires
-.BR --replace .
-.TP
-.B acquire channel list [--config FILE] [--cache-dir DIR] [--offline] [--json]
-Refresh and verify the package-owned built-in channel, or reverify only the cached metadata with
-.BR --offline .
-The channel requires canonical JSON, threshold Ed25519 root and catalog signatures, dual-authorized one-version-at-a-time root rotation through a versioned root URL, unexpired metadata, monotonic root/catalog versions, and rejection of a local clock more than 24 hours behind the last accepted metadata time. A network failure may use only an already verified and still-unexpired cache.
-.TP
-.B acquire channel download --id ID [--output FILE|DIR] [--replace] [--config FILE] [--cache-dir DIR] [--offline] [--json] [--json-progress]
-Verify the built-in channel, select one signed immutable image, and use the same exact-size, redirect-host, SHA-256, cancellation, and atomic-install checks as the local catalog downloader. The package channel is disabled until reviewed offline root keys and production metadata are provisioned; no unsafe bypass is available.
-Cancellation removes the temporary partial file.
-.SH LINUX PERSISTENCE PLANNING
-.TP
-.B persistence plan --image FILE --media-root DIRECTORY --target-size SIZE [--size SIZE] [--json]
-Inspect a plain raw-bootable ISOHybrid image and a read-only mounted or extracted media tree, then calculate an append-only persistence partition without modifying the image, directory, or any device.
-.TP
-.B persistence analyze --image FILE --expected-source-identity ID --target-size SIZE [--size SIZE] [--cancel-file FILE] [--json]
-Open an identity-bound plain ISOHybrid image, mount its pinned file descriptor in a private workspace with read-only, no-suid, no-device, and no-exec options, run the same detector and planner, recheck the source identity, then unmount and remove the workspace. Only target capacity is accepted; no target-device path is opened. The graphical application supplies the source identity recorded before authentication and requires JSON plus a trusted per-user cancellation marker.
+.BI --persistence-size " SIZE"
+Set the ext4 persistence size using bytes or K/M/G/T units. Zero uses all suitable
+aligned space remaining after the FAT32 boot partition. At least 1 GiB is required.
 .PP
-The manual planner and automatic analyzer share the same initial compatibility scope. The initial scope is Ubuntu 20.04 or newer casper media and Debian live-boot media. Ubuntu plans use the
+The initial compatibility scope is Ubuntu 20.04 or newer using casper and Debian
+using live-boot. Ubuntu uses the
 .B persistent
-boot parameter and an ext4 partition labeled
+parameter and ext4 label
 .BR casper-rw .
-Debian plans use the
-.B persistence
-parameter, an ext4 partition labeled
+Debian uses
+.BR persistence ,
+ext4 label
 .BR persistence ,
 and a root
 .B persistence.conf
 containing
 .BR / union .
-The command validates occupied MBR entries or both GPT headers and entry-table copies, requires a free partition entry, reserves relocated GPT backup metadata where applicable, and reports boot configurations that require a parameter edit.
 .PP
-The separate experimental writer uses a fresh GPT layout with a FAT32 EFI System Partition and ext4 persistence partition. It is UEFI-only, requires an architecture-matching fallback bootloader, verifies both GPT copies, copies and rehashes a bounded FAT32-compatible media manifest, atomically enables the persistence boot parameter, re-detects the activated contract, and checks both filesystems. It remains CLI-only pending physical ARM64 qualification.
+Ubuntu detection accepts traditional kernel commands containing
+.B boot=casper
+and modern commands that select
+.B /casper/vmlinuz
+through a form such as:
+.PP
+.nf
+linux /casper/vmlinuz $cmdline --- quiet splash
+.fi
+.PP
+For the structural form, an unversioned image must also provide modern casper
+metadata such as
+.BR casper/install-sources.yaml .
+The patcher inserts
+.B persistent
+before the
+.B ---
+separator, changes only family-matching kernel commands, rejects symbolic-link
+paths, and re-detects the copied tree before success.
+.PP
+Read-only automatic analysis mounts only the identity-bound ISO and validates the
+same complete media tree, architecture-matching fallback UEFI loader, FAT32 path
+and file-size rules, boot-partition capacity, and requested persistence size used
+by creation. It does not extend or rely on the ISO's embedded hybrid MBR geometry.
+.PP
+FAT32 cannot represent symbolic links. Bounded relative file and directory links
+whose fully resolved targets remain inside the mounted image are materialized as
+ordinary FAT32 entries, counted for capacity planning, hashed, copied, and rehashed.
+Version 0.10.5 also recognizes a direct root-self alias such as the official
+Ubuntu 26.04
+.B ubuntu -> .
+entry. That alias is omitted because materializing it would recursively duplicate
+the complete image. Nested links back to the media root, absolute or external
+links, cycles, device nodes, case collisions, oversized files, and unbounded
+expansions are refused.
+.PP
+Persistent creation produces a fresh GPT with a FAT32 UEFI boot partition and an
+ext4 persistence partition. It verifies both GPT copies, copies and rehashes a
+bounded FAT32-compatible manifest, checks both filesystems, and flushes the target.
+Compressed images, MBR/BIOS persistence, encrypted persistence, unknown layouts,
+and files incompatible with FAT32 are refused.
 .SH PERSISTENCE QUALIFICATION
 .TP
 .B qualify start --record FILE --output FILE [--state-dir DIRECTORY] [--json]
-Verify the canonical creation record and its SHA-256 sidecar, confirm that the current live system uses the expected architecture, UEFI, live-media family parameter, persistence parameter, and overlay root, then create a private persistent reboot marker. Write an initial JSON report and checksum sidecar. The default marker directory is
-.BR /var/lib/rufusarm64/qualification .
+Verify the creation record and live environment, then store a private marker and
+an initial JSON report with checksum sidecar.
 .TP
 .B qualify verify --record FILE --output FILE [--state-dir DIRECTORY] [--json]
-Repeat the environment checks after a reboot, require a different Linux boot ID, and require the private marker to have survived. Write a verified JSON report and checksum sidecar. A successful result demonstrates persistence across that reboot only; it does not qualify every ARM64 system or firmware.
+After booting the same USB again, require a different Linux boot ID and the
+surviving private marker, then write a verified report and checksum sidecar.
 .PP
-Reports contain hashed boot IDs and marker tokens, but omit hostnames, network addresses, storage serial numbers, product UUIDs, and the raw kernel command line. The creation-record checksum is tamper-evident rather than authenticated: a party able to replace both the record and its checksum can forge them.
+A passing result demonstrates persistence only for that observed reboot on the
+exact image, USB, controller, firmware, and computer. It is not a universal boot
+guarantee.
+.SH SIGNED IMAGE ACQUISITION
+.B acquire verify
+and
+.B acquire list
+validate local detached Ed25519 catalogs before use.
+.B acquire channel list
+and
+.B acquire channel download
+use package-owned threshold-root metadata, rollback and expiry checks, verified
+cache fallback, exact-size downloads, redirect-host limits, and SHA-256 checks.
+The production built-in channel remains disabled until reviewed offline trust
+metadata is provisioned.
 .SH SAFETY
 The program refuses partitions, read-only targets, the running root disk, and an
-image stored on the selected target. It holds and hashes the selected source
-through an open descriptor, refreshes target identity immediately before
-destructive work, locks the target, verifies bundled boot assets, removes stale
-signatures, flushes block buffers, and verifies copied files and filesystems.
+image stored on the selected target. It holds and hashes the selected source,
+refreshes target identity immediately before destructive work, locks the target,
+rejects unsafe symlinks, verifies bundled boot assets, flushes buffers, and checks
+copied files and filesystems. Cancellation leaves incomplete media explicitly
+unqualified.
 .SH EXIT STATUS
 Zero indicates success. A non-zero status indicates refusal, cancellation,
 validation failure, I/O failure, filesystem failure, or verification mismatch.

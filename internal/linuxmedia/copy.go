@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 type CopyEvent struct {
@@ -96,7 +95,7 @@ func CopyAndVerify(ctx context.Context, manifest Manifest, destinationRoot strin
 
 func validateManifestForCopy(manifest Manifest) error {
 	if manifest.SourceRoot == "" || len(manifest.Entries) == 0 {
-		return errors.New("Linux media manifest is empty")
+		return errors.New("linux media manifest is empty")
 	}
 	resolvedRoot, err := resolveRoot(manifest.SourceRoot)
 	if err != nil {
@@ -312,12 +311,4 @@ func copyEntry(ctx context.Context, entry Entry, destination string) (returnErr 
 		return err
 	}
 	return parentHandle.Close()
-}
-
-func openDirectoryNoFollow(path string) (*os.File, error) {
-	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
-	if err != nil {
-		return nil, err
-	}
-	return os.NewFile(uintptr(fd), path), nil
 }

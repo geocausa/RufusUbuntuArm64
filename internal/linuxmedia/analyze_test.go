@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geocausa/RufusArm64/internal/persistence"
 	"github.com/geocausa/RufusArm64/internal/sourcefile"
 )
 
@@ -40,6 +41,7 @@ func TestAnalyzePersistentMountsReadOnlyAndCleansUp(t *testing.T) {
 		ExpectedSource:  identity,
 		TargetSize:      4 * 1024 * 1024 * 1024,
 		PersistenceSize: 1024 * 1024 * 1024,
+		Architecture:    "arm64",
 		WorkDirectory:   workRoot,
 	}, nil, runner)
 	if err != nil {
@@ -47,6 +49,12 @@ func TestAnalyzePersistentMountsReadOnlyAndCleansUp(t *testing.T) {
 	}
 	if result.Detection.FilesystemLabel != "casper-rw" || result.Plan.SizeBytes != 1024*1024*1024 {
 		t.Fatalf("unexpected analysis result: %#v", result)
+	}
+	if result.Plan.PartitionTable != persistence.TableGPT || result.Plan.PartitionNumber != 2 || result.Layout.Boot.Number != 1 || result.Layout.Persistence.Number != 2 {
+		t.Fatalf("analysis did not produce a fresh GPT/FAT32/ext4 layout: %#v", result)
+	}
+	if result.ManifestEntries < 5 || result.ManifestBytes == 0 || result.FAT32RequiredBytes < result.ManifestBytes {
+		t.Fatalf("analysis did not size the writable media tree: %#v", result)
 	}
 	if len(commands) != 2 || commands[0][0] != "mount" || commands[1][0] != "umount" {
 		t.Fatalf("commands = %#v", commands)
@@ -90,6 +98,7 @@ func TestAnalyzePersistentRejectsSourceMutationAndStillUnmounts(t *testing.T) {
 	_, err = analyzePersistentWithRunner(context.Background(), imagePath, PersistentAnalysisOptions{
 		ExpectedSource: identity,
 		TargetSize:     4 * 1024 * 1024 * 1024,
+		Architecture:   "arm64",
 		WorkDirectory:  t.TempDir(),
 	}, nil, runner)
 	if err == nil || !strings.Contains(err.Error(), "changed") {
@@ -119,6 +128,7 @@ func TestAnalyzePersistentCancellationCleansMount(t *testing.T) {
 	_, err = analyzePersistentWithRunner(ctx, imagePath, PersistentAnalysisOptions{
 		ExpectedSource: identity,
 		TargetSize:     4 * 1024 * 1024 * 1024,
+		Architecture:   "arm64",
 		WorkDirectory:  t.TempDir(),
 	}, nil, runner)
 	if err == nil {
@@ -169,5 +179,7 @@ func populateUbuntuAnalysisRoot(t *testing.T, root string) {
 	writeLinuxTestFile(t, filepath.Join(root, ".disk", "info"), "Ubuntu 24.04.2 LTS arm64\n")
 	writeLinuxTestFile(t, filepath.Join(root, "casper", "vmlinuz"), "kernel")
 	writeLinuxTestFile(t, filepath.Join(root, "casper", "initrd"), "initrd")
+	writeLinuxTestFile(t, filepath.Join(root, "casper", "filesystem.squashfs"), "squashfs")
+	writeLinuxTestFile(t, filepath.Join(root, "EFI", "BOOT", "BOOTAA64.EFI"), "efi")
 	writeLinuxTestFile(t, filepath.Join(root, "boot", "grub", "grub.cfg"), "linux /casper/vmlinuz boot=casper --- quiet\n")
 }

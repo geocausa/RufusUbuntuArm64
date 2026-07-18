@@ -52,7 +52,7 @@ func CreateFilesystem(ctx context.Context, partitionPath string, plan Plan, opts
 		return errors.New("persistence partition path is a symbolic link")
 	}
 
-	partition, err := os.OpenFile(partitionPath, os.O_RDWR|syscall.O_EXCL|syscall.O_NOFOLLOW, 0)
+	partition, err := safety.OpenReopenableDevice(partitionPath)
 	if err != nil {
 		return fmt.Errorf("open persistence partition: %w", err)
 	}

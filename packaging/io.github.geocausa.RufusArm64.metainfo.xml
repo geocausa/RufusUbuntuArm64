@@ -7,15 +7,58 @@
   <project_license>GPL-3.0-or-later</project_license>
   <description>
     <p>RufusArm64 is an unofficial bootable-USB creator designed for Ubuntu on ARM64 computers.</p>
-    <p>It writes raw and ISOHybrid media, prepares compressed and common virtual-disk inputs, creates Windows installation media, verifies signed acquisition catalogs, and provides an explicitly experimental CLI-only persistent-Linux workflow.</p>
+    <p>It writes raw and ISOHybrid media, prepares compressed and common virtual-disk inputs, creates Windows installation media, verifies signed acquisition catalogs, analyzes UEFI and Secure Boot metadata, and provides guarded persistent-live creation with optional ARM64 boot-time media-integrity validation.</p>
   </description>
   <launchable type="desktop-id">io.github.geocausa.RufusArm64.desktop</launchable>
   <url type="homepage">https://github.com/geocausa/RufusUbuntuArm64</url>
-  <developer_name>RufusArm64 contributors</developer_name>
+  <developer id="io.github.geocausa">
+    <name>RufusArm64 contributors</name>
+  </developer>
   <provides>
     <binary>rufusarm64</binary>
+    <binary>rufusarm64-persistence</binary>
   </provides>
   <releases>
+    <release version="0.11.0" date="2026-07-18">
+      <description>
+        <p>Adds descriptor-safe UEFI, DBX, and SBAT analysis plus an opt-in, reproducibly built ARM64 boot-time media-integrity validator for supported persistent Ubuntu/Debian writable-copy media, qualified under pinned AArch64 QEMU firmware and explicitly unsigned.</p>
+      </description>
+    </release>
+    <release version="0.10.6" date="2026-07-17">
+      <description>
+        <p>Prevents desktop automount races during persistent-live USB creation by setting and verifying the GPT do-not-automount attribute before FAT32 and ext4 formatting.</p>
+      </description>
+    </release>
+    <release version="0.10.5" date="2026-07-17">
+      <description>
+        <p>Completes the pre-parity safety and correctness audit with stronger identity, arithmetic, GPT durability, acquisition, GUI concurrency, static-analysis, Debian-policy, and reproducible-package gates.</p>
+      </description>
+    </release>
+    <release version="0.10.4" date="2026-07-17">
+      <description>
+        <p>Fixes persistence analysis for the official Ubuntu 26.04 ARM64 desktop image's harmless root-self alias while preserving strict escape, nested-root, and cycle rejection.</p>
+      </description>
+    </release>
+    <release version="0.10.3" date="2026-07-17">
+      <description>
+        <p>Consolidates the desktop experience to one visible RufusArm64 application entry with a Create Persistent Live USB action, while retaining the separate guarded persistence helper internally.</p>
+      </description>
+    </release>
+    <release version="0.10.2" date="2026-07-17">
+      <description>
+        <p>Fixes persistent-live analysis and verified FAT32 copying for bounded in-tree directory links such as Canonical images' dists/stable metadata path, while retaining escape and cycle rejection.</p>
+      </description>
+    </release>
+    <release version="0.10.1" date="2026-07-16">
+      <description>
+        <p>Aligns persistence analysis with the fresh GPT/FAT32/ext4 creator layout, fixes Canonical Resolute concept-image compatibility, and removes reliance on embedded ISOHybrid MBR geometry.</p>
+      </description>
+    </release>
+    <release version="0.10.0" date="2026-07-16">
+      <description>
+        <p>Adds the guarded graphical persistent-live USB wizard, identity-bound read-only analysis and creation, modern Ubuntu casper cmdline support, reboot qualification records, and the threshold-signed built-in acquisition-channel foundation.</p>
+      </description>
+    </release>
     <release version="0.9.0" date="2026-07-16">
       <description>
         <p>Adds signed image acquisition, richer diagnostics, and a guarded CLI-only experimental Linux persistence workflow with verified GPT, FAT32, ext4, boot-file, and media-copy operations.</p>

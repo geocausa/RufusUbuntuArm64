@@ -71,7 +71,7 @@ func InspectReaderAt(reader io.ReaderAt, size int64) (ImageInfo, error) {
 	if reader == nil || size <= 0 {
 		return ImageInfo{}, errors.New("image must be a non-empty random-access source")
 	}
-	fileSectors := uint64((size + 511) / 512)
+	fileSectors := roundedSectorCount(size, 512)
 
 	var info ImageInfo
 	header := make([]byte, 1024)
@@ -86,6 +86,20 @@ func InspectReaderAt(reader io.ReaderAt, size int64) (ImageInfo, error) {
 	}
 	inspectOpticalDescriptors(reader, &info)
 	return info, nil
+}
+
+// roundedSectorCount computes ceil(size/sectorSize) without adding to the
+// signed size first. Sparse regular files can approach MaxInt64, where the
+// conventional (size+sectorSize-1)/sectorSize expression would overflow.
+func roundedSectorCount(size, sectorSize int64) uint64 {
+	if size <= 0 || sectorSize <= 0 {
+		return 0
+	}
+	count := uint64(size / sectorSize)
+	if size%sectorSize != 0 {
+		count++
+	}
+	return count
 }
 
 func inspectMBR(header []byte, fileSectors uint64, info *ImageInfo) {
