@@ -22,7 +22,7 @@ jobs:
       - name: Apply and validate guided persistence flow
         run: |
           python3 scripts/apply-persistence-guided-flow.py
-          python3 -m unittest discover -s gui -p 'test_*.py'
+          PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
           python3 -m py_compile gui/*.py
           bash -n scripts/*.sh
           git diff --check
