@@ -22,7 +22,9 @@ jobs:
         with:
           go-version: '1.22.x'
       - name: Apply transaction regression suite
-        run: python3 tools/apply_runtime_wrap_tests.py
+        run: |
+          python3 tools/apply_runtime_wrap_tests.py
+          python3 tools/fix_runtime_wrap_root_identity.py
       - name: Format and verify staged sources
         run: |
           gofmt -w internal/runtimeintegrity/transaction.go internal/runtimeintegrity/transaction_linux.go internal/runtimeintegrity/transaction_test.go internal/secureboot/inspect.go
@@ -50,10 +52,10 @@ jobs:
           fi
       - name: Commit validated transaction source and tests
         run: |
-          rm -f tools/apply_runtime_wrap_tests.py .github/runtime-wrap-trigger
+          rm -f tools/apply_runtime_wrap_tests.py tools/fix_runtime_wrap_root_identity.py .github/runtime-wrap-trigger
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add internal/runtimeintegrity/transaction.go internal/runtimeintegrity/transaction_linux.go internal/runtimeintegrity/transaction_test.go internal/secureboot/inspect.go
-          git add -u tools/apply_runtime_wrap_tests.py .github/runtime-wrap-trigger
+          git add -u tools/apply_runtime_wrap_tests.py tools/fix_runtime_wrap_root_identity.py .github/runtime-wrap-trigger
           git commit -m '0.11: add transactional runtime integrity wrapping'
           git push origin HEAD:feature/0.11-runtime-integrity-wrap
