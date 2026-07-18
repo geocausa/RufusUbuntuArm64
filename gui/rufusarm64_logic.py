@@ -557,10 +557,13 @@ def build_uefi_validate_command(
     require_fallback=True,
     dbx_file="",
     firmware=False,
+    sbat_level_file="",
+    firmware_sbat=False,
 ):
     helper = str(helper or "").strip()
     directory = str(directory or "").strip()
     dbx_file = str(dbx_file or "").strip()
+    sbat_level_file = str(sbat_level_file or "").strip()
     if not helper:
         raise ValueError("The RufusArm64 validation helper is not installed correctly.")
     if not directory:
@@ -573,6 +576,8 @@ def build_uefi_validate_command(
         raise ValueError("The EFI file limit must be between 1 and 4096.")
     if dbx_file and firmware:
         raise ValueError("Choose either a local DBX file or the running firmware DBX, not both.")
+    if sbat_level_file and firmware_sbat:
+        raise ValueError("Choose either a local SBAT level or the running firmware SBAT level, not both.")
     command = [
         helper,
         "uefi",
@@ -589,6 +594,10 @@ def build_uefi_validate_command(
         command.extend(["--dbx", dbx_file])
     elif firmware:
         command.append("--firmware")
+    if sbat_level_file:
+        command.extend(["--sbat-level", sbat_level_file])
+    elif firmware_sbat:
+        command.append("--firmware-sbat")
     command.append("--json")
     return command
 
@@ -628,6 +637,8 @@ def normalize_uefi_validation(payload):
             "fallback": bool(item.get("fallback")),
             "direct_hash_revoked": bool(item.get("direct_hash_revoked")),
             "x509_certificate_revoked": bool(item.get("x509_certificate_revoked")),
+            "sbat_revoked": bool(item.get("sbat_revoked")),
+            "sbat_revocations": list(item.get("sbat_revocations") or []),
             "embedded_certificates": max(0, certificates),
             "sbat_records": sbat_count,
             "warnings": [str(value) for value in file_warnings],
@@ -639,6 +650,10 @@ def normalize_uefi_validation(payload):
         "fallback_path": fallback_path,
         "fallback_found": bool(payload.get("fallback_found")),
         "dbx_checked": bool(payload.get("dbx_checked")),
+        "sbat_level_checked": bool(payload.get("sbat_level_checked")),
+        "sbat_level_source": str(payload.get("sbat_level_source") or "").strip(),
+        "sbat_level_datestamp": str(payload.get("sbat_level_datestamp") or "").strip(),
+        "sbat_revoked": bool(payload.get("sbat_revoked")),
         "valid": bool(payload.get("valid")),
         "revoked": bool(payload.get("revoked")),
         "files": normalized_files,
@@ -656,11 +671,17 @@ def uefi_validation_summary(payload):
         f"Media root: {result['root']}",
         f"Fallback loader: {result['fallback_path']} ({'found' if result['fallback_found'] else 'missing'})",
         f"DBX revocations checked: {'yes' if result['dbx_checked'] else 'no'}",
+        f"SBAT level checked: {'yes' if result['sbat_level_checked'] else 'no'}",
         f"EFI executables checked: {len(result['files'])}",
     ]
+    if result["sbat_level_checked"]:
+        lines.append(
+            f"SBAT source: {result['sbat_level_source']}"
+            + (f" (datestamp {result['sbat_level_datestamp']})" if result['sbat_level_datestamp'] else "")
+        )
     for item in result["files"]:
         status = "OK"
-        if item["direct_hash_revoked"] or item["x509_certificate_revoked"]:
+        if item["direct_hash_revoked"] or item["x509_certificate_revoked"] or item["sbat_revoked"]:
             status = "REVOKED"
         elif item["error"]:
             status = "ERROR"
@@ -671,6 +692,14 @@ def uefi_validation_summary(payload):
             f"{status}: {item['path']}{fallback} — {item['machine_name']}; "
             f"{item['subsystem_name']}; SBAT records {item['sbat_records']}"
         )
+        for revocation in item["sbat_revocations"]:
+            if isinstance(revocation, dict):
+                lines.append(
+                    "  SBAT revoked: "
+                    f"{revocation.get('component', 'unknown')} generation "
+                    f"{revocation.get('image_generation', '?')} is below trusted minimum "
+                    f"{revocation.get('minimum_generation', '?')}"
+                )
         for warning in item["warnings"]:
             lines.append(f"  Warning: {warning}")
         if item["error"]:

@@ -681,6 +681,33 @@ class UEFIValidationDialog(Gtk.Dialog):
         grid.attach(self.firmware, 1, 4, 1, 1)
         self.firmware_toggled()
 
+        self._attach_label(grid, "SBAT trust", 5)
+        self.sbat_source = Gtk.ComboBoxText()
+        self.sbat_source.append("none", "Do not compare against an SBAT level")
+        self.sbat_source.append("local", "Use a trusted local SbatLevel CSV")
+        self.sbat_source.append("firmware", "Use the running shim firmware SBAT level")
+        saved_sbat_source = settings.get("uefi_validation_sbat_source", "none")
+        if saved_sbat_source not in {"none", "local", "firmware"}:
+            saved_sbat_source = "none"
+        self.sbat_source.set_active_id(saved_sbat_source)
+        self.sbat_source.connect("changed", self.sbat_source_changed)
+        grid.attach(self.sbat_source, 1, 5, 1, 1)
+
+        self._attach_label(grid, "Local SBAT level", 6)
+        self.sbat_level = Gtk.FileChooserButton(
+            title="Choose a trusted shim-compatible SbatLevel CSV",
+            action=Gtk.FileChooserAction.OPEN,
+        )
+        sbat_filter = Gtk.FileFilter()
+        sbat_filter.set_name("SBAT level CSV files")
+        sbat_filter.add_pattern("*.csv")
+        self.sbat_level.add_filter(sbat_filter)
+        saved_sbat = settings.get("uefi_validation_sbat_level", "")
+        if saved_sbat and os.path.isfile(saved_sbat):
+            self.sbat_level.set_filename(saved_sbat)
+        grid.attach(self.sbat_level, 1, 6, 1, 1)
+        self.sbat_source_changed()
+
         action_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self.validate_button = Gtk.Button(label="Validate")
         self.validate_button.get_style_context().add_class("suggested-action")
@@ -721,6 +748,10 @@ class UEFIValidationDialog(Gtk.Dialog):
     def firmware_toggled(self, *_):
         self.dbx.set_sensitive(not self.running and not self.firmware.get_active())
 
+    def sbat_source_changed(self, *_):
+        source = self.sbat_source.get_active_id() or "none"
+        self.sbat_level.set_sensitive(not self.running and source == "local")
+
     def on_delete_event(self, *_):
         if self.running:
             self.status.set_text("Validation is still running. Wait for it to finish before closing this dialog.")
@@ -737,7 +768,9 @@ class UEFIValidationDialog(Gtk.Dialog):
         self.architecture.set_sensitive(not self.running)
         self.require_fallback.set_sensitive(not self.running)
         self.firmware.set_sensitive(not self.running)
+        self.sbat_source.set_sensitive(not self.running)
         self.firmware_toggled()
+        self.sbat_source_changed()
         if self.running:
             self.spinner.start()
         else:
@@ -755,6 +788,8 @@ class UEFIValidationDialog(Gtk.Dialog):
                 self.require_fallback.get_active(),
                 self.dbx.get_filename() or "",
                 self.firmware.get_active(),
+                self.sbat_level.get_filename() or "" if (self.sbat_source.get_active_id() == "local") else "",
+                self.sbat_source.get_active_id() == "firmware",
             )
         except ValueError as exc:
             self.status.set_text(str(exc))
@@ -764,10 +799,12 @@ class UEFIValidationDialog(Gtk.Dialog):
         self.settings["uefi_validation_require_fallback"] = self.require_fallback.get_active()
         self.settings["uefi_validation_dbx"] = self.dbx.get_filename() or ""
         self.settings["uefi_validation_firmware"] = self.firmware.get_active()
+        self.settings["uefi_validation_sbat_source"] = self.sbat_source.get_active_id() or "none"
+        self.settings["uefi_validation_sbat_level"] = self.sbat_level.get_filename() or ""
         self.generation += 1
         generation = self.generation
         self.set_running(True)
-        self.status.set_text("Validating EFI executables, fallback loader, SBAT metadata, and optional DBX revocations…")
+        self.status.set_text("Validating EFI executables, fallback loader, SBAT metadata, and selected trust policies…")
         self.result_view.get_buffer().set_text("Validation in progress…")
         threading.Thread(target=self._run_validation, args=(command, generation), daemon=True).start()
 
