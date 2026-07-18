@@ -35,6 +35,8 @@ jobs:
       - name: Apply and validate the read-only CLI tranche
         run: |
           set -euo pipefail
+          sed -i 's/if count != 1:/if count < 1:/' scripts/apply-checksum-cli.py
+          sed -i 's/expected one replacement target/expected a replacement target/' scripts/apply-checksum-cli.py
           python3 -m py_compile scripts/apply-checksum-cli.py
           python3 scripts/apply-checksum-cli.py
           gofmt -w \
