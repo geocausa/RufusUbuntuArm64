@@ -30,18 +30,27 @@ jobs:
           go-version: '1.22.x'
       - name: Apply trusted local SBAT-level change
         run: |
-          set -euo pipefail
-          python3 .github/scripts/apply-sbat-level.py
-          gofmt -w \
-            internal/secureboot/uefi.go \
-            internal/secureboot/uefi_test.go \
-            internal/secureboot/sbat_level.go \
-            internal/secureboot/sbat_level_test.go \
-            cmd/rufus-linux/main.go \
-            cmd/rufus-linux/main_test.go
-          python3 -m json.tool docs/upstream-rufus-parity.json >/dev/null
-          bash -n scripts/test.sh
-          git diff --check
+          set -o pipefail
+          {
+            python3 .github/scripts/apply-sbat-level.py
+            gofmt -w \
+              internal/secureboot/uefi.go \
+              internal/secureboot/uefi_test.go \
+              internal/secureboot/sbat_level.go \
+              internal/secureboot/sbat_level_test.go \
+              cmd/rufus-linux/main.go \
+              cmd/rufus-linux/main_test.go
+            python3 -m json.tool docs/upstream-rufus-parity.json >/dev/null
+            bash -n scripts/test.sh
+            git diff --check
+          } 2>&1 | tee /tmp/sbat-level-apply.log
+      - name: Upload transformation diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbat-level-apply-${{ github.run_id }}
+          path: /tmp/sbat-level-apply.log
+          if-no-files-found: error
       - name: Run focused Secure Boot and CLI race tests
         run: go test -race -count=1 ./internal/secureboot ./cmd/rufus-linux
       - name: Vet changed Go packages
