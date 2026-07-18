@@ -18,7 +18,7 @@ The implementation-only command remains available as:
 rufusarm64-persistence
 ```
 
-Only the guarded persistence wizard presents **Erase and create persistent USB** and invokes the restricted persistence helper. Keeping that helper separate internally prevents the ordinary writer from silently gaining persistence privileges.
+Only the guarded persistence wizard presents **Create persistent USB** and invokes the restricted persistence helper. Keeping that helper separate internally prevents the ordinary writer from silently gaining persistence privileges.
 
 ## What persistence means
 
