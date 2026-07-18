@@ -41,6 +41,9 @@ func TestDownloadRejectsInsufficientSpaceBeforeNetwork(t *testing.T) {
 	if !errors.As(err, &spaceErr) {
 		t.Fatalf("insufficient-space error=%v", err)
 	}
+	if !errors.Is(err, ErrInsufficientSpace) {
+		t.Fatalf("insufficient-space sentinel missing: %v", err)
+	}
 	if spaceErr.Required != required || spaceErr.Available != required-1 || spaceErr.Directory != directory {
 		t.Fatalf("unexpected typed space error: %#v", spaceErr)
 	}
