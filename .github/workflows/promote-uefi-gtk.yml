@@ -29,6 +29,16 @@ jobs:
         run: |
           set -o pipefail
           {
+            python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/scripts/apply-uefi-gtk.py')
+          source = path.read_text()
+          source = source.replace(
+              'raise SystemExit(f"{path}: expected one replacement target, found {count}")',
+              'raise SystemExit(f"{path}: unmatched target {old[:120]!r}; found {count}")',
+          )
+          path.write_text(source)
+          PY
             python3 .github/scripts/apply-uefi-gtk.py
             python3 -m json.tool docs/upstream-rufus-parity.json >/dev/null
             python3 -m py_compile gui/*.py
