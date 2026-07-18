@@ -162,6 +162,8 @@ sudo rufusarm64-cli write \
 
 The single visible graphical application entry supplies the ordinary writer and the persistent-live action while retaining separate guarded helpers internally. The main window also provides a read-only **Validate UEFI Media…** dialog for mounted or extracted media; it reports fallback-loader, PE/EFI, DBX, and SBAT results, and can compare against either a trusted local SbatLevel CSV or the running shim firmware SBAT level without changing the write path.
 
+That pre-boot structural/Secure Boot analysis is separate from Rufus's boot-time media-integrity option. The 0.11 development line now includes the descriptor-safe `uefi-md5sum` manifest foundation; it does not yet replace or chainload the media fallback loader.
+
 ## License
 
 RufusArm64 is GPL-3.0-or-later. Rufus is a separate GPL-licensed project by Pete Batard and contributors. No official status or endorsement is claimed.

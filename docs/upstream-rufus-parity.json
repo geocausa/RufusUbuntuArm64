@@ -49,7 +49,7 @@
       "id": "uefi-runtime-validation",
       "upstream_feature": "Perform runtime validation of UEFI bootable media",
       "status": "in_progress",
-      "notes": "The 0.11 development line exposes descriptor-rooted CLI and GTK validation of fallback loaders, PE architecture and EFI subsystem fields, bounded SBAT metadata, optional DBX hash/certificate revocations, and shim-compatible comparison against a trusted local or running-firmware SbatLevel. Complete boot-chain reference resolution remains planned."
+      "notes": "The existing 0.11 CLI and GTK UEFI structural/Secure Boot analyzer is distinct from upstream runtime validation. A descriptor-rooted uefi-md5sum-compatible manifest generator, strict parser, and full-tree verifier are now implemented; bootloader provenance, transactional fallback-loader wrapping, QEMU chainload tests, and physical qualification remain planned."
     },
     {
       "id": "image-checksums",
