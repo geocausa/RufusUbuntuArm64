@@ -10,6 +10,12 @@ rufusarm64-cli \- safely create bootable USB media on Linux
 .BI --image " FILE"
 .RI [ --json ]
 .PP
+.B rufusarm64-cli hash
+.RI [ --algorithm " md5|sha1|sha256|sha512" ] ...
+.RI [ --all ]
+.RI [ --json ]
+.I FILE
+.PP
 .B sudo rufusarm64-cli write
 .BI --image " FILE"
 .BI --device " /dev/DEVICE"
@@ -80,6 +86,24 @@ opens the ordinary writer normally and exposes a Create Persistent Live USB
 desktop action. The persistence path performs identity-bound read-only analysis,
 exact target confirmation, fresh Polkit authorization, destructive creation
 through a separate narrow helper, and post-creation qualification.
+.SH IMAGE CHECKSUMS
+.B hash
+computes checksums from one identity-bound, already-open regular-file descriptor.
+With no options it computes SHA-256 and retains the historical
+.B sha256sum
+compatible output used by existing scripts.
+.PP
+Repeat
+.B --algorithm
+with md5, sha1, sha256, or sha512 to select an ordered subset, or use
+.B --all
+to compute the stable Rufus-compatible four-algorithm set in one pass.
+.B --json
+emits the resolved path, file size, and ordered lowercase hexadecimal digests.
+The command is unprivileged and responds to SIGINT and SIGTERM without opening a
+block device or invoking Polkit. MD5 and SHA-1 are provided only to compare with
+legacy published checksums; they are not used for trust, signatures, downloads,
+or destructive-write assurance.
 .SH UEFI MEDIA VALIDATION
 .B uefi validate
 performs a bounded, descriptor-rooted, read-only scan of a mounted or extracted

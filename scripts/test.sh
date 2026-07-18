@@ -42,6 +42,7 @@ printf 'rufusarm64-smoke' > "${native_dir}/sample.img"
 expected_hash="$(sha256sum "${native_dir}/sample.img" | awk '{print $1}')"
 actual_hash="$("${native_helper}" hash "${native_dir}/sample.img" | awk '{print $1}')"
 [[ "${actual_hash}" == "${expected_hash}" ]]
+"${native_helper}" hash --all --json "${native_dir}/sample.img" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["size"] == 16 and [item["algorithm"] for item in d["digests"]] == ["md5", "sha1", "sha256", "sha512"]'
 # Build a minimal coherent MBR image and smoke-test the read-only inspector used
 # by the graphical interface.
 python3 - "${native_dir}/mbr.img" <<'PYIMAGE'

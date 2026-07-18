@@ -112,7 +112,7 @@ Usage:
   sudo rufusarm64-cli write --image FILE --device /dev/DEVICE [--verify]
   sudo rufusarm64-cli write --mode linux-persistent --experimental-persistence --image FILE --device /dev/DEVICE [--persistence-size SIZE]
   sudo rufusarm64-cli verify --image FILE --device /dev/DEVICE
-  rufusarm64-cli hash FILE
+  rufusarm64-cli hash [--algorithm ALGORITHM]... [--all] [--json] FILE
   rufusarm64-cli uefi validate --directory DIR [--arch ARCH] [--dbx FILE | --firmware] [--sbat-level FILE | --firmware-sbat] [--json]
   rufusarm64-cli uefi integrity manifest --directory DIR [--max-files N] [--json]
   rufusarm64-cli uefi integrity verify --directory DIR [--max-files N] [--json]
@@ -1876,15 +1876,7 @@ func runQualifyPhase(phase string, args []string) error {
 }
 
 func runHash(args []string) error {
-	if len(args) != 1 {
-		return errors.New("hash requires exactly one file")
-	}
-	h, err := imaging.SHA256File(args[0])
-	if err != nil {
-		return err
-	}
-	fmt.Printf("%s  %s\n", h, args[0])
-	return nil
+	return runHashCommand(args)
 }
 func confirmDestructive(path string) error {
 	fmt.Printf("\nALL DATA ON %s WILL BE DESTROYED.\nType exactly 'ERASE %s' to continue: ", path, path)
