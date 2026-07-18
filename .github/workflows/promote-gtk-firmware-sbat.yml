@@ -1,0 +1,48 @@
+name: Promote GTK firmware SBAT selector
+
+on:
+  pull_request:
+    branches: [develop/0.11.0]
+    paths:
+      - .github/gtk-firmware-sbat-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    if: github.event.pull_request.head.ref == 'feature/0.11-gtk-firmware-sbat'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Apply GTK firmware SBAT selector
+        run: python3 tools/apply_gtk_firmware_sbat.py
+      - name: Compile GTK sources
+        run: python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_logic.py gui/test_logic.py
+      - name: Run GUI logic tests
+        run: python3 -m unittest discover -s gui -p 'test*.py' -v
+      - name: Validate parity inventory
+        run: python3 -m json.tool docs/upstream-rufus-parity.json >/dev/null
+      - name: Confirm read-only command boundary
+        run: |
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0, 'gui')
+          from rufusarm64_logic import build_uefi_validate_command
+          command = build_uefi_validate_command('/helper', '/mnt/usb', firmware_sbat=True)
+          assert '--firmware-sbat' in command
+          assert 'pkexec' not in command
+          assert 'write' not in command
+          PY
+      - name: Commit validated production changes
+        run: |
+          rm -f tools/apply_gtk_firmware_sbat.py .github/gtk-firmware-sbat-trigger
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add gui/rufusarm64.py gui/rufusarm64_logic.py gui/test_logic.py README.md docs/upstream-rufus-parity.json
+          git add -u tools/apply_gtk_firmware_sbat.py .github/gtk-firmware-sbat-trigger
+          git commit -m '0.11: expose firmware SBAT trust in GTK validator'
+          git push origin HEAD:feature/0.11-gtk-firmware-sbat
