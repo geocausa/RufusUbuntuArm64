@@ -1607,6 +1607,7 @@ func runAcquireChannelDownload(args []string) error {
 	imageID := fs.String("id", "", "built-in catalog image id")
 	output := fs.String("output", "", "destination file or existing directory")
 	replace := fs.Bool("replace", false, "replace an existing different regular file")
+	resume := fs.Bool("resume", false, "retain and resume a signed-identity partial download")
 	asJSON := fs.Bool("json", false, "output final JSON result")
 	jsonProgress := fs.Bool("json-progress", false, "stream progress events as JSON")
 	if err := fs.Parse(args); err != nil {
@@ -1632,6 +1633,7 @@ func runAcquireChannelDownload(args []string) error {
 	result, err := acquisition.Download(ctx, image, acquisition.DownloadOptions{
 		Destination: *output,
 		Replace:     *replace,
+		Resume:      *resume,
 		Progress: func(progress acquisition.Progress) {
 			if *jsonProgress {
 				emit.event(jsonEvent{Event: "progress", Stage: "download", Done: progress.Done, Total: progress.Total, Rate: progress.BytesPerSec})
@@ -1652,6 +1654,9 @@ func runAcquireChannelDownload(args []string) error {
 	status := "Downloaded"
 	if result.Reused {
 		status = "Already verified"
+	}
+	if result.Resumed > 0 {
+		fmt.Printf("Resumed from: %s\n", humanBytes(result.Resumed))
 	}
 	fmt.Printf("%s: %s\nSource: %s\nSize: %s\nSHA-256: %s\n", status, result.Path, result.URL, humanBytes(result.Size), result.SHA256)
 	return nil
@@ -1716,6 +1721,7 @@ func runAcquireDownload(args []string) error {
 	imageID := fs.String("id", "", "catalog image id")
 	output := fs.String("output", "", "destination file or existing directory")
 	replace := fs.Bool("replace", false, "replace an existing different regular file")
+	resume := fs.Bool("resume", false, "retain and resume a signed-identity partial download")
 	asJSON := fs.Bool("json", false, "output final JSON result")
 	jsonProgress := fs.Bool("json-progress", false, "stream progress events as JSON")
 	if err := fs.Parse(args); err != nil {
@@ -1738,6 +1744,7 @@ func runAcquireDownload(args []string) error {
 	result, err := acquisition.Download(ctx, image, acquisition.DownloadOptions{
 		Destination: *output,
 		Replace:     *replace,
+		Resume:      *resume,
 		Progress: func(progress acquisition.Progress) {
 			if *jsonProgress {
 				emit.event(jsonEvent{Event: "progress", Stage: "download", Done: progress.Done, Total: progress.Total, Rate: progress.BytesPerSec})
@@ -1758,6 +1765,9 @@ func runAcquireDownload(args []string) error {
 	status := "Downloaded"
 	if result.Reused {
 		status = "Already verified"
+	}
+	if result.Resumed > 0 {
+		fmt.Printf("Resumed from: %s\n", humanBytes(result.Resumed))
 	}
 	fmt.Printf("%s: %s\nSource: %s\nSize: %s\nSHA-256: %s\n", status, result.Path, result.URL, humanBytes(result.Size), result.SHA256)
 	return nil
