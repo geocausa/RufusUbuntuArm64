@@ -41,6 +41,7 @@ type UEFIValidationOptions struct {
 	Architecture    string
 	MaxFiles        int
 	DBX             *Database
+	SBATLevel       *SBATLevel
 	RequireFallback bool
 }
 
@@ -60,19 +61,21 @@ type SBATComponent struct {
 // EFI executable. A foreign-architecture file is reported as a warning unless it
 // is the selected architecture's fallback loader.
 type UEFIFileValidation struct {
-	Path                   string          `json:"path"`
-	Machine                uint16          `json:"machine"`
-	MachineName            string          `json:"machine_name"`
-	Subsystem              uint16          `json:"subsystem"`
-	SubsystemName          string          `json:"subsystem_name"`
-	Fallback               bool            `json:"fallback"`
-	AuthenticodeSHA256     string          `json:"authenticode_sha256,omitempty"`
-	DirectHashRevoked      bool            `json:"direct_hash_revoked"`
-	X509CertificateRevoked bool            `json:"x509_certificate_revoked"`
-	EmbeddedCertificates   int             `json:"embedded_certificates"`
-	SBAT                   []SBATComponent `json:"sbat,omitempty"`
-	Warnings               []string        `json:"warnings,omitempty"`
-	Error                  string          `json:"error,omitempty"`
+	Path                   string           `json:"path"`
+	Machine                uint16           `json:"machine"`
+	MachineName            string           `json:"machine_name"`
+	Subsystem              uint16           `json:"subsystem"`
+	SubsystemName          string           `json:"subsystem_name"`
+	Fallback               bool             `json:"fallback"`
+	AuthenticodeSHA256     string           `json:"authenticode_sha256,omitempty"`
+	DirectHashRevoked      bool             `json:"direct_hash_revoked"`
+	X509CertificateRevoked bool             `json:"x509_certificate_revoked"`
+	EmbeddedCertificates   int              `json:"embedded_certificates"`
+	SBAT                   []SBATComponent  `json:"sbat,omitempty"`
+	SBATRevoked            bool             `json:"sbat_revoked"`
+	SBATRevocations        []SBATRevocation `json:"sbat_revocations,omitempty"`
+	Warnings               []string         `json:"warnings,omitempty"`
+	Error                  string           `json:"error,omitempty"`
 }
 
 // UEFIMediaValidation is the complete result for a media tree. Invalid media is
@@ -80,16 +83,20 @@ type UEFIFileValidation struct {
 // Errors; operational failures such as an unreadable root are returned as Go
 // errors.
 type UEFIMediaValidation struct {
-	Root          string               `json:"root"`
-	Architecture  string               `json:"architecture"`
-	FallbackPath  string               `json:"fallback_path"`
-	FallbackFound bool                 `json:"fallback_found"`
-	DBXChecked    bool                 `json:"dbx_checked"`
-	Valid         bool                 `json:"valid"`
-	Revoked       bool                 `json:"revoked"`
-	Files         []UEFIFileValidation `json:"files"`
-	Warnings      []string             `json:"warnings,omitempty"`
-	Errors        []string             `json:"errors,omitempty"`
+	Root               string               `json:"root"`
+	Architecture       string               `json:"architecture"`
+	FallbackPath       string               `json:"fallback_path"`
+	FallbackFound      bool                 `json:"fallback_found"`
+	DBXChecked         bool                 `json:"dbx_checked"`
+	SBATLevelChecked   bool                 `json:"sbat_level_checked"`
+	SBATLevelSource    string               `json:"sbat_level_source,omitempty"`
+	SBATLevelDatestamp string               `json:"sbat_level_datestamp,omitempty"`
+	SBATRevoked        bool                 `json:"sbat_revoked"`
+	Valid              bool                 `json:"valid"`
+	Revoked            bool                 `json:"revoked"`
+	Files              []UEFIFileValidation `json:"files"`
+	Warnings           []string             `json:"warnings,omitempty"`
+	Errors             []string             `json:"errors,omitempty"`
 }
 
 type uefiArchitecture struct {
@@ -132,27 +139,38 @@ func validateUEFIMedia(ctx context.Context, root string, opts UEFIValidationOpti
 	}
 
 	result := UEFIMediaValidation{
-		Root:         resolved,
-		Architecture: architecture.name,
-		FallbackPath: architecture.fallbackPath,
-		DBXChecked:   opts.DBX != nil,
-		Warnings:     warnings,
+		Root:             resolved,
+		Architecture:     architecture.name,
+		FallbackPath:     architecture.fallbackPath,
+		DBXChecked:       opts.DBX != nil,
+		SBATLevelChecked: opts.SBATLevel != nil,
+		Warnings:         warnings,
+	}
+	if opts.SBATLevel != nil {
+		result.SBATLevelSource = opts.SBATLevel.Source
+		result.SBATLevelDatestamp = opts.SBATLevel.Datestamp
 	}
 	if len(mediaFiles) == 0 {
 		result.Errors = append(result.Errors, "media tree contains no EFI executables")
 	}
 
+	var dbxRevoked bool
 	for _, mediaFile := range mediaFiles {
 		if err := ctx.Err(); err != nil {
 			return UEFIMediaValidation{}, err
 		}
 		relative := mediaFile.relative
 		isFallback := strings.EqualFold(relative, architecture.fallbackPath)
-		fileResult := validateUEFIFile(mediaFile.data, relative, isFallback, architecture, opts.DBX)
+		fileResult := validateUEFIFile(mediaFile.data, relative, isFallback, architecture, opts.DBX, opts.SBATLevel)
 		if isFallback {
 			result.FallbackFound = true
 		}
 		if fileResult.DirectHashRevoked || fileResult.X509CertificateRevoked {
+			dbxRevoked = true
+			result.Revoked = true
+		}
+		if fileResult.SBATRevoked {
+			result.SBATRevoked = true
 			result.Revoked = true
 		}
 		if fileResult.Error != "" {
@@ -163,13 +181,16 @@ func validateUEFIMedia(ctx context.Context, root string, opts UEFIValidationOpti
 	if opts.RequireFallback && !result.FallbackFound {
 		result.Errors = append(result.Errors, "missing architecture fallback loader "+architecture.fallbackPath)
 	}
-	if result.Revoked {
+	if dbxRevoked {
 		result.Errors = append(result.Errors, "one or more EFI executables are revoked by the selected DBX")
+	}
+	if result.SBATRevoked {
+		result.Errors = append(result.Errors, "one or more EFI executables are revoked by the selected SBAT level")
 	}
 	result.Valid = len(result.Errors) == 0
 	return result, nil
 }
-func validateUEFIFile(data []byte, relative string, fallback bool, architecture uefiArchitecture, dbx *Database) UEFIFileValidation {
+func validateUEFIFile(data []byte, relative string, fallback bool, architecture uefiArchitecture, dbx *Database, sbatLevel *SBATLevel) UEFIFileValidation {
 	result := UEFIFileValidation{Path: relative, Fallback: fallback}
 	parsed, err := parseUEFIImage(data)
 	if err != nil {
@@ -198,8 +219,15 @@ func validateUEFIFile(data []byte, relative string, fallback bool, architecture 
 		result.Error = fmt.Sprintf("fallback loader subsystem is %s, expected EFI application", result.SubsystemName)
 		return result
 	}
-	if fallback && len(parsed.sbat) == 0 {
-		result.Warnings = append(result.Warnings, "fallback loader has no .sbat metadata; generation-based revocation was not assessed")
+	if len(parsed.sbat) == 0 {
+		if fallback {
+			result.Warnings = append(result.Warnings, "fallback loader has no .sbat metadata; generation-based revocation was not assessed")
+		} else if sbatLevel != nil {
+			result.Warnings = append(result.Warnings, "EFI executable has no .sbat metadata; the selected SBAT level was not assessed")
+		}
+	} else if sbatLevel != nil {
+		result.SBATRevocations = sbatLevel.Revocations(parsed.sbat)
+		result.SBATRevoked = len(result.SBATRevocations) > 0
 	}
 
 	if dbx != nil {

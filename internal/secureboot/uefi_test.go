@@ -335,3 +335,54 @@ func TestValidateUEFIMediaDoesNotTraverseSymlinkComponents(t *testing.T) {
 		t.Fatalf("symlink component was traversed or not reported: %#v", result)
 	}
 }
+
+func TestValidateUEFIMediaAppliesTrustedSBATLevel(t *testing.T) {
+	root := t.TempDir()
+	writeSyntheticEFI(t, root, "EFI/BOOT/BOOTAA64.EFI", syntheticUEFIPE(
+		imageFileMachineARM64,
+		imageSubsystemEFIApp,
+		syntheticUEFISection{name: ".text", data: []byte("fallback")},
+		syntheticUEFISection{name: ".sbat", data: validSBAT()},
+	))
+	level, err := ParseSBATLevel([]byte("sbat,1,2025051000\nshim,5\n"), "test-level")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := ValidateUEFIMedia(context.Background(), root, UEFIValidationOptions{
+		Architecture:    "arm64",
+		RequireFallback: true,
+		SBATLevel:       level,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Valid || !result.Revoked || !result.SBATRevoked || !result.SBATLevelChecked || result.SBATLevelDatestamp != "2025051000" {
+		t.Fatalf("SBAT-revoked media was not rejected: %#v", result)
+	}
+	if len(result.Files) != 1 || !result.Files[0].SBATRevoked || len(result.Files[0].SBATRevocations) != 1 {
+		t.Fatalf("per-file SBAT revocation was not reported: %#v", result.Files)
+	}
+	if revocation := result.Files[0].SBATRevocations[0]; revocation.Component != "shim" || revocation.ImageGeneration != 4 || revocation.MinimumGeneration != 5 {
+		t.Fatalf("unexpected SBAT revocation: %#v", revocation)
+	}
+}
+
+func TestValidateUEFIMediaAcceptsEqualTrustedSBATLevel(t *testing.T) {
+	root := t.TempDir()
+	writeSyntheticEFI(t, root, "EFI/BOOT/BOOTAA64.EFI", syntheticUEFIPE(
+		imageFileMachineARM64,
+		imageSubsystemEFIApp,
+		syntheticUEFISection{name: ".sbat", data: validSBAT()},
+	))
+	level, err := ParseSBATLevel([]byte("sbat,1,2025051000\nshim,4\ngrub,99\n"), "test-level")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := ValidateUEFIMedia(context.Background(), root, UEFIValidationOptions{Architecture: "arm64", RequireFallback: true, SBATLevel: level})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Valid || result.SBATRevoked || result.Revoked {
+		t.Fatalf("equal or absent SBAT generations should pass: %#v", result)
+	}
+}

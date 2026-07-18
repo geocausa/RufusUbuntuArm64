@@ -420,3 +420,36 @@ func TestResolveNativeUEFIArchitecture(t *testing.T) {
 		t.Fatalf("native architecture = %q, want %q", got, want)
 	}
 }
+
+func TestUEFIValidateLoadsTrustedSBATLevel(t *testing.T) {
+	root := t.TempDir()
+	writeCLIUEFIFallback(t, root, 0xaa64)
+	levelPath := filepath.Join(t.TempDir(), "SbatLevel.csv")
+	if err := os.WriteFile(levelPath, []byte("sbat,1,2025051000\nshim,4\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := captureCLIStdout(t, func() error {
+		return runUEFIValidate([]string{"--directory", root, "--arch", "arm64", "--sbat-level", levelPath, "--json"})
+	})
+	if err != nil {
+		t.Fatalf("validate with SBAT level: %v", err)
+	}
+	var result secureboot.UEFIMediaValidation
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("decode UEFI validation: %v\n%s", err, output)
+	}
+	if !result.Valid || !result.SBATLevelChecked || result.SBATLevelDatestamp != "2025051000" || result.SBATRevoked {
+		t.Fatalf("unexpected SBAT-level validation: %#v", result)
+	}
+}
+
+func TestUEFIValidateRejectsMalformedSBATLevel(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bad-sbat.csv")
+	if err := os.WriteFile(path, []byte("shim,4\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := runUEFIValidate([]string{"--directory", t.TempDir(), "--arch", "arm64", "--sbat-level", path})
+	if err == nil || !strings.Contains(err.Error(), "must start with sbat") {
+		t.Fatalf("malformed SBAT level error = %v", err)
+	}
+}
