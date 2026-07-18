@@ -4,15 +4,28 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      expected_version:
+        description: Canonical VERSION value at the selected tag
+        required: true
+        type: string
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   wim-engine:
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - name: Install WIM build dependencies
         run: |
           sudo apt-get update
@@ -20,7 +33,7 @@ jobs:
             build-essential autoconf automake libtool pkg-config git ca-certificates \
             libxml2-dev zlib1g-dev liblzma-dev libbz2-dev liblz4-dev libzstd-dev
       - run: ./scripts/build-wimlib-arm64.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: wimlib-arm64
           path: |
@@ -29,27 +42,95 @@ jobs:
             vendor/wimlib/source/wimlib-1.14.5-source.tar.gz.sha256
           if-no-files-found: error
 
-  release:
-    needs: wim-engine
+  uefi-md5sum-loader:
+    name: Reproduce ARM64 uefi-md5sum loader
     runs-on: ubuntu-24.04
+    timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          go-version: '1.23.x'
-      - uses: actions/download-artifact@v4
+          persist-credentials: false
+      - name: Install pinned loader build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git gzip nasm python3 python3-setuptools uuid-dev \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu sbsigntool
+      - name: Build twice and require identical provenance
+        run: |
+          bash scripts/build-uefi-md5sum-arm64.sh dist/uefi-md5sum-a
+          bash scripts/build-uefi-md5sum-arm64.sh dist/uefi-md5sum-b
+          for file in bootaa64.efi bootaa64.efi.sha256 provenance.json SOURCE-COMMITS.txt \
+            uefi-md5sum-v1.2-source.tar.gz uefi-md5sum-v1.2-source.tar.gz.sha256; do
+            cmp "dist/uefi-md5sum-a/${file}" "dist/uefi-md5sum-b/${file}"
+          done
+          printf '%s\n' \
+            'Two independent Ubuntu 24.04 builds produced byte-for-byte identical artifacts.' \
+            'The loader is unsigned and is not claimed Secure Boot compatible.' \
+            > dist/uefi-md5sum-a/REPRODUCIBILITY.txt
+          mkdir -p vendor/uefi-md5sum/arm64
+          cp -a dist/uefi-md5sum-a/. vendor/uefi-md5sum/arm64/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: uefi-md5sum-arm64
+          path: vendor/uefi-md5sum/arm64/
+          if-no-files-found: error
+
+  release:
+    needs: [wim-engine, uefi-md5sum-loader]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: wimlib-arm64
           path: vendor/wimlib
-      - name: Verify tag matches canonical version
-        id: version
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: uefi-md5sum-arm64
+          path: vendor/uefi-md5sum/arm64
+      - name: Install release validators
         run: |
-          tag_version="${GITHUB_REF_NAME#v}"
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            shellcheck desktop-file-utils appstream lintian
+          audit_bin="${RUNNER_TEMP}/rufusarm64-audit-tools"
+          mkdir -p "${audit_bin}"
+          GOBIN="${audit_bin}" go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          GOBIN="${audit_bin}" go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          GOBIN="${audit_bin}" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          echo "${audit_bin}" >> "${GITHUB_PATH}"
+      - name: Run pinned static, workflow, and vulnerability checks
+        run: bash ./scripts/static-audit.sh
+      - name: Verify selected tag matches canonical version
+        id: version
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+        run: |
           project_version="$(tr -d '\r\n' < VERSION)"
+          test "${GITHUB_REF_TYPE}" = "tag" || {
+            echo "Release workflow must execute at a tag ref, not ${GITHUB_REF}" >&2
+            exit 1
+          }
+          tag_version="${GITHUB_REF_NAME#v}"
           test "${tag_version}" = "${project_version}" || {
             echo "Tag version ${tag_version} does not match repository VERSION ${project_version}" >&2
             exit 1
           }
+          if [[ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]]; then
+            test "${EXPECTED_VERSION}" = "${project_version}" || {
+              echo "Dispatched version ${EXPECTED_VERSION} does not match repository VERSION ${project_version}" >&2
+              exit 1
+            }
+          fi
           echo "VERSION=${project_version}" >> "$GITHUB_ENV"
           echo "version=${project_version}" >> "$GITHUB_OUTPUT"
       - name: Full test, audit, and ARM64 package pass
@@ -59,7 +140,8 @@ jobs:
           zip -qr "dist/RufusArm64-${VERSION}-source.zip" . \
             -x '.git/*' 'dist/*' 'gui/__pycache__/*' '*.pyc' \
                'vendor/wimlib/arm64/wimlib-imagex' \
-               'vendor/wimlib/arm64/wimlib-imagex.sha256'
+               'vendor/wimlib/arm64/wimlib-imagex.sha256' \
+               'vendor/uefi-md5sum/arm64/*'
           upstream_commit="$(cat vendor/wimlib/source/UPSTREAM_COMMIT)"
           git clone https://github.com/ebiggers/wimlib.git dist/wimlib-source
           git -C dist/wimlib-source checkout --detach "${upstream_commit}"
@@ -67,18 +149,27 @@ jobs:
           tar --exclude='.git' -C dist -czf \
             "dist/RufusArm64-${VERSION}-wimlib-1.14.5-source.tar.gz" wimlib-source
           rm -rf dist/wimlib-source
+          cp vendor/uefi-md5sum/arm64/uefi-md5sum-v1.2-source.tar.gz \
+            "dist/RufusArm64-${VERSION}-uefi-md5sum-v1.2-source.tar.gz"
           (
             cd dist
             sha256sum \
+              "RufusArm64-${VERSION}-uefi-md5sum-v1.2-source.tar.gz" \
+              > "RufusArm64-${VERSION}-uefi-md5sum-v1.2-source.tar.gz.sha256"
+            sha256sum \
               "RufusArm64-${VERSION}-source.zip" \
               "RufusArm64-${VERSION}-wimlib-1.14.5-source.tar.gz" \
+              "RufusArm64-${VERSION}-uefi-md5sum-v1.2-source.tar.gz" \
               >> "rufusarm64_${VERSION}_arm64.deb.sha256"
           )
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
+          tag_name: v${{ steps.version.outputs.version }}
           body_path: docs/release-${{ steps.version.outputs.version }}.md
           files: |
             dist/rufusarm64_${{ steps.version.outputs.version }}_arm64.deb
             dist/rufusarm64_${{ steps.version.outputs.version }}_arm64.deb.sha256
             dist/RufusArm64-${{ steps.version.outputs.version }}-source.zip
             dist/RufusArm64-${{ steps.version.outputs.version }}-wimlib-1.14.5-source.tar.gz
+            dist/RufusArm64-${{ steps.version.outputs.version }}-uefi-md5sum-v1.2-source.tar.gz
+            dist/RufusArm64-${{ steps.version.outputs.version }}-uefi-md5sum-v1.2-source.tar.gz.sha256

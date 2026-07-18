@@ -234,7 +234,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 			return fmt.Errorf("resolve Secure Boot DBX file: %w", err)
 		}
 		if err := safety.EnsurePathNotOnTarget(dbxPath, devicePath); err != nil {
-			return fmt.Errorf("Secure Boot DBX file is unsafe: %w", err)
+			return fmt.Errorf("secure boot DBX file is unsafe: %w", err)
 		}
 		database, err := secureboot.ParseFile(dbxPath)
 		if err != nil {
@@ -252,7 +252,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 			}
 			checked++
 			if result.DirectHashRevoked || result.X509CertificateRevoked {
-				return fmt.Errorf("Windows boot file %s is revoked by the selected Secure Boot DBX; no USB data was changed", result.Path)
+				return fmt.Errorf("windows boot file %s is revoked by the selected Secure Boot DBX; no USB data was changed", result.Path)
 			}
 		}
 		send(emit, Event{Stage: "secure_boot", Message: fmt.Sprintf("Checked %d EFI boot files; no direct hash or embedded-certificate revocation was found.", checked)})
@@ -273,7 +273,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 			return fmt.Errorf("resolve Windows driver folder: %w", err)
 		}
 		if err := safety.EnsurePathNotOnTarget(driverRoot, devicePath); err != nil {
-			return fmt.Errorf("Windows driver folder is unsafe: %w", err)
+			return fmt.Errorf("windows driver folder is unsafe: %w", err)
 		}
 		plan.DriverBytes, err = inspectDriverFolder(driverRoot, filesystem)
 		if err != nil {
@@ -287,7 +287,9 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 	if err != nil {
 		return fmt.Errorf("prepare Windows setup options: %w", err)
 	}
-	finalizePlan(&plan)
+	if err := finalizePlan(&plan); err != nil {
+		return fmt.Errorf("calculate Windows media capacity: %w", err)
+	}
 
 	var ntfsFormatter string
 	var uefiNTFSImage string
@@ -374,7 +376,11 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		if temporaryMargin < minimumFreeMargin {
 			temporaryMargin = minimumFreeMargin
 		}
-		if err := ensureAvailableSpace(splitDir, plan.InstallSize+temporaryMargin); err != nil {
+		requiredTemporarySpace, err := checkedAdd("temporary split-image space", plan.InstallSize, temporaryMargin)
+		if err != nil {
+			return err
+		}
+		if err := ensureAvailableSpace(splitDir, requiredTemporarySpace); err != nil {
 			return err
 		}
 		send(emit, Event{Stage: "split", Message: "Preparing the large Windows installation image before erasing the USB…"})
@@ -382,7 +388,9 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		if err != nil {
 			return err
 		}
-		finalizePlan(&plan)
+		if err := finalizePlan(&plan); err != nil {
+			return fmt.Errorf("calculate split Windows media capacity: %w", err)
+		}
 		if opts.TargetSize < plan.RequiredBytes {
 			return fmt.Errorf("the USB drive is too small after preparing the Windows image: need at least %s, but the drive is %s", humanBytes(plan.RequiredBytes), humanBytes(opts.TargetSize))
 		}
@@ -747,9 +755,13 @@ func inspectMountedISO(root string) (mediaPlan, error) {
 		plan.InstallSize = uint64(info.Size())
 	}
 
+	entryCount := 0
 	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		if err := countBoundedEntry(&entryCount, maxWindowsMediaEntries, "Windows ISO"); err != nil {
+			return err
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
 			return fmt.Errorf("unsupported symbolic link in ISO: %s", path)
@@ -765,7 +777,10 @@ func inspectMountedISO(root string) (mediaPlan, error) {
 			return fmt.Errorf("unsupported non-regular file in ISO: %s", path)
 		}
 		if !samePath(path, plan.InstallPath) {
-			plan.OtherBytes += uint64(info.Size())
+			plan.OtherBytes, err = checkedAdd("Windows ISO file total", plan.OtherBytes, uint64(info.Size()))
+			if err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -777,7 +792,9 @@ func inspectMountedISO(root string) (mediaPlan, error) {
 	// recalculates these values before any destructive operation.
 	plan.Filesystem = "fat32"
 	plan.NeedsSplit = plan.InstallSize > fat32MaxFileSize
-	finalizePlan(&plan)
+	if err := finalizePlan(&plan); err != nil {
+		return mediaPlan{}, err
+	}
 	return plan, nil
 }
 
@@ -786,9 +803,13 @@ func inspectMountedISO(root string) (mediaPlan, error) {
 // excluded because it can be split into Windows-supported SWM parts.
 func validateFATCompatibility(root string, plan mediaPlan) error {
 	seenFATPaths := make(map[string]string)
+	entryCount := 0
 	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		if err := countBoundedEntry(&entryCount, maxWindowsMediaEntries, "Windows ISO"); err != nil {
+			return err
 		}
 		relative, err := filepath.Rel(root, path)
 		if err != nil {
@@ -830,10 +851,14 @@ func inspectDriverFolder(root string, filesystem string) (uint64, error) {
 		return 0, errors.New("the Windows driver path is not a directory")
 	}
 	var total uint64
+	entryCount := 0
 	hasINF := false
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		if err := countBoundedEntry(&entryCount, maxDriverFolderEntries, "Windows driver folder"); err != nil {
+			return err
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
 			return fmt.Errorf("driver folder contains a symbolic link: %s", path)
@@ -863,8 +888,8 @@ func inspectDriverFolder(root string, filesystem string) (uint64, error) {
 		if strings.EqualFold(filepath.Ext(entry.Name()), ".inf") {
 			hasINF = true
 		}
-		total += uint64(fileInfo.Size())
-		return nil
+		total, err = checkedAdd("Windows driver folder total", total, uint64(fileInfo.Size()))
+		return err
 	})
 	if err != nil {
 		return 0, err
@@ -875,20 +900,37 @@ func inspectDriverFolder(root string, filesystem string) (uint64, error) {
 	return total, nil
 }
 
-func finalizePlan(plan *mediaPlan) {
+func finalizePlan(plan *mediaPlan) error {
+	if plan == nil {
+		return errors.New("windows media plan is nil")
+	}
 	installOutput := plan.InstallSize
 	if plan.NeedsSplit && plan.SplitBytes > 0 {
 		installOutput = plan.SplitBytes
 	}
 	otherBytes := plan.OtherBytes
-	if len(plan.AnswerFile) > 0 && plan.ExistingAnswerSize <= otherBytes {
+	if len(plan.AnswerFile) > 0 {
+		if plan.ExistingAnswerSize > otherBytes {
+			return errors.New("existing Windows answer file size exceeds the inspected media total")
+		}
 		otherBytes -= plan.ExistingAnswerSize
-		otherBytes += uint64(len(plan.AnswerFile))
+		var err error
+		otherBytes, err = checkedAdd("Windows answer-file replacement total", otherBytes, uint64(len(plan.AnswerFile)))
+		if err != nil {
+			return err
+		}
 	}
-	plan.CopyBytes = otherBytes + installOutput + plan.DriverBytes
+	copyBytes, err := checkedAdd("Windows media copy size", otherBytes, installOutput, plan.DriverBytes)
+	if err != nil {
+		return err
+	}
 	if plan.DriverFolder != "" {
-		plan.CopyBytes += uint64(len(rufusDriverMarker))
+		copyBytes, err = checkedAdd("Windows media copy size", copyBytes, uint64(len(rufusDriverMarker)))
+		if err != nil {
+			return err
+		}
 	}
+	plan.CopyBytes = copyBytes
 	marginDivisor := uint64(10)
 	if plan.Filesystem == "ntfs" {
 		marginDivisor = 20
@@ -901,7 +943,8 @@ func finalizePlan(plan *mediaPlan) {
 	if plan.Filesystem == "ntfs" {
 		reserve += oneMiB
 	}
-	plan.RequiredBytes = plan.CopyBytes + margin + reserve
+	plan.RequiredBytes, err = checkedAdd("required Windows USB capacity", plan.CopyBytes, margin, reserve)
+	return err
 }
 
 func prepareSplitImage(ctx context.Context, sourcePath, splitDir string, emit EventFunc) ([]string, uint64, error) {
@@ -926,23 +969,6 @@ func prepareSplitImage(ctx context.Context, sourcePath, splitDir string, emit Ev
 		return nil, 0, err
 	}
 	return parts, total, nil
-}
-
-func verifySplitImage(ctx context.Context, parts []string, emit EventFunc) error {
-	if len(parts) == 0 {
-		return errors.New("no split WIM parts were supplied")
-	}
-	args := []string{"verify", parts[0]}
-	for _, part := range parts {
-		// An exact path is also a valid wimlib --ref glob, and avoids relying on
-		// shell expansion or filename case.
-		args = append(args, "--ref="+part)
-	}
-	wimlib, err := wimlibExecutable()
-	if err != nil {
-		return err
-	}
-	return run(ctx, emit, wimlib, args...)
 }
 
 func findExistingSplitFiles(root string) ([]string, error) {
@@ -1034,7 +1060,10 @@ func ensureAvailableSpace(path string, required uint64) error {
 	if err := syscall.Statfs(path, &stat); err != nil {
 		return fmt.Errorf("check temporary free space: %w", err)
 	}
-	available := uint64(stat.Bavail) * uint64(stat.Bsize)
+	available, err := checkedMultiply("temporary filesystem free space", uint64(stat.Bavail), uint64(stat.Bsize))
+	if err != nil {
+		return err
+	}
 	if available < required {
 		return fmt.Errorf("not enough temporary disk space to prepare the Windows image safely: need %s, available %s", humanBytes(required), humanBytes(available))
 	}
@@ -1058,7 +1087,10 @@ func validateSplitParts(parts []string) (uint64, error) {
 		if size > fat32MaxFileSize {
 			return 0, fmt.Errorf("%s is %s and cannot fit on FAT32; this ISO contains a resource that wimlib cannot split below the FAT32 file limit", filepath.Base(part), humanBytes(size))
 		}
-		total += size
+		total, err = checkedAdd("split Windows image total", total, size)
+		if err != nil {
+			return 0, err
+		}
 	}
 	return total, nil
 }
@@ -1276,10 +1308,7 @@ func openFileSHA256(file *os.File) ([sha256.Size]byte, error) {
 }
 
 func wimlibExecutable() (string, error) {
-	candidates := make([]string, 0, 4)
-	if envPath := strings.TrimSpace(os.Getenv("RUFUSARM64_WIMLIB")); envPath != "" {
-		candidates = append(candidates, envPath)
-	}
+	candidates := make([]string, 0, 3)
 	if executable, err := os.Executable(); err == nil {
 		candidates = append(candidates, filepath.Join(filepath.Dir(executable), "wimlib-imagex"))
 	}

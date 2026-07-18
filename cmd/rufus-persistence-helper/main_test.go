@@ -42,3 +42,15 @@ func TestRunRequiresGraphicalSafetyFlags(t *testing.T) {
 		t.Fatalf("graphical safety error = %v", err)
 	}
 }
+
+func TestPackagedRuntimeUEFILoaderContract(t *testing.T) {
+	if packagedRuntimeUEFILoaderPath != "/usr/lib/rufusarm64/bootaa64-uefi-md5sum.efi" {
+		t.Fatalf("loader path = %q", packagedRuntimeUEFILoaderPath)
+	}
+	if packagedRuntimeUEFILoaderSHA256 != "543615a8e97fed1cb5293bee7bdfe10f9feb6979f191b20ab32dafdcf097b502" {
+		t.Fatalf("loader digest = %q", packagedRuntimeUEFILoaderSHA256)
+	}
+	if !strings.Contains(packagedRuntimeUEFILoaderProvenance, "unsigned") {
+		t.Fatalf("loader provenance must disclose unsigned status: %q", packagedRuntimeUEFILoaderProvenance)
+	}
+}

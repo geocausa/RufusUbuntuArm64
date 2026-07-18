@@ -324,7 +324,7 @@ func DownloadMicrosoftDBX(ctx context.Context, arch, destination string) (Downlo
 		return DownloadResult{}, fmt.Errorf("read Microsoft DBX response: %w", err)
 	}
 	if int64(len(data)) > maxDBXDownload {
-		return DownloadResult{}, errors.New("Microsoft DBX response is unexpectedly large")
+		return DownloadResult{}, errors.New("downloaded DBX response is unexpectedly large")
 	}
 	db, err := Parse(data, url)
 	if err != nil {

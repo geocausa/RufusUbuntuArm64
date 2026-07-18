@@ -19,6 +19,9 @@ type DigestProgress func(done, total uint64)
 // The descriptor offset is restored before return so callers can safely use it
 // for a later mount, copy, or verification pass.
 func SHA256Open(ctx context.Context, file *os.File, progress DigestProgress) (result [sha256.Size]byte, returnErr error) {
+	if ctx == nil {
+		return result, errors.New("hash context is nil")
+	}
 	if file == nil {
 		return result, errors.New("image file is nil")
 	}
@@ -66,6 +69,16 @@ func SHA256Open(ctx context.Context, file *os.File, progress DigestProgress) (re
 		if readErr != nil {
 			return result, fmt.Errorf("read image for hashing: %w", readErr)
 		}
+	}
+	if done != total {
+		return result, fmt.Errorf("image size changed while hashing: read %d bytes, expected %d", done, total)
+	}
+	after, err := file.Stat()
+	if err != nil {
+		return result, fmt.Errorf("stat open image after hashing: %w", err)
+	}
+	if after.Size() != info.Size() || after.Mode() != info.Mode() || !after.ModTime().Equal(info.ModTime()) {
+		return result, errors.New("image metadata changed while hashing")
 	}
 	copy(result[:], hash.Sum(nil))
 	return result, nil

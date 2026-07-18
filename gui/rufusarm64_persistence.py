@@ -26,10 +26,8 @@ from rufusarm64_persistence_logic import (
 )
 
 APP_ID = "io.github.geocausa.RufusArm64.Persistence"
-HELPER = os.environ.get("RUFUSARM64_HELPER", "/usr/lib/rufusarm64/rufusarm64-helper")
-PERSISTENCE_HELPER = os.environ.get(
-    "RUFUSARM64_PERSISTENCE_HELPER", "/usr/lib/rufusarm64/rufusarm64-persistence-helper"
-)
+HELPER = "/usr/lib/rufusarm64/rufusarm64-helper"
+PERSISTENCE_HELPER = "/usr/lib/rufusarm64/rufusarm64-persistence-helper"
 PKEXEC = "/usr/bin/pkexec"
 
 
@@ -40,6 +38,9 @@ class Window(Gtk.ApplicationWindow):
         self.devices = []
         self.process = None
         self.busy = False
+        self.closed = False
+        self.device_generation = 0
+        self.device_refreshing = False
         self.job = ""
         self.cancel_requested = False
         self.cancel_path = None
@@ -47,6 +48,7 @@ class Window(Gtk.ApplicationWindow):
         self.plan = None
         self.plan_key = None
         self.last_status = None
+        self.runtime_validation_requested = False
         self.connect("delete-event", self.on_delete)
 
         header = Gtk.HeaderBar(title="RufusArm64 Persistent Live USB", subtitle="Ubuntu casper and Debian live-boot")
@@ -116,6 +118,21 @@ class Window(Gtk.ApplicationWindow):
         self.volume_label.set_text("RUFUS-LIVE")
         self.volume_label.connect("changed", self.selection_changed)
         grid.attach(self.volume_label, 1, 3, 2, 1)
+
+        self._label(grid, "Boot-time validation", 4)
+        runtime_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.runtime_uefi_validation = Gtk.CheckButton(label="Validate media at UEFI boot")
+        self.runtime_uefi_validation.set_active(False)
+        self.runtime_uefi_validation.set_sensitive(False)
+        self.runtime_uefi_validation.connect("toggled", self.selection_changed)
+        runtime_box.pack_start(self.runtime_uefi_validation, False, False, 0)
+        runtime_warning = Gtk.Label(label=(
+            "Unsigned development loader — Secure Boot compatibility is not established"
+        ))
+        runtime_warning.set_xalign(0)
+        runtime_warning.set_line_wrap(True)
+        runtime_box.pack_start(runtime_warning, False, False, 0)
+        grid.attach(runtime_box, 1, 4, 2, 1)
 
         frame = Gtk.Frame(label="Mandatory compatibility analysis")
         frame_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -187,6 +204,7 @@ class Window(Gtk.ApplicationWindow):
         if not self.busy:
             self.plan = self.plan_key = None
             self.create_button.set_sensitive(False)
+            self.runtime_uefi_validation.set_sensitive(False)
             self.summary.set_text("Selection changed. Run compatibility analysis again before creation.")
 
     def selection(self):
@@ -204,32 +222,55 @@ class Window(Gtk.ApplicationWindow):
         image, source_identity = inspect_source_identity(image)
         size_gib = normalize_persistence_gib(self.size.get_value_as_int())
         label = normalize_boot_label(self.volume_label.get_text())
-        key = (image, source_identity, target_identity, target_size, size_gib)
-        return image, source_identity, device, target_identity, target_size, size_gib, label, key
+        runtime_validation = bool(self.runtime_uefi_validation.get_active())
+        key = (image, source_identity, target_identity, target_size, size_gib, label, runtime_validation)
+        return image, source_identity, device, target_identity, target_size, size_gib, label, runtime_validation, key
 
     def refresh_devices(self):
-        if self.busy:
+        if self.busy or self.device_refreshing or self.closed:
             return
+        self.device_generation += 1
+        generation = self.device_generation
+        self.device_refreshing = True
         self.target.remove_all()
         self.devices = []
         self.plan = self.plan_key = None
         self.create_button.set_sensitive(False)
+        self.runtime_uefi_validation.set_sensitive(False)
+        self.progress.set_text("Scanning removable drives…")
+        self.set_busy(self.busy)
+        threading.Thread(target=self._run_device_refresh, args=(generation,), daemon=True).start()
+
+    def _run_device_refresh(self, generation):
+        devices = []
+        error = ""
         try:
             result = subprocess.run([HELPER, "list", "--json"], check=True, text=True, capture_output=True, timeout=15)
             devices = json.loads(result.stdout)
             if not isinstance(devices, list):
                 raise ValueError("Drive enumeration returned invalid data.")
-            self.devices = devices
-            for device in devices:
-                self.target.append_text(device_label(device))
-            if devices:
-                self.target.set_active(0)
-                self.progress.set_text("Ready for compatibility analysis")
-            else:
-                self.progress.set_text("No removable USB drive found")
         except Exception as exc:
-            self.append_log(f"Could not list removable USB drives: {exc}")
+            error = str(exc)
+        GLib.idle_add(self._finish_device_refresh, generation, devices, error)
+
+    def _finish_device_refresh(self, generation, devices, error):
+        if self.closed or generation != self.device_generation:
+            return False
+        self.device_refreshing = False
+        self.devices = devices if not error else []
+        self.target.remove_all()
+        for device in self.devices:
+            self.target.append_text(device_label(device))
+        if error:
+            self.append_log(f"Could not list removable USB drives: {error}")
             self.progress.set_text("Drive detection failed")
+        elif self.devices:
+            self.target.set_active(0)
+            self.progress.set_text("Ready for compatibility analysis")
+        else:
+            self.progress.set_text("No removable USB drive found")
+        self.set_busy(self.busy)
+        return False
 
     @staticmethod
     def new_cancel_path():
@@ -241,14 +282,21 @@ class Window(Gtk.ApplicationWindow):
     def set_busy(self, busy, job=""):
         self.busy = busy
         self.job = job if busy else ""
-        for widget in (self.image, self.target, self.refresh_button, self.size, self.volume_label, self.analyze_button):
+        for widget in (self.image, self.target, self.size, self.volume_label):
             widget.set_sensitive(not busy)
-        self.create_button.set_sensitive(not busy and self.plan is not None and self.plan_key is not None)
+        self.runtime_uefi_validation.set_sensitive(
+            not busy and not self.device_refreshing and self.plan is not None and self.plan_key is not None
+        )
+        self.refresh_button.set_sensitive(not busy and not self.device_refreshing)
+        self.analyze_button.set_sensitive(not busy and not self.device_refreshing)
+        self.create_button.set_sensitive(
+            not busy and not self.device_refreshing and self.plan is not None and self.plan_key is not None
+        )
         self.cancel_button.set_sensitive(busy)
 
     def analyze(self, *_):
         try:
-            image, source_id, _device, _target_id, target_size, size_gib, _label, key = self.selection()
+            image, source_id, _device, _target_id, target_size, size_gib, _label, _runtime_validation, key = self.selection()
             cancel_path = self.new_cancel_path()
             command = build_analyze_command(PKEXEC, HELPER, image, source_id, target_size, size_gib, cancel_path)
         except (ValueError, OSError) as exc:
@@ -272,17 +320,20 @@ class Window(Gtk.ApplicationWindow):
         threading.Thread(target=self.run_analysis, args=(command, key), daemon=True).start()
 
     def run_analysis(self, command, key):
+        process = None
         try:
-            self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
-            stdout, stderr = self.process.communicate()
-            code = self.process.returncode
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+            self.process = process
+            stdout, stderr = process.communicate()
+            code = process.returncode
             payload = json.loads(stdout) if code == 0 else {}
             error = (stderr.strip() or stdout.strip()) if code else ""
             GLib.idle_add(self.finish_analysis, code, payload, error, key)
         except Exception as exc:
             GLib.idle_add(self.finish_analysis, 1, {}, str(exc), key)
         finally:
-            self.process = None
+            if self.process is process:
+                self.process = None
 
     def finish_analysis(self, code, payload, error, key):
         cancelled = self.cancel_requested
@@ -302,12 +353,14 @@ class Window(Gtk.ApplicationWindow):
                 self.summary.set_text(text)
                 self.append_log(text)
                 self.create_button.set_sensitive(True)
+                self.runtime_uefi_validation.set_sensitive(True)
                 self.progress.set_fraction(1)
                 self.progress.set_text("Compatibility confirmed")
                 self.detail.set_text("Creation is enabled for this exact source identity, USB identity, capacity, and persistence size.")
                 return False
         self.plan = self.plan_key = None
         self.create_button.set_sensitive(False)
+        self.runtime_uefi_validation.set_sensitive(False)
         if cancelled:
             self.progress.set_text("Analysis cancelled")
             self.detail.set_text("The private read-only mount was cleaned up. Nothing was modified.")
@@ -321,13 +374,13 @@ class Window(Gtk.ApplicationWindow):
         if not self.plan or not self.plan_key:
             return
         try:
-            image, source_id, device, target_id, target_size, size_gib, label, key = self.selection()
+            image, source_id, device, target_id, target_size, size_gib, label, runtime_validation, key = self.selection()
             if key != self.plan_key:
-                raise ValueError("The image, USB, or requested size changed. Analyze again.")
+                raise ValueError("The image, USB, boot label, validation option, or requested size changed. Analyze again.")
             cancel_path = self.new_cancel_path()
             command = build_create_command(
                 PKEXEC, PERSISTENCE_HELPER, image, source_id, device.get("path"), target_id,
-                size_gib, label, cancel_path,
+                size_gib, label, cancel_path, runtime_validation,
             )
         except (ValueError, OSError) as exc:
             self.message(str(exc), Gtk.MessageType.ERROR)
@@ -339,9 +392,17 @@ class Window(Gtk.ApplicationWindow):
             transient_for=self, modal=True, message_type=Gtk.MessageType.WARNING,
             buttons=Gtk.ButtonsType.CANCEL, text="Erase the selected USB and create persistent live media?",
         )
+        runtime_confirmation = ""
+        if runtime_validation:
+            runtime_confirmation = (
+                "\n\nBoot-time UEFI media validation will replace EFI/BOOT/BOOTAA64.EFI and preserve the "
+                "original as EFI/BOOT/bootaa64_original.efi. Unsigned development loader — "
+                "Secure Boot compatibility is not established."
+            )
         dialog.format_secondary_text(
             f"ALL DATA on {device.get('path')} ({human_bytes(target_size)}) will be permanently erased.\n\n"
-            f"{plan_summary(self.plan, human_bytes)}\n\n"
+            f"{plan_summary(self.plan, human_bytes)}"
+            f"{runtime_confirmation}\n\n"
             "This is a persistent live system, not a conventional installed OS. Software checks cannot guarantee firmware boot. "
             "After creation, boot this exact USB and complete start/reboot/verify qualification."
         )
@@ -355,10 +416,15 @@ class Window(Gtk.ApplicationWindow):
         self.cancel_requested = False
         self.started = datetime.now(timezone.utc)
         self.last_status = None
+        self.runtime_validation_requested = runtime_validation
         self.log.get_buffer().set_text("")
         self.append_log(f"Image: {image}")
         self.append_log(f"Target: {device_label(device)}")
         self.append_log(plan_summary(self.plan, human_bytes))
+        if runtime_validation:
+            self.append_log(
+                "Boot-time UEFI validation requested: package-owned unsigned loader; original fallback will be preserved."
+            )
         self.set_busy(True, "create")
         self.progress.set_fraction(0)
         self.progress.set_text("Requesting administrator permission…")
@@ -366,9 +432,11 @@ class Window(Gtk.ApplicationWindow):
         threading.Thread(target=self.run_create, args=(command,), daemon=True).start()
 
     def run_create(self, command):
+        process = None
         try:
-            self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True)
-            for raw in self.process.stdout or ():
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True)
+            self.process = process
+            for raw in process.stdout or ():
                 line = raw.strip()
                 if not line:
                     continue
@@ -378,13 +446,14 @@ class Window(Gtk.ApplicationWindow):
                     GLib.idle_add(self.append_log, line)
                 else:
                     GLib.idle_add(self.handle_event, event)
-            code = self.process.wait()
+            code = process.wait()
             GLib.idle_add(self.finish_create, code)
         except Exception as exc:
             GLib.idle_add(self.append_log, f"Persistent USB creation failed: {exc}")
             GLib.idle_add(self.finish_create, 1)
         finally:
-            self.process = None
+            if self.process is process:
+                self.process = None
 
     def handle_event(self, event):
         message = str(event.get("message") or "")
@@ -416,12 +485,26 @@ class Window(Gtk.ApplicationWindow):
         self.set_busy(False)
         self.plan = self.plan_key = None
         self.create_button.set_sensitive(False)
+        self.runtime_uefi_validation.set_sensitive(False)
+        runtime_validation = self.runtime_validation_requested
+        self.runtime_validation_requested = False
         if code == 0:
             self.progress.set_fraction(1)
-            self.progress.set_text("Persistent live USB created and verified")
-            self.detail.set_text("Boot the USB, then qualify persistence across one reboot.")
+            self.progress.set_text("Persistent live USB creation completed")
+            if runtime_validation:
+                self.detail.set_text(
+                    "Internal checks and the boot-time media manifest passed. Physical boot and reboot qualification are still required."
+                )
+                runtime_note = (
+                    "\n\nBoot-time UEFI media validation is installed. The validator is unsigned, so Secure Boot "
+                    "compatibility is not established. Physical boot and reboot qualification remain required."
+                )
+            else:
+                self.detail.set_text("Internal checks passed. Boot the USB, then qualify persistence across one reboot.")
+                runtime_note = ""
             self.message(
-                "Persistent live media was created and checked.\n\nBoot it and run:\n\n"
+                "Persistent live media was created and checked."
+                f"{runtime_note}\n\nBoot it and run:\n\n"
                 "sudo rufusarm64-cli qualify start --record /cdrom/.rufusarm64/creation.json --output ~/rufusarm64-initial.json\n\n"
                 "Reboot the same USB, then run qualify verify with a new output file. Until that passes, treat this image/hardware combination as unqualified.",
                 Gtk.MessageType.INFO,
@@ -479,6 +562,8 @@ class Window(Gtk.ApplicationWindow):
         if self.busy:
             self.message("An operation is running. Cancel it and wait for cleanup before closing.", Gtk.MessageType.WARNING)
             return True
+        self.closed = True
+        self.device_generation += 1
         return False
 
     def message(self, text, kind):

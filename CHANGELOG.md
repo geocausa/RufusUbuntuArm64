@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.11.0 — 2026-07-18
+
+- Added a descriptor-rooted, bounded UEFI media analyzer for fallback-loader architecture, PE/COFF structure, DBX revocations, SBAT metadata, trusted local or firmware SBAT levels, and structured CLI/GTK reporting.
+- Added Rufus-compatible `md5sum.txt` generation and verification plus an opt-in boot-time ARM64 media-integrity option for the guarded Ubuntu/Debian persistent writable-copy path.
+- Reproducibly built the package-private `uefi-md5sum` v1.2 ARM64 loader from exact upstream and EDK2 commits, retained corresponding source and provenance, and kept the loader explicitly unsigned.
+- Added transactional fallback-loader wrapping and rollback, exact post-install manifest verification, qualification-record hashes, guarded GUI disclosure, and refusal in raw-image, Windows, NTFS, compressed-stream, and virtual-disk writers.
+- Qualified unchanged and intentionally corrupted GPT/FAT32 media under pinned AArch64 QEMU firmware, including original-loader chainload and complete serial, image, firmware, provenance, and checksum evidence.
+- Kept Secure Boot compatibility and universal hardware compatibility explicitly unclaimed; physical Surface Pro 11 boot and persistence start/reboot/verify evidence remains a separate per-hardware qualification gate.
+- Hardened tagged releases so the ARM64 package, deterministic project source, pinned WIM source, and deterministic `uefi-md5sum` corresponding source are produced from one synchronized version contract.
+
+## 0.10.6 — 2026-07-17
+
+- Marked both fresh persistent-live GPT partitions with attribute bit 63 before the kernel publishes them, preventing desktop automount services from racing FAT32 and ext4 creation.
+- Included the do-not-automount attribute in exact primary and backup GPT entry-table readback verification and added focused regression coverage for both partitions.
+- Bumped the Debian package and runtime version so systems already on 0.10.5 receive the correction through a normal upgrade.
+
+## 0.10.5 — 2026-07-17
+
+- Completed the pre-parity correctness, destructive-operation, privilege-boundary, parser, arithmetic, concurrency, acquisition, packaging, and supply-chain audit.
+- Retained confirmed source and target identities through destructive revalidation, added checked size and offset arithmetic, and strengthened GPT durability, short-write handling, and exact metadata readback.
+- Bound reused verified downloads to no-follow regular-file descriptors and closed pathname replacement and symbolic-link races.
+- Moved slow image, device, and signed-catalog probes off the GTK thread; added stale-result generations, worker-owned process references, and early cancellation handling.
+- Added Go 1.22 compatibility, Staticcheck, Govulncheck, Actionlint, ShellCheck, Lintian, AppStream, desktop validation, deterministic packaging, and byte-for-byte package reproducibility gates.
+- Corrected Debian metadata, runtime dependencies, copyright, changelog, launcher man pages, and verification wording. Software checks do not claim firmware boot, Secure Boot acceptance, or persistence across reboot without physical qualification.
+- Fixed real-device persistent-media creation by retaining identity-bound, flocked partition descriptors without a kernel-exclusive open, so FAT32/ext4 formatters and filesystem tools can safely reopen inherited `/proc/self/fd/N` targets; added a real loop-device regression gate.
+
 ## 0.10.4 — 2026-07-17
 
 - Fixed persistence analysis for the official Ubuntu 26.04 ARM64 desktop ISO root alias `ubuntu -> .`.

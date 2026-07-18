@@ -7,16 +7,33 @@
   <project_license>GPL-3.0-or-later</project_license>
   <description>
     <p>RufusArm64 is an unofficial bootable-USB creator designed for Ubuntu on ARM64 computers.</p>
-    <p>It writes raw and ISOHybrid media, prepares compressed and common virtual-disk inputs, creates Windows installation media, verifies signed acquisition catalogs, and provides a guarded graphical persistent-live USB workflow for supported Ubuntu casper and Debian live-boot media.</p>
+    <p>It writes raw and ISOHybrid media, prepares compressed and common virtual-disk inputs, creates Windows installation media, verifies signed acquisition catalogs, analyzes UEFI and Secure Boot metadata, and provides guarded persistent-live creation with optional ARM64 boot-time media-integrity validation.</p>
   </description>
   <launchable type="desktop-id">io.github.geocausa.RufusArm64.desktop</launchable>
   <url type="homepage">https://github.com/geocausa/RufusUbuntuArm64</url>
-  <developer_name>RufusArm64 contributors</developer_name>
+  <developer id="io.github.geocausa">
+    <name>RufusArm64 contributors</name>
+  </developer>
   <provides>
     <binary>rufusarm64</binary>
     <binary>rufusarm64-persistence</binary>
   </provides>
   <releases>
+    <release version="0.11.0" date="2026-07-18">
+      <description>
+        <p>Adds descriptor-safe UEFI, DBX, and SBAT analysis plus an opt-in, reproducibly built ARM64 boot-time media-integrity validator for supported persistent Ubuntu/Debian writable-copy media, qualified under pinned AArch64 QEMU firmware and explicitly unsigned.</p>
+      </description>
+    </release>
+    <release version="0.10.6" date="2026-07-17">
+      <description>
+        <p>Prevents desktop automount races during persistent-live USB creation by setting and verifying the GPT do-not-automount attribute before FAT32 and ext4 formatting.</p>
+      </description>
+    </release>
+    <release version="0.10.5" date="2026-07-17">
+      <description>
+        <p>Completes the pre-parity safety and correctness audit with stronger identity, arithmetic, GPT durability, acquisition, GUI concurrency, static-analysis, Debian-policy, and reproducible-package gates.</p>
+      </description>
+    </release>
     <release version="0.10.4" date="2026-07-17">
       <description>
         <p>Fixes persistence analysis for the official Ubuntu 26.04 ARM64 desktop image's harmless root-self alias while preserving strict escape, nested-root, and cycle rejection.</p>

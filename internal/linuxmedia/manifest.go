@@ -146,12 +146,6 @@ func (builder *manifestBuilder) inspectPath(sourcePath, logicalPath string, ance
 		if err := validateFATPath(logicalPath); err != nil {
 			return err
 		}
-		portablePath := filepath.ToSlash(logicalPath)
-		folded := strings.ToLower(portablePath)
-		if previous, ok := builder.seen[folded]; ok && previous != portablePath {
-			return fmt.Errorf("FAT32 case-insensitive path collision between %q and %q", previous, portablePath)
-		}
-		builder.seen[folded] = portablePath
 	}
 
 	info, err := os.Lstat(sourcePath)
@@ -159,6 +153,11 @@ func (builder *manifestBuilder) inspectPath(sourcePath, logicalPath string, ance
 		return err
 	}
 	entry := Entry{Path: filepath.ToSlash(logicalPath), Mode: uint32(info.Mode().Perm())}
+	if info.Mode()&os.ModeSymlink == 0 {
+		if err := builder.registerFATPath(logicalPath); err != nil {
+			return err
+		}
+	}
 	switch {
 	case info.IsDir():
 		builder.manifest.Directories++
@@ -177,6 +176,9 @@ func (builder *manifestBuilder) inspectPath(sourcePath, logicalPath string, ance
 			// nested root links and all links outside the mounted media tree.
 			builder.manifest.OmittedRootAliases++
 			return nil
+		}
+		if err := builder.registerFATPath(logicalPath); err != nil {
+			return err
 		}
 		entry.Mode = uint32(resolvedInfo.Mode().Perm())
 		entry.DereferencedSymlink = true
@@ -209,6 +211,19 @@ func (builder *manifestBuilder) inspectPath(sourcePath, logicalPath string, ance
 	builder.manifest.TotalBytes += entry.Size
 	builder.manifest.Files++
 	builder.manifest.Entries = append(builder.manifest.Entries, entry)
+	return nil
+}
+
+func (builder *manifestBuilder) registerFATPath(logicalPath string) error {
+	if !builder.opts.RequireFAT32 {
+		return nil
+	}
+	portablePath := filepath.ToSlash(logicalPath)
+	folded := strings.ToLower(portablePath)
+	if previous, ok := builder.seen[folded]; ok && previous != portablePath {
+		return fmt.Errorf("FAT32 case-insensitive path collision between %q and %q", previous, portablePath)
+	}
+	builder.seen[folded] = portablePath
 	return nil
 }
 

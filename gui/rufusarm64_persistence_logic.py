@@ -75,6 +75,7 @@ def build_create_command(
     persistence_gib,
     volume_label,
     cancel_path,
+    runtime_uefi_validation=False,
 ):
     values = [
         str(value or "").strip()
@@ -86,7 +87,9 @@ def build_create_command(
         raise ValueError("The selected target is not a whole device under /dev.")
     persistence_gib = normalize_persistence_gib(persistence_gib)
     label = normalize_boot_label(volume_label)
-    return [
+    if not isinstance(runtime_uefi_validation, bool):
+        raise ValueError("Runtime UEFI media validation must be an explicit boolean selection.")
+    command = [
         values[0], values[1],
         "--image", values[2],
         "--expected-source-identity", values[3],
@@ -98,6 +101,9 @@ def build_create_command(
         "--json-progress",
         "--yes",
     ]
+    if runtime_uefi_validation:
+        command.append("--runtime-uefi-validation")
+    return command
 
 
 def _normalize_patch_path(value):

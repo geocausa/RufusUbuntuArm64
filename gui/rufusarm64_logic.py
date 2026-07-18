@@ -1,8 +1,48 @@
 """Pure, testable helpers for the RufusArm64 GTK front end."""
 
+import json
 import os
 import re
 import stat
+import tempfile
+
+def atomic_write_json(path, payload):
+    """Durably replace an owner-only JSON file without following directory links."""
+    absolute = os.path.abspath(path)
+    directory = os.path.dirname(absolute)
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    directory_info = os.lstat(directory)
+    if stat.S_ISLNK(directory_info.st_mode) or not stat.S_ISDIR(directory_info.st_mode):
+        raise OSError("settings directory is not a real directory")
+    os.chmod(directory, 0o700)
+
+    descriptor = -1
+    temporary = ""
+    try:
+        descriptor, temporary = tempfile.mkstemp(prefix=".settings-", suffix=".tmp", dir=directory)
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            descriptor = -1
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, absolute)
+        temporary = ""
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        directory_fd = os.open(directory, flags)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+
 
 SUPPORTED_IMAGE_SUFFIXES = (
     ".iso", ".img", ".raw", ".bin",
@@ -133,16 +173,20 @@ def device_label(device):
 
 
 def success_message(mode, verify_requested, filesystem="auto"):
-    """Return an accurate GUI completion message for the selected job."""
+    """Describe completed software checks without implying a firmware boot guarantee."""
+    qualification = (
+        "This does not prove firmware boot or Secure Boot acceptance; test the media on the intended computer. "
+        "Remove it safely before unplugging it."
+    )
     if verify_requested:
-        return "The bootable USB was created and verified successfully. Remove it safely before unplugging it."
+        return "USB media creation completed. Copied-data verification passed. " + qualification
     if mode == "windows":
         filesystem_name = "NTFS" if filesystem == "ntfs" else "FAT32" if filesystem == "fat32" else "selected"
         return (
-            f"The bootable USB was created successfully. The {filesystem_name} filesystem check passed, "
-            "but copied-file verification was skipped. Remove it safely before unplugging it."
+            f"USB media creation completed. The {filesystem_name} filesystem consistency check passed, "
+            "but copied-file verification was skipped. " + qualification
         )
-    return "The bootable USB was created successfully. Verification was skipped. Remove it safely before unplugging it."
+    return "USB media creation completed. Copied-data verification was skipped. " + qualification
 
 
 def validate_local_username(value):
@@ -473,7 +517,198 @@ def persistence_plan_summary(payload):
         lines.append(f"Boot parameter: {parameter}")
     if patch_paths:
         lines.append("Boot files to update: " + ", ".join(str(path) for path in patch_paths))
-    lines.append("Planning is read-only. Persistent USB creation remains experimental and command-line only.")
+    lines.append("Planning is read-only. Use the guarded persistent USB creator for the destructive creation step.")
+    return "\n".join(lines)
+
+
+UEFI_ARCHITECTURES = {
+    "native",
+    "386",
+    "amd64",
+    "arm",
+    "arm64",
+    "riscv64",
+    "loongarch64",
+}
+
+
+def normalize_uefi_architecture(value):
+    value = str(value or "native").strip().lower()
+    aliases = {
+        "": "native",
+        "aarch64": "arm64",
+        "x86_64": "amd64",
+        "x64": "amd64",
+        "i386": "386",
+        "i686": "386",
+        "loong64": "loongarch64",
+    }
+    value = aliases.get(value, value)
+    if value not in UEFI_ARCHITECTURES:
+        raise ValueError("Choose Native, x86, x86-64, ARM, ARM64, RISC-V 64, or LoongArch 64.")
+    return value
+
+
+def build_uefi_validate_command(
+    helper,
+    directory,
+    architecture="native",
+    max_files=512,
+    require_fallback=True,
+    dbx_file="",
+    firmware=False,
+    sbat_level_file="",
+    firmware_sbat=False,
+):
+    helper = str(helper or "").strip()
+    directory = str(directory or "").strip()
+    dbx_file = str(dbx_file or "").strip()
+    sbat_level_file = str(sbat_level_file or "").strip()
+    if not helper:
+        raise ValueError("The RufusArm64 validation helper is not installed correctly.")
+    if not directory:
+        raise ValueError("Choose a mounted or extracted UEFI media folder.")
+    try:
+        max_files = int(max_files)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("The EFI file limit must be a whole number.") from exc
+    if max_files <= 0 or max_files > 4096:
+        raise ValueError("The EFI file limit must be between 1 and 4096.")
+    if dbx_file and firmware:
+        raise ValueError("Choose either a local DBX file or the running firmware DBX, not both.")
+    if sbat_level_file and firmware_sbat:
+        raise ValueError("Choose either a local SBAT level or the running firmware SBAT level, not both.")
+    command = [
+        helper,
+        "uefi",
+        "validate",
+        "--directory",
+        directory,
+        "--arch",
+        normalize_uefi_architecture(architecture),
+        "--max-files",
+        str(max_files),
+        f"--require-fallback={'true' if require_fallback else 'false'}",
+    ]
+    if dbx_file:
+        command.extend(["--dbx", dbx_file])
+    elif firmware:
+        command.append("--firmware")
+    if sbat_level_file:
+        command.extend(["--sbat-level", sbat_level_file])
+    elif firmware_sbat:
+        command.append("--firmware-sbat")
+    command.append("--json")
+    return command
+
+
+def normalize_uefi_validation(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("The UEFI validator returned an invalid response.")
+    root = str(payload.get("root") or "").strip()
+    architecture = str(payload.get("architecture") or "").strip()
+    fallback_path = str(payload.get("fallback_path") or "").strip()
+    files = payload.get("files")
+    warnings = payload.get("warnings") or []
+    errors = payload.get("errors") or []
+    if not root or not architecture or not fallback_path or not isinstance(files, list):
+        raise ValueError("The UEFI validator response is incomplete.")
+    if not isinstance(warnings, list) or not isinstance(errors, list):
+        raise ValueError("The UEFI validator returned invalid warning or error lists.")
+    normalized_files = []
+    for item in files:
+        if not isinstance(item, dict):
+            raise ValueError("The UEFI validator returned an invalid file result.")
+        path = str(item.get("path") or "").strip()
+        if not path:
+            raise ValueError("The UEFI validator returned a file result without a path.")
+        file_warnings = item.get("warnings") or []
+        if not isinstance(file_warnings, list):
+            raise ValueError("The UEFI validator returned invalid per-file warnings.")
+        try:
+            sbat_count = len(item.get("sbat") or [])
+            certificates = int(item.get("embedded_certificates") or 0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("The UEFI validator returned invalid per-file metadata.") from exc
+        normalized_files.append({
+            "path": path,
+            "machine_name": str(item.get("machine_name") or "unknown"),
+            "subsystem_name": str(item.get("subsystem_name") or "unknown subsystem"),
+            "fallback": bool(item.get("fallback")),
+            "direct_hash_revoked": bool(item.get("direct_hash_revoked")),
+            "x509_certificate_revoked": bool(item.get("x509_certificate_revoked")),
+            "sbat_revoked": bool(item.get("sbat_revoked")),
+            "sbat_revocations": list(item.get("sbat_revocations") or []),
+            "embedded_certificates": max(0, certificates),
+            "sbat_records": sbat_count,
+            "warnings": [str(value) for value in file_warnings],
+            "error": str(item.get("error") or "").strip(),
+        })
+    return {
+        "root": root,
+        "architecture": architecture,
+        "fallback_path": fallback_path,
+        "fallback_found": bool(payload.get("fallback_found")),
+        "dbx_checked": bool(payload.get("dbx_checked")),
+        "sbat_level_checked": bool(payload.get("sbat_level_checked")),
+        "sbat_level_source": str(payload.get("sbat_level_source") or "").strip(),
+        "sbat_level_datestamp": str(payload.get("sbat_level_datestamp") or "").strip(),
+        "sbat_revoked": bool(payload.get("sbat_revoked")),
+        "valid": bool(payload.get("valid")),
+        "revoked": bool(payload.get("revoked")),
+        "files": normalized_files,
+        "warnings": [str(value) for value in warnings],
+        "errors": [str(value) for value in errors],
+        "raw": payload,
+    }
+
+
+def uefi_validation_summary(payload):
+    result = normalize_uefi_validation(payload)
+    state = "Validation passed" if result["valid"] else "Validation found problems"
+    lines = [
+        f"{state}: {result['architecture']} UEFI media",
+        f"Media root: {result['root']}",
+        f"Fallback loader: {result['fallback_path']} ({'found' if result['fallback_found'] else 'missing'})",
+        f"DBX revocations checked: {'yes' if result['dbx_checked'] else 'no'}",
+        f"SBAT level checked: {'yes' if result['sbat_level_checked'] else 'no'}",
+        f"EFI executables checked: {len(result['files'])}",
+    ]
+    if result["sbat_level_checked"]:
+        lines.append(
+            f"SBAT source: {result['sbat_level_source']}"
+            + (f" (datestamp {result['sbat_level_datestamp']})" if result['sbat_level_datestamp'] else "")
+        )
+    for item in result["files"]:
+        status = "OK"
+        if item["direct_hash_revoked"] or item["x509_certificate_revoked"] or item["sbat_revoked"]:
+            status = "REVOKED"
+        elif item["error"]:
+            status = "ERROR"
+        elif item["warnings"]:
+            status = "WARNING"
+        fallback = " fallback" if item["fallback"] else ""
+        lines.append(
+            f"{status}: {item['path']}{fallback} — {item['machine_name']}; "
+            f"{item['subsystem_name']}; SBAT records {item['sbat_records']}"
+        )
+        for revocation in item["sbat_revocations"]:
+            if isinstance(revocation, dict):
+                lines.append(
+                    "  SBAT revoked: "
+                    f"{revocation.get('component', 'unknown')} generation "
+                    f"{revocation.get('image_generation', '?')} is below trusted minimum "
+                    f"{revocation.get('minimum_generation', '?')}"
+                )
+        for warning in item["warnings"]:
+            lines.append(f"  Warning: {warning}")
+        if item["error"]:
+            lines.append(f"  Error: {item['error']}")
+    for warning in result["warnings"]:
+        lines.append(f"Warning: {warning}")
+    for error in result["errors"]:
+        lines.append(f"Error: {error}")
+    lines.append("This read-only check does not prove that the intended computer will boot the media.")
     return "\n".join(lines)
 
 def build_writer_command(

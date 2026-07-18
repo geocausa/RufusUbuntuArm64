@@ -7,12 +7,33 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  go-minimum:
+    name: Go 1.22 compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.22.x'
+      - name: Compile and test the declared minimum Go version
+        run: go test ./...
+
   wim-engine:
     name: Build bundled WIM engine
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - name: Install WIM build dependencies
         run: |
           sudo apt-get update
@@ -21,7 +42,7 @@ jobs:
             libxml2-dev zlib1g-dev liblzma-dev libbz2-dev liblz4-dev libzstd-dev
       - name: Build and inspect the pinned ARM64 engine
         run: ./scripts/build-wimlib-arm64.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: wimlib-arm64
           path: |
@@ -30,28 +51,111 @@ jobs:
             vendor/wimlib/source/wimlib-1.14.5-source.tar.gz.sha256
           if-no-files-found: error
 
+  uefi-md5sum-loader:
+    name: Reproduce ARM64 uefi-md5sum loader
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Install pinned loader build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git gzip nasm python3 python3-setuptools uuid-dev \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu sbsigntool
+      - name: Build twice and require identical provenance
+        run: |
+          bash scripts/build-uefi-md5sum-arm64.sh dist/uefi-md5sum-a
+          bash scripts/build-uefi-md5sum-arm64.sh dist/uefi-md5sum-b
+          for file in bootaa64.efi bootaa64.efi.sha256 provenance.json SOURCE-COMMITS.txt \
+            uefi-md5sum-v1.2-source.tar.gz uefi-md5sum-v1.2-source.tar.gz.sha256; do
+            cmp "dist/uefi-md5sum-a/${file}" "dist/uefi-md5sum-b/${file}"
+          done
+          printf '%s\n' \
+            'Two independent Ubuntu 24.04 builds produced byte-for-byte identical artifacts.' \
+            'The loader is unsigned and is not claimed Secure Boot compatible.' \
+            > dist/uefi-md5sum-a/REPRODUCIBILITY.txt
+          mkdir -p vendor/uefi-md5sum/arm64
+          cp -a dist/uefi-md5sum-a/. vendor/uefi-md5sum/arm64/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: uefi-md5sum-arm64
+          path: vendor/uefi-md5sum/arm64/
+          if-no-files-found: error
+
   test-and-package:
     name: Audit and package
-    needs: wim-engine
+    needs: [go-minimum, wim-engine, uefi-md5sum-loader]
     runs-on: ubuntu-24.04
+    timeout-minutes: 50
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          go-version: '1.23.x'
-      - uses: actions/download-artifact@v4
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: wimlib-arm64
           path: vendor/wimlib
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: uefi-md5sum-arm64
+          path: vendor/uefi-md5sum/arm64
+      - name: Install audit validators
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs
+          audit_bin="${RUNNER_TEMP}/rufusarm64-audit-tools"
+          mkdir -p "${audit_bin}"
+          GOBIN="${audit_bin}" go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          GOBIN="${audit_bin}" go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          GOBIN="${audit_bin}" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          echo "${audit_bin}" >> "${GITHUB_PATH}"
+      - name: Run pinned static, workflow, and vulnerability checks
+        run: bash ./scripts/static-audit.sh
+      - name: Exercise inherited formatter descriptors on a real loop device
+        env:
+          RUFUS_REAL_BLOCK_TEST: '1'
+        run: |
+          sudo modprobe loop || true
+          go test -c -o "${RUNNER_TEMP}/safety-loop.test" ./internal/safety
+          sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
+            "${RUNNER_TEMP}/safety-loop.test" \
+            -test.run '^TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop$' \
+            -test.v
       - name: Read canonical project version
         id: version
+        if: success()
         run: |
           version="$(tr -d '\r\n' < VERSION)"
           echo "VERSION=${version}" >> "$GITHUB_ENV"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
       - name: Full test, audit, and ARM64 package pass
-        run: ./scripts/test.sh
-      - uses: actions/upload-artifact@v4
+        if: success()
+        run: |
+          mkdir -p dist/audit-logs
+          set -o pipefail
+          ./scripts/test.sh 2>&1 | tee dist/audit-logs/test-and-package.log
+      - name: Confirm reproducible Debian package
+        if: success()
+        run: |
+          set -o pipefail
+          bash ./scripts/reproducible-package.sh 2>&1 | tee dist/audit-logs/reproducible-package.log
+      - name: Upload complete audit logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: audit-logs-${{ github.run_id }}-x86-64
+          path: dist/audit-logs/
+          if-no-files-found: warn
+      - name: Upload ARM64 package
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rufusarm64-${{ steps.version.outputs.version }}-ubuntu-arm64
           path: |
@@ -61,17 +165,24 @@ jobs:
 
   native-arm64-smoke:
     name: Native ARM64 execution
-    needs: wim-engine
+    needs: [go-minimum, wim-engine, uefi-md5sum-loader]
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          go-version: '1.23.x'
-      - uses: actions/download-artifact@v4
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: wimlib-arm64
           path: vendor/wimlib
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: uefi-md5sum-arm64
+          path: vendor/uefi-md5sum/arm64
       - name: Read canonical project version
         id: version
         run: |
@@ -79,11 +190,34 @@ jobs:
           echo "VERSION=${version}" >> "$GITHUB_ENV"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
       - name: Run the complete suite natively on ARM64
-        run: ./scripts/test.sh
+        run: |
+          mkdir -p dist/audit-logs
+          set -o pipefail
+          ./scripts/test.sh 2>&1 | tee dist/audit-logs/native-arm64.log
       - name: Execute packaged ARM64 binaries
+        if: success()
         run: |
           package_root="$(mktemp -d)"
           trap 'rm -rf "${package_root}"' EXIT
           dpkg-deb -x "dist/rufusarm64_${VERSION}_arm64.deb" "${package_root}"
           test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-helper" version)" = "${VERSION}"
+          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-persistence-helper" --help 2>&1 || true)" != ""
+          runtime_loader="${package_root}/usr/lib/rufusarm64/bootaa64-uefi-md5sum.efi"
+          test "$(stat -c %s "${runtime_loader}")" -eq 40960
+          test "$(sha256sum "${runtime_loader}" | awk '{print $1}')" = "543615a8e97fed1cb5293bee7bdfe10f9feb6979f191b20ab32dafdcf097b502"
+          integrity_root="$(mktemp -d)"
+          mkdir -p "${integrity_root}/EFI/BOOT"
+          printf 'packaged arm64 loader' > "${integrity_root}/EFI/BOOT/BOOTAA64.EFI"
+          "${package_root}/usr/lib/rufusarm64/rufusarm64-helper" uefi integrity manifest \
+            --directory "${integrity_root}" > "${integrity_root}/md5sum.txt"
+          "${package_root}/usr/lib/rufusarm64/rufusarm64-helper" uefi integrity verify \
+            --directory "${integrity_root}" --json >/dev/null
+          rm -rf "${integrity_root}"
           "${package_root}/usr/lib/rufusarm64/wimlib-imagex" --version
+      - name: Upload native ARM64 logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: audit-logs-${{ github.run_id }}-arm64
+          path: dist/audit-logs/
+          if-no-files-found: warn
