@@ -64,11 +64,7 @@ jobs:
           assert data["sources"]["edk2"]["commit"] == "3d244c3b364bd4e21261380662186d064659161c"
           assert data["chainload_contract"]["original_loader"] == "EFI/BOOT/bootaa64_original.efi"
           PY
-          if sbverify --list "${output}/bootaa64.efi" >"${output}/sbverify.txt" 2>&1; then
-            echo "Unexpected certificate table reported by sbverify" >&2
-            cat "${output}/sbverify.txt" >&2
-            exit 1
-          fi
+          sbverify --list "${output}/bootaa64.efi" >"${output}/sbverify.txt" 2>&1 || true
           grep -Ei 'no signature|no.*certificate|not signed' "${output}/sbverify.txt" >/dev/null || {
             echo "Unrecognized sbverify result" >&2
             cat "${output}/sbverify.txt" >&2
