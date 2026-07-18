@@ -77,6 +77,25 @@ PYSECURE
 gzip -n -c "${native_dir}/windows.iso" > "${native_dir}/windows.iso.gz"
 "${native_helper}" inspect --image "${native_dir}/windows.iso.gz" --json | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["mode"] == "windows" and d["windows_options"] and d["container_format"] == "gzip"'
 "${native_helper}" dbx inspect --file "${native_dir}/test.dbx" --json | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["sha256_hashes"] == 1 and d["signatures"] == 1'
+python3 - "${native_dir}/uefi-media/EFI/BOOT/BOOTAA64.EFI" <<'PYUEFI'
+import os, struct, sys
+path = sys.argv[1]
+os.makedirs(os.path.dirname(path), exist_ok=True)
+data = bytearray(0x400)
+data[0:2] = b'MZ'
+struct.pack_into('<I', data, 0x3c, 0x80)
+data[0x80:0x84] = b'PE\0\0'
+coff = 0x84
+struct.pack_into('<H', data, coff, 0xaa64)
+struct.pack_into('<H', data, coff + 2, 1)
+struct.pack_into('<H', data, coff + 16, 0xf0)
+optional = coff + 20
+struct.pack_into('<H', data, optional, 0x20b)
+struct.pack_into('<H', data, optional + 68, 10)
+data[optional + 0xf0:optional + 0xf0 + 5] = b'.text'
+open(path, 'wb').write(data)
+PYUEFI
+"${native_helper}" uefi validate --directory "${native_dir}/uefi-media" --arch arm64 --json | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["valid"] and d["fallback_found"] and d["architecture"] == "arm64"'
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/helper-arm64" ./cmd/rufus-linux
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/helper-amd64" ./cmd/rufus-linux
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/persistence-helper-arm64" ./cmd/rufus-persistence-helper

@@ -22,6 +22,14 @@ rufusarm64-cli \- safely create bootable USB media on Linux
 .BI --device " /dev/DEVICE"
 .RI [ --persistence-size " SIZE" ]
 .PP
+.B rufusarm64-cli uefi validate
+.BI --directory " DIRECTORY"
+.RI [ --arch " ARCH" ]
+.RI [ --max-files " N" ]
+.RI [ --require-fallback=true|false ]
+.RI [ --dbx " FILE" | --firmware ]
+.RI [ --json ]
+.PP
 .B rufusarm64-cli persistence plan
 .BI --image " FILE"
 .BI --media-root " DIRECTORY"
@@ -61,6 +69,36 @@ opens the ordinary writer normally and exposes a Create Persistent Live USB
 desktop action. The persistence path performs identity-bound read-only analysis,
 exact target confirmation, fresh Polkit authorization, destructive creation
 through a separate narrow helper, and post-creation qualification.
+.SH UEFI MEDIA VALIDATION
+.B uefi validate
+performs a bounded, descriptor-rooted, read-only scan of a mounted or extracted
+UEFI media tree. It validates the architecture fallback loader, PE machine and
+EFI subsystem fields, bounded SBAT metadata, and optional DBX image-hash and
+embedded-certificate revocations. It does not modify firmware or media.
+.TP
+.BI --directory " DIRECTORY"
+Select the mounted or extracted media root. Every directory and EFI executable
+is opened relative to a retained descriptor with no-follow semantics.
+.TP
+.BI --arch " ARCH"
+Select native, 386, amd64, arm, arm64, riscv64, or loongarch64. Native is the
+default.
+.TP
+.BI --max-files " N"
+Set the bounded EFI executable count. The default is 512 and the library safety
+maximum remains 4096.
+.TP
+.B --require-fallback=true|false
+Require the architecture removable-media fallback loader. The default is true.
+.TP
+.BI --dbx " FILE"
+Apply a local DBXUpdate.bin or raw EFI signature-list file.
+.TP
+.B --firmware
+Apply the running firmware DBX instead of a local file.
+.PP
+JSON output is emitted before an invalid-media failure status, allowing callers
+to inspect the complete result while still relying on the process exit code.
 .SH COMMON WRITE OPTIONS
 .TP
 .B --verify
