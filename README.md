@@ -160,7 +160,7 @@ sudo rufusarm64-cli write \
   --image ubuntu.iso --device /dev/sdX --persistence-size 16G
 ```
 
-The single visible graphical application entry supplies the ordinary writer and the persistent-live action while retaining separate guarded helpers internally.
+The single visible graphical application entry supplies the ordinary writer and the persistent-live action while retaining separate guarded helpers internally. The main window also provides a read-only **Validate UEFI Media…** dialog for mounted or extracted media; it reports fallback-loader, PE/EFI, SBAT, and optional DBX results without changing the write path.
 
 ## License
 
