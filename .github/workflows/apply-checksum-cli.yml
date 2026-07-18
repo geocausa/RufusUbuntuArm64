@@ -6,6 +6,11 @@ on:
     paths:
       - scripts/apply-checksum-cli.py
       - .github/workflows/apply-checksum-cli.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/apply-checksum-cli.py
+      - .github/workflows/apply-checksum-cli.yml
 
 permissions:
   contents: write
@@ -16,6 +21,7 @@ concurrency:
 
 jobs:
   apply:
+    if: github.head_ref == 'feature/checksum-cli' || github.ref_name == 'feature/checksum-cli'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
