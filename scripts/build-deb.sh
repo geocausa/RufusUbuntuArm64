@@ -123,6 +123,51 @@ done
 install -Dm644 "${ROOT_DIR}/vendor/wimlib/arm64/wimlib-imagex.sha256" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/wimlib/wimlib-imagex.sha256"
 
+# Include the independently reproduced upstream ARM64 uefi-md5sum loader. It is
+# unsigned and package-private; the writer must disclose that state explicitly.
+UEFI_MD5SUM_DIR="${UEFI_MD5SUM_DIR:-${ROOT_DIR}/vendor/uefi-md5sum/arm64}"
+UEFI_MD5SUM_SHA256="543615a8e97fed1cb5293bee7bdfe10f9feb6979f191b20ab32dafdcf097b502"
+for file in bootaa64.efi bootaa64.efi.sha256 provenance.json SOURCE-COMMITS.txt \
+  REPRODUCIBILITY.txt uefi-md5sum-v1.2-source.tar.gz uefi-md5sum-v1.2-source.tar.gz.sha256; do
+  [[ -f "${UEFI_MD5SUM_DIR}/${file}" ]] || {
+    echo "Missing reproduced ARM64 uefi-md5sum artifact: ${file}" >&2
+    exit 1
+  }
+done
+actual_md5sum_hash="$(sha256sum "${UEFI_MD5SUM_DIR}/bootaa64.efi" | awk '{print $1}')"
+[[ "${actual_md5sum_hash}" == "${UEFI_MD5SUM_SHA256}" ]] || {
+  echo "Refusing modified ARM64 uefi-md5sum loader: ${actual_md5sum_hash}" >&2
+  exit 1
+}
+[[ "$(stat -c %s "${UEFI_MD5SUM_DIR}/bootaa64.efi")" -eq 40960 ]] || {
+  echo "Unexpected ARM64 uefi-md5sum loader size" >&2
+  exit 1
+}
+(
+  cd "${UEFI_MD5SUM_DIR}"
+  sha256sum -c bootaa64.efi.sha256
+  sha256sum -c uefi-md5sum-v1.2-source.tar.gz.sha256
+)
+python3 - "${UEFI_MD5SUM_DIR}/provenance.json" <<'PYUEFIMD5'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    data = json.load(handle)
+artifact = data["artifact"]
+assert artifact["sha256"] == "543615a8e97fed1cb5293bee7bdfe10f9feb6979f191b20ab32dafdcf097b502"
+assert artifact["size"] == 40960
+assert artifact["pe"]["machine"] == 0xAA64
+assert artifact["pe"]["subsystem"] == 10
+assert artifact["authenticode"]["present"] is False
+assert artifact["secure_boot"]["compatibility_established"] is False
+PYUEFIMD5
+install -Dm644 "${UEFI_MD5SUM_DIR}/bootaa64.efi" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/bootaa64-uefi-md5sum.efi"
+for file in bootaa64.efi.sha256 provenance.json SOURCE-COMMITS.txt REPRODUCIBILITY.txt \
+  uefi-md5sum-v1.2-source.tar.gz uefi-md5sum-v1.2-source.tar.gz.sha256; do
+  install -Dm644 "${UEFI_MD5SUM_DIR}/${file}" \
+    "${PACKAGE_DIR}/usr/share/doc/rufusarm64/uefi-md5sum/${file}"
+done
+
 # Include Rufus 4.15's pinned, multi-architecture UEFI:NTFS FAT image.
 # Its checksum is fixed in source so an altered boot path cannot enter a package.
 UEFI_NTFS_SOURCE="${ROOT_DIR}/vendor/uefi-ntfs/uefi-ntfs.img"

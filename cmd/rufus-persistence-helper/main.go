@@ -31,6 +31,13 @@ import (
 
 var version = "development"
 
+const (
+	packagedRuntimeUEFILoaderPath       = "/usr/lib/rufusarm64/bootaa64-uefi-md5sum.efi"
+	packagedRuntimeUEFILoaderSHA256     = "543615a8e97fed1cb5293bee7bdfe10f9feb6979f191b20ab32dafdcf097b502"
+	packagedRuntimeUEFILoaderCommit     = "6195f2ef754c2ad390bda6590628708f410d55f6"
+	packagedRuntimeUEFILoaderProvenance = "reproducible upstream uefi-md5sum v1.2 ARM64 build; unsigned"
+)
+
 type jsonEvent struct {
 	Event   string  `json:"event"`
 	Stage   string  `json:"stage,omitempty"`
@@ -77,6 +84,7 @@ func run(args []string) error {
 	cancelFile := flags.String("cancel-file", "", "per-user cancellation marker")
 	jsonProgress := flags.Bool("json-progress", false, "emit JSON lines")
 	yes := flags.Bool("yes", false, "confirm the graphical application already obtained explicit erase consent")
+	runtimeUEFIValidation := flags.Bool("runtime-uefi-validation", false, "install the package-owned unsigned ARM64 boot-time media validator")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -216,14 +224,20 @@ func run(args []string) error {
 	}()
 
 	result, err := linuxmedia.CreatePersistent(ctx, resolvedImage, resolvedTarget, linuxmedia.PersistentCreateOptions{
-		TargetSize:        target.Size,
-		ExpectedDeviceID:  kernelDeviceID,
-		ExpectedSource:    expectedSource,
-		Architecture:      runtime.GOARCH,
-		PersistenceSize:   persistenceSize,
-		VolumeLabel:       *volumeLabel,
-		CreatorVersion:    "RufusArm64 " + version,
-		BeforeDestructive: targetCheck,
+		TargetSize:                      target.Size,
+		ExpectedDeviceID:                kernelDeviceID,
+		ExpectedSource:                  expectedSource,
+		Architecture:                    runtime.GOARCH,
+		PersistenceSize:                 persistenceSize,
+		VolumeLabel:                     *volumeLabel,
+		CreatorVersion:                  "RufusArm64 " + version,
+		BeforeDestructive:               targetCheck,
+		RuntimeUEFIValidation:           *runtimeUEFIValidation,
+		RuntimeUEFILoaderPath:           packagedRuntimeUEFILoaderPath,
+		RuntimeUEFILoaderSHA256:         packagedRuntimeUEFILoaderSHA256,
+		RuntimeUEFILoaderSourceCommit:   packagedRuntimeUEFILoaderCommit,
+		RuntimeUEFILoaderProvenance:     packagedRuntimeUEFILoaderProvenance,
+		RuntimeUEFIUnsignedAcknowledged: *runtimeUEFIValidation,
 	}, func(event linuxmedia.PersistentEvent) {
 		heartbeatMu.Lock()
 		heartbeat = event
@@ -257,6 +271,14 @@ func run(args []string) error {
 	stopHeartbeat()
 	if err != nil {
 		return err
+	}
+	if result.RuntimeIntegrity != nil {
+		out.event(jsonEvent{
+			Event:   "log",
+			Stage:   "runtime_integrity",
+			Message: fmt.Sprintf("Runtime UEFI media validation installed and verified; manifest SHA-256 %s. The loader is unsigned and is not Secure Boot compatible.", result.RuntimeIntegrity.ManifestSHA256),
+			Hash:    result.RuntimeIntegrity.ManifestSHA256,
+		})
 	}
 	if err := safety.RereadPartitionTable(resolvedTarget); err != nil {
 		out.event(jsonEvent{Event: "log", Stage: "warning", Message: fmt.Sprintf("Warning: %v", err)})

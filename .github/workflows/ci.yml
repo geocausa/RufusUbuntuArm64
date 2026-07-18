@@ -51,9 +51,43 @@ jobs:
             vendor/wimlib/source/wimlib-1.14.5-source.tar.gz.sha256
           if-no-files-found: error
 
+  uefi-md5sum-loader:
+    name: Reproduce ARM64 uefi-md5sum loader
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Install pinned loader build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git gzip nasm python3 python3-setuptools uuid-dev \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu sbsigntool
+      - name: Build twice and require identical provenance
+        run: |
+          bash scripts/build-uefi-md5sum-arm64.sh dist/uefi-md5sum-a
+          bash scripts/build-uefi-md5sum-arm64.sh dist/uefi-md5sum-b
+          for file in bootaa64.efi bootaa64.efi.sha256 provenance.json SOURCE-COMMITS.txt \
+            uefi-md5sum-v1.2-source.tar.gz uefi-md5sum-v1.2-source.tar.gz.sha256; do
+            cmp "dist/uefi-md5sum-a/${file}" "dist/uefi-md5sum-b/${file}"
+          done
+          printf '%s\n' \
+            'Two independent Ubuntu 24.04 builds produced byte-for-byte identical artifacts.' \
+            'The loader is unsigned and is not claimed Secure Boot compatible.' \
+            > dist/uefi-md5sum-a/REPRODUCIBILITY.txt
+          mkdir -p vendor/uefi-md5sum/arm64
+          cp -a dist/uefi-md5sum-a/. vendor/uefi-md5sum/arm64/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: uefi-md5sum-arm64
+          path: vendor/uefi-md5sum/arm64/
+          if-no-files-found: error
+
   test-and-package:
     name: Audit and package
-    needs: [go-minimum, wim-engine]
+    needs: [go-minimum, wim-engine, uefi-md5sum-loader]
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     steps:
@@ -67,6 +101,10 @@ jobs:
         with:
           name: wimlib-arm64
           path: vendor/wimlib
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: uefi-md5sum-arm64
+          path: vendor/uefi-md5sum/arm64
       - name: Install audit validators
         run: |
           sudo apt-get update
@@ -127,7 +165,7 @@ jobs:
 
   native-arm64-smoke:
     name: Native ARM64 execution
-    needs: [go-minimum, wim-engine]
+    needs: [go-minimum, wim-engine, uefi-md5sum-loader]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
     steps:
@@ -141,6 +179,10 @@ jobs:
         with:
           name: wimlib-arm64
           path: vendor/wimlib
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: uefi-md5sum-arm64
+          path: vendor/uefi-md5sum/arm64
       - name: Read canonical project version
         id: version
         run: |
@@ -160,6 +202,9 @@ jobs:
           dpkg-deb -x "dist/rufusarm64_${VERSION}_arm64.deb" "${package_root}"
           test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-helper" version)" = "${VERSION}"
           test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-persistence-helper" --help 2>&1 || true)" != ""
+          runtime_loader="${package_root}/usr/lib/rufusarm64/bootaa64-uefi-md5sum.efi"
+          test "$(stat -c %s "${runtime_loader}")" -eq 40960
+          test "$(sha256sum "${runtime_loader}" | awk '{print $1}')" = "543615a8e97fed1cb5293bee7bdfe10f9feb6979f191b20ab32dafdcf097b502"
           integrity_root="$(mktemp -d)"
           mkdir -p "${integrity_root}/EFI/BOOT"
           printf 'packaged arm64 loader' > "${integrity_root}/EFI/BOOT/BOOTAA64.EFI"
