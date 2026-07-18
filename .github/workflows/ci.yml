@@ -160,6 +160,14 @@ jobs:
           dpkg-deb -x "dist/rufusarm64_${VERSION}_arm64.deb" "${package_root}"
           test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-helper" version)" = "${VERSION}"
           test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-persistence-helper" --help 2>&1 || true)" != ""
+          integrity_root="$(mktemp -d)"
+          mkdir -p "${integrity_root}/EFI/BOOT"
+          printf 'packaged arm64 loader' > "${integrity_root}/EFI/BOOT/BOOTAA64.EFI"
+          "${package_root}/usr/lib/rufusarm64/rufusarm64-helper" uefi integrity manifest \
+            --directory "${integrity_root}" > "${integrity_root}/md5sum.txt"
+          "${package_root}/usr/lib/rufusarm64/rufusarm64-helper" uefi integrity verify \
+            --directory "${integrity_root}" --json >/dev/null
+          rm -rf "${integrity_root}"
           "${package_root}/usr/lib/rufusarm64/wimlib-imagex" --version
       - name: Upload native ARM64 logs
         if: always()
