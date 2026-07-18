@@ -1,6 +1,6 @@
 # Signed acquisition catalog format
 
-RufusUbuntuArm64 0.9 introduces a security-first foundation for future ISO and image downloads. The initial implementation deliberately accepts **local catalog, detached signature, and public-key files only**. A remote catalogue service and graphical picker will be added only after this verifier and downloader have been exercised independently.
+RufusUbuntuArm64 0.9 introduces a security-first foundation for ISO and image downloads. The implementation accepts signed local catalogs and also supports the built-in signed acquisition channel. Remote metadata is used only after signature, expiry, schema, URL, redirect-host, size, and digest validation.
 
 ## Trust model
 
@@ -8,9 +8,11 @@ RufusUbuntuArm64 0.9 introduces a security-first foundation for future ISO and i
 2. RufusUbuntuArm64 verifies the detached signature over the **exact catalog bytes** before parsing any URL.
 3. The catalog must be unexpired and use the supported schema.
 4. Every entry is validated for a safe filename, absolute HTTPS URL, bounded size, SHA-256 digest, and explicitly signed redirect hosts.
-5. Before any image request is sent, the destination filesystem must report enough unprivileged available space for the complete signed image plus a 64 MiB safety reserve. Replacement downloads retain the same full requirement because the old destination remains until atomic installation.
-6. The image is written to a private temporary file, size-bounded, hashed while downloading, synchronized, and atomically installed only after the signed size and SHA-256 both match.
-7. Existing files are reused only when their complete SHA-256 and size already match. Different files are never overwritten without `--replace`.
+5. Before any image request is sent, the destination filesystem must report enough unprivileged available space for the signed bytes still required plus a 64 MiB safety reserve. Replacement downloads retain the full-image requirement because the old destination remains until atomic installation.
+6. A normal download uses a private random temporary file. Explicit `--resume` mode instead uses a deterministic owner-only partial file keyed by the complete signed SHA-256, opened without following links and protected by an exclusive lock.
+7. Resumed transfers rehash all retained bytes, request the exact remaining byte range, require a matching HTTP 206 `Content-Range`, and reject servers that ignore or contradict the request.
+8. The complete file is size-bounded, SHA-256 verified from byte zero, synchronized, and atomically installed only after the signed size and digest both match.
+9. Existing files are reused only when their complete SHA-256 and size already match. Different files are never overwritten without `--replace`.
 
 The public key and catalog distribution policy are outside the JSON schema. Production catalogs should be distributed with a public key obtained through an independent trusted channel or embedded in a signed application release.
 
@@ -90,18 +92,20 @@ rufusarm64-cli acquire download \
   --signature catalog.json.sig \
   --public-key catalog-ed25519.pub \
   --id ubuntu-example-arm64 \
-  --output ~/Downloads
+  --output ~/Downloads \
+  --resume
 ```
 
-`--resume` opts into a deterministic owner-only partial file keyed by the signed image SHA-256. A resumed server must return an exact HTTP 206 range; the complete file is rehashed before atomic installation. Without `--resume`, cancellation continues to remove temporary partials. `--json-progress` emits the same byte/rate progress events used by the graphical application. `--json` emits the final result object, including `resumed_bytes` when applicable. CLI and graphical downloads both fail before contacting the image server when the exact destination filesystem cannot prove the signed image size plus the 64 MiB reserve. Cancellation through `SIGINT` or `SIGTERM` removes the temporary partial file.
+`--resume` is opt-in. A cancelled or transiently interrupted resumable transfer keeps its synchronized partial file for the next run. Without `--resume`, cancellation continues to remove temporary partials. Protocol contradictions, oversize data, signed-size mismatch, and final SHA-256 mismatch remove the retained partial rather than carrying unsafe state forward.
+
+`--json-progress` emits the same byte/rate progress events used by the graphical application. `--json` emits the final result object, including `resumed_bytes` when applicable. CLI and graphical downloads enforce the same destination-space and signed-content checks.
 
 ## Deliberate exclusions in this tranche
 
 - No unsigned catalog mode.
 - No HTTP image URLs.
-- No automatic remote catalog update.
-- No embedded project signing key yet.
-- No download-resume support yet.
+- No embedded production project signing key yet.
+- No graphical resume control yet.
 - No Windows ISO scraping or bypass of vendor download terms.
 
 These features require separate threat modelling and review rather than being hidden behind an “advanced” switch.
