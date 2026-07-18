@@ -9,17 +9,33 @@ RufusArm64 does not download or trust a floating bootloader binary. The 0.11 dev
 | `pbatard/uefi-md5sum` | `v1.2` | `6195f2ef754c2ad390bda6590628708f410d55f6` |
 | `tianocore/edk2` | `edk2-stable202508.01` | `3d244c3b364bd4e21261380662186d064659161c` |
 
-The build uses the Ubuntu 24.04 AARCH64 GCC cross-toolchain in EDK2 `RELEASE` mode:
+The build uses Ubuntu 24.04's AARCH64 GCC 13.3.0 and GNU binutils 2.42 in EDK2 `RELEASE` mode:
 
 ```text
 build -a AARCH64 -b RELEASE -t GCC -p Md5SumPkg.dsc
 ```
 
-The script fetches each exact commit into a new repository, verifies `HEAD`, initializes the EDK2 submodules selected by the pinned parent, and uses a fixed locale, timezone, Python hash seed, and `SOURCE_DATE_EPOCH`.
+The script fetches each exact commit into a new repository, verifies `HEAD`, initializes the EDK2 submodules selected by the pinned parent, and uses a fixed locale, timezone, Python hash seed, `SOURCE_DATE_EPOCH`, and canonical `/tmp/rufusarm64-uefi-md5sum-build` source/build path. The fixed absolute path is necessary because EDK2 embeds source locations in the resulting image.
+
+## Canonical ARM64 artifact
+
+The independent-build gate established this exact artifact:
+
+| Property | Value |
+|---|---|
+| Filename | `bootaa64.efi` |
+| Size | 40,960 bytes |
+| SHA-256 | `543615a8e97fed1cb5293bee7bdfe10f9feb6979f191b20ab32dafdcf097b502` |
+| PE machine | `0xAA64` — ARM64 |
+| Optional header | PE32+ (`0x020b`) |
+| Subsystem | 10 — EFI application |
+| COFF timestamp | 0 |
+| Authenticode certificate table | absent |
+| Secure Boot compatibility | not established |
 
 ## Reproducibility gate
 
-The dedicated workflow performs two independent builds. It compares the loader, checksum sidecars, source archive, source metadata, and provenance JSON byte-for-byte. The canonical artifact is published only when every comparison succeeds.
+The dedicated workflow performs two independent builds on separate Ubuntu 24.04 runners. It compares the loader, checksum sidecars, source archive, source metadata, and provenance JSON byte-for-byte. The canonical artifact is published only when every comparison succeeds.
 
 The artifact contract contains:
 
@@ -42,7 +58,7 @@ The exact corresponding GPL-2.0-or-later `uefi-md5sum` source is retained as a d
 - subsystem 10 (EFI application)
 - a well-formed certificate-table range when present
 
-The source-built loader is expected to have no Authenticode certificate table. CI verifies that state independently with `sbverify` and records:
+The source-built loader has no Authenticode certificate table. CI verifies that state independently with `sbverify`, which reports `No signature table present`, and records:
 
 > The loader is unsigned and is not claimed Secure Boot compatible.
 
