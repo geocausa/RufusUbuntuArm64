@@ -1,0 +1,26 @@
+from pathlib import Path
+import base64
+import gzip
+import hashlib
+
+payload = "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"
+data = gzip.decompress(base64.b64decode(payload))
+if hashlib.sha256(data).hexdigest() != "15b9295c8d917a29f47b0114ee29e9a11463a91938a30acb337ae24a41ce00ba":
+    raise SystemExit("transaction test payload checksum mismatch")
+test_path = Path("internal/runtimeintegrity/transaction_test.go")
+if test_path.exists():
+    raise SystemExit("refusing to replace an existing transaction_test.go")
+test_path.write_bytes(data)
+
+source = Path("internal/runtimeintegrity/transaction.go")
+text = source.read_text(encoding="utf-8")
+old_import = '\t"fmt"\n\t"strings"\n'
+new_import = '\t"fmt"\n\t"io"\n\t"strings"\n'
+if text.count(old_import) != 1:
+    raise SystemExit("transaction.go import patch did not match exactly once")
+text = text.replace(old_import, new_import, 1)
+old_trailing = '''\t\t\tif err := decoder.Decode(&record); err != nil {\n\t\t\t\treturn InstallationRecord{}, nil, fmt.Errorf("parse manifest installation record: %w", err)\n\t\t\t}\n\t\t\tif decoder.More() {\n\t\t\t\treturn InstallationRecord{}, nil, errors.New("manifest installation record contains trailing JSON")\n\t\t\t}\n'''
+new_trailing = '''\t\t\tif err := decoder.Decode(&record); err != nil {\n\t\t\t\treturn InstallationRecord{}, nil, fmt.Errorf("parse manifest installation record: %w", err)\n\t\t\t}\n\t\t\tvar trailing any\n\t\t\tif err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {\n\t\t\t\treturn InstallationRecord{}, nil, errors.New("manifest installation record contains trailing JSON")\n\t\t\t}\n'''
+if text.count(old_trailing) != 1:
+    raise SystemExit("transaction.go trailing JSON patch did not match exactly once")
+source.write_text(text.replace(old_trailing, new_trailing, 1), encoding="utf-8")
