@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 )
@@ -214,26 +213,6 @@ func validateUEFIFile(data []byte, relative string, fallback bool, architecture 
 		}
 	}
 	return result
-}
-
-func parseUEFIImageFile(path string) (parsedUEFIImage, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return parsedUEFIImage{}, fmt.Errorf("open EFI executable: %w", err)
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return parsedUEFIImage{}, fmt.Errorf("stat EFI executable: %w", err)
-	}
-	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maximumUEFIFileSize {
-		return parsedUEFIImage{}, fmt.Errorf("EFI executable must be a non-empty regular file no larger than %d bytes", maximumUEFIFileSize)
-	}
-	data, err := io.ReadAll(file)
-	if err != nil {
-		return parsedUEFIImage{}, fmt.Errorf("read EFI executable: %w", err)
-	}
-	return parseUEFIImage(data)
 }
 
 func parseUEFIImage(data []byte) (parsedUEFIImage, error) {
