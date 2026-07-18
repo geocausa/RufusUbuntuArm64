@@ -8,6 +8,7 @@ UEFI_MD5SUM_COMMIT="6195f2ef754c2ad390bda6590628708f410d55f6"
 EDK2_REPOSITORY="https://github.com/tianocore/edk2.git"
 EDK2_COMMIT="3d244c3b364bd4e21261380662186d064659161c"
 SOURCE_DATE_EPOCH="1781373190"
+BUILD_ROOT="${RUFUSARM64_UEFI_BUILD_ROOT:-/tmp/rufusarm64-uefi-md5sum-build}"
 
 export LC_ALL=C
 export TZ=UTC
@@ -22,8 +23,20 @@ for command in git make python3 aarch64-linux-gnu-gcc aarch64-linux-gnu-ld sha25
   }
 done
 
-work_dir="$(mktemp -d)"
-trap 'rm -rf "${work_dir}"' EXIT
+case "${BUILD_ROOT}" in
+  /*) ;;
+  *)
+    echo "RUFUSARM64_UEFI_BUILD_ROOT must be an absolute path" >&2
+    exit 1
+    ;;
+esac
+if [[ "${BUILD_ROOT}" == "/" || -e "${BUILD_ROOT}" ]]; then
+  echo "Deterministic build root must be absent and must not be /: ${BUILD_ROOT}" >&2
+  exit 1
+fi
+mkdir -m 0700 -p "${BUILD_ROOT}"
+work_dir="${BUILD_ROOT}"
+trap 'rm -rf -- "${work_dir}"' EXIT
 source_dir="${work_dir}/uefi-md5sum"
 edk2_dir="${work_dir}/edk2"
 
@@ -82,6 +95,7 @@ printf '%s\n' \
   "edk2 tag: edk2-stable202508.01" \
   "edk2 commit: ${EDK2_COMMIT}" \
   "source date epoch: ${SOURCE_DATE_EPOCH}" \
+  "deterministic build root: ${BUILD_ROOT}" \
   > "${OUTPUT_DIR}/SOURCE-COMMITS.txt"
 
 gcc_version="$(aarch64-linux-gnu-gcc --version | head -n 1)"
