@@ -49,7 +49,7 @@
       "id": "uefi-runtime-validation",
       "upstream_feature": "Perform runtime validation of UEFI bootable media",
       "status": "in_progress",
-      "notes": "The 0.11 development line exposes descriptor-rooted CLI and GTK validation of fallback loaders, PE architecture and EFI subsystem fields, bounded SBAT metadata, optional DBX hash/certificate revocations, shim-compatible local SbatLevel comparison, and read-only acquisition of the running shim SbatLevelRT/SbatLevel through strictly validated efivarfs files. GTK SBAT source selection and complete boot-chain reference resolution remain planned."
+      "notes": "The 0.11 development line exposes descriptor-rooted CLI and GTK validation of fallback loaders, PE architecture and EFI subsystem fields, bounded SBAT metadata, optional DBX hash/certificate revocations, and shim-compatible comparison against a trusted local or running-firmware SbatLevel. Complete boot-chain reference resolution remains planned."
     },
     {
       "id": "image-checksums",

@@ -312,6 +312,18 @@ class LogicTests(unittest.TestCase):
             build_uefi_validate_command("/helper", "/mnt/usb", dbx_file="dbx.bin", firmware=True)
         with self.assertRaises(ValueError):
             build_uefi_validate_command("/helper", "/mnt/usb", max_files=4097)
+        firmware_sbat = build_uefi_validate_command(
+            "/helper", "/mnt/usb", firmware_sbat=True
+        )
+        self.assertIn("--firmware-sbat", firmware_sbat)
+        local_sbat = build_uefi_validate_command(
+            "/helper", "/mnt/usb", sbat_level_file="/trust/SbatLevel.csv"
+        )
+        self.assertEqual(local_sbat[local_sbat.index("--sbat-level") + 1], "/trust/SbatLevel.csv")
+        with self.assertRaises(ValueError):
+            build_uefi_validate_command(
+                "/helper", "/mnt/usb", sbat_level_file="local.csv", firmware_sbat=True
+            )
 
     def test_uefi_validation_normalization_and_summary(self):
         payload = {
@@ -320,6 +332,9 @@ class LogicTests(unittest.TestCase):
             "fallback_path": "EFI/BOOT/BOOTAA64.EFI",
             "fallback_found": True,
             "dbx_checked": True,
+            "sbat_level_checked": True,
+            "sbat_level_source": "/sys/firmware/efi/efivars/SbatLevelRT-605dab50-e046-4300-abb6-3dd810dd8b23",
+            "sbat_level_datestamp": "2025051000",
             "valid": True,
             "revoked": False,
             "files": [{
@@ -329,6 +344,12 @@ class LogicTests(unittest.TestCase):
                 "fallback": True,
                 "embedded_certificates": 2,
                 "sbat": [{"component": "shim"}],
+                "sbat_revoked": True,
+                "sbat_revocations": [{
+                    "component": "shim",
+                    "image_generation": 3,
+                    "minimum_generation": 4,
+                }],
             }],
         }
         normalized = normalize_uefi_validation(payload)
@@ -337,6 +358,8 @@ class LogicTests(unittest.TestCase):
         summary = uefi_validation_summary(payload)
         self.assertIn("Validation passed", summary)
         self.assertIn("BOOTAA64.EFI", summary)
+        self.assertIn("SBAT source:", summary)
+        self.assertIn("SBAT revoked: shim generation 3", summary)
         self.assertIn("does not prove", summary)
         with self.assertRaises(ValueError):
             normalize_uefi_validation({"root": "/mnt/usb", "files": []})
