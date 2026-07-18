@@ -161,6 +161,7 @@ dist/rufusarm64_0.11.0_arm64.deb
 ```bash
 rufusarm64-cli list
 rufusarm64-cli inspect --image Windows.iso.xz --json
+rufusarm64-cli hash --all ubuntu.iso
 rufusarm64-cli acquire channel list --json
 rufusarm64-cli uefi validate --directory /mnt/usb --arch arm64 --firmware-sbat --json
 rufusarm64-cli uefi integrity manifest --directory /mnt/usb > md5sum.txt
