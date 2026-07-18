@@ -135,8 +135,8 @@ jobs:
 
           def replace_step(lines, old_name, occurrence, include_success_guard):
               indexes = [i for i, line in enumerate(lines) if line.strip() == f"- name: {old_name}"]
-              if len(indexes) != 2:
-                  raise SystemExit(f"{old_name}: found {len(indexes)} steps, want 2")
+              if occurrence >= len(indexes):
+                  raise SystemExit(f"{old_name}: occurrence {occurrence} missing from {len(indexes)} matching steps")
               start = indexes[occurrence]
               prefix = lines[start][: len(lines[start]) - len(lines[start].lstrip())]
               end = start + 1
