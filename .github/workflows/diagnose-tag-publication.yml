@@ -16,15 +16,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Verify missing-tag-safe exact lookup
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: fix/0.11-canonical-tag-lookup
+          persist-credentials: false
+      - name: Validate fixed publication contract and missing-tag lookup
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          python3 scripts/check-version-sync.py
+          python3 scripts/check-release-runtime-integrity.py
           tag="v0.11.0"
           existing="$(
             gh api "/repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/${tag}" \
               --jq ".[] | select(.ref == \"refs/tags/${tag}\") | .object.sha"
           )"
           test -z "${existing}"
-          echo "Exact missing-tag lookup returned an empty result."
+          echo "Fixed publication contract passed and exact missing-tag lookup returned empty."
