@@ -141,9 +141,21 @@ class PublishedReleaseContractTests(unittest.TestCase):
         self.write_metadata()
         self.assert_failure("published asset inventory mismatch")
 
+    def test_malformed_metadata_digest_fails(self) -> None:
+        self.metadata["assets"][0]["digest"] = "sha256:not-a-digest"  # type: ignore[index]
+        self.write_metadata()
+        self.assert_failure("malformed SHA-256 digest")
+
     def test_downloaded_asset_substitution_fails(self) -> None:
         (self.assets / self.package).write_bytes(b"substituted package\n")
         self.assert_failure(f"release asset size mismatch for {self.package}")
+
+    def test_malformed_checksum_record_fails(self) -> None:
+        (self.assets / self.loader_sidecar).write_text(
+            "not a checksum record\n", encoding="ascii"
+        )
+        self.refresh_asset_metadata(self.loader_sidecar)
+        self.assert_failure("malformed SHA-256 record")
 
     def test_sidecar_checksum_mismatch_fails(self) -> None:
         records = (self.assets / self.package_sidecar).read_text(encoding="ascii")
