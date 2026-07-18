@@ -408,15 +408,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		if err := sourcefile.VerifyPinned(isoFile, opts.ExpectedSource); err != nil {
 			return err
 		}
-		if err := safety.VerifyOpenDevice(lock, opts.ExpectedDeviceID, opts.TargetSize); err != nil {
-			return err
-		}
-		if opts.BeforeDestructive != nil {
-			if err := opts.BeforeDestructive(isoFile); err != nil {
-				return fmt.Errorf("target safety check: %w", err)
-			}
-		}
-		return nil
+		return safety.VerifyOpenDevice(lock, opts.ExpectedDeviceID, opts.TargetSize)
 	}
 	runOnTarget := func(name string, args ...string) error {
 		if err := checkTarget(); err != nil {
@@ -425,6 +417,14 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		return run(ctx, emit, name, args...)
 	}
 
+	if err := checkTarget(); err != nil {
+		return err
+	}
+	if opts.BeforeDestructive != nil {
+		if err := opts.BeforeDestructive(isoFile); err != nil {
+			return fmt.Errorf("target safety check: %w", err)
+		}
+	}
 	send(emit, Event{Stage: "partition", Message: fmt.Sprintf("Creating a %s partition table…", strings.ToUpper(scheme))})
 	if err := runOnTarget("wipefs", "--all", "--force", "--", devicePath); err != nil {
 		return err

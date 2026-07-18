@@ -109,7 +109,9 @@ func CreateFilesystem(ctx context.Context, partitionPath string, plan Plan, opts
 		return err
 	}
 	emitFilesystem(opts.Event, "format", fmt.Sprintf("Formatting persistence partition as ext4 with label %q…", plan.FilesystemLabel))
-	if err := runPartitionCommand(ctx, partition, "mkfs.ext4", "-F", "-L", plan.FilesystemLabel, "-m", "0", "-E", "lazy_itable_init=0,lazy_journal_init=0", partitionFDToken); err != nil {
+	if err := safety.WithTemporarilyReleasedFlock(partition, func() error {
+		return runPartitionCommand(ctx, partition, "mkfs.ext4", "-F", "-L", plan.FilesystemLabel, "-m", "0", "-E", "lazy_itable_init=0,lazy_journal_init=0", partitionFDToken)
+	}); err != nil {
 		return fmt.Errorf("format persistence partition: %w", err)
 	}
 	if err := ctx.Err(); err != nil {

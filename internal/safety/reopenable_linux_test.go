@@ -18,6 +18,48 @@ func TestReopenableDeviceFlagsExcludeKernelExclusiveOpen(t *testing.T) {
 	}
 }
 
+func TestWithTemporarilyReleasedFlockRestoresLock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "locked-device")
+	if err := os.WriteFile(path, []byte("device"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	primary, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer primary.Close()
+	contender, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer contender.Close()
+	if err := syscall.Flock(int(primary.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.Flock(int(primary.Fd()), syscall.LOCK_UN)
+	if err := syscall.Flock(int(contender.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err == nil {
+		_ = syscall.Flock(int(contender.Fd()), syscall.LOCK_UN)
+		t.Fatal("contender unexpectedly acquired the initial lock")
+	}
+	run := false
+	if err := WithTemporarilyReleasedFlock(primary, func() error {
+		if err := syscall.Flock(int(contender.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+			return fmt.Errorf("contender could not acquire released lock: %w", err)
+		}
+		run = true
+		return syscall.Flock(int(contender.Fd()), syscall.LOCK_UN)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !run {
+		t.Fatal("trusted operation did not run")
+	}
+	if err := syscall.Flock(int(contender.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err == nil {
+		_ = syscall.Flock(int(contender.Fd()), syscall.LOCK_UN)
+		t.Fatal("partition lock was not restored")
+	}
+}
+
 func TestOpenReopenableDeviceRefusesSymlink(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "device")
 	if err := os.WriteFile(target, []byte("device"), 0o600); err != nil {
@@ -87,8 +129,11 @@ func TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop(t *testing.T) {
 	}
 	defer syscall.Flock(int(device.Fd()), syscall.LOCK_UN) // best effort
 
+	// A loop device is deliberately not accepted by the production whole-disk
+	// policy. This integration test is scoped to the formatter descriptor and
+	// advisory-lock handoff only.
 	const inheritedDevice = "/proc/self/fd/3"
-	runInheritedDeviceCommand(t, device, "mkfs.vfat", "-F", "32", inheritedDevice)
+	runInheritedDeviceCommandUnlocked(t, device, "mkfs.vfat", "-F", "32", inheritedDevice)
 	runInheritedDeviceCommand(t, device, "fsck.vfat", "-n", inheritedDevice)
 
 	mountDir := filepath.Join(t.TempDir(), "mount")
@@ -103,7 +148,7 @@ func TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop(t *testing.T) {
 	runFormatterTestCommand(t, "umount", "--", mountDir)
 	mountedAt = ""
 
-	runInheritedDeviceCommand(t, device, "mkfs.ext4", "-F", "-m", "0", inheritedDevice)
+	runInheritedDeviceCommandUnlocked(t, device, "mkfs.ext4", "-F", "-m", "0", inheritedDevice)
 	runInheritedDeviceCommand(t, device, "mount", "-t", "ext4", "-o", "rw,nosuid,nodev,noexec", "--", inheritedDevice, mountDir)
 	mountedAt = mountDir
 	if err := os.WriteFile(filepath.Join(mountDir, "probe"), []byte("ext4\n"), 0o600); err != nil {
@@ -112,6 +157,22 @@ func TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop(t *testing.T) {
 	runFormatterTestCommand(t, "umount", "--", mountDir)
 	mountedAt = ""
 	runInheritedDeviceCommand(t, device, "e2fsck", "-f", "-n", inheritedDevice)
+}
+
+func runInheritedDeviceCommandUnlocked(t *testing.T, device *os.File, name string, args ...string) {
+	t.Helper()
+	err := WithTemporarilyReleasedFlock(device, func() error {
+		command := exec.Command(name, args...)
+		command.ExtraFiles = []*os.File{device}
+		output, runErr := command.CombinedOutput()
+		if runErr != nil {
+			return fmt.Errorf("%s failed: %w: %s", formatCommand(name, args), runErr, strings.TrimSpace(string(output)))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func runInheritedDeviceCommand(t *testing.T, device *os.File, name string, args ...string) {
