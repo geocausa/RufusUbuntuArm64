@@ -7,6 +7,12 @@ on:
     paths:
       - scripts/apply-real-usb-guard-fixes.py
       - .github/workflows/apply-real-usb-guard-fixes.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - scripts/apply-real-usb-guard-fixes.py
+      - .github/workflows/apply-real-usb-guard-fixes.yml
 
 permissions:
   contents: write
