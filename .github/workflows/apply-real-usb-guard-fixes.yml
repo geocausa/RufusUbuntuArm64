@@ -47,10 +47,18 @@ jobs:
           sudo apt-get install -y --no-install-recommends dosfstools e2fsprogs
           sudo modprobe loop || true
           go test -c -o "${RUNNER_TEMP}/safety-loop.test" ./internal/safety
+          set -o pipefail
           sudo env RUFUS_REAL_BLOCK_TEST=1 \
             "${RUNNER_TEMP}/safety-loop.test" \
             -test.run '^TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop$' \
-            -test.v
+            -test.v 2>&1 | tee loop-test.log
+      - name: Upload focused loop diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: usb-guard-loop-diagnostics
+          path: loop-test.log
+          if-no-files-found: warn
       - name: Remove staging files
         run: rm -f scripts/apply-real-usb-guard-fixes.py .github/workflows/apply-real-usb-guard-fixes.yml
       - name: Commit validated fixes
