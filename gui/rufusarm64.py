@@ -2060,7 +2060,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.append_log(f"Image: {image}")
         self.append_log(f"Target: {path} — {model} — {human_bytes(device.get('size'))}")
         if persistence_requested:
-            layout_summary = f"GPT / UEFI / FAT32 boot + {human_bytes(self.persistence_plan["size"])} ext4 persistence"
+            layout_summary = f"GPT / UEFI / FAT32 boot + {human_bytes(self.persistence_plan['size'])} ext4 persistence"
         elif self.inspection.get("mode") == "windows":
             layout_summary = f"{partition_scheme.upper()} / {self.target_system_combo.get_active_text()} / {filesystem.upper()} / {self.cluster_combo.get_active_text()} clusters"
         else:
@@ -2087,6 +2087,12 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.active_job = ""
             self.set_busy(False)
             self.message("Ubuntu administrator authentication (pkexec) is not installed.", Gtk.MessageType.ERROR)
+            return
+        if persistence_requested and not os.access(PERSISTENCE_HELPER, os.X_OK):
+            self.cancel_path = None
+            self.active_job = ""
+            self.set_busy(False)
+            self.message("The package-owned persistence helper is not installed or executable.", Gtk.MessageType.ERROR)
             return
         try:
             if persistence_requested:

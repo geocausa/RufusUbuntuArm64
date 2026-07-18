@@ -35,6 +35,13 @@ class UnifiedPersistenceUISourceTests(unittest.TestCase):
         self.assertIn("if persistence_on and not raw_ready:", self.source)
         self.assertIn("self.persistence_enabled.set_active(False)", self.source)
 
+    def test_persistence_helper_is_checked_before_launch(self):
+        self.assertIn("persistence_requested and not os.access(PERSISTENCE_HELPER, os.X_OK)", self.source)
+        self.assertIn("package-owned persistence helper is not installed or executable", self.source)
+
+    def test_layout_fstring_uses_python_310_compatible_quotes(self):
+        self.assertIn("self.persistence_plan['size']", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
