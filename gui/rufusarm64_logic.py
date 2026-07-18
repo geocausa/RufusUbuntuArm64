@@ -284,6 +284,59 @@ def normalize_cluster_size(value):
     return value
 
 
+CHECKSUM_ALGORITHMS = ("md5", "sha1", "sha256", "sha512")
+CHECKSUM_LENGTHS = {"md5": 32, "sha1": 40, "sha256": 64, "sha512": 128}
+CHECKSUM_LABELS = {"md5": "MD5", "sha1": "SHA-1", "sha256": "SHA-256", "sha512": "SHA-512"}
+
+
+def build_checksum_command(helper, image):
+    helper = str(helper or "").strip()
+    image = str(image or "").strip()
+    if not helper:
+        raise ValueError("The RufusArm64 checksum helper is not installed correctly.")
+    if not image:
+        raise ValueError("Choose an image before calculating checksums.")
+    return [helper, "hash", "--all", "--json", image]
+
+
+def normalize_checksum_result(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("The checksum helper returned an invalid response.")
+    path = str(payload.get("path") or "").strip()
+    try:
+        size = int(payload.get("size") or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("The checksum helper returned an invalid image size.") from exc
+    digests = payload.get("digests")
+    if not path or not os.path.isabs(path) or size <= 0 or not isinstance(digests, list):
+        raise ValueError("The checksum helper response is incomplete.")
+    if len(digests) != len(CHECKSUM_ALGORITHMS):
+        raise ValueError("The checksum helper did not return the complete algorithm set.")
+    normalized = []
+    for index, algorithm in enumerate(CHECKSUM_ALGORITHMS):
+        item = digests[index]
+        if not isinstance(item, dict) or item.get("algorithm") != algorithm:
+            raise ValueError("The checksum helper returned algorithms in an unexpected order.")
+        value = str(item.get("hex") or "").strip()
+        if not re.fullmatch(rf"[0-9a-f]{{{CHECKSUM_LENGTHS[algorithm]}}}", value):
+            raise ValueError(f"The checksum helper returned an invalid {CHECKSUM_LABELS[algorithm]} value.")
+        normalized.append({"algorithm": algorithm, "hex": value})
+    return {"path": path, "size": size, "digests": normalized}
+
+
+def checksum_summary(payload):
+    result = normalize_checksum_result(payload)
+    lines = [f"File: {result['path']}", f"Size: {human_bytes(result['size'])}", ""]
+    for item in result["digests"]:
+        lines.append(f"{CHECKSUM_LABELS[item['algorithm']]}: {item['hex']}")
+    lines.extend([
+        "",
+        "MD5 and SHA-1 are shown only for comparison with legacy published checksums.",
+        "Use a trusted signature or authenticated catalog for authenticity decisions.",
+    ])
+    return "\n".join(lines)
+
+
 def build_acquisition_channel_list_command(helper, config):
     helper = str(helper or "").strip()
     config = str(config or "").strip()
