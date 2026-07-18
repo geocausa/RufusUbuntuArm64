@@ -49,7 +49,18 @@ jobs:
           path: qemu-static-validation.log
           if-no-files-found: warn
       - name: Build pinned firmware and qualify success/corruption chainload
-        run: bash scripts/qualify-runtime-integrity-qemu.sh artifacts/uefi-runtime-qemu
+        run: |
+          set -o pipefail
+          bash scripts/qualify-runtime-integrity-qemu.sh artifacts/uefi-runtime-qemu 2>&1 | tee qemu-qualification.log
+      - name: Upload complete QEMU diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: arm64-runtime-uefi-qemu-diagnostics
+          path: |
+            qemu-qualification.log
+            artifacts/uefi-runtime-qemu/
+          if-no-files-found: warn
       - name: Require complete qualification evidence
         run: |
           grep -Fq 'Secure Boot: disabled' artifacts/uefi-runtime-qemu/QUALIFICATION.txt
