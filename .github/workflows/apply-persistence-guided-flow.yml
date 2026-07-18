@@ -20,16 +20,39 @@ jobs:
           ref: feature/persistence-guided-flow
           fetch-depth: 0
       - name: Apply and validate guided persistence flow
+        id: validate
+        shell: bash
         run: |
-          python3 scripts/apply-persistence-guided-flow.py
-          PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
-          python3 -m py_compile gui/*.py
-          bash -n scripts/*.sh
-          git diff --check
-          rm scripts/apply-persistence-guided-flow.py .github/workflows/apply-persistence-guided-flow.yml
+          set +e
+          {
+            python3 scripts/apply-persistence-guided-flow.py &&
+            PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py' &&
+            python3 -m py_compile gui/*.py &&
+            bash -n scripts/*.sh &&
+            git diff --check
+          } > guided-flow-diagnostics.txt 2>&1
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          cat guided-flow-diagnostics.txt
+          exit 0
+      - name: Upload focused diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: persistence-guided-flow-diagnostics
+          path: guided-flow-diagnostics.txt
+          if-no-files-found: error
+      - name: Require focused validation
+        if: steps.validate.outputs.status != '0'
+        run: exit 1
+      - name: Remove staging files
+        if: steps.validate.outputs.status == '0'
+        run: |
+          rm scripts/apply-persistence-guided-flow.py .github/workflows/apply-persistence-guided-flow.yml guided-flow-diagnostics.txt
           test ! -e scripts/apply-persistence-guided-flow.py
           test ! -e .github/workflows/apply-persistence-guided-flow.yml
       - name: Commit validated product diff
+        if: steps.validate.outputs.status == '0'
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
