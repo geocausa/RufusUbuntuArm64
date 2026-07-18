@@ -25,6 +25,20 @@ jobs:
         run: |
           set +e
           {
+            python3 - <<'PY'
+          from pathlib import Path
+          path = Path("scripts/apply-persistence-guided-flow.py")
+          text = path.read_text()
+          text = text.replace(
+              'Gtk.CheckButton(label="Check media files during ARM64 UEFI boot")',
+              'Gtk.CheckButton(label="Validate media at UEFI boot (development only)")',
+          )
+          text = text.replace(
+              '"For development testing only. The validation loader is unsigned and may not work with Secure Boot."',
+              '"Unsigned development loader — Secure Boot compatibility is not established. Development testing only."',
+          )
+          path.write_text(text)
+          PY
             python3 scripts/apply-persistence-guided-flow.py &&
             PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py' &&
             python3 -m py_compile gui/*.py &&
