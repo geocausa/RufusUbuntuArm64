@@ -19,7 +19,8 @@ jobs:
       - name: Apply reviewed writer integration
         shell: bash
         run: |
-          set -euo pipefail
+          exec > >(tee integration.log) 2>&1
+          set -euxo pipefail
           python3 <<'PY'
           from pathlib import Path
 
@@ -156,3 +157,11 @@ jobs:
           fi
           git commit -m "windows: enforce media eligibility in writer"
           git push origin HEAD:feature/windows-option-eligibility
+      - name: Upload integration diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr96-integration-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 1
+          path: integration.log
