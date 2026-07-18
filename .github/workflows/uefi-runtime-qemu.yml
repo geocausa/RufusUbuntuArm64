@@ -14,6 +14,15 @@ on:
   push:
     branches:
       - feature/0.11-runtime-integrity-qemu
+      - main
+    paths:
+      - .github/workflows/uefi-runtime-qemu.yml
+      - scripts/qualify-runtime-integrity-qemu.sh
+      - scripts/build-uefi-md5sum-arm64.sh
+      - tests/uefi-chainload/**
+      - internal/runtimeintegrity/**
+      - cmd/rufus-linux/**
+      - docs/uefi-runtime-integrity.md
 
 permissions:
   contents: read
