@@ -54,17 +54,24 @@ test "$(git -C "${edk2_dir}" rev-parse HEAD)" = "${EDK2_COMMIT}"
 git -C "${edk2_dir}" submodule update --init --recursive --depth 1
 make -C "${edk2_dir}/BaseTools" -j"$(nproc)"
 
-(
-  cd "${edk2_dir}"
-  export WORKSPACE="${edk2_dir}"
-  export PACKAGES_PATH="${edk2_dir}"
-  export GCC_AARCH64_PREFIX="aarch64-linux-gnu-"
-  set +u
-  # shellcheck source=/dev/null
-  source "${edk2_dir}/edksetup.sh" BaseTools
-  set -u
-  build -a AARCH64 -b RELEASE -t GCC -p ArmVirtPkg/ArmVirtQemu.dsc
-)
+run_edk2_build() {
+  local workspace="$1"
+  local packages_path="$2"
+  local platform="$3"
+  (
+    cd "${workspace}"
+    export WORKSPACE="${workspace}"
+    export PACKAGES_PATH="${packages_path}"
+    export GCC_AARCH64_PREFIX="aarch64-linux-gnu-"
+    set +u
+    # shellcheck source=/dev/null
+    source "${edk2_dir}/edksetup.sh" BaseTools
+    set -u
+    build -a AARCH64 -b RELEASE -t GCC -p "${platform}"
+  )
+}
+
+run_edk2_build "${edk2_dir}" "${edk2_dir}" "ArmVirtPkg/ArmVirtQemu.dsc"
 mapfile -t firmware_candidates < <(find "${edk2_dir}/Build" -type f -path '*/FV/QEMU_EFI.fd' -print)
 [[ "${#firmware_candidates[@]}" -eq 1 ]] || {
   printf 'Expected one QEMU_EFI.fd, found %d\n' "${#firmware_candidates[@]}" >&2
@@ -83,17 +90,8 @@ truncate -s "${FIRMWARE_BYTES}" "${firmware}"
 app_workspace="${work_dir}/chainload-workspace"
 mkdir -p "${app_workspace}/RufusChainloadTestPkg"
 cp "${ROOT_DIR}/tests/uefi-chainload/"* "${app_workspace}/RufusChainloadTestPkg/"
-(
-  cd "${app_workspace}"
-  export WORKSPACE="${app_workspace}"
-  export PACKAGES_PATH="${app_workspace}:${edk2_dir}"
-  export GCC_AARCH64_PREFIX="aarch64-linux-gnu-"
-  set +u
-  # shellcheck source=/dev/null
-  source "${edk2_dir}/edksetup.sh" BaseTools
-  set -u
-  build -a AARCH64 -b RELEASE -t GCC -p RufusChainloadTestPkg/RufusChainloadTestPkg.dsc
-)
+run_edk2_build "${app_workspace}" "${app_workspace}:${edk2_dir}" \
+  "RufusChainloadTestPkg/RufusChainloadTestPkg.dsc"
 mapfile -t app_candidates < <(find "${app_workspace}/Build" -type f -name RufusChainloadTest.efi -print)
 [[ "${#app_candidates[@]}" -eq 1 ]] || {
   printf 'Expected one RufusChainloadTest.efi, found %d\n' "${#app_candidates[@]}" >&2
@@ -145,7 +143,7 @@ run_qemu() {
     -smbios 'type=0,vendor=GitHub Actions Test,version=v1.0'
     -drive "if=pflash,format=raw,unit=0,file=${firmware},readonly=on"
     -drive "if=none,format=raw,file=${disk},id=bootdisk"
-    -device virtio-blk-device,drive=bootdisk
+    -device 'virtio-blk-device,drive=bootdisk'
     -nodefaults
     -nographic
     -serial stdio
