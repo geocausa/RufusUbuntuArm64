@@ -242,6 +242,21 @@ done < <(readelf -d "${wim_engine}" | sed -n 's/.*Shared library: \[\(.*\)\].*/\
 expected_wim_hash="$(awk '{print $1}' vendor/wimlib/arm64/wimlib-imagex.sha256)"
 actual_wim_hash="$(sha256sum "${wim_engine}" | awk '{print $1}')"
 [[ "${actual_wim_hash}" == "${expected_wim_hash}" ]]
+runtime_loader="${extract_dir}/usr/lib/rufusarm64/bootaa64-uefi-md5sum.efi"
+[[ -f "${runtime_loader}" ]]
+[[ "$(stat -c %s "${runtime_loader}")" -eq 40960 ]]
+[[ "$(sha256sum "${runtime_loader}" | awk '{print $1}')" == "543615a8e97fed1cb5293bee7bdfe10f9feb6979f191b20ab32dafdcf097b502" ]]
+for file in bootaa64.efi.sha256 provenance.json SOURCE-COMMITS.txt REPRODUCIBILITY.txt \
+  uefi-md5sum-v1.2-source.tar.gz uefi-md5sum-v1.2-source.tar.gz.sha256; do
+  [[ -f "${extract_dir}/usr/share/doc/rufusarm64/uefi-md5sum/${file}" ]]
+done
+python3 - "${extract_dir}/usr/share/doc/rufusarm64/uefi-md5sum/provenance.json" <<'PYUEFIPKG'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    data = json.load(handle)
+assert data["artifact"]["authenticode"]["present"] is False
+assert data["artifact"]["secure_boot"]["compatibility_established"] is False
+PYUEFIPKG
 uefi_image="${extract_dir}/usr/lib/rufusarm64/uefi-ntfs.img"
 [[ -f "${uefi_image}" ]]
 [[ "$(stat -c %s "${uefi_image}")" -eq 1048576 ]]
