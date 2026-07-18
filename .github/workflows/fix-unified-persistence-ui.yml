@@ -20,13 +20,36 @@ jobs:
           ref: feature/unified-persistence-ui
           fetch-depth: 0
       - name: Apply and validate review fix
+        id: validate
+        shell: bash
         run: |
-          python3 scripts/fix-unified-persistence-ui.py
-          PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
-          python3 -m py_compile gui/*.py
-          git diff --check
-          rm scripts/fix-unified-persistence-ui.py .github/workflows/fix-unified-persistence-ui.yml
+          set +e
+          {
+            python3 scripts/fix-unified-persistence-ui.py &&
+            PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py' &&
+            python3 -m py_compile gui/*.py &&
+            git diff --check
+          } > unified-ui-fix-diagnostics.txt 2>&1
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          cat unified-ui-fix-diagnostics.txt
+          exit 0
+      - name: Upload focused diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: unified-ui-fix-diagnostics
+          path: unified-ui-fix-diagnostics.txt
+          if-no-files-found: error
+      - name: Require focused validation
+        if: steps.validate.outputs.status != '0'
+        run: exit 1
+      - name: Remove staging files
+        if: steps.validate.outputs.status == '0'
+        run: |
+          rm scripts/fix-unified-persistence-ui.py .github/workflows/fix-unified-persistence-ui.yml unified-ui-fix-diagnostics.txt
       - name: Commit validated review fix
+        if: steps.validate.outputs.status == '0'
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
