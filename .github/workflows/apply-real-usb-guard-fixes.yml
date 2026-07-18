@@ -6,12 +6,14 @@ on:
       - feature/unified-persistence-ui
     paths:
       - scripts/apply-real-usb-guard-fixes.py
+      - scripts/fix-real-usb-loop-test.py
       - .github/workflows/apply-real-usb-guard-fixes.yml
   pull_request:
     branches:
       - main
     paths:
       - scripts/apply-real-usb-guard-fixes.py
+      - scripts/fix-real-usb-loop-test.py
       - .github/workflows/apply-real-usb-guard-fixes.yml
 
 permissions:
@@ -27,7 +29,9 @@ jobs:
           ref: feature/unified-persistence-ui
           fetch-depth: 0
       - name: Apply guarded real-hardware fixes
-        run: python3 scripts/apply-real-usb-guard-fixes.py
+        run: |
+          python3 scripts/apply-real-usb-guard-fixes.py
+          python3 scripts/fix-real-usb-loop-test.py
       - name: Format and run focused tests
         run: |
           gofmt -w \
@@ -60,7 +64,7 @@ jobs:
           path: loop-test.log
           if-no-files-found: warn
       - name: Remove staging files
-        run: rm -f scripts/apply-real-usb-guard-fixes.py .github/workflows/apply-real-usb-guard-fixes.yml
+        run: rm -f scripts/apply-real-usb-guard-fixes.py scripts/fix-real-usb-loop-test.py .github/workflows/apply-real-usb-guard-fixes.yml
       - name: Commit validated fixes
         run: |
           git config user.name "github-actions[bot]"
