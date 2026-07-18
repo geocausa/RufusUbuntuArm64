@@ -1,0 +1,79 @@
+name: Promote runtime integrity writer
+
+on:
+  pull_request:
+    branches: [develop/0.11.0]
+    paths:
+      - .github/runtime-integrity-writer-trigger
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    if: github.event.pull_request.head.ref == 'feature/0.11-runtime-integrity-writer'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+      - name: Apply runtime integrity writer and package integration
+        run: python3 tools/apply_runtime_integrity_writer.py
+      - name: Format and verify staged sources
+        run: |
+          gofmt -w internal/linuxmedia/runtime_integrity.go internal/linuxmedia/create.go internal/linuxmedia/create_test.go cmd/rufus-persistence-helper/main.go cmd/rufus-persistence-helper/main_test.go
+          test -z "$(gofmt -l internal/linuxmedia cmd/rufus-persistence-helper)"
+          python3 -m py_compile tools/apply_runtime_integrity_writer.py
+          bash -n scripts/build-deb.sh scripts/test.sh scripts/build-uefi-md5sum-arm64.sh
+      - name: Run focused race tests
+        run: |
+          set -o pipefail
+          go test -race -v ./internal/linuxmedia ./internal/runtimeintegrity ./internal/secureboot ./cmd/rufus-persistence-helper 2>&1 | tee runtime-integrity-writer-tests.log
+      - name: Upload focused diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: runtime-integrity-writer-tests
+          path: runtime-integrity-writer-tests.log
+          if-no-files-found: warn
+      - name: Vet changed packages
+        run: go vet ./internal/linuxmedia ./internal/runtimeintegrity ./internal/secureboot ./cmd/rufus-persistence-helper
+      - name: Run complete Go suite
+        run: go test ./...
+      - name: Confirm bounded writer scope
+        run: |
+          grep -q 'RuntimeUEFIValidation' internal/linuxmedia/create.go
+          grep -q 'runtime-uefi-validation' cmd/rufus-persistence-helper/main.go
+          ! grep -R -n -- '--runtime-uefi-validation' cmd/rufus-linux internal/writer internal/windowsmedia 2>/dev/null
+          grep -q 'unsigned' cmd/rufus-persistence-helper/main.go
+      - name: Create validated production commit
+        run: |
+          rm -f tools/apply_runtime_integrity_writer.py .github/runtime-integrity-writer-trigger
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            .github/workflows/ci.yml \
+            cmd/rufus-persistence-helper/main.go \
+            cmd/rufus-persistence-helper/main_test.go \
+            docs/persistence-user-guide.md \
+            internal/linuxmedia/create.go \
+            internal/linuxmedia/create_test.go \
+            internal/linuxmedia/runtime_integrity.go \
+            scripts/build-deb.sh \
+            scripts/test.sh
+          git add -u tools/apply_runtime_integrity_writer.py .github/runtime-integrity-writer-trigger
+          git commit -m '0.11: integrate runtime UEFI validation into persistent media creation'
+          git rev-parse HEAD | tee validated-runtime-integrity-writer-commit.txt
+          git push origin HEAD:feature/0.11-runtime-integrity-writer
+      - name: Upload validated commit identity
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: validated-runtime-integrity-writer-commit
+          path: validated-runtime-integrity-writer-commit.txt
+          if-no-files-found: warn
