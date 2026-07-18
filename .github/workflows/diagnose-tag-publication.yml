@@ -16,12 +16,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Print only the failed canonical-tag step log
+      - name: Verify missing-tag-safe exact lookup
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh run view 29642458299 \
-            --repo "${GITHUB_REPOSITORY}" \
-            --log-failed \
-            | tail -n 80
+          tag="v0.11.0"
+          existing="$(
+            gh api "/repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/${tag}" \
+              --jq ".[] | select(.ref == \"refs/tags/${tag}\") | .object.sha"
+          )"
+          test -z "${existing}"
+          echo "Exact missing-tag lookup returned an empty result."
