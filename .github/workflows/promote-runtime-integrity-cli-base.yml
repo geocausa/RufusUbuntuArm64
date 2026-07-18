@@ -26,7 +26,15 @@ jobs:
       - name: Check formatting
         run: test -z "$(gofmt -l cmd/rufus-linux)"
       - name: Run focused command and integrity race tests
-        run: go test -race ./cmd/rufus-linux ./internal/runtimeintegrity
+        run: |
+          set -o pipefail
+          go test -race -v ./cmd/rufus-linux ./internal/runtimeintegrity 2>&1 | tee runtime-integrity-cli-tests.log
+      - name: Upload focused test diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: runtime-integrity-cli-tests
+          path: runtime-integrity-cli-tests.log
       - name: Vet command and integrity packages
         run: go vet ./cmd/rufus-linux ./internal/runtimeintegrity
       - name: Run complete Go suite
