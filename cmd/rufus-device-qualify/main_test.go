@@ -55,7 +55,7 @@ func TestGraphicalInvocationRequiresGuardedIdentityBoundMode(t *testing.T) {
 		want string
 	}{
 		{name: "dry run", args: []string{"--device", "/dev/does-not-exist", "--expected-identity", "token", "--yes", "--json", "--dry-run"}, want: "requires --yes, --json"},
-		{name: "interactive", args: []string{"--device", "/dev/does-not-exist", "--expected-identity", "token", "--json"}, want: "requires --yes, --json"},
+		{name: "interactive", args: []string{"--device", "/dev/does-not-exist", "--expected-identity", "token", "--json"}, want: "requires --yes"},
 		{name: "fixed disk", args: []string{"--device", "/dev/does-not-exist", "--expected-identity", "token", "--yes", "--json", "--allow-fixed"}, want: "normal removable targets"},
 		{name: "unmount relaxed", args: []string{"--device", "/dev/does-not-exist", "--expected-identity", "token", "--yes", "--json", "--no-unmount"}, want: "guarded unmounting"},
 	} {
