@@ -5,10 +5,74 @@ package drivebackup
 import (
 	"fmt"
 	"os"
+	"os/user"
 	"strconv"
 	"strings"
 	"syscall"
 )
+
+func validateGraphicalDestinationDirectory(directory *os.File) error {
+	uidText := strings.TrimSpace(os.Getenv("PKEXEC_UID"))
+	if uidText == "" {
+		return nil
+	}
+	uid, groups, err := resolveGraphicalCredentials(uidText)
+	if err != nil {
+		return err
+	}
+	metadata, err := destinationMetadata(directory)
+	if err != nil {
+		return fmt.Errorf("verify graphical backup destination directory: %w", err)
+	}
+	if metadata.Mode&syscall.S_IFMT != syscall.S_IFDIR {
+		return fmt.Errorf("graphical backup destination is not a directory")
+	}
+	if !directoryPermitsCreate(metadata, uid, groups) {
+		return fmt.Errorf(
+			"graphical backup destination directory is not writable and searchable by desktop user %d",
+			uid,
+		)
+	}
+	return nil
+}
+
+func resolveGraphicalCredentials(uidText string) (int, map[uint32]struct{}, error) {
+	uid, err := resolveGraphicalUID(uidText)
+	if err != nil {
+		return 0, nil, err
+	}
+	account, err := user.LookupId(strconv.Itoa(uid))
+	if err != nil {
+		return 0, nil, fmt.Errorf("resolve graphical backup user %d: %w", uid, err)
+	}
+	groupTexts, err := account.GroupIds()
+	if err != nil {
+		return 0, nil, fmt.Errorf("resolve graphical backup groups for user %d: %w", uid, err)
+	}
+	groupTexts = append(groupTexts, account.Gid)
+	groups := make(map[uint32]struct{}, len(groupTexts))
+	for _, groupText := range groupTexts {
+		group64, err := strconv.ParseUint(strings.TrimSpace(groupText), 10, 32)
+		if err != nil {
+			return 0, nil, fmt.Errorf("graphical backup user %d has invalid group %q", uid, groupText)
+		}
+		groups[uint32(group64)] = struct{}{}
+	}
+	return uid, groups, nil
+}
+
+func directoryPermitsCreate(metadata *syscall.Stat_t, uid int, groups map[uint32]struct{}) bool {
+	if metadata == nil || uid < 0 || metadata.Mode&syscall.S_IFMT != syscall.S_IFDIR {
+		return false
+	}
+	permissions := metadata.Mode & 0o7
+	if metadata.Uid == uint32(uid) {
+		permissions = (metadata.Mode >> 6) & 0o7
+	} else if _, ok := groups[metadata.Gid]; ok {
+		permissions = (metadata.Mode >> 3) & 0o7
+	}
+	return permissions&0o3 == 0o3
+}
 
 func applyGraphicalDestinationOwner(file *os.File) error {
 	uidText := strings.TrimSpace(os.Getenv("PKEXEC_UID"))

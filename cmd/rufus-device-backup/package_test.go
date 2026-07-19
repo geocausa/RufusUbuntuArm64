@@ -42,6 +42,8 @@ func TestBackupCommandPackageContract(t *testing.T) {
 			path: filepath.Join(root, "internal", "drivebackup", "owner_linux.go"),
 			parts: []string{
 				`PKEXEC_UID`,
+				`validateGraphicalDestinationDirectory`,
+				`directoryPermitsCreate`,
 				`file.Chown(uid, -1)`,
 				`file.Sync()`,
 				`int(metadata.Uid) != uid`,

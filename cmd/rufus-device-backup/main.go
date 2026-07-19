@@ -168,8 +168,10 @@ func run(args []string) error {
 		return err
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	signalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	ctx, cancel := context.WithCancel(signalCtx)
+	defer cancel()
 	started := time.Now()
 	lastProgress := time.Time{}
 	var progressErr error
@@ -184,7 +186,10 @@ func run(args []string) error {
 			elapsed := time.Since(started)
 			if *progressJSON {
 				if progressErr == nil {
-					progressErr = writeJSONProgress(os.Stderr, progress, elapsed)
+					if err := writeJSONProgressOrCancel(os.Stderr, progress, elapsed, cancel); err != nil {
+						progressErr = err
+						cancel()
+					}
 				}
 				return
 			}
@@ -222,7 +227,7 @@ func run(args []string) error {
 	} else if !*asJSON && report.Schema != 0 {
 		printReport(report, destination.Path)
 	}
-	if progressErr != nil && runErr == nil {
+	if progressErr != nil {
 		return fmt.Errorf("write JSON progress: %w", progressErr)
 	}
 	return runErr
@@ -349,6 +354,14 @@ func makeProgressEvent(progress drivebackup.Progress, elapsed time.Duration) bac
 
 func writeJSONProgress(writer io.Writer, progress drivebackup.Progress, elapsed time.Duration) error {
 	return json.NewEncoder(writer).Encode(makeProgressEvent(progress, elapsed))
+}
+
+func writeJSONProgressOrCancel(writer io.Writer, progress drivebackup.Progress, elapsed time.Duration, cancel context.CancelFunc) error {
+	err := writeJSONProgress(writer, progress, elapsed)
+	if err != nil {
+		cancel()
+	}
+	return err
 }
 
 func printReport(report drivebackup.Report, output string) {

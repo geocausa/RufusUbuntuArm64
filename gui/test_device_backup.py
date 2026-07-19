@@ -176,7 +176,7 @@ class DeviceBackupLogicTests(unittest.TestCase):
             "status": "failed",
             "planned_bytes": 4096,
             "completed_bytes": 1024,
-            "failure": {"message": "read failed"},
+            "failure": {"kind": "source_read", "message": "read failed", "byte_offset": 1024},
         }
         self.assertIn("read failed", report_summary(failed, "/tmp/backup.img"))
 
@@ -185,7 +185,7 @@ class DeviceBackupLogicTests(unittest.TestCase):
             "status": "cancelled",
             "planned_bytes": 4096,
             "completed_bytes": 1024,
-            "failure": {"message": "context canceled"},
+            "failure": {"kind": "cancelled", "message": "context canceled", "byte_offset": 1024},
         }
         self.assertIn("cancelled", report_summary(cancelled, "/tmp/backup.img"))
 
@@ -195,6 +195,21 @@ class DeviceBackupLogicTests(unittest.TestCase):
             normalize_report({**failed, "sha256": digest})
         with self.assertRaises(ValueError):
             normalize_report({**passed, "sha256": "not-a-digest"})
+        with self.assertRaises(ValueError):
+            normalize_report({**failed, "failure": None})
+        with self.assertRaises(ValueError):
+            normalize_report({**passed, "failure": {"kind": "impossible", "message": "bad"}})
+        with self.assertRaises(ValueError):
+            normalize_report({**failed, "failure": {"kind": "source_read", "message": "bad", "byte_offset": 2048}})
+        with self.assertRaises(ValueError):
+            normalize_progress({
+                "schema": 1,
+                "type": "progress",
+                "done": 1.5,
+                "total": 2,
+                "elapsed_ms": 1,
+                "bytes_per_second": 1,
+            })
 
 
 if __name__ == "__main__":
