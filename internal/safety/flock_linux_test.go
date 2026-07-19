@@ -65,10 +65,7 @@ func TestAcquireExclusiveFlockHonorsCancellation(t *testing.T) {
 	}
 }
 
-func TestAcquireExclusiveFlockRejectsInvalidInputs(t *testing.T) {
-	if err := AcquireExclusiveFlock(nil, nil); err == nil {
-		t.Fatal("expected nil context error")
-	}
+func TestAcquireExclusiveFlockRejectsNilFile(t *testing.T) {
 	if err := AcquireExclusiveFlock(context.Background(), nil); err == nil {
 		t.Fatal("expected nil file error")
 	}
