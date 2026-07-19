@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/geocausa/RufusArm64/internal/safety"
 )
@@ -90,6 +92,7 @@ func TestRunDeviceQualifiesRealLoopDevice(t *testing.T) {
 			t.Logf("udevadm settle: %v: %s", settleErr, strings.TrimSpace(string(settleOutput)))
 		}
 	}
+	waitForLoopDeviceLock(t, loopPath)
 
 	deviceID, err := safety.KernelDeviceID(loopPath)
 	if err != nil {
@@ -131,5 +134,26 @@ func TestRunDeviceQualifiesRealLoopDevice(t *testing.T) {
 	}
 	if len(report.Passes) != 1 || report.Passes[0].WrittenBytes != capacity || report.Passes[0].VerifiedBytes != capacity {
 		t.Fatalf("unexpected pass report: %+v", report.Passes)
+	}
+}
+
+func waitForLoopDeviceLock(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		file, err := os.OpenFile(path, os.O_RDWR|syscall.O_EXCL|syscall.O_NOFOLLOW, 0)
+		if err == nil {
+			err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+			if err == nil {
+				_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+				_ = file.Close()
+				return
+			}
+			_ = file.Close()
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("loop device %s did not become exclusively lockable: %v", path, err)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
