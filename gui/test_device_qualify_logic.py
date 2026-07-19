@@ -2,6 +2,7 @@ import unittest
 
 from rufusarm64_device_qualify import (
     build_qualification_command,
+    normalize_qualification_event,
     normalize_qualification_profile,
     normalize_qualification_report,
     qualification_progress_fraction,
@@ -40,7 +41,7 @@ class DeviceQualificationLogicTests(unittest.TestCase):
                 "--profile",
                 "full",
                 "--yes",
-                "--json",
+                "--json-progress",
             ],
         )
 
@@ -106,6 +107,37 @@ class DeviceQualificationLogicTests(unittest.TestCase):
             with self.subTest(payload=payload):
                 with self.assertRaises(ValueError):
                     normalize_qualification_report(payload)
+
+    def test_progress_and_result_events_are_normalized(self):
+        progress = normalize_qualification_event(
+            {
+                "event": "progress",
+                "stage": "verify",
+                "pass": 2,
+                "pattern": "address-b",
+                "done": 50,
+                "total": 100,
+                "offset": 4096,
+            }
+        )
+        self.assertEqual(progress["stage"], "verify")
+        self.assertEqual(progress["done"], 50)
+        result = normalize_qualification_event({"event": "result", "report": self.report()})
+        self.assertEqual(result["report"]["status"], "passed")
+
+    def test_invalid_events_fail_closed(self):
+        invalid = [
+            None,
+            {},
+            {"event": "unknown"},
+            {"event": "progress", "done": 101, "total": 100},
+            {"event": "progress", "pass": -1},
+            {"event": "result", "report": {"schema": 2}},
+        ]
+        for payload in invalid:
+            with self.subTest(payload=payload):
+                with self.assertRaises(ValueError):
+                    normalize_qualification_event(payload)
 
     def test_progress_is_bounded_and_readable(self):
         self.assertEqual(qualification_progress_fraction(50, 100), 0.5)
