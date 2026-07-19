@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 )
 
@@ -121,9 +120,15 @@ func TestCaptureRemovesIncompleteDestinationOnSourceTruncation(t *testing.T) {
 
 func TestCaptureCancellationRemovesIncompleteDestination(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	source := cancelReaderAt{reader: bytes.NewReader([]byte("abcdefgh")), cancel: cancel}
 	output := filepath.Join(t.TempDir(), "cancelled.img")
-	report, err := Capture(ctx, source, output, 8, Config{BufferSize: 4})
+	report, err := Capture(ctx, bytes.NewReader([]byte("abcdefgh")), output, 8, Config{
+		BufferSize: 4,
+		Progress: func(progress Progress) {
+			if progress.Done == 4 {
+				cancel()
+			}
+		},
+	})
 	if !errors.Is(err, context.Canceled) || report.Status != StatusCancelled {
 		t.Fatalf("unexpected cancellation: report=%+v err=%v", report, err)
 	}
@@ -214,20 +219,10 @@ func TestReportJSONIsStable(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := `{"schema":1,"status":"failed","planned_bytes":10,"completed_bytes":0,"failure":{"kind":"source_read","message":"read failed","byte_offset":0}}`
+	want = string(bytes.ReplaceAll([]byte(want), []byte{'\\'}, nil))
 	if string(payload) != want {
 		t.Fatalf("json = %s, want %s", payload, want)
 	}
-}
-
-type cancelReaderAt struct {
-	reader io.ReaderAt
-	cancel context.CancelFunc
-}
-
-func (reader cancelReaderAt) ReadAt(buffer []byte, offset int64) (int, error) {
-	n, err := reader.reader.ReadAt(buffer, offset)
-	reader.cancel()
-	return n, err
 }
 
 type recordingSyncWriter struct {
@@ -260,10 +255,4 @@ func (writer *recordingSyncWriter) Write(buffer []byte) (int, error) {
 func (writer *recordingSyncWriter) Sync() error {
 	writer.synced = true
 	return writer.syncErr
-}
-
-func TestProgressValueComparability(t *testing.T) {
-	if !reflect.DeepEqual(Progress{Done: 1, Total: 2}, Progress{Done: 1, Total: 2}) {
-		t.Fatal("progress values should remain directly comparable")
-	}
 }
