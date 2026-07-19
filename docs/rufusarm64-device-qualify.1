@@ -55,7 +55,9 @@ remains refused.
 .B --yes
 Skip the interactive
 .B ERASE /dev/DEVICE
-confirmation. Intended for controlled automation with an exact identity token.
+confirmation. This mode requires an exact
+.B --expected-identity
+token and is intended only for controlled automation.
 .TP
 .BR --version , " -v"
 Print the package version.
