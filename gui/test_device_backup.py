@@ -1,9 +1,12 @@
 import json
+import os
+import tempfile
 import unittest
 
 from rufusarm64_device_backup import (
     build_dry_run_command,
     build_run_command,
+    confirmation_phrase,
     decode_progress_line,
     normalize_plan,
     normalize_progress,
@@ -66,9 +69,37 @@ class DeviceBackupLogicTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_run_command("/usr/bin/pkexec", "/usr/bin/tool", "/dev/sdc", "token", "relative.img")
 
+    def test_existing_destination_and_links_are_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            existing = os.path.join(directory, "existing.img")
+            with open(existing, "wb") as handle:
+                handle.write(b"keep")
+            with self.assertRaisesRegex(ValueError, "never replaced"):
+                build_dry_run_command("/usr/bin/tool", "/dev/sdb", "identity", existing)
+
+            link = os.path.join(directory, "link.img")
+            os.symlink(existing, link)
+            with self.assertRaisesRegex(ValueError, "never replaced"):
+                build_run_command("/usr/bin/pkexec", "/usr/bin/tool", "/dev/sdb", "identity", link)
+
+    def test_confirmation_phrase_binds_source_and_destination(self):
+        self.assertEqual(
+            confirmation_phrase("/dev/sdb", "/home/user/backup.img"),
+            "SAVE /dev/sdb TO /home/user/backup.img",
+        )
+        with self.assertRaises(ValueError):
+            confirmation_phrase("sdb", "/home/user/backup.img")
+        with self.assertRaises(ValueError):
+            confirmation_phrase("/dev/sdb", "backup.img")
+
     def test_plan_normalization_and_summary(self):
         payload = {
-            "device": {"path": "/dev/sdb", "vendor": "USB", "model": "Test"},
+            "device": {
+                "path": "/dev/sdb",
+                "vendor": "USB",
+                "model": "Test",
+                "size": 8 * 1024 * 1024,
+            },
             "identity": "abc",
             "destination": {
                 "path": "/home/user/backup.img",
@@ -79,20 +110,30 @@ class DeviceBackupLogicTests(unittest.TestCase):
         }
         normalized = normalize_plan(payload)
         self.assertEqual(normalized["identity"], "abc")
-        self.assertIn("USB Test", plan_summary(payload))
-        self.assertIn("8.0 MiB", plan_summary(payload))
+        summary = plan_summary(payload)
+        self.assertIn("USB Test", summary)
+        self.assertIn("8.0 MiB", summary)
+        self.assertIn("Destination filesystem: /home/user", summary)
         with self.assertRaises(ValueError):
             normalize_plan({"device": {}, "identity": "abc", "destination": {}})
         with self.assertRaises(ValueError):
             normalize_plan(
                 {
-                    "device": {"path": "/dev/sdb"},
+                    "device": {"path": "/dev/sdb", "size": 2},
                     "identity": "abc",
                     "destination": {
                         "path": "/tmp/out.img",
+                        "directory": "/tmp",
                         "required_bytes": 2,
                         "available_bytes": 1,
                     },
+                }
+            )
+        with self.assertRaises(ValueError):
+            normalize_plan(
+                {
+                    **payload,
+                    "device": {**payload["device"], "size": payload["device"]["size"] - 1},
                 }
             )
 
