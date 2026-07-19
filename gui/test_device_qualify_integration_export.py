@@ -1,0 +1,105 @@
+import os
+from pathlib import Path
+import unittest
+
+
+class DeviceQualificationIntegrationExport(unittest.TestCase):
+    def test_export_patched_files_for_connector_commit(self):
+        if os.environ.get("GITHUB_ACTIONS") != "true":
+            self.skipTest("integration export runs only in GitHub Actions")
+
+        output = Path("dist/audit-logs/gui-integration")
+        output.mkdir(parents=True, exist_ok=True)
+
+        gui = Path("gui/rufusarm64.py")
+        text = gui.read_text(encoding="utf-8")
+        import_line = "from rufusarm64_checksums import ChecksumDialog\n"
+        dialog_import = "from rufusarm64_device_qualify_dialog import DeviceQualificationDialog\n"
+        if dialog_import not in text:
+            self.assertEqual(text.count(import_line), 1)
+            text = text.replace(import_line, import_line + dialog_import, 1)
+        constant = 'DEVICE_QUALIFY = "/usr/bin/rufusarm64-device-qualify"\n'
+        anchor = 'PERSISTENCE_HELPER = "/usr/lib/rufusarm64/rufusarm64-persistence-helper"\n'
+        if constant not in text:
+            self.assertEqual(text.count(anchor), 1)
+            text = text.replace(anchor, anchor + constant, 1)
+        old_target = '''        self.refresh_button = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
+        self.refresh_button.set_tooltip_text("Refresh connected USB drives")
+        self.refresh_button.connect("clicked", lambda *_: self.refresh_devices())
+        grid.attach(self.refresh_button, 2, 1, 1, 1)
+'''
+        new_target = '''        target_actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.refresh_button = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
+        self.refresh_button.set_tooltip_text("Refresh connected USB drives")
+        self.refresh_button.connect("clicked", lambda *_: self.refresh_devices())
+        target_actions.pack_start(self.refresh_button, False, False, 0)
+        self.qualify_button = Gtk.Button(label="Check USB…")
+        self.qualify_button.set_tooltip_text("Run a separate destructive capacity and bad-block qualification test")
+        self.qualify_button.connect("clicked", self.open_device_qualification)
+        target_actions.pack_start(self.qualify_button, False, False, 0)
+        grid.attach(target_actions, 2, 1, 1, 1)
+'''
+        if 'self.qualify_button = Gtk.Button(label="Check USB…")' not in text:
+            self.assertEqual(text.count(old_target), 1)
+            text = text.replace(old_target, new_target, 1)
+        method = '''    def open_device_qualification(self, *_):
+        if self.busy:
+            return
+        device_path = self.target_combo.get_active_id() or ""
+        selected = next((item for item in self.devices if item.get("path") == device_path), None)
+        identity = str((selected or {}).get("identity") or "")
+        if not device_path or not identity:
+            self.progress_detail.set_text("Choose a USB drive and refresh the device list before checking it.")
+            return
+        dialog = DeviceQualificationDialog(self, device_path, identity, DEVICE_QUALIFY, PKEXEC)
+        dialog.run()
+        dialog.destroy()
+        self.refresh_devices()
+
+'''
+        method_anchor = "    def open_checksum_dialog(self, *_):\n"
+        if "    def open_device_qualification(self, *_):\n" not in text:
+            self.assertEqual(text.count(method_anchor), 1)
+            text = text.replace(method_anchor, method + method_anchor, 1)
+        compile(text, str(gui), "exec")
+        (output / "rufusarm64.py").write_text(text, encoding="utf-8")
+
+        build = Path("scripts/build-deb.sh")
+        text = build.read_text(encoding="utf-8")
+        anchor = '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_checksums.py" \\
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_checksums.py"
+'''
+        addition = anchor + '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_device_qualify.py" \\
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_device_qualify.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_device_qualify_dialog.py" \\
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_device_qualify_dialog.py"
+'''
+        if "rufusarm64_device_qualify_dialog.py" not in text:
+            self.assertEqual(text.count(anchor), 1)
+            text = text.replace(anchor, addition, 1)
+        (output / "build-deb.sh").write_text(text, encoding="utf-8")
+
+        tests = Path("scripts/test.sh")
+        text = tests.read_text(encoding="utf-8")
+        old_compile = '''  gui/rufusarm64.py gui/rufusarm64_logic.py gui/rufusarm64_checksums.py \\
+  gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py
+'''
+        new_compile = '''  gui/rufusarm64.py gui/rufusarm64_logic.py gui/rufusarm64_checksums.py \\
+  gui/rufusarm64_device_qualify.py gui/rufusarm64_device_qualify_dialog.py \\
+  gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py
+'''
+        if "gui/rufusarm64_device_qualify_dialog.py \\" not in text:
+            self.assertEqual(text.count(old_compile), 1)
+            text = text.replace(old_compile, new_compile, 1)
+        installed_anchor = '[[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_logic.py" ]]\n'
+        installed_add = installed_anchor + '[[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_device_qualify.py" ]]\n[[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_device_qualify_dialog.py" ]]\n'
+        if "extract_dir}/usr/lib/rufusarm64/rufusarm64_device_qualify_dialog.py" not in text:
+            self.assertEqual(text.count(installed_anchor), 1)
+            text = text.replace(installed_anchor, installed_add, 1)
+        (output / "test.sh").write_text(text, encoding="utf-8")
+
+        self.fail("GTK integration files exported to the audit artifact for connector commit")
+
+
+if __name__ == "__main__":
+    unittest.main()
