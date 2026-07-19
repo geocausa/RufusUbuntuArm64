@@ -12,6 +12,69 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  wire-device-command:
+    name: Wire device qualification command
+    if: github.event_name == 'pull_request' && github.head_ref == 'feature/device-qualification-executor'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/device-qualification-executor
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.22.x'
+      - name: Patch, test, and push the public dispatcher
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('cmd/rufus-linux/main.go')
+          text = path.read_text(encoding='utf-8')
+          if '\tcase "device":\n\t\treturn runDevice(args[1:])\n' not in text:
+              old = '''\tcase "list":
+\t\treturn runList(args[1:])
+\tcase "inspect":
+'''
+              new = '''\tcase "list":
+\t\treturn runList(args[1:])
+\tcase "device":
+\t\treturn runDevice(args[1:])
+\tcase "inspect":
+'''
+              if text.count(old) != 1:
+                  raise SystemExit(f'dispatch site count = {text.count(old)}, want 1')
+              text = text.replace(old, new, 1)
+          usage = '  sudo rufusarm64-cli device qualify --device /dev/DEVICE [--profile quick|full] [--dry-run] [--json]\n'
+          if usage not in text:
+              old = '''  rufusarm64-cli list [--all] [--json]
+  rufusarm64-cli inspect --image FILE [--json]
+'''
+              new = '''  rufusarm64-cli list [--all] [--json]
+  sudo rufusarm64-cli device qualify --device /dev/DEVICE [--profile quick|full] [--dry-run] [--json]
+  rufusarm64-cli inspect --image FILE [--json]
+'''
+              if text.count(old) != 1:
+                  raise SystemExit(f'usage site count = {text.count(old)}, want 1')
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          gofmt -w cmd/rufus-linux/main.go cmd/rufus-linux/device_qualify.go cmd/rufus-linux/device_qualify_test.go internal/devicequal/executor_linux.go internal/devicequal/executor_linux_test.go
+          go test ./cmd/rufus-linux ./internal/devicequal
+          if git diff --quiet -- cmd/rufus-linux/main.go cmd/rufus-linux/device_qualify.go cmd/rufus-linux/device_qualify_test.go internal/devicequal/executor_linux.go internal/devicequal/executor_linux_test.go; then
+            exit 0
+          fi
+          git config user.name 'RufusArm64 CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add cmd/rufus-linux/main.go cmd/rufus-linux/device_qualify.go cmd/rufus-linux/device_qualify_test.go internal/devicequal/executor_linux.go internal/devicequal/executor_linux_test.go
+          git commit -m 'devicequal: expose standalone device qualification command'
+          git push origin HEAD:feature/device-qualification-executor
+
   go-minimum:
     name: Go 1.22 compatibility
     runs-on: ubuntu-24.04
