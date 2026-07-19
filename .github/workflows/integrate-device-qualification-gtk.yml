@@ -1,0 +1,265 @@
+name: Integrate guarded qualification GTK
+
+on:
+  push:
+    branches:
+      - feature/device-qualification-gtk
+
+permissions:
+  contents: write
+
+concurrency:
+  group: integrate-device-qualification-gtk
+  cancel-in-progress: false
+
+jobs:
+  integrate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: feature/device-qualification-gtk
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+      - name: Apply exact GUI and package integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              text = path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: replacement count {count}, want 1 for {old[:80]!r}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          main = Path("gui/rufusarm64.py")
+          replace_once(
+              main,
+              "from rufusarm64_checksums import ChecksumDialog\n",
+              "from rufusarm64_checksums import ChecksumDialog\n"
+              "from rufusarm64_device_qualify_dialog import DeviceQualificationDialog\n",
+          )
+          replace_once(
+              main,
+              'PERSISTENCE_HELPER = "/usr/lib/rufusarm64/rufusarm64-persistence-helper"\nPKEXEC = "/usr/bin/pkexec"\n',
+              'PERSISTENCE_HELPER = "/usr/lib/rufusarm64/rufusarm64-persistence-helper"\n'
+              'DEVICE_QUALIFICATION_HELPER = "/usr/lib/rufusarm64/rufusarm64-device-qualify"\n'
+              'PKEXEC = "/usr/bin/pkexec"\n',
+          )
+          replace_once(
+              main,
+              '''        self.attach_label(grid, "USB drive", 1)
+                  self.target_combo = Gtk.ComboBoxText()
+                  self.target_combo.set_hexpand(True)
+                  self.target_combo.connect("changed", self.persistence_selection_changed)
+                  grid.attach(self.target_combo, 1, 1, 1, 1)
+                  self.refresh_button = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
+                  self.refresh_button.set_tooltip_text("Refresh connected USB drives")
+                  self.refresh_button.connect("clicked", lambda *_: self.refresh_devices())
+                  grid.attach(self.refresh_button, 2, 1, 1, 1)
+          '''.replace("              ", ""),
+              '''        self.attach_label(grid, "USB drive", 1)
+                  self.target_combo = Gtk.ComboBoxText()
+                  self.target_combo.set_hexpand(True)
+                  self.target_combo.connect("changed", self.target_selection_changed)
+                  grid.attach(self.target_combo, 1, 1, 1, 1)
+                  target_actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+                  self.qualification_button = Gtk.Button(label="Test USB drive…")
+                  self.qualification_button.set_tooltip_text("Destructively test the selected drive for bad blocks and false capacity")
+                  self.qualification_button.set_sensitive(False)
+                  self.qualification_button.connect("clicked", self.open_device_qualification)
+                  target_actions.pack_start(self.qualification_button, False, False, 0)
+                  self.refresh_button = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
+                  self.refresh_button.set_tooltip_text("Refresh connected USB drives")
+                  self.refresh_button.connect("clicked", lambda *_: self.refresh_devices())
+                  target_actions.pack_start(self.refresh_button, False, False, 0)
+                  grid.attach(target_actions, 2, 1, 1, 1)
+          '''.replace("              ", ""),
+          )
+          replace_once(
+              main,
+              '''        self.refresh_button.set_sensitive(not busy and not self.device_refreshing)
+                  windows_controls = not busy and self.inspection.get("mode") == "windows"
+          '''.replace("              ", ""),
+              '''        self.refresh_button.set_sensitive(not busy and not self.device_refreshing)
+                  target_index = self.target_combo.get_active()
+                  self.qualification_button.set_sensitive(
+                      not busy and not self.device_refreshing and 0 <= target_index < len(self.devices)
+                  )
+                  windows_controls = not busy and self.inspection.get("mode") == "windows"
+          '''.replace("              ", ""),
+          )
+          replace_once(
+              main,
+              '''
+              def open_checksum_dialog(self, *_):
+          '''.replace("          ", ""),
+              '''
+              def target_selection_changed(self, *_):
+                  self.persistence_selection_changed()
+                  self.update_qualification_sensitivity()
+
+              def update_qualification_sensitivity(self):
+                  index = self.target_combo.get_active()
+                  self.qualification_button.set_sensitive(
+                      not self.busy and not self.device_refreshing and 0 <= index < len(self.devices)
+                  )
+
+              def open_device_qualification(self, *_):
+                  if self.busy:
+                      return
+                  index = self.target_combo.get_active()
+                  if index < 0 or index >= len(self.devices):
+                      self.message("Connect and select a USB drive first.", Gtk.MessageType.INFO)
+                      return
+                  if not os.path.isfile(PKEXEC) or not os.access(PKEXEC, os.X_OK):
+                      self.message("Ubuntu administrator authentication (pkexec) is not installed.", Gtk.MessageType.ERROR)
+                      return
+                  if not os.path.isfile(DEVICE_QUALIFICATION_HELPER) or not os.access(DEVICE_QUALIFICATION_HELPER, os.X_OK):
+                      self.message("The RufusArm64 USB qualification utility is not installed correctly.", Gtk.MessageType.ERROR)
+                      return
+                  dialog = DeviceQualificationDialog(
+                      self, PKEXEC, DEVICE_QUALIFICATION_HELPER, self.devices[index]
+                  )
+                  self.qualification_dialog = dialog
+                  dialog.connect("destroy", self._qualification_dialog_destroyed)
+                  dialog.present()
+
+              def _qualification_dialog_destroyed(self, *_):
+                  self.qualification_dialog = None
+                  if not self.closed and not self.busy:
+                      self.refresh_devices()
+
+              def open_checksum_dialog(self, *_):
+          '''.replace("          ", ""),
+          )
+
+          dialog = Path("gui/rufusarm64_device_qualify_dialog.py")
+          replace_once(
+              dialog,
+              "        self.generation = 0\n        self.set_default_size(660, 520)\n",
+              "        self.generation = 0\n        self.parent_busy = False\n        self.set_default_size(660, 520)\n",
+          )
+          replace_once(
+              dialog,
+              '''    def _set_running(self, running):
+                  self.running = bool(running)
+                  self.profile.set_sensitive(not running)
+                  self.confirmation.set_sensitive(not running)
+                  self.start_button.set_sensitive(False if running else self.confirmation.get_text().strip() == f"ERASE {self.device_path}")
+                  self.cancel_button.set_sensitive(running and not self.cancel_requested)
+                  self.close_button.set_sensitive(not running)
+          '''.replace("              ", ""),
+              '''    def _set_running(self, running):
+                  self.running = bool(running)
+                  if running and not self.parent_busy:
+                      self.parent_window.active_job = "qualification"
+                      self.parent_window.set_busy(True)
+                      self.parent_busy = True
+                  elif not running and self.parent_busy:
+                      self.parent_window.active_job = ""
+                      self.parent_window.set_busy(False)
+                      self.parent_busy = False
+                  self.profile.set_sensitive(not running)
+                  self.confirmation.set_sensitive(not running)
+                  ready = bool(self.identity) and self.confirmation.get_text().strip() == f"ERASE {self.device_path}"
+                  self.start_button.set_sensitive(not running and ready)
+                  self.cancel_button.set_sensitive(running and not self.cancel_requested)
+                  self.close_button.set_sensitive(not running)
+          '''.replace("              ", ""),
+          )
+          replace_once(
+              dialog,
+              '''    def _destroyed(self, *_):
+                  self.closed = True
+                  self.generation += 1
+                  process = self.process
+                  if process is not None:
+                      self._terminate_process(process)
+          '''.replace("              ", ""),
+              '''    def _destroyed(self, *_):
+                  self.closed = True
+                  self.generation += 1
+                  process = self.process
+                  if process is not None:
+                      self._terminate_process(process)
+                  if self.parent_busy:
+                      self.parent_window.active_job = ""
+                      self.parent_window.set_busy(False)
+                      self.parent_busy = False
+          '''.replace("              ", ""),
+          )
+
+          build = Path("scripts/build-deb.sh")
+          replace_once(
+              build,
+              '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_checksums.py" \\
+                "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_checksums.py"
+              install -Dm755 "${ROOT_DIR}/gui/rufusarm64_persistence.py" \\
+          '''.replace("              ", ""),
+              '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_checksums.py" \\
+                "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_checksums.py"
+              install -Dm644 "${ROOT_DIR}/gui/rufusarm64_device_qualify.py" \\
+                "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_device_qualify.py"
+              install -Dm644 "${ROOT_DIR}/gui/rufusarm64_device_qualify_dialog.py" \\
+                "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_device_qualify_dialog.py"
+              install -Dm755 "${ROOT_DIR}/gui/rufusarm64_persistence.py" \\
+          '''.replace("              ", ""),
+          )
+          replace_once(
+              build,
+              'grep -Fq "Checksums…" "${GUI_TARGET}"\n',
+              'grep -Fq "Checksums…" "${GUI_TARGET}"\n'
+              'grep -Fq "Test USB drive…" "${GUI_TARGET}"\n',
+          )
+
+          tests = Path("scripts/test.sh")
+          replace_once(
+              tests,
+              '''python3 -m py_compile \\
+                gui/rufusarm64.py gui/rufusarm64_logic.py gui/rufusarm64_checksums.py \\
+                gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py
+          '''.replace("              ", ""),
+              '''python3 -m py_compile \\
+                gui/rufusarm64.py gui/rufusarm64_logic.py gui/rufusarm64_checksums.py \\
+                gui/rufusarm64_device_qualify.py gui/rufusarm64_device_qualify_dialog.py \\
+                gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py
+          '''.replace("              ", ""),
+          )
+          replace_once(
+              tests,
+              '''[[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_logic.py" ]]
+              [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_persistence.py" ]]
+          '''.replace("              ", ""),
+              '''[[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_logic.py" ]]
+              [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_device_qualify.py" ]]
+              [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_device_qualify_dialog.py" ]]
+              [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_persistence.py" ]]
+          '''.replace("              ", ""),
+          )
+          PY
+
+          gofmt -w cmd/rufus-device-qualify/main.go cmd/rufus-device-qualify/main_test.go
+          go test ./cmd/rufus-device-qualify ./internal/devicequal ./internal/safety
+          python3 -m py_compile \
+            gui/rufusarm64.py gui/rufusarm64_logic.py gui/rufusarm64_device_qualify.py \
+            gui/rufusarm64_device_qualify_dialog.py
+          PYTHONPATH=gui python3 -m unittest gui/test_device_qualify_logic.py
+          bash -n scripts/build-deb.sh scripts/test.sh
+
+          git config user.name 'RufusArm64 CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/integrate-device-qualification-gtk.yml
+          git add \
+            cmd/rufus-device-qualify/main.go cmd/rufus-device-qualify/main_test.go \
+            gui/rufusarm64.py gui/rufusarm64_device_qualify.py \
+            gui/rufusarm64_device_qualify_dialog.py gui/test_device_qualify_logic.py \
+            scripts/build-deb.sh scripts/test.sh
+          git commit -m 'gui: expose guarded USB qualification workflow'
+          git push origin HEAD:feature/device-qualification-gtk
