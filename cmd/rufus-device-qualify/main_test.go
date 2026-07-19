@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/geocausa/RufusArm64/internal/devicequal"
@@ -39,10 +41,45 @@ func TestRunValidatesArgumentsBeforeDeviceAccess(t *testing.T) {
 		{"--device", "/dev/does-not-exist", "--yes"},
 		{"--device", "/dev/does-not-exist", "--allow-fixed"},
 		{"--device", "/dev/does-not-exist", "--json"},
+		{"--device", "/dev/does-not-exist", "--json-progress"},
+		{"--device", "/dev/does-not-exist", "--json", "--json-progress"},
+		{"--device", "/dev/does-not-exist", "--dry-run", "--json-progress"},
 	} {
 		if err := run(args); err == nil {
 			t.Fatalf("args %v: expected validation error", args)
 		}
+	}
+}
+
+func TestGraphicalLaunchRequiresProgressStream(t *testing.T) {
+	t.Setenv("PKEXEC_UID", "1000")
+	err := run([]string{
+		"--device", "/dev/does-not-exist",
+		"--expected-identity", "identity",
+		"--yes",
+		"--json",
+	})
+	if err == nil || !strings.Contains(err.Error(), "--json-progress") {
+		t.Fatalf("error = %v, want graphical stream refusal", err)
+	}
+}
+
+func TestQualificationEventJSONContract(t *testing.T) {
+	report := devicequal.Report{Schema: 1, Profile: devicequal.ProfileQuick, Status: devicequal.StatusPassed}
+	payload, err := json.Marshal(qualificationEvent{Event: "result", Report: &report})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded["event"] != "result" {
+		t.Fatalf("event = %v, want result", decoded["event"])
+	}
+	reportValue, ok := decoded["report"].(map[string]any)
+	if !ok || reportValue["schema"] != float64(1) || reportValue["status"] != "passed" {
+		t.Fatalf("unexpected report event: %s", payload)
 	}
 }
 
