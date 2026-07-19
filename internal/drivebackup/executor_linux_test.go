@@ -79,23 +79,54 @@ func TestCaptureDeviceRefusesExistingDestinationBeforeSourceOpen(t *testing.T) {
 	}
 }
 
+func TestCaptureDeviceRefusesSymlinkDestinationDirectory(t *testing.T) {
+	root := t.TempDir()
+	realDirectory := filepath.Join(root, "real")
+	if err := os.Mkdir(realDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "linked")
+	if err := os.Symlink(realDirectory, link); err != nil {
+		t.Fatal(err)
+	}
+	report, err := CaptureDevice(context.Background(), "/does/not/exist", filepath.Join(link, "drive.img"), DeviceOptions{
+		ExpectedDeviceID: 1,
+		ExpectedSize:     1,
+	})
+	if err == nil || report.Failure == nil || report.Failure.Kind != "destination_preflight" {
+		t.Fatalf("unexpected result: report=%+v err=%v", report, err)
+	}
+}
+
 func TestEnsureFreeSpaceRejectsImpossibleRequest(t *testing.T) {
-	if err := ensureFreeSpace(t.TempDir(), math.MaxUint64); err == nil {
+	directory, err := os.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer directory.Close()
+	if err := ensureFreeSpace(directory, math.MaxUint64); err == nil {
 		t.Fatal("impossible free-space request was accepted")
 	}
 }
 
 func TestPublishNoReplaceIsAtomicAndPreservesExistingFiles(t *testing.T) {
-	directory := t.TempDir()
-	temporary := filepath.Join(directory, ".partial")
-	output := filepath.Join(directory, "drive.img")
+	path := t.TempDir()
+	directory, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer directory.Close()
+	const temporaryName = ".partial"
+	const outputName = "drive.img"
+	temporary := filepath.Join(path, temporaryName)
+	output := filepath.Join(path, outputName)
 	if err := os.WriteFile(temporary, []byte("captured"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(output, []byte("existing"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := publishNoReplace(temporary, output); err == nil {
+	if err := publishNoReplace(directory, temporaryName, outputName); err == nil {
 		t.Fatal("publication replaced an existing destination")
 	}
 	got, err := os.ReadFile(output)
@@ -112,7 +143,7 @@ func TestPublishNoReplaceIsAtomicAndPreservesExistingFiles(t *testing.T) {
 	if err := os.Remove(output); err != nil {
 		t.Fatal(err)
 	}
-	if err := publishNoReplace(temporary, output); err != nil {
+	if err := publishNoReplace(directory, temporaryName, outputName); err != nil {
 		t.Fatal(err)
 	}
 	got, err = os.ReadFile(output)
