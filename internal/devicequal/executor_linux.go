@@ -69,7 +69,13 @@ func RunDevice(ctx context.Context, path string, options DeviceOptions) (Report,
 		return Report{}, err
 	}
 
-	backend := &flushedDeviceBackend{ctx: ctx, path: path, file: file}
+	backend := &flushedDeviceBackend{
+		ctx:              ctx,
+		path:             path,
+		file:             file,
+		expectedDeviceID: options.ExpectedDeviceID,
+		expectedSize:     options.ExpectedSize,
+	}
 	report, runErr := Run(ctx, backend, options.ExpectedSize, Config{
 		Profile:    options.Profile,
 		RegionSize: options.RegionSize,
@@ -87,9 +93,11 @@ func RunDevice(ctx context.Context, path string, options DeviceOptions) (Report,
 }
 
 type flushedDeviceBackend struct {
-	ctx  context.Context
-	path string
-	file *os.File
+	ctx              context.Context
+	path             string
+	file             *os.File
+	expectedDeviceID uint64
+	expectedSize     uint64
 }
 
 func (backend *flushedDeviceBackend) ReadAt(buffer []byte, offset int64) (int, error) {
@@ -110,5 +118,5 @@ func (backend *flushedDeviceBackend) Sync() error {
 	if err := safety.FlushBuffers(backend.ctx, backend.path); err != nil {
 		return fmt.Errorf("flush qualification target buffers: %w", err)
 	}
-	return safety.VerifyOpenDeviceID(backend.file, 0)
+	return safety.VerifyOpenDevice(backend.file, backend.expectedDeviceID, backend.expectedSize)
 }
