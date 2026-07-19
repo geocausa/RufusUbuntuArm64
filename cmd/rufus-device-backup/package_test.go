@@ -21,6 +21,7 @@ func TestBackupCommandPackageContract(t *testing.T) {
 				`"${PACKAGE_DIR}/usr/bin/rufusarm64-device-backup"`,
 				`rufusarm64-device-qualify rufusarm64-device-backup`,
 			},
+		},
 		{
 			path: filepath.Join(root, "packaging", "io.github.geocausa.RufusArm64.policy"),
 			parts: []string{
@@ -28,6 +29,7 @@ func TestBackupCommandPackageContract(t *testing.T) {
 				`/usr/lib/rufusarm64/rufusarm64-device-backup`,
 				`<allow_active>auth_admin</allow_active>`,
 			},
+		},
 		{
 			path: filepath.Join(root, "docs", "rufusarm64-device-backup.1"),
 			parts: []string{
