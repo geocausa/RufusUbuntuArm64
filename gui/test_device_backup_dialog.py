@@ -20,7 +20,9 @@ class DeviceBackupDialogStructureTests(unittest.TestCase):
     def test_sources_are_valid_and_launcher_activates_integration(self):
         ast.parse(self.dialog_source)
         self.assertIn("run_rufusarm64", self.launcher_source)
-        self.assertIn("PYTHONPATH=/usr/lib/rufusarm64", self.launcher_source.replace('"', ""))
+        self.assertIn("/usr/bin/python3 -I -c", self.launcher_source)
+        self.assertIn('sys.path.insert(0, "/usr/lib/rufusarm64")', self.launcher_source)
+        self.assertNotIn("PYTHONPATH", self.launcher_source)
         self.assertNotIn("exec /usr/bin/python3 /usr/lib/rufusarm64/rufusarm64.py", self.launcher_source)
 
     def test_backup_is_separate_and_read_only_with_respect_to_source(self):
