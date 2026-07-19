@@ -10,8 +10,14 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"unsafe"
 
 	"github.com/geocausa/RufusArm64/internal/safety"
+)
+
+const (
+	atFDCWD         = ^uintptr(99)
+	renameNoReplace = 1
 )
 
 // DeviceOptions binds a capture to one already validated whole-device identity.
@@ -167,25 +173,31 @@ func ensureFreeSpace(path string, required uint64) error {
 }
 
 func publishNoReplace(temporaryPath, outputPath string) error {
-	if err := os.Link(temporaryPath, outputPath); err != nil {
-		return fmt.Errorf("publish backup without replacing an existing file: %w", err)
+	temporaryPointer, err := syscall.BytePtrFromString(temporaryPath)
+	if err != nil {
+		return fmt.Errorf("encode backup temporary path: %w", err)
 	}
-	published := true
-	cleanupPublished := func() {
-		if published {
-			_ = os.Remove(outputPath)
-			_ = syncDirectory(filepath.Dir(outputPath))
-		}
+	outputPointer, err := syscall.BytePtrFromString(outputPath)
+	if err != nil {
+		return fmt.Errorf("encode backup destination path: %w", err)
 	}
-	if err := os.Remove(temporaryPath); err != nil {
-		cleanupPublished()
-		return fmt.Errorf("remove backup temporary name after publication: %w", err)
+	_, _, errno := syscall.Syscall6(
+		syscall.SYS_RENAMEAT2,
+		atFDCWD,
+		uintptr(unsafe.Pointer(temporaryPointer)),
+		atFDCWD,
+		uintptr(unsafe.Pointer(outputPointer)),
+		renameNoReplace,
+		0,
+	)
+	if errno != 0 {
+		return fmt.Errorf("publish backup without replacing an existing file: %w", errno)
 	}
 	if err := syncDirectory(filepath.Dir(outputPath)); err != nil {
-		cleanupPublished()
+		_ = os.Remove(outputPath)
+		_ = syncDirectory(filepath.Dir(outputPath))
 		return fmt.Errorf("sync backup destination directory: %w", err)
 	}
-	published = false
 	return nil
 }
 
