@@ -33,8 +33,9 @@ func TestBackupCommandPackageContract(t *testing.T) {
 		{
 			path: filepath.Join(root, "packaging", "rufusarm64"),
 			parts: []string{
+				`/usr/bin/python3 -I -c`,
+				`sys.path.insert(0, "/usr/lib/rufusarm64")`,
 				`run_rufusarm64`,
-				`PYTHONPATH="/usr/lib/rufusarm64`,
 			},
 		},
 		{
