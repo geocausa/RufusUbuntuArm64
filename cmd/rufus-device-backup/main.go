@@ -88,6 +88,11 @@ func run(args []string) error {
 		}
 	}
 
+	// All device and filesystem discovery commands must resolve through package-
+	// controlled system locations. This applies before the first probe because a
+	// terminal caller may already be root and pkexec starts the process elevated.
+	setTrustedSystemPath()
+
 	resolved, err := safety.ResolveDevice(*devicePath)
 	if err != nil {
 		return err
@@ -123,7 +128,6 @@ func run(args []string) error {
 	if err := safety.RequireRoot(); err != nil {
 		return err
 	}
-	setTrustedSystemPath()
 	if len(device.MountedDescendants(selected)) > 0 && *noUnmount {
 		return errors.New("source has mounted filesystems")
 	}
@@ -289,7 +293,8 @@ func printProgress(progress drivebackup.Progress, elapsed time.Duration) {
 	}
 	eta := "--"
 	if rate > 0 && progress.Done < progress.Total {
-		eta = (time.Duration(float64(progress.Total-progress.Done)/rate) * time.Second).Round(time.Second).String()
+		seconds := float64(progress.Total-progress.Done) / rate
+		eta = time.Duration(seconds * float64(time.Second)).Round(time.Second).String()
 	}
 	fmt.Printf("\r%6.2f%%  %s / %s  %s/s  ETA %s", percent, humanBytes(progress.Done), humanBytes(progress.Total), humanBytes(uint64(rate)), eta)
 }
