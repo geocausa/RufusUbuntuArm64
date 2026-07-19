@@ -40,9 +40,12 @@ PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
 native_dir="$(mktemp -d)"
 native_helper="${native_dir}/rufusarm64-helper"
 native_persistence_helper="${native_dir}/rufusarm64-persistence-helper"
+native_device_qualify="${native_dir}/rufusarm64-device-qualify"
 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_helper}" ./cmd/rufus-linux
 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_persistence_helper}" ./cmd/rufus-persistence-helper
+go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_device_qualify}" ./cmd/rufus-device-qualify
 [[ "$("${native_helper}" version)" == "${VERSION}" ]]
+[[ "$("${native_device_qualify}" version)" == "${VERSION}" ]]
 printf 'rufusarm64-smoke' > "${native_dir}/sample.img"
 expected_hash="$(sha256sum "${native_dir}/sample.img" | awk '{print $1}')"
 actual_hash="$("${native_helper}" hash "${native_dir}/sample.img" | awk '{print $1}')"
@@ -110,12 +113,16 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/helper-amd64" ./cmd/rufus-linux
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/persistence-helper-arm64" ./cmd/rufus-persistence-helper
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/persistence-helper-amd64" ./cmd/rufus-persistence-helper
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/device-qualify-arm64" ./cmd/rufus-device-qualify
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/device-qualify-amd64" ./cmd/rufus-device-qualify
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o "${native_dir}/channel-admin-arm64" ./cmd/rufus-channel-admin
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o "${native_dir}/channel-admin-amd64" ./cmd/rufus-channel-admin
 readelf -h "${native_dir}/helper-arm64" | grep -q 'Machine:.*AArch64'
 readelf -h "${native_dir}/helper-amd64" | grep -q 'Machine:.*Advanced Micro Devices X86-64'
 readelf -h "${native_dir}/persistence-helper-arm64" | grep -q 'Machine:.*AArch64'
 readelf -h "${native_dir}/persistence-helper-amd64" | grep -q 'Machine:.*Advanced Micro Devices X86-64'
+readelf -h "${native_dir}/device-qualify-arm64" | grep -q 'Machine:.*AArch64'
+readelf -h "${native_dir}/device-qualify-amd64" | grep -q 'Machine:.*Advanced Micro Devices X86-64'
 readelf -h "${native_dir}/channel-admin-arm64" | grep -q 'Machine:.*AArch64'
 readelf -h "${native_dir}/channel-admin-amd64" | grep -q 'Machine:.*Advanced Micro Devices X86-64'
 if grep -q -- '--private-key' cmd/rufus-channel-admin/main.go; then echo 'private-key option must not exist' >&2; exit 1; fi
@@ -218,9 +225,11 @@ dpkg-deb -x "${PACKAGE}" "${extract_dir}"
 dpkg-deb -e "${PACKAGE}" "${extract_dir}/DEBIAN"
 helper="${extract_dir}/usr/lib/rufusarm64/rufusarm64-helper"
 persistence_helper="${extract_dir}/usr/lib/rufusarm64/rufusarm64-persistence-helper"
+device_qualify="${extract_dir}/usr/lib/rufusarm64/rufusarm64-device-qualify"
 installed_gui="${extract_dir}/usr/lib/rufusarm64/rufusarm64.py"
 [[ -x "${helper}" ]]
 [[ -x "${persistence_helper}" ]]
+[[ -x "${device_qualify}" ]]
 [[ -f "${installed_gui}" ]]
 [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_logic.py" ]]
 [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_persistence.py" ]]
@@ -311,7 +320,7 @@ if grep -q 'rufusarm64_persistence.py' "${extract_dir}/usr/bin/rufusarm64"; then
   exit 1
 fi
 grep -q '^Exec=rufusarm64$' "${extract_dir}/usr/share/applications/io.github.geocausa.RufusArm64.desktop"
-for page in rufusarm64 rufusarm64-cli rufusarm64-persistence; do
+for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify; do
   [[ -f "${extract_dir}/usr/share/man/man1/${page}.1.gz" ]]
   gzip -t "${extract_dir}/usr/share/man/man1/${page}.1.gz"
 done
@@ -337,10 +346,14 @@ file "${helper}" | grep -q 'ARM aarch64'
 file "${helper}" | grep -q 'statically linked'
 file "${persistence_helper}" | grep -q 'ARM aarch64'
 file "${persistence_helper}" | grep -q 'statically linked'
+file "${device_qualify}" | grep -q 'ARM aarch64'
+file "${device_qualify}" | grep -q 'statically linked'
 readelf -h "${helper}" | grep -q 'Machine:.*AArch64'
 readelf -h "${persistence_helper}" | grep -q 'Machine:.*AArch64'
+readelf -h "${device_qualify}" | grep -q 'Machine:.*AArch64'
 if readelf -l "${helper}" | grep -q 'Requesting program interpreter'; then echo 'main helper must be static' >&2; exit 1; fi
 if readelf -l "${persistence_helper}" | grep -q 'Requesting program interpreter'; then echo 'persistence helper must be static' >&2; exit 1; fi
+if readelf -l "${device_qualify}" | grep -q 'Requesting program interpreter'; then echo 'device qualification utility must be static' >&2; exit 1; fi
 grep -q '^Architecture: arm64$' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*libc6 (>= 2.38)' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*mount' "${extract_dir}/DEBIAN/control"
@@ -353,6 +366,7 @@ grep -q 'Depends:.*qemu-utils' "${extract_dir}/DEBIAN/control"
 if grep -q '^Suggests:.*wimtools' "${extract_dir}/DEBIAN/control"; then echo 'package must not suggest external wimtools' >&2; exit 1; fi
 if grep -q 'Depends:.*parted' "${extract_dir}/DEBIAN/control"; then echo 'package must not depend on parted' >&2; exit 1; fi
 [[ "$(readlink "${extract_dir}/usr/bin/rufusarm64-cli")" == "../lib/rufusarm64/rufusarm64-helper" ]]
+[[ "$(readlink "${extract_dir}/usr/bin/rufusarm64-device-qualify")" == "../lib/rufusarm64/rufusarm64-device-qualify" ]]
 grep -q '<allow_active>auth_admin</allow_active>' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"
 grep -q '<allow_any>no</allow_any>' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"
 grep -q '<allow_inactive>no</allow_inactive>' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"
