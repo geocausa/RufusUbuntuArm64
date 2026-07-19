@@ -22,6 +22,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import GLib, Gtk
 
 from rufusarm64_checksums import ChecksumDialog
+from rufusarm64_device_qualify_dialog import DeviceQualificationDialog
 from rufusarm64_persistence_logic import (
     build_create_command as build_persistence_create_command,
     completion_checklist,
@@ -68,6 +69,7 @@ VERSION = "development"
 INSTALLED_HELPER = "/usr/lib/rufusarm64/rufusarm64-helper"
 BUNDLED_WIMLIB = "/usr/lib/rufusarm64/wimlib-imagex"
 PERSISTENCE_HELPER = "/usr/lib/rufusarm64/rufusarm64-persistence-helper"
+DEVICE_QUALIFY = "/usr/bin/rufusarm64-device-qualify"
 PKEXEC = "/usr/bin/pkexec"
 ACQUISITION_CHANNEL_CONFIG = os.environ.get(
     "RUFUSARM64_CHANNEL_CONFIG", "/usr/share/rufusarm64/acquisition/channel.json"
@@ -1070,10 +1072,16 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.target_combo.set_hexpand(True)
         self.target_combo.connect("changed", self.persistence_selection_changed)
         grid.attach(self.target_combo, 1, 1, 1, 1)
+        target_actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.refresh_button = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
         self.refresh_button.set_tooltip_text("Refresh connected USB drives")
         self.refresh_button.connect("clicked", lambda *_: self.refresh_devices())
-        grid.attach(self.refresh_button, 2, 1, 1, 1)
+        target_actions.pack_start(self.refresh_button, False, False, 0)
+        self.qualify_button = Gtk.Button(label="Check USB…")
+        self.qualify_button.set_tooltip_text("Run a separate destructive capacity and bad-block qualification test")
+        self.qualify_button.connect("clicked", self.open_device_qualification)
+        target_actions.pack_start(self.qualify_button, False, False, 0)
+        grid.attach(target_actions, 2, 1, 1, 1)
 
         self.attach_label(grid, "Image option", 2)
         self.mode_value = self.value_label("Choose an image")
@@ -1458,6 +1466,7 @@ class RufusWindow(Gtk.ApplicationWindow):
             not busy and background_idle and bool(selected_image) and os.path.isfile(selected_image)
         )
         self.refresh_button.set_sensitive(not busy and not self.device_refreshing)
+        self.qualify_button.set_sensitive(not busy and not self.device_refreshing and self.target_combo.get_active() >= 0)
         windows_controls = not busy and self.inspection.get("mode") == "windows"
         for widget in (self.partition_combo, self.target_system_combo, self.filesystem_combo, self.cluster_combo, self.volume_label, self.driver_chooser, self.dbx_chooser, self.dbx_update_button, self.quick_format, self.bad_block_check):
             widget.set_sensitive(windows_controls)
@@ -1479,6 +1488,23 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.save_settings()
         return False
 
+
+    def open_device_qualification(self, *_):
+        if self.busy:
+            return
+        target_index = self.target_combo.get_active()
+        selected = self.devices[target_index] if 0 <= target_index < len(self.devices) else None
+        device_path = str((selected or {}).get("path") or "")
+        identity = str((selected or {}).get("identity") or "")
+        if not device_path or not identity:
+            self.progress_detail.set_text("Choose a USB drive and refresh the device list before checking it.")
+            return
+        dialog = DeviceQualificationDialog(self, device_path, identity, DEVICE_QUALIFY, PKEXEC)
+        dialog.run()
+        if dialog.running:
+            return
+        dialog.destroy()
+        self.refresh_devices()
 
     def open_checksum_dialog(self, *_):
         if self.busy:
