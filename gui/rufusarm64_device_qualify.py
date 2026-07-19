@@ -32,7 +32,7 @@ def build_qualification_command(pkexec_path, helper_path, device, identity, prof
         "--profile",
         profile,
         "--yes",
-        "--json",
+        "--json-progress",
     ]
 
 
@@ -85,6 +85,33 @@ def normalize_qualification_report(payload):
         raise ValueError("A failed USB qualification report is missing failure details.")
     if normalized["completed_bytes"] > normalized["planned_bytes"] and normalized["planned_bytes"] > 0:
         raise ValueError("USB qualification reported more completed data than planned.")
+    return normalized
+
+
+def normalize_qualification_event(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("USB qualification returned an invalid event.")
+    event = str(payload.get("event") or "").strip().lower()
+    if event == "result":
+        return {"event": "result", "report": normalize_qualification_report(payload.get("report"))}
+    if event != "progress":
+        raise ValueError("USB qualification returned an unknown event type.")
+    normalized = {"event": "progress"}
+    normalized["stage"] = str(payload.get("stage") or "working").strip().lower()
+    normalized["pattern"] = str(payload.get("pattern") or "").strip()
+    for name in ("pass", "done", "total", "offset"):
+        value = payload.get(name, 0)
+        if isinstance(value, bool):
+            raise ValueError(f"USB qualification returned an invalid progress {name}.")
+        try:
+            value = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"USB qualification returned an invalid progress {name}.") from exc
+        if value < 0:
+            raise ValueError(f"USB qualification returned a negative progress {name}.")
+        normalized[name] = value
+    if normalized["total"] and normalized["done"] > normalized["total"]:
+        raise ValueError("USB qualification progress exceeded its total.")
     return normalized
 
 
