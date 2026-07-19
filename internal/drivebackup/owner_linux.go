@@ -45,28 +45,44 @@ func applyDestinationOwner(file *os.File, uid, gid int) error {
 	if file == nil || uid < 0 || gid < 0 {
 		return fmt.Errorf("invalid graphical destination ownership request")
 	}
-	if err := file.Chown(uid, gid); err != nil {
-		return fmt.Errorf("assign backup image to graphical user: %w", err)
+	metadata, err := destinationMetadata(file)
+	if err != nil {
+		return err
+	}
+	// FAT, exFAT, and some NTFS mounts map every file to a configured UID and
+	// reject chown. If the mounted filesystem already reports the desktop user,
+	// the owner-only image is usable and no ownership mutation is required.
+	if int(metadata.Uid) != uid {
+		if err := file.Chown(uid, gid); err != nil {
+			return fmt.Errorf("assign backup image to graphical user: %w", err)
+		}
 	}
 	if err := file.Sync(); err != nil {
 		return fmt.Errorf("sync backup image ownership: %w", err)
 	}
-	info, err := file.Stat()
+	metadata, err = destinationMetadata(file)
 	if err != nil {
-		return fmt.Errorf("verify backup image ownership: %w", err)
+		return err
 	}
-	metadata, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return fmt.Errorf("verify backup image ownership: unsupported file metadata")
-	}
-	if int(metadata.Uid) != uid || int(metadata.Gid) != gid {
+	if int(metadata.Uid) != uid {
 		return fmt.Errorf(
-			"verify backup image ownership: got %d:%d, expected %d:%d",
+			"verify backup image ownership: got %d:%d, expected user %d",
 			metadata.Uid,
 			metadata.Gid,
 			uid,
-			gid,
 		)
 	}
 	return nil
+}
+
+func destinationMetadata(file *os.File) (*syscall.Stat_t, error) {
+	info, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("verify backup image ownership: %w", err)
+	}
+	metadata, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil, fmt.Errorf("verify backup image ownership: unsupported file metadata")
+	}
+	return metadata, nil
 }
