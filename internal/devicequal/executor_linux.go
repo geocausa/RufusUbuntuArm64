@@ -12,6 +12,8 @@ import (
 	"github.com/geocausa/RufusArm64/internal/safety"
 )
 
+const blkflsbuf = 0x1261
+
 // DeviceOptions binds a qualification run to an already validated whole-device
 // identity. The caller remains responsible for removable/system-disk policy,
 // confirmation, and unmounting before RunDevice is called.
@@ -71,7 +73,6 @@ func RunDevice(ctx context.Context, path string, options DeviceOptions) (Report,
 
 	backend := &flushedDeviceBackend{
 		ctx:              ctx,
-		path:             path,
 		file:             file,
 		expectedDeviceID: options.ExpectedDeviceID,
 		expectedSize:     options.ExpectedSize,
@@ -94,7 +95,6 @@ func RunDevice(ctx context.Context, path string, options DeviceOptions) (Report,
 
 type flushedDeviceBackend struct {
 	ctx              context.Context
-	path             string
 	file             *os.File
 	expectedDeviceID uint64
 	expectedSize     uint64
@@ -115,8 +115,9 @@ func (backend *flushedDeviceBackend) Sync() error {
 	if err := backend.file.Sync(); err != nil {
 		return fmt.Errorf("sync qualification target: %w", err)
 	}
-	if err := safety.FlushBuffers(backend.ctx, backend.path); err != nil {
-		return fmt.Errorf("flush qualification target buffers: %w", err)
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, backend.file.Fd(), uintptr(blkflsbuf), 0)
+	if errno != 0 {
+		return fmt.Errorf("flush qualification target buffers: %w", errno)
 	}
 	return safety.VerifyOpenDevice(backend.file, backend.expectedDeviceID, backend.expectedSize)
 }
