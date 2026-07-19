@@ -1,15 +1,16 @@
 name: Wire device qualification command
 
 on:
-  push:
+  pull_request:
     branches:
-      - feature/device-qualification-executor
+      - feature/device-qualification-foundation
 
 permissions:
   contents: write
 
 jobs:
   integrate:
+    if: github.head_ref == 'feature/device-qualification-executor'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
