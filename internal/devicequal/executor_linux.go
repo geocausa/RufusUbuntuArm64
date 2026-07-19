@@ -8,11 +8,16 @@ import (
 	"fmt"
 	"os"
 	"syscall"
+	"time"
 
 	"github.com/geocausa/RufusArm64/internal/safety"
 )
 
-const blkflsbuf = 0x1261
+const (
+	blkflsbuf                 = 0x1261
+	qualificationLockWait     = 2 * time.Second
+	qualificationLockInterval = 50 * time.Millisecond
+)
 
 // DeviceOptions binds a qualification run to an already validated whole-device
 // identity. The caller remains responsible for removable/system-disk policy,
@@ -57,7 +62,7 @@ func RunDevice(ctx context.Context, path string, options DeviceOptions) (Report,
 	if err := safety.VerifyOpenDevice(file, options.ExpectedDeviceID, options.ExpectedSize); err != nil {
 		return Report{}, err
 	}
-	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := acquireExclusiveFlock(ctx, file); err != nil {
 		return Report{}, fmt.Errorf("acquire exclusive qualification lock on target: %w", err)
 	}
 	defer func() { _ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN) }()
@@ -91,6 +96,37 @@ func RunDevice(ctx context.Context, path string, options DeviceOptions) (Report,
 		return report, err
 	}
 	return report, nil
+}
+
+func acquireExclusiveFlock(ctx context.Context, file *os.File) error {
+	if ctx == nil {
+		return errors.New("qualification lock context is nil")
+	}
+	if file == nil {
+		return errors.New("qualification lock target is nil")
+	}
+
+	deadline := time.NewTimer(qualificationLockWait)
+	defer deadline.Stop()
+	retry := time.NewTicker(qualificationLockInterval)
+	defer retry.Stop()
+
+	for {
+		err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return err
+		case <-retry.C:
+		}
+	}
 }
 
 type flushedDeviceBackend struct {
