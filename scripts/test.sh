@@ -34,6 +34,7 @@ go vet ./...
 go test -cover ./...
 python3 -m py_compile \
   gui/rufusarm64.py gui/rufusarm64_logic.py gui/rufusarm64_checksums.py \
+  gui/rufusarm64_device_qualify.py gui/rufusarm64_device_qualify_dialog.py \
   gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py
 PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
 
@@ -232,6 +233,8 @@ installed_gui="${extract_dir}/usr/lib/rufusarm64/rufusarm64.py"
 [[ -x "${device_qualify}" ]]
 [[ -f "${installed_gui}" ]]
 [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_logic.py" ]]
+[[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_device_qualify.py" ]]
+[[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_device_qualify_dialog.py" ]]
 [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_persistence.py" ]]
 [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_persistence_logic.py" ]]
 grep -Fxq "VERSION = \"${VERSION}\"" "${installed_gui}"

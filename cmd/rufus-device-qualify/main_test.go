@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/geocausa/RufusArm64/internal/devicequal"
@@ -43,6 +44,27 @@ func TestRunValidatesArgumentsBeforeDeviceAccess(t *testing.T) {
 		if err := run(args); err == nil {
 			t.Fatalf("args %v: expected validation error", args)
 		}
+	}
+}
+
+func TestGraphicalInvocationRequiresGuardedIdentityBoundMode(t *testing.T) {
+	t.Setenv("PKEXEC_UID", "1000")
+	for _, test := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "dry run", args: []string{"--device", "/dev/does-not-exist", "--expected-identity", "token", "--yes", "--json", "--dry-run"}, want: "requires --yes, --json"},
+		{name: "interactive", args: []string{"--device", "/dev/does-not-exist", "--expected-identity", "token", "--json"}, want: "requires --yes, --json"},
+		{name: "fixed disk", args: []string{"--device", "/dev/does-not-exist", "--expected-identity", "token", "--yes", "--json", "--allow-fixed"}, want: "normal removable targets"},
+		{name: "unmount relaxed", args: []string{"--device", "/dev/does-not-exist", "--expected-identity", "token", "--yes", "--json", "--no-unmount"}, want: "guarded unmounting"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := run(test.args)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want substring %q", err, test.want)
+			}
+		})
 	}
 }
 
