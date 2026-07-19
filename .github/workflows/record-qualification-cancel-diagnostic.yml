@@ -1,0 +1,82 @@
+name: Record qualification cancellation diagnostic
+
+on:
+  push:
+    branches:
+      - feature/device-qualification-gtk
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    if: ${{ !contains(github.event.head_commit.message, 'record qualification cancel diagnostic') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: feature/device-qualification-gtk
+          fetch-depth: 0
+      - name: Reproduce and record
+        shell: bash
+        run: |
+          set +e
+          log="docs/pr102-cancel-diagnostic.log"
+          (
+            set -euxo pipefail
+            python3 <<'PY'
+            from pathlib import Path
+
+            main = Path("gui/rufusarm64.py")
+            text = main.read_text(encoding="utf-8")
+            old = 'self.cancel_button.set_sensitive(busy and self.active_job in {"writer", "download", "persistence-plan"})'
+            print("sensitivity count", text.count(old))
+            assert text.count(old) == 1
+            text = text.replace(old, old[:-1] + ', "qualification"})', 1)
+            start = text.index("    def cancel(self, *_):\n")
+            marker = "        self.cancel_requested = True\n"
+            print("cancel marker count", text.count(marker, start))
+            point = text.index(marker, start)
+            text = text[:point] + (
+                "        if self.active_job == \"qualification\":\n"
+                "            dialog = getattr(self, \"qualification_dialog\", None)\n"
+                "            if dialog is not None:\n"
+                "                dialog.request_cancel()\n"
+                "            return\n"
+            ) + text[point:]
+            main.write_text(text, encoding="utf-8")
+
+            dialog = Path("gui/rufusarm64_device_qualify_dialog.py")
+            text = dialog.read_text(encoding="utf-8")
+            start = text.index("    def _cancel_clicked(self, *_):\n")
+            end = text.index("\n    @staticmethod\n    def _terminate_process", start)
+            text = text[:start] + (
+                "    def request_cancel(self):\n"
+                "        if not self.running:\n"
+                "            return\n"
+                "        self.cancel_requested = True\n"
+                "        self.cancel_button.set_sensitive(False)\n"
+                "        self.status.set_text(\"Cancelling safely after the current I/O operation…\")\n"
+                "        process = self.process\n"
+                "        if process is not None:\n"
+                "            self._terminate_process(process)\n"
+                "\n"
+                "    def _cancel_clicked(self, *_):\n"
+                "        self.request_cancel()\n"
+            ) + text[end:]
+            old_delete = "        if self.running:\n            self._cancel_clicked()\n            return True\n"
+            print("delete count", text.count(old_delete))
+            assert text.count(old_delete) == 1
+            dialog.write_text(text.replace(old_delete, "        if self.running:\n            self.request_cancel()\n            return True\n", 1), encoding="utf-8")
+            PY
+            python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_device_qualify_dialog.py
+            PYTHONPATH=gui python3 -m unittest gui/test_device_qualify_logic.py gui/test_device_qualify_source.py
+          ) >"${log}" 2>&1
+          status=$?
+          git config user.name 'RufusArm64 CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add "${log}"
+          git commit -m 'ci: record qualification cancel diagnostic'
+          git push origin HEAD:feature/device-qualification-gtk
+          exit "${status}"
