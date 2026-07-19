@@ -31,6 +31,12 @@ func TestBackupCommandPackageContract(t *testing.T) {
 			},
 		},
 		{
+			path: filepath.Join(root, "packaging", "rufusarm64.lintian-overrides"),
+			parts: []string{
+				`rufusarm64: statically-linked-binary [usr/lib/rufusarm64/rufusarm64-device-backup]`,
+			},
+		},
+		{
 			path: filepath.Join(root, "docs", "rufusarm64-device-backup.1"),
 			parts: []string{
 				`.TH RUFUSARM64-DEVICE-BACKUP 1`,
