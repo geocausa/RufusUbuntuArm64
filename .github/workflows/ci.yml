@@ -232,6 +232,7 @@ jobs:
           test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-helper" version)" = "${VERSION}"
           test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-persistence-helper" --help 2>&1 || true)" != ""
           test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-device-qualify" version)" = "${VERSION}"
+          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-device-backup" version)" = "${VERSION}"
           runtime_loader="${package_root}/usr/lib/rufusarm64/bootaa64-uefi-md5sum.efi"
           test "$(stat -c %s "${runtime_loader}")" -eq 40960
           test "$(sha256sum "${runtime_loader}" | awk '{print $1}')" = "543615a8e97fed1cb5293bee7bdfe10f9feb6979f191b20ab32dafdcf097b502"
