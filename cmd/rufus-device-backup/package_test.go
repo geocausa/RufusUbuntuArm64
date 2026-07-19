@@ -36,6 +36,7 @@ func TestBackupCommandPackageContract(t *testing.T) {
 				`.TH RUFUSARM64-DEVICE-BACKUP 1`,
 				`Existing destination files are never replaced`,
 				`--expected-identity`,
+				`--progress-json`,
 			},
 		},
 	}
