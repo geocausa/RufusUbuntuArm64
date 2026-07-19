@@ -17,7 +17,6 @@ import (
 )
 
 const (
-	atFDCWD           = ^uintptr(99)
 	renameNoReplace   = 1
 	sysRenameat2AMD64 = 316
 	sysRenameat2ARM64 = 276
@@ -106,6 +105,9 @@ func CaptureDevice(ctx context.Context, sourcePath, outputPath string, options D
 	if err := safety.VerifyOpenDevice(source, options.ExpectedDeviceID, options.ExpectedSize); err != nil {
 		return fail(report, "source_revalidation", report.CompletedBytes, true, err)
 	}
+	if err := destination.revalidatePath(); err != nil {
+		return fail(report, "destination_revalidation", report.CompletedBytes, true, err)
+	}
 	if err := publishNoReplace(destination.directory, temporaryName, destination.name); err != nil {
 		return fail(report, "publish_destination", report.CompletedBytes, true, err)
 	}
@@ -161,6 +163,24 @@ func prepareDestination(outputPath, sourcePath string, required uint64) (destina
 	}
 	closeOnError = false
 	return destinationPlan{path: clean, name: name, directory: directory}, nil
+}
+
+func (destination destinationPlan) revalidatePath() error {
+	pathInfo, err := os.Lstat(filepath.Dir(destination.path))
+	if err != nil {
+		return fmt.Errorf("reinspect backup destination directory: %w", err)
+	}
+	if pathInfo.Mode()&os.ModeSymlink != 0 || !pathInfo.IsDir() {
+		return errors.New("backup destination directory is no longer a real directory")
+	}
+	openInfo, err := destination.directory.Stat()
+	if err != nil {
+		return fmt.Errorf("reinspect open backup destination directory: %w", err)
+	}
+	if !os.SameFile(pathInfo, openInfo) {
+		return errors.New("backup destination directory changed before publication")
+	}
+	return nil
 }
 
 func ensureDestinationAbsent(directory *os.File, name string) error {
