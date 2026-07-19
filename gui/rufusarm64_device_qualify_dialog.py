@@ -43,6 +43,7 @@ class DeviceQualificationDialog(Gtk.Dialog):
         self.cancel_requested = False
         self.closed = False
         self.generation = 0
+        self.parent_busy = False
         self.set_default_size(660, 520)
         self.connect("delete-event", self._delete_event)
         self.connect("destroy", self._destroyed)
@@ -165,9 +166,18 @@ class DeviceQualificationDialog(Gtk.Dialog):
 
     def _set_running(self, running):
         self.running = bool(running)
+        if running and not self.parent_busy:
+            self.parent_window.active_job = "qualification"
+            self.parent_window.set_busy(True)
+            self.parent_busy = True
+        elif not running and self.parent_busy:
+            self.parent_window.active_job = ""
+            self.parent_window.set_busy(False)
+            self.parent_busy = False
         self.profile.set_sensitive(not running)
         self.confirmation.set_sensitive(not running)
-        self.start_button.set_sensitive(False if running else self.confirmation.get_text().strip() == f"ERASE {self.device_path}")
+        ready = bool(self.identity) and self.confirmation.get_text().strip() == f"ERASE {self.device_path}"
+        self.start_button.set_sensitive(not running and ready)
         self.cancel_button.set_sensitive(running and not self.cancel_requested)
         self.close_button.set_sensitive(not running)
 
@@ -319,3 +329,7 @@ class DeviceQualificationDialog(Gtk.Dialog):
         process = self.process
         if process is not None:
             self._terminate_process(process)
+        if self.parent_busy:
+            self.parent_window.active_job = ""
+            self.parent_window.set_busy(False)
+            self.parent_busy = False

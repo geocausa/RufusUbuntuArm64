@@ -22,6 +22,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import GLib, Gtk
 
 from rufusarm64_checksums import ChecksumDialog
+from rufusarm64_device_qualify_dialog import DeviceQualificationDialog
 from rufusarm64_persistence_logic import (
     build_create_command as build_persistence_create_command,
     completion_checklist,
@@ -68,6 +69,7 @@ VERSION = "development"
 INSTALLED_HELPER = "/usr/lib/rufusarm64/rufusarm64-helper"
 BUNDLED_WIMLIB = "/usr/lib/rufusarm64/wimlib-imagex"
 PERSISTENCE_HELPER = "/usr/lib/rufusarm64/rufusarm64-persistence-helper"
+DEVICE_QUALIFICATION_HELPER = "/usr/lib/rufusarm64/rufusarm64-device-qualify"
 PKEXEC = "/usr/bin/pkexec"
 ACQUISITION_CHANNEL_CONFIG = os.environ.get(
     "RUFUSARM64_CHANNEL_CONFIG", "/usr/share/rufusarm64/acquisition/channel.json"
@@ -1068,12 +1070,19 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.attach_label(grid, "USB drive", 1)
         self.target_combo = Gtk.ComboBoxText()
         self.target_combo.set_hexpand(True)
-        self.target_combo.connect("changed", self.persistence_selection_changed)
+        self.target_combo.connect("changed", self.target_selection_changed)
         grid.attach(self.target_combo, 1, 1, 1, 1)
+        target_actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.qualification_button = Gtk.Button(label="Test USB drive…")
+        self.qualification_button.set_tooltip_text("Destructively test the selected drive for bad blocks and false capacity")
+        self.qualification_button.set_sensitive(False)
+        self.qualification_button.connect("clicked", self.open_device_qualification)
+        target_actions.pack_start(self.qualification_button, False, False, 0)
         self.refresh_button = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
         self.refresh_button.set_tooltip_text("Refresh connected USB drives")
         self.refresh_button.connect("clicked", lambda *_: self.refresh_devices())
-        grid.attach(self.refresh_button, 2, 1, 1, 1)
+        target_actions.pack_start(self.refresh_button, False, False, 0)
+        grid.attach(target_actions, 2, 1, 1, 1)
 
         self.attach_label(grid, "Image option", 2)
         self.mode_value = self.value_label("Choose an image")
@@ -1458,6 +1467,10 @@ class RufusWindow(Gtk.ApplicationWindow):
             not busy and background_idle and bool(selected_image) and os.path.isfile(selected_image)
         )
         self.refresh_button.set_sensitive(not busy and not self.device_refreshing)
+        target_index = self.target_combo.get_active()
+        self.qualification_button.set_sensitive(
+            not busy and not self.device_refreshing and 0 <= target_index < len(self.devices)
+        )
         windows_controls = not busy and self.inspection.get("mode") == "windows"
         for widget in (self.partition_combo, self.target_system_combo, self.filesystem_combo, self.cluster_combo, self.volume_label, self.driver_chooser, self.dbx_chooser, self.dbx_update_button, self.quick_format, self.bad_block_check):
             widget.set_sensitive(windows_controls)
@@ -1479,6 +1492,41 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.save_settings()
         return False
 
+
+    def target_selection_changed(self, *_):
+        self.persistence_selection_changed()
+        self.update_qualification_sensitivity()
+
+    def update_qualification_sensitivity(self):
+        index = self.target_combo.get_active()
+        self.qualification_button.set_sensitive(
+            not self.busy and not self.device_refreshing and 0 <= index < len(self.devices)
+        )
+
+    def open_device_qualification(self, *_):
+        if self.busy:
+            return
+        index = self.target_combo.get_active()
+        if index < 0 or index >= len(self.devices):
+            self.message("Connect and select a USB drive first.", Gtk.MessageType.INFO)
+            return
+        if not os.path.isfile(PKEXEC) or not os.access(PKEXEC, os.X_OK):
+            self.message("Ubuntu administrator authentication (pkexec) is not installed.", Gtk.MessageType.ERROR)
+            return
+        if not os.path.isfile(DEVICE_QUALIFICATION_HELPER) or not os.access(DEVICE_QUALIFICATION_HELPER, os.X_OK):
+            self.message("The RufusArm64 USB qualification utility is not installed correctly.", Gtk.MessageType.ERROR)
+            return
+        dialog = DeviceQualificationDialog(
+            self, PKEXEC, DEVICE_QUALIFICATION_HELPER, self.devices[index]
+        )
+        self.qualification_dialog = dialog
+        dialog.connect("destroy", self._qualification_dialog_destroyed)
+        dialog.present()
+
+    def _qualification_dialog_destroyed(self, *_):
+        self.qualification_dialog = None
+        if not self.closed and not self.busy:
+            self.refresh_devices()
 
     def open_checksum_dialog(self, *_):
         if self.busy:
