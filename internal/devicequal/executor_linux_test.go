@@ -3,6 +3,7 @@
 package devicequal
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geocausa/RufusArm64/internal/drivebackup"
 	"github.com/geocausa/RufusArm64/internal/safety"
 )
 
@@ -141,6 +143,42 @@ func TestRunDeviceQualifiesRealLoopDevice(t *testing.T) {
 	}
 	if len(report.Passes) != 1 || report.Passes[0].WrittenBytes != capacity || report.Passes[0].VerifiedBytes != capacity {
 		t.Fatalf("unexpected pass report: %+v", report.Passes)
+	}
+
+	// The audited privileged invariant also proves that the separate backup
+	// executor can reopen the same whole device read-only, retain its identity,
+	// capture every byte, and publish only the completed image.
+	expected, err := os.ReadFile(loopPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForLoopDeviceLock(t, loopPath)
+	backupPath := filepath.Join(t.TempDir(), "qualification-capture.img")
+	backupBeforeCalls := 0
+	backupReport, err := drivebackup.CaptureDevice(context.Background(), loopPath, backupPath, drivebackup.DeviceOptions{
+		ExpectedDeviceID: deviceID,
+		ExpectedSize:     capacity,
+		BufferSize:       4096,
+		BeforeRead: func(open *os.File) error {
+			backupBeforeCalls++
+			return safety.VerifyOpenDevice(open, deviceID, capacity)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backupBeforeCalls != 1 {
+		t.Fatalf("backup before-read calls = %d, want 1", backupBeforeCalls)
+	}
+	if backupReport.Status != drivebackup.StatusPassed || backupReport.CompletedBytes != capacity {
+		t.Fatalf("unexpected backup report: %+v", backupReport)
+	}
+	captured, err := os.ReadFile(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(captured, expected) {
+		t.Fatal("captured backup differs from the held loop-device content")
 	}
 }
 
