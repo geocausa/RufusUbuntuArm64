@@ -151,8 +151,7 @@ func prepareDestination(outputPath, sourcePath string, required uint64) (destina
 	if !openInfo.IsDir() || !os.SameFile(pathInfo, openInfo) {
 		return destinationPlan{}, errors.New("backup destination directory changed during validation")
 	}
-	descriptorPath := fmt.Sprintf("/proc/self/fd/%d", directory.Fd())
-	if err := safety.EnsurePathNotOnTarget(descriptorPath, sourcePath); err != nil {
+	if err := safety.EnsurePathNotOnTarget(descriptorPath(directory), sourcePath); err != nil {
 		return destinationPlan{}, fmt.Errorf("validate backup destination storage: %w", err)
 	}
 	if err := ensureFreeSpace(directory, required); err != nil {
@@ -163,6 +162,10 @@ func prepareDestination(outputPath, sourcePath string, required uint64) (destina
 	}
 	closeOnError = false
 	return destinationPlan{path: clean, name: name, directory: directory}, nil
+}
+
+func descriptorPath(file *os.File) string {
+	return fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), file.Fd())
 }
 
 func (destination destinationPlan) revalidatePath() error {
@@ -221,8 +224,7 @@ func ensureFreeSpace(directory *os.File, required uint64) error {
 }
 
 func (destination destinationPlan) createTemporary() (*os.File, string, error) {
-	descriptorPath := fmt.Sprintf("/proc/self/fd/%d", destination.directory.Fd())
-	temporary, err := os.CreateTemp(descriptorPath, "."+destination.name+".rufusarm64-partial-*")
+	temporary, err := os.CreateTemp(descriptorPath(destination.directory), "."+destination.name+".rufusarm64-partial-*")
 	if err != nil {
 		return nil, "", fmt.Errorf("create backup temporary destination: %w", err)
 	}
