@@ -4,8 +4,10 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geocausa/RufusArm64/internal/device"
+	"github.com/geocausa/RufusArm64/internal/drivebackup"
 )
 
 func TestRunValidatesArgumentsBeforeDeviceAccess(t *testing.T) {
@@ -20,6 +22,8 @@ func TestRunValidatesArgumentsBeforeDeviceAccess(t *testing.T) {
 		{name: "yes without identity", args: []string{"--device", "/dev/does-not-exist", "--output", "/tmp/out.img", "--yes"}, want: "--yes requires --expected-identity"},
 		{name: "fixed without identity", args: []string{"--device", "/dev/does-not-exist", "--output", "/tmp/out.img", "--allow-fixed"}, want: "--allow-fixed requires --expected-identity"},
 		{name: "json run without yes", args: []string{"--device", "/dev/does-not-exist", "--output", "/tmp/out.img", "--json", "--expected-identity", "token"}, want: "non-dry-run --json requires --yes"},
+		{name: "progress without json", args: []string{"--device", "/dev/does-not-exist", "--output", "/tmp/out.img", "--progress-json"}, want: "--progress-json requires non-dry-run --json"},
+		{name: "progress on dry run", args: []string{"--device", "/dev/does-not-exist", "--output", "/tmp/out.img", "--dry-run", "--json", "--progress-json"}, want: "--progress-json requires non-dry-run --json"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			err := run(test.args)
@@ -102,5 +106,26 @@ func TestHumanBytes(t *testing.T) {
 		if got := humanBytes(value); got != want {
 			t.Fatalf("humanBytes(%d) = %q, want %q", value, got, want)
 		}
+	}
+}
+
+func TestMakeProgressEvent(t *testing.T) {
+	event := makeProgressEvent(drivebackup.Progress{Done: 512, Total: 1024}, 2*time.Second)
+	if event.Schema != 1 || event.Type != "progress" {
+		t.Fatalf("unexpected progress envelope: %#v", event)
+	}
+	if event.Done != 512 || event.Total != 1024 || event.ElapsedMS != 2000 {
+		t.Fatalf("unexpected progress accounting: %#v", event)
+	}
+	if event.BytesPerSecond != 256 {
+		t.Fatalf("bytes_per_second = %d, want 256", event.BytesPerSecond)
+	}
+	if event.ETASeconds == nil || *event.ETASeconds != 2 {
+		t.Fatalf("eta_seconds = %v, want 2", event.ETASeconds)
+	}
+
+	complete := makeProgressEvent(drivebackup.Progress{Done: 1024, Total: 1024}, time.Second)
+	if complete.ETASeconds != nil {
+		t.Fatalf("completed progress must omit ETA: %#v", complete)
 	}
 }
