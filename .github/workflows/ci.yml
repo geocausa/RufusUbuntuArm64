@@ -118,7 +118,7 @@ jobs:
           echo "${audit_bin}" >> "${GITHUB_PATH}"
       - name: Run pinned static, workflow, and vulnerability checks
         run: bash ./scripts/static-audit.sh
-      - name: Exercise inherited formatter descriptors on a real loop device
+      - name: Exercise privileged loop-device invariants
         env:
           RUFUS_REAL_BLOCK_TEST: '1'
         run: |
@@ -127,6 +127,11 @@ jobs:
           sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
             "${RUNNER_TEMP}/safety-loop.test" \
             -test.run '^TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop$' \
+            -test.v
+          go test -c -o "${RUNNER_TEMP}/devicequal-loop.test" ./internal/devicequal
+          sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
+            "${RUNNER_TEMP}/devicequal-loop.test" \
+            -test.run '^TestRunDeviceQualifiesRealLoopDevice$' \
             -test.v
       - name: Resolve traceable build version
         id: version
