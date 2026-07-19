@@ -20,8 +20,12 @@ jobs:
       - name: Wire, test, and push the GTK workflow
         shell: bash
         run: |
-          set -euxo pipefail
-          python3 <<'PY'
+          set -u
+          log="${RUNNER_TEMP}/device-qualification-gui.log"
+          status=0
+          {
+            set -euxo pipefail
+            python3 <<'PY'
           from pathlib import Path
 
           gui = Path('gui/rufusarm64.py')
@@ -32,14 +36,12 @@ jobs:
               if text.count(import_line) != 1:
                   raise SystemExit('checksum import anchor mismatch')
               text = text.replace(import_line, import_line + dialog_import, 1)
-
           constant = 'DEVICE_QUALIFY = "/usr/bin/rufusarm64-device-qualify"\n'
           anchor = 'PERSISTENCE_HELPER = "/usr/lib/rufusarm64/rufusarm64-persistence-helper"\n'
           if constant not in text:
               if text.count(anchor) != 1:
                   raise SystemExit('qualification constant anchor mismatch')
               text = text.replace(anchor, anchor + constant, 1)
-
           old_target = '''        self.refresh_button = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
           self.refresh_button.set_tooltip_text("Refresh connected USB drives")
           self.refresh_button.connect("clicked", lambda *_: self.refresh_devices())
@@ -60,7 +62,6 @@ jobs:
               if text.count(old_target) != 1:
                   raise SystemExit('USB action row anchor mismatch')
               text = text.replace(old_target, new_target, 1)
-
           method = '''    def open_device_qualification(self, *_):
               if self.busy:
                   return
@@ -120,16 +121,23 @@ jobs:
               text = text.replace(installed_anchor, installed_add, 1)
           tests.write_text(text, encoding='utf-8')
           PY
+            python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_device_qualify.py gui/rufusarm64_device_qualify_dialog.py
+            PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
+            bash -n scripts/build-deb.sh scripts/test.sh
+          } >"${log}" 2>&1 || status=$?
 
-          python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_device_qualify.py gui/rufusarm64_device_qualify_dialog.py
-          PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
-          bash -n scripts/build-deb.sh scripts/test.sh
-
-          if git diff --quiet -- gui/rufusarm64.py scripts/build-deb.sh scripts/test.sh; then
-            exit 0
-          fi
           git config user.name 'RufusArm64 CI'
           git config user.email 'actions@users.noreply.github.com'
-          git add gui/rufusarm64.py scripts/build-deb.sh scripts/test.sh
-          git commit -m 'gui: expose identity-bound USB qualification dialog'
+          if [[ "${status}" -eq 0 ]]; then
+            if git diff --quiet -- gui/rufusarm64.py scripts/build-deb.sh scripts/test.sh; then
+              exit 0
+            fi
+            git add gui/rufusarm64.py scripts/build-deb.sh scripts/test.sh
+            git commit -m 'gui: expose identity-bound USB qualification dialog'
+          else
+            cp "${log}" gui-integration-failure.log
+            git add gui-integration-failure.log
+            git commit -m 'ci: record GTK qualification integration failure'
+          fi
           git push origin HEAD:feature/device-qualification-gui
+          exit "${status}"
