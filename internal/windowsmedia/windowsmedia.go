@@ -283,7 +283,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 	}
 	customizations := opts.Customizations
 	customizations.LoadDrivers = plan.DriverFolder != ""
-	plan.AnswerFile, err = windowsconfig.Generate(plan.Architecture, customizations)
+	plan.AnswerFile, err = preparePlanAnswerFile(ctx, plan, customizations, PrepareCustomizations)
 	if err != nil {
 		return fmt.Errorf("prepare Windows setup options: %w", err)
 	}

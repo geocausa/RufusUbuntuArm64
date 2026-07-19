@@ -105,16 +105,71 @@ def current_regional_settings():
     return locale_value, windows_timezone_for_iana(iana_zone), iana_zone
 
 
+def build_windows_analyze_command(pkexec_path, helper, image, source_identity, cancel_path):
+    if not all((pkexec_path, helper, image, source_identity, cancel_path)):
+        raise ValueError("Windows capability analysis requires an image identity and cancellation channel.")
+    return [
+        pkexec_path,
+        helper,
+        "windows",
+        "analyze",
+        "--image",
+        image,
+        "--expected-source-identity",
+        source_identity,
+        "--cancel-file",
+        cancel_path,
+        "--json",
+    ]
+
+
+def normalize_windows_capability_analysis(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Windows capability analysis returned invalid data.")
+    capabilities = payload.get("capabilities")
+    metadata = payload.get("metadata") or {}
+    if not isinstance(capabilities, dict) or not isinstance(metadata, dict):
+        raise ValueError("Windows capability analysis is missing metadata or capabilities.")
+    normalized = dict(payload)
+    normalized["metadata"] = metadata
+    normalized["capabilities"] = capabilities
+    return normalized
+
+
+def unavailable_windows_capability_analysis(reason):
+    reason = str(reason or "Windows setup capabilities could not be identified.")
+    disabled = {"enabled": False, "reason": reason}
+    return {
+        "metadata": {},
+        "capabilities": {
+            "recognized": False,
+            "reason": reason,
+            "bypass_hardware_checks": dict(disabled),
+            "bypass_online_account": dict(disabled),
+            "local_account": dict(disabled),
+            "reduce_data_collection": dict(disabled),
+            "disable_bitlocker": dict(disabled),
+            "load_drivers": dict(disabled),
+            "locale": dict(disabled),
+            "time_zone": dict(disabled),
+        },
+    }
+
+
 class WindowsOptionsDialog(Gtk.Dialog):
     """Explicit opt-in Windows Setup customizations."""
 
-    def __init__(self, parent, previous=None):
+    def __init__(self, parent, previous=None, capability_analysis=None):
         super().__init__(title="Windows installation options", transient_for=parent, modal=True)
         self.add_button("Cancel", Gtk.ResponseType.CANCEL)
         self.add_button("Continue", Gtk.ResponseType.OK)
         self.set_default_response(Gtk.ResponseType.OK)
         self.set_default_size(620, 560)
         previous = dict(previous or {})
+        self.capability_analysis = capability_analysis or unavailable_windows_capability_analysis(
+            "Windows setup capabilities have not been analyzed."
+        )
+        self.capabilities = self.capability_analysis.get("capabilities") or {}
 
         scroll = Gtk.ScrolledWindow()
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -139,6 +194,12 @@ class WindowsOptionsDialog(Gtk.Dialog):
         intro.set_xalign(0)
         intro.set_line_wrap(True)
         box.pack_start(intro, False, False, 0)
+
+        capability_summary = Gtk.Label(label=self.capability_summary())
+        capability_summary.set_xalign(0)
+        capability_summary.set_line_wrap(True)
+        capability_summary.get_style_context().add_class("dim-label")
+        box.pack_start(capability_summary, False, False, 0)
 
         self.bypass_hardware = self.check(
             box,
@@ -167,8 +228,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
         account_row.pack_start(account_label, False, False, 0)
         account_row.pack_start(self.local_user, True, True, 0)
         box.pack_start(account_row, False, False, 0)
-        self.local_account.connect("toggled", lambda button: self.local_user.set_sensitive(button.get_active()))
-        self.local_user.set_sensitive(self.local_account.get_active())
+        self.local_account.connect("toggled", lambda *_: self.update_local_user_sensitivity())
 
         self.reduce_data = self.check(
             box,
@@ -200,6 +260,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
             "Does not decrypt an existing installation. It prevents automatic encryption during this new setup where supported.",
             previous.get("disable_bitlocker", False),
         )
+        self.apply_capabilities()
 
         warning = Gtk.InfoBar()
         warning.set_message_type(Gtk.MessageType.INFO)
@@ -214,6 +275,61 @@ class WindowsOptionsDialog(Gtk.Dialog):
         warning.get_content_area().add(note)
         box.pack_start(warning, False, False, 0)
         self.show_all()
+
+    def capability_summary(self):
+        capabilities = self.capabilities
+        if capabilities.get("recognized"):
+            generation = capabilities.get("generation") or "unknown generation"
+            family = capabilities.get("family") or "unknown family"
+            architecture = capabilities.get("architecture") or "unknown architecture"
+            return f"Detected Windows {generation} {family} media ({architecture}). Unsupported options are disabled below."
+        return "Setup customizations are unavailable: " + str(
+            capabilities.get("reason") or "the Windows version and architecture could not be identified safely."
+        )
+
+    def option_capability(self, key):
+        capability = self.capabilities.get(key)
+        if isinstance(capability, dict):
+            return bool(capability.get("enabled")), str(capability.get("reason") or "")
+        reason = self.capabilities.get("reason") or "This option is not supported by the selected Windows media."
+        return False, str(reason)
+
+    def apply_option_capability(self, widget, key):
+        enabled, reason = self.option_capability(key)
+        if not enabled:
+            widget.set_active(False)
+        widget.set_sensitive(enabled)
+        if reason:
+            widget.set_tooltip_text(reason)
+        return enabled
+
+    def apply_capabilities(self):
+        self.apply_option_capability(self.bypass_hardware, "bypass_hardware_checks")
+        self.apply_option_capability(self.bypass_online, "bypass_online_account")
+        self.local_account_allowed = self.apply_option_capability(self.local_account, "local_account")
+        self.apply_option_capability(self.reduce_data, "reduce_data_collection")
+        self.apply_option_capability(self.disable_bitlocker, "disable_bitlocker")
+        regional_keys = []
+        if self.region_locale:
+            regional_keys.append("locale")
+        if self.region_timezone:
+            regional_keys.append("time_zone")
+        regional_allowed = bool(regional_keys)
+        regional_reasons = []
+        for key in regional_keys:
+            enabled, reason = self.option_capability(key)
+            regional_allowed = regional_allowed and enabled
+            if reason:
+                regional_reasons.append(reason)
+        if not regional_allowed:
+            self.use_region.set_active(False)
+        self.use_region.set_sensitive(regional_allowed)
+        if regional_reasons:
+            self.use_region.set_tooltip_text("; ".join(dict.fromkeys(regional_reasons)))
+        self.update_local_user_sensitivity()
+
+    def update_local_user_sensitivity(self):
+        self.local_user.set_sensitive(bool(getattr(self, "local_account_allowed", False)) and self.local_account.get_active())
 
     @staticmethod
     def check(parent, title, detail, active):
@@ -866,6 +982,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.cancel_path = None
         self.inspection = {}
         self.windows_options = {}
+        self.windows_capability_analysis = {}
         self.last_status_key = None
         self.active_verify_requested = False
         self.active_mode = ""
@@ -1393,6 +1510,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.inspection_running = False
         self.inspection = {}
         self.windows_options = {}
+        self.windows_capability_analysis = {}
         if not path:
             self.update_layout({})
             self.set_busy(self.busy)
@@ -1934,8 +2052,65 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.set_busy(self.busy)
         return False
 
+    def analyze_windows_capabilities(self):
+        image = self.image_chooser.get_filename() or ""
+        try:
+            resolved_image, source_identity = inspect_source_identity(image)
+        except ValueError as exc:
+            return unavailable_windows_capability_analysis(exc)
+        if not os.path.isfile(PKEXEC) or not os.access(PKEXEC, os.X_OK):
+            return unavailable_windows_capability_analysis("Ubuntu administrator authentication (pkexec) is not installed.")
+        runtime_dir = f"/run/user/{os.getuid()}"
+        cancel_path = None
+        try:
+            fd, cancel_path = tempfile.mkstemp(prefix="rufusarm64-windows-", suffix=".cancel", dir=runtime_dir)
+            os.close(fd)
+            os.unlink(cancel_path)
+            command = build_windows_analyze_command(PKEXEC, helper_path(), resolved_image, source_identity, cancel_path)
+        except (OSError, ValueError) as exc:
+            return unavailable_windows_capability_analysis(exc)
+
+        result_holder = {}
+        progress_dialog = Gtk.Dialog(title="Checking Windows setup capabilities", transient_for=self, modal=True)
+        progress_dialog.set_deletable(False)
+        progress_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        progress_box.set_border_width(18)
+        spinner = Gtk.Spinner()
+        spinner.start()
+        progress_label = Gtk.Label(label="Requesting permission for a read-only Windows ISO analysis…")
+        progress_label.set_line_wrap(True)
+        progress_box.pack_start(spinner, False, False, 0)
+        progress_box.pack_start(progress_label, False, False, 0)
+        progress_dialog.get_content_area().pack_start(progress_box, True, True, 0)
+        progress_dialog.show_all()
+
+        def worker():
+            try:
+                completed = subprocess.run(command, text=True, capture_output=True, timeout=150)
+                if completed.returncode != 0:
+                    raise RuntimeError(completed.stderr.strip() or completed.stdout.strip() or "Windows capability analysis failed.")
+                result_holder["analysis"] = normalize_windows_capability_analysis(json.loads(completed.stdout))
+            except Exception as exc:
+                result_holder["analysis"] = unavailable_windows_capability_analysis(exc)
+            GLib.idle_add(progress_dialog.response, Gtk.ResponseType.OK)
+
+        threading.Thread(target=worker, daemon=True).start()
+        progress_dialog.run()
+        progress_dialog.destroy()
+        if cancel_path:
+            try:
+                os.unlink(cancel_path)
+            except FileNotFoundError:
+                pass
+        analysis = result_holder.get("analysis") or unavailable_windows_capability_analysis(
+            "Windows capability analysis returned no result."
+        )
+        self.append_log("Windows capability analysis:\n" + json.dumps(analysis, indent=2, sort_keys=True))
+        return analysis
+
     def choose_windows_options(self):
-        dialog = WindowsOptionsDialog(self, self.windows_options)
+        self.windows_capability_analysis = self.analyze_windows_capabilities()
+        dialog = WindowsOptionsDialog(self, self.windows_options, self.windows_capability_analysis)
         while True:
             response = dialog.run()
             if response != Gtk.ResponseType.OK:

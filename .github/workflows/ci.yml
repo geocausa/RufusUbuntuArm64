@@ -128,12 +128,22 @@ jobs:
             "${RUNNER_TEMP}/safety-loop.test" \
             -test.run '^TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop$' \
             -test.v
-      - name: Read canonical project version
+      - name: Resolve traceable build version
         id: version
         if: success()
         run: |
-          version="$(tr -d '\r\n' < VERSION)"
+          project_version="$(tr -d '\r\n' < VERSION)"
+          version="${project_version}"
+          allow_nonrelease=0
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            pr_number="$(python3 -c 'import json,os; print(json.load(open(os.environ["GITHUB_EVENT_PATH"]))["number"])')"
+            head_sha="$(python3 -c 'import json,os; print(json.load(open(os.environ["GITHUB_EVENT_PATH"]))["pull_request"]["head"]["sha"])')"
+            version="${project_version}+pr${pr_number}.${head_sha:0:8}"
+            allow_nonrelease=1
+          fi
+          dpkg --validate-version "${version}"
           echo "VERSION=${version}" >> "$GITHUB_ENV"
+          echo "RUFUS_ALLOW_NONRELEASE_VERSION=${allow_nonrelease}" >> "$GITHUB_ENV"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
       - name: Full test, audit, and ARM64 package pass
         if: success()
@@ -183,11 +193,21 @@ jobs:
         with:
           name: uefi-md5sum-arm64
           path: vendor/uefi-md5sum/arm64
-      - name: Read canonical project version
+      - name: Resolve traceable build version
         id: version
         run: |
-          version="$(tr -d '\r\n' < VERSION)"
+          project_version="$(tr -d '\r\n' < VERSION)"
+          version="${project_version}"
+          allow_nonrelease=0
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            pr_number="$(python3 -c 'import json,os; print(json.load(open(os.environ["GITHUB_EVENT_PATH"]))["number"])')"
+            head_sha="$(python3 -c 'import json,os; print(json.load(open(os.environ["GITHUB_EVENT_PATH"]))["pull_request"]["head"]["sha"])')"
+            version="${project_version}+pr${pr_number}.${head_sha:0:8}"
+            allow_nonrelease=1
+          fi
+          dpkg --validate-version "${version}"
           echo "VERSION=${version}" >> "$GITHUB_ENV"
+          echo "RUFUS_ALLOW_NONRELEASE_VERSION=${allow_nonrelease}" >> "$GITHUB_ENV"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
       - name: Run the complete suite natively on ARM64
         run: |
