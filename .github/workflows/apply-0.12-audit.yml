@@ -1,0 +1,70 @@
+name: Apply 0.12 audit patch
+
+on:
+  push:
+    branches: [release/0.12.0]
+    paths:
+      - .github/workflows/apply-0.12-audit.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-0.12-audit
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.repository == 'geocausa/RufusUbuntuArm64'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: release/0.12.0
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - name: Apply audited release patch
+        run: |
+          set -euo pipefail
+          base64 -d .github/audit-patches/012-small.py.gz.b64 | gzip -d > /tmp/apply-0.12.py
+          python3 -m py_compile /tmp/apply-0.12.py
+          python3 /tmp/apply-0.12.py
+          gofmt -w \
+            internal/drivebackup/owner_linux.go \
+            internal/drivebackup/owner_linux_test.go \
+            internal/drivebackup/executor_linux.go \
+            cmd/rufus-device-backup/main.go \
+            cmd/rufus-device-backup/main_test.go \
+            cmd/rufus-device-backup/package_test.go
+          python3 -m py_compile \
+            gui/rufusarm64_device_qualify.py \
+            gui/rufusarm64_device_qualify_dialog.py \
+            gui/test_device_backup.py \
+            gui/test_device_backup_dialog.py \
+            scripts/check-version-sync.py
+      - name: Run focused audit regressions
+        run: |
+          set -euo pipefail
+          PYTHONPATH=gui python3 -m unittest \
+            gui/test_device_backup.py \
+            gui/test_device_backup_dialog.py
+          go test ./internal/drivebackup ./cmd/rufus-device-backup
+          python3 scripts/check-version-sync.py
+          python3 scripts/check-release-runtime-integrity.py
+      - name: Commit audited release tree
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'Audit patch produced no changes.' >&2
+            exit 1
+          fi
+          git commit -m 'Release: audit and prepare 0.12.0'
+          git push origin HEAD:release/0.12.0
