@@ -217,7 +217,7 @@ func validateCommon(ctx context.Context, source io.ReaderAt, size uint64, config
 		return fail(report, "invalid_size", 0, false, errors.New("backup size exceeds the supported offset range"))
 	}
 	if config.BufferSize < 0 || config.BufferSize > maxBufferSize {
-		return fail(report, "invalid_buffer", 0, false, fmt.Errorf("backup buffer size must be between 1 and %d bytes", maxBufferSize))
+		return fail(report, "invalid_buffer", 0, false, fmt.Errorf("backup buffer size must be zero for the default or no more than %d bytes", maxBufferSize))
 	}
 	if err := ctx.Err(); err != nil {
 		return cancel(report, 0, err)
@@ -234,6 +234,7 @@ func emit(progress ProgressFunc, done, total uint64) {
 func cancel(report Report, offset uint64, err error) (Report, error) {
 	report.Status = StatusCancelled
 	report.CompletedBytes = offset
+	report.SHA256 = ""
 	offsetCopy := offset
 	report.Failure = &Failure{Kind: "cancelled", Message: err.Error(), ByteOffset: &offsetCopy}
 	return report, err
@@ -241,6 +242,7 @@ func cancel(report Report, offset uint64, err error) (Report, error) {
 
 func fail(report Report, kind string, offset uint64, includeOffset bool, err error) (Report, error) {
 	report.Status = StatusFailed
+	report.SHA256 = ""
 	if offset > report.CompletedBytes {
 		report.CompletedBytes = offset
 	}
