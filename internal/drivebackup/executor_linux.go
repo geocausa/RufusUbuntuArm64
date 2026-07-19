@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"unsafe"
 
@@ -16,8 +17,10 @@ import (
 )
 
 const (
-	atFDCWD         = ^uintptr(99)
-	renameNoReplace = 1
+	atFDCWD               = ^uintptr(99)
+	renameNoReplace       = 1
+	sysRenameat2AMD64     = 316
+	sysRenameat2ARM64     = 276
 )
 
 // DeviceOptions binds a capture to one already validated whole-device identity.
@@ -173,6 +176,10 @@ func ensureFreeSpace(path string, required uint64) error {
 }
 
 func publishNoReplace(temporaryPath, outputPath string) error {
+	syscallNumber, err := renameat2SyscallNumber()
+	if err != nil {
+		return err
+	}
 	temporaryPointer, err := syscall.BytePtrFromString(temporaryPath)
 	if err != nil {
 		return fmt.Errorf("encode backup temporary path: %w", err)
@@ -182,7 +189,7 @@ func publishNoReplace(temporaryPath, outputPath string) error {
 		return fmt.Errorf("encode backup destination path: %w", err)
 	}
 	_, _, errno := syscall.Syscall6(
-		syscall.SYS_RENAMEAT2,
+		syscallNumber,
 		atFDCWD,
 		uintptr(unsafe.Pointer(temporaryPointer)),
 		atFDCWD,
@@ -199,6 +206,17 @@ func publishNoReplace(temporaryPath, outputPath string) error {
 		return fmt.Errorf("sync backup destination directory: %w", err)
 	}
 	return nil
+}
+
+func renameat2SyscallNumber() (uintptr, error) {
+	switch runtime.GOARCH {
+	case "amd64":
+		return sysRenameat2AMD64, nil
+	case "arm64":
+		return sysRenameat2ARM64, nil
+	default:
+		return 0, fmt.Errorf("atomic no-replace backup publication is unsupported on linux/%s", runtime.GOARCH)
+	}
 }
 
 func syncDirectory(path string) error {
