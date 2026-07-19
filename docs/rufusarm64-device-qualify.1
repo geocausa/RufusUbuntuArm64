@@ -1,0 +1,74 @@
+.TH RUFUSARM64-DEVICE-QUALIFY 1 "19 July 2026" "RufusArm64 0.11.0" "User Commands"
+.SH NAME
+rufusarm64-device-qualify \- destructively test removable-media capacity and readback
+.SH SYNOPSIS
+.B sudo rufusarm64-device-qualify
+.BI --device " /dev/DEVICE"
+.RI [ options ]
+.br
+.B rufusarm64-device-qualify
+.BI --device " /dev/DEVICE"
+.B --dry-run
+.RI [ --json ]
+.SH DESCRIPTION
+.B rufusarm64-device-qualify
+runs the RufusArm64 address-pattern qualification engine against one explicitly
+selected whole device. It is separate from the normal image writer.
+.PP
+The command is destructive. Every tested region is overwritten and previous
+content is not restored. The target is validated as a whole disk, checked against
+the running system disk, bound to the listed identity and live capacity, opened
+exclusively, locked, flushed through the held descriptor, and revalidated during
+the run.
+.SH OPTIONS
+.TP
+.BI --device " PATH"
+Select the exact whole-disk device. Required.
+.TP
+.BI --profile " quick|full"
+Select a bounded sampled test or a complete-capacity test. The default is
+.BR quick .
+.TP
+.BI --region-size " SIZE"
+Set the qualification region size. The default is 4 MiB.
+.TP
+.BI --expected-identity " TOKEN"
+Require the identity token returned by
+.BR "rufusarm64-cli list --json" .
+When omitted for a direct terminal invocation, the current listed identity is
+captured and revalidated before writing.
+.TP
+.B --dry-run
+Validate the target and print the plan without opening it for writing.
+.TP
+.B --json
+Emit one deterministic JSON plan or final report.
+.TP
+.B --no-unmount
+Refuse a target with mounted descendants instead of unmounting removable-media
+filesystems.
+.TP
+.B --allow-fixed
+Permit an explicitly selected non-removable whole disk. The running system disk
+remains refused.
+.TP
+.B --yes
+Skip the interactive
+.B ERASE /dev/DEVICE
+confirmation. Intended for controlled automation with an exact identity token.
+.TP
+.BR --version , " -v"
+Print the package version.
+.SH EXIT STATUS
+Zero indicates that all selected passes verified successfully. A nonzero status
+indicates refusal, cancellation, I/O failure, data mismatch, or detected aliasing.
+When
+.B --json
+is used, a completed report is emitted before a verification failure status.
+.SH SAFETY
+Do not use this utility on a device containing data that must be preserved. Use
+.B --dry-run
+first and verify the exact path, capacity, model, and identity token.
+.SH SEE ALSO
+.BR rufusarm64-cli (1),
+.BR rufusarm64 (1)
