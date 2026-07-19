@@ -1,16 +1,15 @@
 name: Apply device qualification contract fixes
 
 on:
-  pull_request:
+  push:
     branches:
-      - feature/windows-option-eligibility
+      - feature/device-qualification-foundation
 
 permissions:
   contents: write
 
 jobs:
   integrate:
-    if: github.head_ref == 'feature/device-qualification-foundation'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
