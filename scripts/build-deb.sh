@@ -49,6 +49,10 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
   go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \
   -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-persistence-helper" \
   "${ROOT_DIR}/cmd/rufus-persistence-helper"
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+  go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \
+  -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-device-qualify" \
+  "${ROOT_DIR}/cmd/rufus-device-qualify"
 
 install -Dm755 "${ROOT_DIR}/gui/rufusarm64.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64.py"
@@ -215,6 +219,8 @@ install -Dm755 "${ROOT_DIR}/packaging/rufusarm64-persistence" \
   "${PACKAGE_DIR}/usr/bin/rufusarm64-persistence"
 ln -s ../lib/rufusarm64/rufusarm64-helper \
   "${PACKAGE_DIR}/usr/bin/rufusarm64-cli"
+ln -s ../lib/rufusarm64/rufusarm64-device-qualify \
+  "${PACKAGE_DIR}/usr/bin/rufusarm64-device-qualify"
 install -Dm644 "${ROOT_DIR}/packaging/io.github.geocausa.RufusArm64.desktop" \
   "${PACKAGE_DIR}/usr/share/applications/io.github.geocausa.RufusArm64.desktop"
 install -Dm644 "${ROOT_DIR}/packaging/io.github.geocausa.RufusArm64.Persistence.desktop" \
@@ -246,7 +252,7 @@ install -Dm644 "${ROOT_DIR}/packaging/copyright" \
 install -Dm644 "${ROOT_DIR}/CHANGELOG.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/changelog"
 gzip -9n "${PACKAGE_DIR}/usr/share/doc/rufusarm64/changelog"
-for page in rufusarm64 rufusarm64-cli rufusarm64-persistence; do
+for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify; do
   install -Dm644 "${ROOT_DIR}/docs/${page}.1" \
     "${PACKAGE_DIR}/usr/share/man/man1/${page}.1"
   gzip -9n "${PACKAGE_DIR}/usr/share/man/man1/${page}.1"
