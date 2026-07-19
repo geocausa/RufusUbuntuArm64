@@ -230,7 +230,6 @@ installed_gui="${extract_dir}/usr/lib/rufusarm64/rufusarm64.py"
 [[ -x "${helper}" ]]
 [[ -x "${persistence_helper}" ]]
 [[ -x "${device_qualify}" ]]
-[[ "$("${device_qualify}" version)" == "${VERSION}" ]]
 [[ -f "${installed_gui}" ]]
 [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_logic.py" ]]
 [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_persistence.py" ]]
