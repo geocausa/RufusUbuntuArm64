@@ -77,11 +77,14 @@ func TestRunDeviceQualifiesRealLoopDevice(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output, err := exec.Command("losetup", "--find", "--show", "--", backing).CombinedOutput()
+	output, err := exec.Command("losetup", "--find", "--show", backing).CombinedOutput()
 	if err != nil {
 		t.Fatalf("attach loop device: %v: %s", err, strings.TrimSpace(string(output)))
 	}
 	loopPath := strings.TrimSpace(string(output))
+	if !strings.HasPrefix(loopPath, "/dev/loop") {
+		t.Fatalf("losetup returned unexpected path %q", loopPath)
+	}
 	t.Cleanup(func() {
 		if detachOutput, detachErr := exec.Command("losetup", "--detach", loopPath).CombinedOutput(); detachErr != nil {
 			t.Logf("detach %s: %v: %s", loopPath, detachErr, strings.TrimSpace(string(detachOutput)))
@@ -92,7 +95,6 @@ func TestRunDeviceQualifiesRealLoopDevice(t *testing.T) {
 			t.Logf("udevadm settle: %v: %s", settleErr, strings.TrimSpace(string(settleOutput)))
 		}
 	}
-	waitForLoopDeviceLock(t, loopPath)
 
 	deviceID, err := safety.KernelDeviceID(loopPath)
 	if err != nil {
@@ -109,6 +111,11 @@ func TestRunDeviceQualifiesRealLoopDevice(t *testing.T) {
 	if capacity != size {
 		t.Fatalf("loop capacity = %d, want %d", capacity, size)
 	}
+
+	// Metadata probes can briefly hold the advisory lock. Wait only after every
+	// probe is complete so RunDevice receives the same uncontended state expected
+	// from the production pre-destructive sequence.
+	waitForLoopDeviceLock(t, loopPath)
 
 	beforeCalls := 0
 	report, err := RunDevice(context.Background(), loopPath, DeviceOptions{
