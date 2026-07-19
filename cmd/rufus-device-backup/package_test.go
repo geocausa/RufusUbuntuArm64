@@ -32,7 +32,7 @@ func TestBackupCommandPackageContract(t *testing.T) {
 			path: filepath.Join(root, "docs", "rufusarm64-device-backup.1"),
 			parts: []string{
 				`.TH RUFUSARM64-DEVICE-BACKUP 1`,
-				`renameat2`,
+				`Existing destination files are never replaced`,
 				`--expected-identity`,
 			},
 		},
