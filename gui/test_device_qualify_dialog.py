@@ -1,3 +1,4 @@
+import ast
 import pathlib
 import unittest
 
@@ -6,6 +7,9 @@ class DeviceQualificationDialogStructureTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source = pathlib.Path(__file__).with_name("rufusarm64_device_qualify_dialog.py").read_text(encoding="utf-8")
+
+    def test_dialog_source_is_valid_python(self):
+        ast.parse(self.source)
 
     def test_dialog_is_separate_from_create_usb(self):
         self.assertIn("class DeviceQualificationDialog(Gtk.Dialog):", self.source)
