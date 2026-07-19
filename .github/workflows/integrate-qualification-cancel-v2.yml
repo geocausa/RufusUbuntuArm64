@@ -1,0 +1,110 @@
+name: Integrate qualification cancellation v2
+
+on:
+  push:
+    branches:
+      - feature/device-qualification-gtk
+
+permissions:
+  contents: write
+
+concurrency:
+  group: integrate-qualification-cancel-v2
+  cancel-in-progress: false
+
+jobs:
+  integrate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: feature/device-qualification-gtk
+          fetch-depth: 0
+      - name: Wire public cancellation path
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              text = path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: replacement count {count}, want 1")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          main = Path("gui/rufusarm64.py")
+          replace_once(
+              main,
+              '        self.cancel_button.set_sensitive(busy and self.active_job in {"writer", "download", "persistence-plan"})\n',
+              '        self.cancel_button.set_sensitive(busy and self.active_job in {"writer", "download", "persistence-plan", "qualification"})\n',
+          )
+          replace_once(
+              main,
+              "    def cancel(self, *_):\n"
+              "        if not self.busy:\n"
+              "            return\n"
+              "        self.cancel_requested = True\n",
+              "    def cancel(self, *_):\n"
+              "        if not self.busy:\n"
+              "            return\n"
+              "        if self.active_job == \"qualification\":\n"
+              "            dialog = getattr(self, \"qualification_dialog\", None)\n"
+              "            if dialog is not None:\n"
+              "                dialog.request_cancel()\n"
+              "            return\n"
+              "        self.cancel_requested = True\n",
+          )
+
+          dialog = Path("gui/rufusarm64_device_qualify_dialog.py")
+          replace_once(
+              dialog,
+              "    def _cancel_clicked(self, *_):\n"
+              "        if not self.running:\n"
+              "            return\n"
+              "        self.cancel_requested = True\n"
+              "        self.cancel_button.set_sensitive(False)\n"
+              "        self.status.set_text(\"Cancelling safely after the current I/O operation…\")\n"
+              "        process = self.process\n"
+              "        if process is not None:\n"
+              "            self._terminate_process(process)\n",
+              "    def request_cancel(self):\n"
+              "        if not self.running:\n"
+              "            return\n"
+              "        self.cancel_requested = True\n"
+              "        self.cancel_button.set_sensitive(False)\n"
+              "        self.status.set_text(\"Cancelling safely after the current I/O operation…\")\n"
+              "        process = self.process\n"
+              "        if process is not None:\n"
+              "            self._terminate_process(process)\n"
+              "\n"
+              "    def _cancel_clicked(self, *_):\n"
+              "        self.request_cancel()\n",
+          )
+          replace_once(
+              dialog,
+              "    def _delete_event(self, *_):\n"
+              "        if self.running:\n"
+              "            self._cancel_clicked()\n"
+              "            return True\n",
+              "    def _delete_event(self, *_):\n"
+              "        if self.running:\n"
+              "            self.request_cancel()\n"
+              "            return True\n",
+          )
+          PY
+
+          python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_device_qualify_dialog.py
+          PYTHONPATH=gui python3 -m unittest gui/test_device_qualify_logic.py gui/test_device_qualify_source.py
+
+          git config user.name 'RufusArm64 CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm \
+            .github/workflows/integrate-qualification-cancel.yml \
+            .github/workflows/integrate-qualification-cancel-v2.yml \
+            docs/.pr102-cancel-trigger docs/.pr102-cancel-v2-trigger
+          git add gui/rufusarm64.py gui/rufusarm64_device_qualify_dialog.py
+          git commit -m 'gui: unify qualification cancellation controls'
+          git push origin HEAD:feature/device-qualification-gtk
