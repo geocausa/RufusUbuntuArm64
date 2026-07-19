@@ -75,6 +75,13 @@
 - Pinned AArch64 QEMU success, corruption, and original-loader chainload qualification
 - Physical Surface Pro 11 and broader hardware qualification remains tracked under 0.5
 
+## 0.12 — Stage 1 guarded backup and product completion (completed)
+
+- Identity-bound command and GTK workflow for read-only removable-drive image capture
+- Exact destination planning and confirmation, progress, cancellation, SHA-256, atomic publication, and desktop ownership
+- Focused privilege, process-lifecycle, report-schema, launcher-isolation, native ARM64, and reproducible-package audit
+- Clean Stage 1 release package and rollback documentation; physical play-testing continues as field feedback
+
 ## 1.0 — supportable stable release
 
 - Signed release artifacts

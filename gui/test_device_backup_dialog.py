@@ -49,6 +49,8 @@ class DeviceBackupDialogStructureTests(unittest.TestCase):
         self.assertIn("backup_normalize_report", self.backup_class_source)
         self.assertIn("os.lstat(self.output_path)", self.backup_class_source)
         self.assertIn("stat.S_ISREG", self.backup_class_source)
+        self.assertIn("info.st_uid != os.getuid()", self.backup_class_source)
+        self.assertIn("Backup report status does not match", self.backup_class_source)
         self.assertIn("SHA-256", self.dialog_source)
 
     def test_cancel_and_close_target_only_the_owned_process_group(self):
@@ -56,6 +58,8 @@ class DeviceBackupDialogStructureTests(unittest.TestCase):
         self.assertIn("GLib.timeout_add_seconds(5, self._force_kill, process)", self.backup_class_source)
         self.assertIn("os.killpg(process.pid, signal.SIGKILL)", self.backup_class_source)
         self.assertIn("if self.process is process and process.poll() is None", self.backup_class_source)
+        self.assertIn("def _terminate_and_reap(process):", self.backup_class_source)
+        self.assertIn("process.communicate(timeout=5)", self.backup_class_source)
         self.assertIn("Closing requested. Cancelling", self.backup_class_source)
 
     def test_main_window_busy_state_and_refresh_are_mutually_exclusive(self):

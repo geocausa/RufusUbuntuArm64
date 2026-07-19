@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.0 — 2026-07-19
+
+- Added an identity-bound, read-only drive-to-image command and graphical **Save drive image…** workflow with destination planning, exact confirmation, progress, cancellation, SHA-256 reporting, atomic no-replace publication, and desktop-user ownership handoff.
+- Completed a focused Stage 1 code audit covering privilege boundaries, process lifecycle, report validation, package isolation, and release automation.
+- Refused graphical destinations unless the authenticated desktop user can create files in the held directory, preventing administrator authentication from becoming an arbitrary privileged file-creation service.
+- Made progress-channel failures cancel before publication and made exceptional GTK paths terminate, drain, escalate, and reap only their owned process group before releasing the application busy state.
+- Tightened schema validation so successful reports cannot contain failures, failed or cancelled reports require complete failure records, numeric fields remain exact integers, and GUI success requires matching exit status, size, regular-file type, and desktop ownership.
+- Preserved the unsigned UEFI runtime-integrity boundary: Secure Boot compatibility is not established, and physical hardware qualification remains separate from software and QEMU gates.
+
 ## 0.11.0 — 2026-07-18
 
 - Added a descriptor-rooted, bounded UEFI media analyzer for fallback-loader architecture, PE/COFF structure, DBX revocations, SBAT metadata, trusted local or firmware SBAT levels, and structured CLI/GTK reporting.

@@ -12,12 +12,13 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 - Signed image-catalog verification, threshold-root channel foundations, rollback protection, and checksum-gated downloads.
 - A guarded graphical workflow for persistent Ubuntu casper and Debian live-boot USB media, exposed through the single RufusArm64 application entry.
 - Descriptor-safe UEFI, DBX, and SBAT analysis plus optional ARM64 boot-time media-integrity validation for the supported persistent writable-copy path.
+- A guarded **Save drive image…** workflow that captures a selected removable drive read-only into a new SHA-256-reported image without replacing existing files.
 - Whole-device, source-identity, target-identity, mount, system-disk, cancellation, filesystem, and post-copy verification safeguards.
 
 ## Install on Ubuntu ARM64
 
 ```bash
-sudo apt install ./rufusarm64_0.11.0_arm64.deb
+sudo apt install ./rufusarm64_0.12.0_arm64.deb
 ```
 
 The package upgrades older `rufusarm64` installations in place. One visible **RufusArm64** application entry is installed. Its normal launch opens the ordinary writer, and its **Create Persistent Live USB** desktop action opens the guarded persistence wizard.
@@ -38,7 +39,7 @@ The **Create USB** button in the ordinary writer always performs the normal imag
 
 ## Persistent Linux media
 
-Version 0.11.0 retains the separate guarded persistence wizard internally while presenting only one desktop application icon. Open it from the same RufusArm64 application entry using the **Create Persistent Live USB** action. The direct command remains available for troubleshooting:
+Version 0.12.0 retains the separate guarded persistence wizard internally while presenting only one desktop application icon. Open it from the same RufusArm64 application entry using the **Create Persistent Live USB** action. The direct command remains available for troubleshooting:
 
 ```text
 rufusarm64 --persistence
@@ -126,6 +127,14 @@ Automatic prefers FAT32 and splits a large Windows installation payload. NTFS is
 
 x86 and x86-64 media may additionally use MBR/BIOS when the ISO contains compatible boot files and a root `bootmgr`.
 
+## Save a drive image
+
+Select a removable drive and choose **Save drive image…** to create a byte-for-byte image on another physical disk. RufusArm64 plans the destination without elevation, displays the exact source identity and capacity, requires the exact `SAVE /dev/DEVICE TO /absolute/path/image.img` phrase, and then uses the package-owned read-only helper through Polkit.
+
+The final pathname appears only after the full source capacity is copied, synchronized, SHA-256 accounted, source and destination are revalidated, and ownership is handed to the desktop user. Existing files are never replaced. Cancellation and failures remove incomplete temporary output. The authenticated helper refuses destination directories in which the desktop user could not create a file without elevation.
+
+This workflow is read-only with respect to the source, but mounted source filesystems may be unmounted briefly for a coherent snapshot. **Create USB** and **Check USB…** remain separate operations and are disabled while capture is active.
+
 ## Safety model
 
 The privileged helpers:
@@ -153,7 +162,7 @@ Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, the ver
 The installer is produced at:
 
 ```text
-dist/rufusarm64_0.11.0_arm64.deb
+dist/rufusarm64_0.12.0_arm64.deb
 ```
 
 ## Command-line examples
@@ -176,7 +185,7 @@ sudo rufusarm64-cli write \
 
 The single visible graphical application entry supplies the ordinary writer and the persistent-live action while retaining separate guarded helpers internally. The selected-image **Checksums…** action calculates MD5, SHA-1, SHA-256, and SHA-512 through the unprivileged descriptor-bound helper without changing writer state; MD5 and SHA-1 are legacy comparison values only. The main window also provides a read-only **Validate UEFI Media…** dialog for mounted or extracted media; it reports fallback-loader, PE/EFI, DBX, and SBAT results, and can compare against either a trusted local SbatLevel CSV or the running shim firmware SBAT level without changing the write path.
 
-That pre-boot structural/Secure Boot analysis is separate from the boot-time media-integrity option. Version 0.11.0 also provides descriptor-safe manifest generation and verification through the unprivileged CLI and an opt-in transactional ARM64 wrapper in the guarded persistent-media workflow; the wrapper is unsigned and is not offered by other writer modes.
+That pre-boot structural/Secure Boot analysis is separate from the boot-time media-integrity option. Version 0.12.0 also provides descriptor-safe manifest generation and verification through the unprivileged CLI and an opt-in transactional ARM64 wrapper in the guarded persistent-media workflow; the wrapper is unsigned and is not offered by other writer modes.
 
 ## License
 

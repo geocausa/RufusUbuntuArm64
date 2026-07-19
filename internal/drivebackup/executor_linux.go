@@ -66,6 +66,9 @@ func CaptureDevice(ctx context.Context, sourcePath, outputPath string, options D
 		return fail(report, "destination_preflight", 0, false, err)
 	}
 	defer func() { _ = destination.directory.Close() }()
+	if err := validateGraphicalDestinationDirectory(destination.directory); err != nil {
+		return fail(report, "destination_permissions", 0, false, err)
+	}
 
 	source, err := os.OpenFile(sourcePath, os.O_RDONLY|syscall.O_EXCL|syscall.O_NOFOLLOW, 0)
 	if err != nil {

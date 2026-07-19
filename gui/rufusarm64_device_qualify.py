@@ -237,8 +237,25 @@ def backup_normalize_report(payload):
     elif sha256:
         raise ValueError("Failed or cancelled backup report must not claim a SHA-256 digest.")
     failure = value.get("failure")
-    if failure is not None and not isinstance(failure, dict):
-        raise ValueError("Drive-image backup report contains an invalid failure record.")
+    if status == "passed":
+        if failure is not None:
+            raise ValueError("Successful backup report must not include a failure record.")
+    else:
+        if not isinstance(failure, dict):
+            raise ValueError("Failed or cancelled backup report is missing its failure record.")
+        kind = str(failure.get("kind") or "").strip()
+        message = str(failure.get("message") or "").strip()
+        if not kind or not message:
+            raise ValueError("Backup failure record is incomplete.")
+        byte_offset = failure.get("byte_offset")
+        if byte_offset is not None:
+            byte_offset = _nonnegative_integer(byte_offset, "failure byte offset")
+            if byte_offset > completed:
+                raise ValueError("Backup failure offset exceeds the completed byte count.")
+        failure = dict(failure)
+        failure.update({"kind": kind, "message": message})
+        if byte_offset is not None:
+            failure["byte_offset"] = byte_offset
     normalized = dict(value)
     normalized.update(
         {
@@ -322,15 +339,11 @@ def _mapping(value, message):
 
 
 def _nonnegative_integer(value, label):
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"Backup {label} is invalid.")
-    try:
-        result = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"Backup {label} is invalid.") from exc
-    if result < 0:
+    if value < 0:
         raise ValueError(f"Backup {label} is invalid.")
-    return result
+    return value
 
 
 def _human_bytes(value):

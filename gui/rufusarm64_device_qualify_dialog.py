@@ -526,25 +526,46 @@ class DriveImageBackupDialog(Gtk.Dialog):
                 raise RuntimeError("Drive-image backup did not return its final report.")
             if payload["planned_bytes"] != planned:
                 raise ValueError("Backup report does not match the reviewed plan.")
-            if returncode != 0 and payload["status"] == "passed":
-                raise ValueError("Backup reported success but returned an error status.")
+            if (returncode == 0) != (payload["status"] == "passed"):
+                raise ValueError("Backup report status does not match the helper exit status.")
             if payload["status"] == "passed":
                 info = os.lstat(self.output_path)
-                if not stat.S_ISREG(info.st_mode) or info.st_size != payload["completed_bytes"]:
-                    raise ValueError("The completed destination file does not match the verified report.")
+                if (
+                    not stat.S_ISREG(info.st_mode)
+                    or info.st_size != payload["completed_bytes"]
+                    or info.st_uid != os.getuid()
+                ):
+                    raise ValueError("The completed destination file does not match the verified report or desktop user.")
             GLib.idle_add(self._run_ready, generation, payload, "\n".join(diagnostics), returncode)
         except Exception as exc:
             process = self.process
             self.process = None
-            if process and process.poll() is None:
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except (ProcessLookupError, PermissionError):
-                    pass
+            if process is not None:
+                self._terminate_and_reap(process)
             detail = str(exc)
             if diagnostics:
                 detail += "\n\nDiagnostics:\n" + "\n".join(diagnostics)
             GLib.idle_add(self._run_ready, generation, None, detail, returncode)
+
+    @staticmethod
+    def _terminate_and_reap(process):
+        """Stop and reap only the process group created for this backup."""
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+        try:
+            process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            try:
+                process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
 
     def _progress_ready(self, generation, progress):
         if self.closed or generation != self.run_generation or not self.running:

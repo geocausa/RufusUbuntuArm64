@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"math"
 	"strings"
 	"testing"
@@ -106,6 +108,30 @@ func TestHumanBytes(t *testing.T) {
 		if got := humanBytes(value); got != want {
 			t.Fatalf("humanBytes(%d) = %q, want %q", value, got, want)
 		}
+	}
+}
+
+type failingProgressWriter struct{}
+
+func (failingProgressWriter) Write([]byte) (int, error) {
+	return 0, errors.New("progress pipe closed")
+}
+
+func TestWriteJSONProgressFailureCancelsCapture(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	err := writeJSONProgressOrCancel(
+		failingProgressWriter{},
+		drivebackup.Progress{Done: 1, Total: 2},
+		time.Second,
+		cancel,
+	)
+	if err == nil {
+		t.Fatal("progress writer failure was ignored")
+	}
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("progress writer failure did not cancel capture")
 	}
 }
 
