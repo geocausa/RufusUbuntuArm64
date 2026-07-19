@@ -28,9 +28,12 @@ type DeviceOptions struct {
 	BeforeWrite      func(*os.File) error
 }
 
-// RunDevice opens and exclusively locks the exact selected block device, checks
-// its live kernel identity and capacity, performs one final caller-supplied
-// safety check, then runs the qualification engine through the held descriptor.
+// RunDevice opens the exact selected block device with the kernel-exclusive
+// read/write flag, checks its live identity and capacity, performs one final
+// caller-supplied safety check, then runs the qualification engine through the
+// same held descriptor. O_EXCL is the exclusivity boundary here; adding an
+// advisory flock to an O_RDWR|O_EXCL block-device descriptor is redundant and
+// is rejected by loop devices on Linux.
 func RunDevice(ctx context.Context, path string, options DeviceOptions) (Report, error) {
 	if ctx == nil {
 		return Report{}, errors.New("device qualification context is nil")
@@ -57,10 +60,6 @@ func RunDevice(ctx context.Context, path string, options DeviceOptions) (Report,
 	if err := safety.VerifyOpenDevice(file, options.ExpectedDeviceID, options.ExpectedSize); err != nil {
 		return Report{}, err
 	}
-	if err := safety.AcquireExclusiveFlock(ctx, file); err != nil {
-		return Report{}, fmt.Errorf("acquire exclusive qualification lock on target: %w", err)
-	}
-	defer func() { _ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN) }()
 
 	if options.BeforeWrite != nil {
 		if err := options.BeforeWrite(file); err != nil {
