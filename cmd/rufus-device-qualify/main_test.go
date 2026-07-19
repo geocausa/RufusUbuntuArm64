@@ -36,6 +36,9 @@ func TestRunValidatesArgumentsBeforeDeviceAccess(t *testing.T) {
 		{"--device", "/dev/does-not-exist", "extra"},
 		{"--device", "/dev/does-not-exist", "--profile", "invalid"},
 		{"--device", "/dev/does-not-exist", "--region-size", "0"},
+		{"--device", "/dev/does-not-exist", "--yes"},
+		{"--device", "/dev/does-not-exist", "--allow-fixed"},
+		{"--device", "/dev/does-not-exist", "--json"},
 	} {
 		if err := run(args); err == nil {
 			t.Fatalf("args %v: expected validation error", args)
