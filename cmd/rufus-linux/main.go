@@ -556,8 +556,15 @@ func runWrite(args []string) error {
 		}
 	}
 
-	targetCheck := func(source *os.File, expectedIdentity string) error {
-		fresh, currentID, err := safety.RevalidateTarget(resolved, expectedIdentity, *allowFixed)
+	targetCheck := func(source *os.File, requireSelectionIdentity bool) error {
+		var fresh device.BlockDevice
+		var currentID uint64
+		var err error
+		if requireSelectionIdentity {
+			fresh, currentID, err = safety.RevalidateTarget(resolved, selectedIdentity, *allowFixed)
+		} else {
+			fresh, currentID, err = safety.RevalidateOpenBoundTarget(resolved, kernelDeviceID, *allowFixed)
+		}
 		if err != nil {
 			return err
 		}
@@ -575,10 +582,10 @@ func runWrite(args []string) error {
 		return safety.EnsureNoMountedDescendants(resolved)
 	}
 	strictTargetCheck := func(source *os.File) error {
-		return targetCheck(source, selectedIdentity)
+		return targetCheck(source, true)
 	}
 	postWriteTargetCheck := func(source *os.File) error {
-		return targetCheck(source, selectedIdentity)
+		return targetCheck(source, false)
 	}
 
 	if selectedMode == "linux-persistent" {

@@ -14,5 +14,5 @@ Actions=PersistentLiveUSB;
 
 [Desktop Action PersistentLiveUSB]
 Name=Create Persistent Live USB
-Exec=rufusarm64 --persistence
+Exec=rufusarm64
 Icon=io.github.geocausa.RufusArm64

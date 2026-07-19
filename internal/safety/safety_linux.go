@@ -178,6 +178,29 @@ func RevalidateTarget(path, expectedIdentity string, allowFixed bool) (device.Bl
 	return dev, kernelID, nil
 }
 
+// RevalidateOpenBoundTarget is used only after the selected whole disk has been
+// opened and identity-bound. The pre-erase GUI snapshot is intentionally not
+// recomputed after RufusArm64 changes the disk layout. The live /dev path must
+// still resolve to the same kernel block device and pass the complete target
+// policy, while the writer independently verifies its held descriptor.
+func RevalidateOpenBoundTarget(path string, expectedKernelID uint64, allowFixed bool) (device.BlockDevice, uint64, error) {
+	dev, err := device.Find(path)
+	if err != nil {
+		return device.BlockDevice{}, 0, err
+	}
+	if err := ValidateTarget(path, dev, allowFixed); err != nil {
+		return device.BlockDevice{}, 0, err
+	}
+	kernelID, err := KernelDeviceID(path)
+	if err != nil {
+		return device.BlockDevice{}, 0, err
+	}
+	if expectedKernelID != 0 && kernelID != expectedKernelID {
+		return device.BlockDevice{}, 0, errors.New("the selected kernel device changed after confirmation")
+	}
+	return dev, kernelID, nil
+}
+
 func KernelDeviceID(path string) (uint64, error) {
 	info, err := os.Stat(path)
 	if err != nil {

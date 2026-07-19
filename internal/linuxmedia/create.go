@@ -241,18 +241,15 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 		if err := sourcefile.VerifyPinned(isoFile, opts.ExpectedSource); err != nil {
 			return err
 		}
-		if err := safety.VerifyOpenDevice(target, opts.ExpectedDeviceID, opts.TargetSize); err != nil {
-			return err
-		}
-		if opts.BeforeDestructive != nil {
-			if err := opts.BeforeDestructive(isoFile); err != nil {
-				return fmt.Errorf("target safety check: %w", err)
-			}
-		}
-		return nil
+		return safety.VerifyOpenDevice(target, opts.ExpectedDeviceID, opts.TargetSize)
 	}
 	if err := checkTarget(); err != nil {
 		return result, err
+	}
+	if opts.BeforeDestructive != nil {
+		if err := opts.BeforeDestructive(isoFile); err != nil {
+			return result, fmt.Errorf("target safety check: %w", err)
+		}
 	}
 
 	sendPersistent(emit, PersistentEvent{Stage: "partition", Message: "Creating a fresh GPT layout for writable Linux boot files and persistence…"})
@@ -299,7 +296,7 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 	bootFDPath := "/proc/self/fd/3"
 	sendPersistent(emit, PersistentEvent{Stage: "format", Message: fmt.Sprintf("Formatting the writable UEFI boot partition as FAT32 (%s)…", label)})
 	clusterSectors := fat32ClusterBytes / sectorSize
-	if err := runPersistentFile(ctx, emit, bootFile, "mkfs.vfat", "-F", "32", "-s", strconv.FormatUint(clusterSectors, 10), "-n", label, bootFDPath); err != nil {
+	if err := runPersistentFileUnlocked(ctx, emit, bootFile, "mkfs.vfat", "-F", "32", "-s", strconv.FormatUint(clusterSectors, 10), "-n", label, bootFDPath); err != nil {
 		return result, fmt.Errorf("format writable boot partition: %w", err)
 	}
 	if err := unmountPersistentDeviceMounts(ctx, bootPartition); err != nil {
@@ -828,6 +825,12 @@ func runPersistent(ctx context.Context, emit PersistentEventFunc, name string, a
 		}
 	}
 	return nil
+}
+
+func runPersistentFileUnlocked(ctx context.Context, emit PersistentEventFunc, file *os.File, name string, args ...string) error {
+	return safety.WithTemporarilyReleasedFlock(file, func() error {
+		return runPersistentFile(ctx, emit, file, name, args...)
+	})
 }
 
 func runPersistentFile(ctx context.Context, emit PersistentEventFunc, file *os.File, name string, args ...string) error {

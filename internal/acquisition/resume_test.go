@@ -72,17 +72,21 @@ func TestResumableCancellationRetainsPartialButDefaultRemovesIt(t *testing.T) {
 	data := bytesOf("cancel-resume", 8192)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		flusher, _ := w.(http.Flusher)
-		for i := 0; i < len(data); i += 1024 {
-			end := i + 1024
-			if end > len(data) {
-				end = len(data)
-			}
-			_, _ = w.Write(data[i:end])
-			if flusher != nil {
-				flusher.Flush()
-			}
-			time.Sleep(5 * time.Millisecond)
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+		_, _ = w.Write(data[:1024])
+		if flusher != nil {
+			flusher.Flush()
 		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(300 * time.Millisecond):
+		}
+		_, _ = w.Write(data[1024:2048])
+		if flusher != nil {
+			flusher.Flush()
+		}
+		<-r.Context().Done()
 	}))
 	defer server.Close()
 	image := testImage(server.URL, data)
