@@ -72,7 +72,11 @@ func TestValidateSourceMetadata(t *testing.T) {
 		{name: "oversize", selected: func() device.BlockDevice { value := base; value.Size = math.MaxInt64 + 1; return value }(), want: "unsupported size"},
 		{name: "fixed refused", selected: func() device.BlockDevice { value := base; value.Transport = ""; return value }(), want: "--allow-fixed"},
 		{name: "fixed allowed", selected: func() device.BlockDevice { value := base; value.Transport = ""; return value }(), allowFixed: true},
-		{name: "protected mount", selected: func() device.BlockDevice { value := base; value.Children = []device.BlockDevice{{Path: "/dev/sdz1", Type: "part", Mountpoints: []string{"/home"}}}; return value }(), want: "used by the running system"},
+		{name: "protected mount", selected: func() device.BlockDevice {
+			value := base
+			value.Children = []device.BlockDevice{{Path: "/dev/sdz1", Type: "part", Mountpoints: []string{"/home"}}}
+			return value
+		}(), want: "used by the running system"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			err := validateSourceMetadata(base.Path, test.selected, test.allowFixed)
@@ -91,8 +95,8 @@ func TestValidateSourceMetadata(t *testing.T) {
 
 func TestHumanBytes(t *testing.T) {
 	for value, want := range map[uint64]string{
-		0:          "0 B",
-		1024:       "1.0 KiB",
+		0:           "0 B",
+		1024:        "1.0 KiB",
 		1024 * 1024: "1.0 MiB",
 	} {
 		if got := humanBytes(value); got != want {
