@@ -53,6 +53,12 @@ Emit one deterministic JSON plan or report. A non-dry-run JSON invocation also r
 and
 .BR --expected-identity .
 .TP
+.B --progress-json
+With a non-dry-run
+.B --json
+invocation, emit bounded schema-1 progress records as JSON lines on standard error while keeping the final deterministic report on standard output.
+This channel is intended for the packaged graphical workflow and reports completed bytes, total bytes, elapsed time, throughput, and ETA when available.
+.TP
 .B --yes
 Skip terminal confirmation. This is accepted only with an exact expected identity.
 .TP
