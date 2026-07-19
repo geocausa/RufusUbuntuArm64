@@ -122,17 +122,21 @@ jobs:
         env:
           RUFUS_REAL_BLOCK_TEST: '1'
         run: |
-          sudo modprobe loop || true
-          go test -c -o "${RUNNER_TEMP}/safety-loop.test" ./internal/safety
-          sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
-            "${RUNNER_TEMP}/safety-loop.test" \
-            -test.run '^TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop$' \
-            -test.v
-          go test -c -o "${RUNNER_TEMP}/devicequal-loop.test" ./internal/devicequal
-          sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
-            "${RUNNER_TEMP}/devicequal-loop.test" \
-            -test.run '^TestRunDeviceQualifiesRealLoopDevice$' \
-            -test.v
+          mkdir -p dist/audit-logs
+          set -o pipefail
+          {
+            sudo modprobe loop || true
+            go test -c -o "${RUNNER_TEMP}/safety-loop.test" ./internal/safety
+            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
+              "${RUNNER_TEMP}/safety-loop.test" \
+              -test.run '^TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop$' \
+              -test.v
+            go test -c -o "${RUNNER_TEMP}/devicequal-loop.test" ./internal/devicequal
+            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
+              "${RUNNER_TEMP}/devicequal-loop.test" \
+              -test.run '^TestRunDeviceQualifiesRealLoopDevice$' \
+              -test.v
+          } 2>&1 | tee dist/audit-logs/privileged-loop-device.log
       - name: Resolve traceable build version
         id: version
         if: success()
