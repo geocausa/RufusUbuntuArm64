@@ -1,0 +1,48 @@
+name: Apply exact device qualification syntax repair
+
+on:
+  push:
+    branches:
+      - feature/device-qualification-foundation
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: feature/device-qualification-foundation
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+      - name: Insert the missing verification brace
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('internal/devicequal/engine.go')
+          text = path.read_text(encoding='utf-8')
+          old = '''\t\t\t}
+\t\temit(progress, Progress{
+'''
+          new = '''\t\t\t}
+\t\t}
+\t\temit(progress, Progress{
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'missing-brace site count = {text.count(old)}, want 1')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          gofmt -w internal/devicequal/engine.go
+          go test ./internal/devicequal
+          git config user.name 'RufusArm64 CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add internal/devicequal/engine.go
+          git commit -m 'devicequal: close verification mismatch block'
+          git push origin HEAD:feature/device-qualification-foundation
