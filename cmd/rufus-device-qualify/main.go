@@ -66,9 +66,6 @@ func run(args []string) error {
 	if strings.TrimSpace(*devicePath) == "" {
 		return errors.New("--device is required")
 	}
-	if os.Getenv("PKEXEC_UID") != "" {
-		return errors.New("graphical device qualification is not implemented; run this utility explicitly from a terminal")
-	}
 	identityArgument := strings.TrimSpace(*expectedIdentity)
 	if *yes && identityArgument == "" {
 		return errors.New("--yes requires --expected-identity")
@@ -78,6 +75,14 @@ func run(args []string) error {
 	}
 	if *asJSON && !*dryRun && !*yes {
 		return errors.New("non-dry-run --json requires --yes and --expected-identity")
+	}
+	if strings.TrimSpace(os.Getenv("PKEXEC_UID")) != "" {
+		if *dryRun || !*yes || !*asJSON || identityArgument == "" {
+			return errors.New("graphical qualification requires --yes, --json, and --expected-identity without --dry-run")
+		}
+		if *allowFixed || *noUnmount {
+			return errors.New("graphical qualification is limited to normal removable targets with guarded unmounting")
+		}
 	}
 
 	profile, err := parseProfile(*profileText)
