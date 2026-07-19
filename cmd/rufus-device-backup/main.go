@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"os/signal"
@@ -26,6 +27,16 @@ type backupPlan struct {
 	Device      device.BlockDevice          `json:"device"`
 	Identity    string                      `json:"identity"`
 	Destination drivebackup.DestinationInfo `json:"destination"`
+}
+
+type backupProgress struct {
+	Schema         int    `json:"schema"`
+	Type           string `json:"type"`
+	Done           uint64 `json:"done"`
+	Total          uint64 `json:"total"`
+	ElapsedMS      int64  `json:"elapsed_ms"`
+	BytesPerSecond uint64 `json:"bytes_per_second"`
+	ETASeconds     *int64 `json:"eta_seconds,omitempty"`
 }
 
 func main() {
@@ -57,6 +68,7 @@ func run(args []string) error {
 	noUnmount := flags.Bool("no-unmount", false, "refuse instead of unmounting mounted removable filesystems")
 	dryRun := flags.Bool("dry-run", false, "validate and display the plan without opening the source device")
 	asJSON := flags.Bool("json", false, "output one deterministic JSON plan or report")
+	progressJSON := flags.Bool("progress-json", false, "emit schema-1 JSON progress records to stderr; requires non-dry-run --json")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -78,6 +90,9 @@ func run(args []string) error {
 	}
 	if *asJSON && !*dryRun && !*yes {
 		return errors.New("non-dry-run --json requires --yes and --expected-identity")
+	}
+	if *progressJSON && (!*asJSON || *dryRun) {
+		return errors.New("--progress-json requires non-dry-run --json")
 	}
 	if strings.TrimSpace(os.Getenv("PKEXEC_UID")) != "" {
 		if *dryRun || !*yes || !*asJSON || identityArgument == "" {
@@ -157,18 +172,26 @@ func run(args []string) error {
 	defer stop()
 	started := time.Now()
 	lastProgress := time.Time{}
+	var progressErr error
 	report, runErr := drivebackup.CaptureDevice(ctx, resolved, destination.Path, drivebackup.DeviceOptions{
 		ExpectedDeviceID: kernelDeviceID,
 		ExpectedSize:     selected.Size,
 		Progress: func(progress drivebackup.Progress) {
-			if *asJSON {
-				return
-			}
 			if time.Since(lastProgress) < 200*time.Millisecond && progress.Done != progress.Total {
 				return
 			}
 			lastProgress = time.Now()
-			printProgress(progress, time.Since(started))
+			elapsed := time.Since(started)
+			if *progressJSON {
+				if progressErr == nil {
+					progressErr = writeJSONProgress(os.Stderr, progress, elapsed)
+				}
+				return
+			}
+			if *asJSON {
+				return
+			}
+			printProgress(progress, elapsed)
 		},
 		BeforeRead: func(open *os.File) error {
 			fresh, currentID, err := revalidateSource(resolved, identity, *allowFixed)
@@ -198,6 +221,9 @@ func run(args []string) error {
 		}
 	} else if !*asJSON && report.Schema != 0 {
 		printReport(report, destination.Path)
+	}
+	if progressErr != nil && runErr == nil {
+		return fmt.Errorf("write JSON progress: %w", progressErr)
 	}
 	return runErr
 }
@@ -297,6 +323,32 @@ func printProgress(progress drivebackup.Progress, elapsed time.Duration) {
 		eta = time.Duration(seconds * float64(time.Second)).Round(time.Second).String()
 	}
 	fmt.Printf("\r%6.2f%%  %s / %s  %s/s  ETA %s", percent, humanBytes(progress.Done), humanBytes(progress.Total), humanBytes(uint64(rate)), eta)
+}
+
+func makeProgressEvent(progress drivebackup.Progress, elapsed time.Duration) backupProgress {
+	event := backupProgress{
+		Schema:    1,
+		Type:      "progress",
+		Done:      progress.Done,
+		Total:     progress.Total,
+		ElapsedMS: elapsed.Milliseconds(),
+	}
+	if elapsed <= 0 || progress.Done == 0 {
+		return event
+	}
+	rate := float64(progress.Done) / elapsed.Seconds()
+	if rate > 0 {
+		event.BytesPerSecond = uint64(rate)
+	}
+	if rate > 0 && progress.Done < progress.Total {
+		seconds := int64(math.Ceil(float64(progress.Total-progress.Done) / rate))
+		event.ETASeconds = &seconds
+	}
+	return event
+}
+
+func writeJSONProgress(writer io.Writer, progress drivebackup.Progress, elapsed time.Duration) error {
+	return json.NewEncoder(writer).Encode(makeProgressEvent(progress, elapsed))
 }
 
 func printReport(report drivebackup.Report, output string) {
