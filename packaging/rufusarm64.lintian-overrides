@@ -3,3 +3,4 @@
 # and persistence privilege boundaries. Their source is shipped with the package.
 rufusarm64: statically-linked-binary [usr/lib/rufusarm64/rufusarm64-helper]
 rufusarm64: statically-linked-binary [usr/lib/rufusarm64/rufusarm64-persistence-helper]
+rufusarm64: statically-linked-binary [usr/lib/rufusarm64/rufusarm64-device-qualify]
