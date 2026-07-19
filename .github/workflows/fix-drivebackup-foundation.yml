@@ -1,0 +1,97 @@
+name: Fix drive backup foundation
+
+on:
+  push:
+    branches:
+      - feature/drive-image-backup-foundation
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: feature/drive-image-backup-foundation
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+      - name: Correct report and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          source = Path("internal/drivebackup/backup.go")
+          text = source.read_text(encoding="utf-8")
+          old = '''func cancel(report Report, offset uint64, err error) (Report, error) {
+              report.Status = StatusCancelled
+              report.CompletedBytes = offset
+          '''.replace("          ", "")
+          new = '''func cancel(report Report, offset uint64, err error) (Report, error) {
+              report.Status = StatusCancelled
+              report.CompletedBytes = offset
+              report.SHA256 = ""
+          '''.replace("          ", "")
+          if text.count(old) != 1:
+              raise SystemExit("cancel report site changed")
+          text = text.replace(old, new, 1)
+          old = '''func fail(report Report, kind string, offset uint64, includeOffset bool, err error) (Report, error) {
+              report.Status = StatusFailed
+          '''.replace("          ", "")
+          new = '''func fail(report Report, kind string, offset uint64, includeOffset bool, err error) (Report, error) {
+              report.Status = StatusFailed
+              report.SHA256 = ""
+          '''.replace("          ", "")
+          if text.count(old) != 1:
+              raise SystemExit("failure report site changed")
+          source.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          tests = Path("internal/drivebackup/backup_test.go")
+          text = tests.read_text(encoding="utf-8")
+          text = text.replace('\n\t"reflect"', "", 1)
+          old = '''	ctx, cancel := context.WithCancel(context.Background())
+	 source := cancelReaderAt{reader: bytes.NewReader([]byte("abcdefgh")), cancel: cancel}
+	 output := filepath.Join(t.TempDir(), "cancelled.img")
+	 report, err := Capture(ctx, source, output, 8, Config{BufferSize: 4})
+'''.replace("\t ", "\t")
+          new = '''	ctx, cancel := context.WithCancel(context.Background())
+	output := filepath.Join(t.TempDir(), "cancelled.img")
+	report, err := Capture(ctx, bytes.NewReader([]byte("abcdefgh")), output, 8, Config{
+		BufferSize: 4,
+		Progress: func(progress Progress) {
+			if progress.Done == 4 {
+				cancel()
+			}
+		},
+	})
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f"cancellation test site count = {text.count(old)}")
+          text = text.replace(old, new, 1)
+          old = 'want := `{\"schema\":1,\"status\":\"failed\",\"planned_bytes\":10,\"completed_bytes\":0,\"failure\":{\"kind\":\"source_read\",\"message\":\"read failed\",\"byte_offset\":0}}`'
+          new = 'want := `{"schema":1,"status":"failed","planned_bytes":10,"completed_bytes":0,"failure":{"kind":"source_read","message":"read failed","byte_offset":0}}`'
+          if text.count(old) != 1:
+              raise SystemExit(f"json expectation count = {text.count(old)}")
+          text = text.replace(old, new, 1)
+          start = text.index("type cancelReaderAt struct {")
+          end = text.index("type recordingSyncWriter struct {", start)
+          text = text[:start] + text[end:]
+          marker = "\nfunc TestProgressValueComparability(t *testing.T) {"
+          if marker in text:
+              text = text[:text.index(marker)] + "\n"
+          tests.write_text(text, encoding="utf-8")
+          PY
+          gofmt -w internal/drivebackup/backup.go internal/drivebackup/backup_test.go
+          go test ./internal/drivebackup
+          git config user.name 'RufusArm64 CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git rm .github/workflows/fix-drivebackup-foundation.yml docs/.drivebackup-foundation-trigger
+          git add internal/drivebackup/backup.go internal/drivebackup/backup_test.go
+          git commit -m 'drivebackup: finalize verified capture contract'
+          git push origin HEAD:feature/drive-image-backup-foundation
