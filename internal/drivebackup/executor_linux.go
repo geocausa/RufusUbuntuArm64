@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	atFDCWD               = ^uintptr(99)
-	renameNoReplace       = 1
-	sysRenameat2AMD64     = 316
-	sysRenameat2ARM64     = 276
+	atFDCWD           = ^uintptr(99)
+	renameNoReplace   = 1
+	sysRenameat2AMD64 = 316
+	sysRenameat2ARM64 = 276
 )
 
 // DeviceOptions binds a capture to one already validated whole-device identity.
@@ -32,6 +32,12 @@ type DeviceOptions struct {
 	BufferSize       int
 	Progress         ProgressFunc
 	BeforeRead       func(*os.File) error
+}
+
+type destinationPlan struct {
+	path      string
+	name      string
+	directory *os.File
 }
 
 // CaptureDevice holds one read-only, exclusive block-device descriptor for the
@@ -56,10 +62,11 @@ func CaptureDevice(ctx context.Context, sourcePath, outputPath string, options D
 		return cancel(report, 0, err)
 	}
 
-	cleanOutput, destinationDir, err := prepareDestination(outputPath, sourcePath, options.ExpectedSize)
+	destination, err := prepareDestination(outputPath, sourcePath, options.ExpectedSize)
 	if err != nil {
 		return fail(report, "destination_preflight", 0, false, err)
 	}
+	defer func() { _ = destination.directory.Close() }()
 
 	source, err := os.OpenFile(sourcePath, os.O_RDONLY|syscall.O_EXCL|syscall.O_NOFOLLOW, 0)
 	if err != nil {
@@ -79,28 +86,11 @@ func CaptureDevice(ctx context.Context, sourcePath, outputPath string, options D
 		return fail(report, "source_identity", 0, false, err)
 	}
 
-	temporary, err := os.CreateTemp(destinationDir, "."+filepath.Base(cleanOutput)+".rufusarm64-partial-*")
+	temporary, temporaryName, err := destination.createTemporary()
 	if err != nil {
-		return fail(report, "open_destination", 0, false, fmt.Errorf("create backup temporary destination: %w", err))
+		return fail(report, "open_destination", 0, false, err)
 	}
-	temporaryPath := temporary.Name()
-	defer func() { _ = os.Remove(temporaryPath) }()
-
-	info, err := temporary.Stat()
-	if err != nil {
-		_ = temporary.Close()
-		return fail(report, "inspect_destination", 0, false, fmt.Errorf("inspect backup temporary destination: %w", err))
-	}
-	if !info.Mode().IsRegular() {
-		_ = temporary.Close()
-		return fail(report, "invalid_destination", 0, false, errors.New("backup temporary destination is not a regular file"))
-	}
-	if info.Mode().Perm() != 0o600 {
-		if err := temporary.Chmod(0o600); err != nil {
-			_ = temporary.Close()
-			return fail(report, "secure_destination", 0, false, fmt.Errorf("secure backup temporary destination: %w", err))
-		}
-	}
+	defer func() { _ = syscall.Unlinkat(int(destination.directory.Fd()), temporaryName) }()
 
 	report, copyErr := Copy(ctx, source, temporary, options.ExpectedSize, Config{
 		BufferSize: options.BufferSize,
@@ -116,48 +106,83 @@ func CaptureDevice(ctx context.Context, sourcePath, outputPath string, options D
 	if err := safety.VerifyOpenDevice(source, options.ExpectedDeviceID, options.ExpectedSize); err != nil {
 		return fail(report, "source_revalidation", report.CompletedBytes, true, err)
 	}
-	if err := publishNoReplace(temporaryPath, cleanOutput); err != nil {
+	if err := publishNoReplace(destination.directory, temporaryName, destination.name); err != nil {
 		return fail(report, "publish_destination", report.CompletedBytes, true, err)
 	}
 	return report, nil
 }
 
-func prepareDestination(outputPath, sourcePath string, required uint64) (string, string, error) {
+func prepareDestination(outputPath, sourcePath string, required uint64) (destinationPlan, error) {
 	if outputPath == "" {
-		return "", "", errors.New("backup destination path is empty")
+		return destinationPlan{}, errors.New("backup destination path is empty")
 	}
 	clean := filepath.Clean(outputPath)
 	if !filepath.IsAbs(clean) {
-		return "", "", errors.New("backup destination path must be absolute")
+		return destinationPlan{}, errors.New("backup destination path must be absolute")
 	}
-	if clean == string(filepath.Separator) || filepath.Base(clean) == "." {
-		return "", "", errors.New("backup destination must name a file")
+	name := filepath.Base(clean)
+	if clean == string(filepath.Separator) || name == "." || !filepath.IsLocal(name) {
+		return destinationPlan{}, errors.New("backup destination must name a local file")
 	}
-	if _, err := os.Lstat(clean); err == nil {
-		return "", "", fmt.Errorf("backup destination already exists: %s", clean)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", "", fmt.Errorf("inspect backup destination: %w", err)
-	}
-	directory := filepath.Dir(clean)
-	info, err := os.Stat(directory)
+	parent := filepath.Dir(clean)
+	pathInfo, err := os.Lstat(parent)
 	if err != nil {
-		return "", "", fmt.Errorf("inspect backup destination directory: %w", err)
+		return destinationPlan{}, fmt.Errorf("inspect backup destination directory: %w", err)
 	}
-	if !info.IsDir() {
-		return "", "", errors.New("backup destination parent is not a directory")
+	if pathInfo.Mode()&os.ModeSymlink != 0 || !pathInfo.IsDir() {
+		return destinationPlan{}, errors.New("backup destination parent must be a real directory")
 	}
-	if err := safety.EnsurePathNotOnTarget(directory, sourcePath); err != nil {
-		return "", "", fmt.Errorf("validate backup destination storage: %w", err)
+	directory, err := os.OpenFile(parent, os.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return destinationPlan{}, fmt.Errorf("open backup destination directory: %w", err)
+	}
+	closeOnError := true
+	defer func() {
+		if closeOnError {
+			_ = directory.Close()
+		}
+	}()
+	openInfo, err := directory.Stat()
+	if err != nil {
+		return destinationPlan{}, fmt.Errorf("inspect open backup destination directory: %w", err)
+	}
+	if !openInfo.IsDir() || !os.SameFile(pathInfo, openInfo) {
+		return destinationPlan{}, errors.New("backup destination directory changed during validation")
+	}
+	descriptorPath := fmt.Sprintf("/proc/self/fd/%d", directory.Fd())
+	if err := safety.EnsurePathNotOnTarget(descriptorPath, sourcePath); err != nil {
+		return destinationPlan{}, fmt.Errorf("validate backup destination storage: %w", err)
 	}
 	if err := ensureFreeSpace(directory, required); err != nil {
-		return "", "", err
+		return destinationPlan{}, err
 	}
-	return clean, directory, nil
+	if err := ensureDestinationAbsent(directory, name); err != nil {
+		return destinationPlan{}, err
+	}
+	closeOnError = false
+	return destinationPlan{path: clean, name: name, directory: directory}, nil
 }
 
-func ensureFreeSpace(path string, required uint64) error {
+func ensureDestinationAbsent(directory *os.File, name string) error {
+	fd, err := syscall.Openat(
+		int(directory.Fd()),
+		name,
+		syscall.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW,
+		0,
+	)
+	if err == nil {
+		_ = syscall.Close(fd)
+		return fmt.Errorf("backup destination already exists: %s", name)
+	}
+	if errors.Is(err, syscall.ENOENT) {
+		return nil
+	}
+	return fmt.Errorf("backup destination already exists or cannot be inspected: %s: %w", name, err)
+}
+
+func ensureFreeSpace(directory *os.File, required uint64) error {
 	var stat syscall.Statfs_t
-	if err := syscall.Statfs(path, &stat); err != nil {
+	if err := syscall.Fstatfs(int(directory.Fd()), &stat); err != nil {
 		return fmt.Errorf("inspect backup destination free space: %w", err)
 	}
 	if stat.Bsize <= 0 {
@@ -175,24 +200,58 @@ func ensureFreeSpace(path string, required uint64) error {
 	return nil
 }
 
-func publishNoReplace(temporaryPath, outputPath string) error {
+func (destination destinationPlan) createTemporary() (*os.File, string, error) {
+	descriptorPath := fmt.Sprintf("/proc/self/fd/%d", destination.directory.Fd())
+	temporary, err := os.CreateTemp(descriptorPath, "."+destination.name+".rufusarm64-partial-*")
+	if err != nil {
+		return nil, "", fmt.Errorf("create backup temporary destination: %w", err)
+	}
+	name := filepath.Base(temporary.Name())
+	if !filepath.IsLocal(name) {
+		_ = temporary.Close()
+		_ = os.Remove(temporary.Name())
+		return nil, "", errors.New("backup temporary destination has an invalid name")
+	}
+	info, err := temporary.Stat()
+	if err != nil {
+		_ = temporary.Close()
+		_ = syscall.Unlinkat(int(destination.directory.Fd()), name)
+		return nil, "", fmt.Errorf("inspect backup temporary destination: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		_ = temporary.Close()
+		_ = syscall.Unlinkat(int(destination.directory.Fd()), name)
+		return nil, "", errors.New("backup temporary destination is not a regular file")
+	}
+	if info.Mode().Perm() != 0o600 {
+		if err := temporary.Chmod(0o600); err != nil {
+			_ = temporary.Close()
+			_ = syscall.Unlinkat(int(destination.directory.Fd()), name)
+			return nil, "", fmt.Errorf("secure backup temporary destination: %w", err)
+		}
+	}
+	return temporary, name, nil
+}
+
+func publishNoReplace(directory *os.File, temporaryName, outputName string) error {
 	syscallNumber, err := renameat2SyscallNumber()
 	if err != nil {
 		return err
 	}
-	temporaryPointer, err := syscall.BytePtrFromString(temporaryPath)
+	temporaryPointer, err := syscall.BytePtrFromString(temporaryName)
 	if err != nil {
-		return fmt.Errorf("encode backup temporary path: %w", err)
+		return fmt.Errorf("encode backup temporary name: %w", err)
 	}
-	outputPointer, err := syscall.BytePtrFromString(outputPath)
+	outputPointer, err := syscall.BytePtrFromString(outputName)
 	if err != nil {
-		return fmt.Errorf("encode backup destination path: %w", err)
+		return fmt.Errorf("encode backup destination name: %w", err)
 	}
+	directoryFD := uintptr(directory.Fd())
 	_, _, errno := syscall.Syscall6(
 		syscallNumber,
-		atFDCWD,
+		directoryFD,
 		uintptr(unsafe.Pointer(temporaryPointer)),
-		atFDCWD,
+		directoryFD,
 		uintptr(unsafe.Pointer(outputPointer)),
 		renameNoReplace,
 		0,
@@ -200,9 +259,9 @@ func publishNoReplace(temporaryPath, outputPath string) error {
 	if errno != 0 {
 		return fmt.Errorf("publish backup without replacing an existing file: %w", errno)
 	}
-	if err := syncDirectory(filepath.Dir(outputPath)); err != nil {
-		_ = os.Remove(outputPath)
-		_ = syncDirectory(filepath.Dir(outputPath))
+	if err := directory.Sync(); err != nil {
+		_ = syscall.Unlinkat(int(directory.Fd()), outputName)
+		_ = directory.Sync()
 		return fmt.Errorf("sync backup destination directory: %w", err)
 	}
 	return nil
@@ -217,13 +276,4 @@ func renameat2SyscallNumber() (uintptr, error) {
 	default:
 		return 0, fmt.Errorf("atomic no-replace backup publication is unsupported on linux/%s", runtime.GOARCH)
 	}
-}
-
-func syncDirectory(path string) error {
-	directory, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = directory.Close() }()
-	return directory.Sync()
 }
