@@ -53,6 +53,10 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
   go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \
   -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-device-qualify" \
   "${ROOT_DIR}/cmd/rufus-device-qualify"
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+  go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \
+  -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-device-backup" \
+  "${ROOT_DIR}/cmd/rufus-device-backup"
 
 install -Dm755 "${ROOT_DIR}/gui/rufusarm64.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64.py"
@@ -225,6 +229,8 @@ ln -s ../lib/rufusarm64/rufusarm64-helper \
   "${PACKAGE_DIR}/usr/bin/rufusarm64-cli"
 ln -s ../lib/rufusarm64/rufusarm64-device-qualify \
   "${PACKAGE_DIR}/usr/bin/rufusarm64-device-qualify"
+ln -s ../lib/rufusarm64/rufusarm64-device-backup \
+  "${PACKAGE_DIR}/usr/bin/rufusarm64-device-backup"
 install -Dm644 "${ROOT_DIR}/packaging/io.github.geocausa.RufusArm64.desktop" \
   "${PACKAGE_DIR}/usr/share/applications/io.github.geocausa.RufusArm64.desktop"
 install -Dm644 "${ROOT_DIR}/packaging/io.github.geocausa.RufusArm64.Persistence.desktop" \
@@ -256,7 +262,7 @@ install -Dm644 "${ROOT_DIR}/packaging/copyright" \
 install -Dm644 "${ROOT_DIR}/CHANGELOG.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/changelog"
 gzip -9n "${PACKAGE_DIR}/usr/share/doc/rufusarm64/changelog"
-for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify; do
+for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify rufusarm64-device-backup; do
   install -Dm644 "${ROOT_DIR}/docs/${page}.1" \
     "${PACKAGE_DIR}/usr/share/man/man1/${page}.1"
   gzip -9n "${PACKAGE_DIR}/usr/share/man/man1/${page}.1"
@@ -278,10 +284,10 @@ Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec,
 Homepage: https://github.com/geocausa/RufusUbuntuArm64
 Description: Bootable USB creator for Ubuntu ARM64
  A graphical utility that writes Linux ISOHybrid/raw images, creates verified
- persistent Ubuntu/Debian live media, and creates Windows installation USB media
- using GPT or MBR, UEFI or x86-family BIOS/CSM, FAT32 or NTFS, and
- compressed or virtual-disk inputs. It includes Secure Boot DBX checks,
- verified boot assets, WIM splitting, and optional drivers.
+ persistent Ubuntu/Debian live media, creates Windows installation USB media,
+ and captures verified images of removable drives. It supports GPT or MBR,
+ UEFI or x86-family BIOS/CSM, FAT32 or NTFS, compressed or virtual-disk inputs,
+ Secure Boot DBX checks, verified boot assets, WIM splitting, and optional drivers.
 CONTROL
 
 cat > "${PACKAGE_DIR}/DEBIAN/postinst" <<'POSTINST'

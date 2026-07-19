@@ -1,0 +1,98 @@
+.TH RUFUSARM64-DEVICE-BACKUP 1 "July 2026" "RufusArm64" "User Commands"
+.SH NAME
+rufusarm64-device-backup \- save a verified image of a removable drive
+.SH SYNOPSIS
+.B rufusarm64-device-backup
+.B --device
+.I /dev/DEVICE
+.B --output
+.I /absolute/path/drive.img
+.RI [ options ]
+.br
+.B rufusarm64-device-backup
+.B --device
+.I /dev/DEVICE
+.B --output
+.I /absolute/path/drive.img
+.B --dry-run
+.RI [ --json ]
+.SH DESCRIPTION
+.B rufusarm64-device-backup
+captures the exact reported capacity of one explicitly selected whole block device into a newly created image file.
+The source is opened read-only, bound to its kernel device identity and capacity, and revalidated before and after capture.
+The completed image is published atomically only after every byte has been copied, SHA-256 has been calculated, the file has been synchronized, and the source and destination identities have been rechecked.
+.PP
+The destination must not already exist, must have enough available space, and must be stored on a different disk from the selected source.
+Mounted removable filesystems are unmounted before capture unless
+.B --no-unmount
+is supplied, in which case the command refuses mounted sources.
+.SH OPTIONS
+.TP
+.BI --device " /dev/DEVICE"
+Select the whole source disk. Partitions and paths outside
+.I /dev
+are refused.
+.TP
+.BI --output " PATH"
+Absolute path for the new image file. The path must not already exist.
+.TP
+.BI --expected-identity " TOKEN"
+Require the exact identity token returned by
+.BR rufusarm64-cli " list --json".
+This option is mandatory with
+.B --yes
+or
+.BR --allow-fixed .
+.TP
+.B --dry-run
+Validate the source metadata and destination storage and print a plan without opening the source device.
+.TP
+.B --json
+Emit one deterministic JSON plan or report. A non-dry-run JSON invocation also requires
+.B --yes
+and
+.BR --expected-identity .
+.TP
+.B --progress-json
+With a non-dry-run
+.B --json
+invocation, emit bounded schema-1 progress records as JSON lines on standard error while keeping the final deterministic report on standard output.
+This channel is intended for the packaged graphical workflow and reports completed bytes, total bytes, elapsed time, throughput, and ETA when available.
+.TP
+.B --yes
+Skip terminal confirmation. This is accepted only with an exact expected identity.
+.TP
+.B --allow-fixed
+Permit a non-removable whole disk. This is terminal-only, requires an exact expected identity, and does not override root-disk or protected-mount refusals.
+.TP
+.B --no-unmount
+Refuse a source that has mounted filesystems instead of unmounting eligible removable-media mounts.
+.TP
+.BR --version , " -v"
+Print the installed version.
+.TP
+.BR --help , " -h"
+Print usage information.
+.SH SAFETY
+The source is never opened for writing. Nevertheless, a coherent drive image requires mounted filesystems to be unmounted so that filesystem state does not change during capture.
+The normal graphical path is restricted to removable or USB-attached whole disks, exact identity binding, guarded unmounting, deterministic JSON, and noninteractive execution after the graphical confirmation.
+.PP
+No final destination pathname is created until verified capture completion. Incomplete temporary files are removed after failure or cancellation. Existing destination files are never replaced.
+.SH EXAMPLES
+Inspect a planned capture without root privileges:
+.PP
+.nf
+rufusarm64-device-backup --device /dev/sdb \
+  --output /home/user/usb-backup.img --dry-run
+.fi
+.PP
+Capture after reviewing the plan:
+.PP
+.nf
+sudo rufusarm64-device-backup --device /dev/sdb \
+  --output /home/user/usb-backup.img
+.fi
+.SH SEE ALSO
+.BR rufusarm64 (1),
+.BR rufusarm64-cli (1),
+.BR rufusarm64-device-qualify (1)

@@ -26,4 +26,14 @@
     </defaults>
     <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/rufusarm64/rufusarm64-persistence-helper</annotate>
   </action>
+  <action id="io.github.geocausa.RufusArm64.backup">
+    <description>Save a verified image of a removable drive</description>
+    <message>Administrator authentication is required to unmount and read the selected removable drive into an image file.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/rufusarm64/rufusarm64-device-backup</annotate>
+  </action>
 </policyconfig>
