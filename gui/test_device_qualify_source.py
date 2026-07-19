@@ -23,7 +23,9 @@ class DeviceQualificationSourceTests(unittest.TestCase):
         self.assertIn('self.target_combo.connect("changed", self.target_selection_changed)', source)
         self.assertIn("def open_device_qualification", source)
         self.assertIn("DeviceQualificationDialog(", source)
-        self.assertNotIn("device-qualify", self._writer_command_slice(source))
+
+        logic = self.read("gui/rufusarm64_logic.py")
+        self.assertNotIn("device-qualify", self._function_slice(logic, "def build_writer_command"))
 
     def test_dialog_keeps_destructive_workflow_guarded(self):
         source = self.read("gui/rufusarm64_device_qualify_dialog.py")
@@ -59,9 +61,9 @@ class DeviceQualificationSourceTests(unittest.TestCase):
             self.assertGreaterEqual(tests.count(filename), 2)
 
     @staticmethod
-    def _writer_command_slice(source):
-        start = source.index("def build_writer_command") if "def build_writer_command" in source else 0
-        end = source.find("\n    def ", start + 1)
+    def _function_slice(source, signature):
+        start = source.index(signature)
+        end = source.find("\ndef ", start + len(signature))
         return source[start:] if end < 0 else source[start:end]
 
 
