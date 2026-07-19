@@ -95,10 +95,21 @@ func CaptureDevice(ctx context.Context, sourcePath, outputPath string, options D
 		BufferSize: options.BufferSize,
 		Progress:   options.Progress,
 	})
-	closeErr := temporary.Close()
 	if copyErr != nil {
+		_ = temporary.Close()
 		return report, copyErr
 	}
+	if err := applyGraphicalDestinationOwner(temporary); err != nil {
+		_ = temporary.Close()
+		return fail(
+			report,
+			"destination_ownership",
+			report.CompletedBytes,
+			true,
+			fmt.Errorf("prepare graphical backup destination ownership: %w", err),
+		)
+	}
+	closeErr := temporary.Close()
 	if closeErr != nil {
 		return fail(report, "close_destination", report.CompletedBytes, true, fmt.Errorf("close backup temporary destination: %w", closeErr))
 	}

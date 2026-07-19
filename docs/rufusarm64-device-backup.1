@@ -26,6 +26,20 @@ The destination must not already exist, must have enough available space, and mu
 Mounted removable filesystems are unmounted before capture unless
 .B --no-unmount
 is supplied, in which case the command refuses mounted sources.
+.SH GRAPHICAL WORKFLOW
+In the installed RufusArm64 application, select a removable drive and choose
+.BR "Save drive image…" .
+Choose a new image pathname; existing files and symbolic links are refused.
+RufusArm64 first runs the unprivileged planning mode and displays the exact source path, model, reported capacity, destination filesystem directory, required bytes, and available bytes.
+.PP
+Before authentication, the graphical workflow requires the exact phrase
+.B SAVE /dev/DEVICE TO /absolute/path/drive.img
+so the reviewed source and destination remain explicit.
+The privileged command is then launched only with the selected path, exact identity token, guarded unmounting, deterministic JSON report, and schema-1 progress channel.
+The dialog displays completed bytes, throughput, ETA, cancellation state, final SHA-256, and final image path.
+.PP
+Closing the dialog during capture requests cancellation of the owned process group and waits for incomplete temporary output to be removed before allowing the dialog to close.
+Create USB and Check USB remain separate operations.
 .SH OPTIONS
 .TP
 .BI --device " /dev/DEVICE"
@@ -78,6 +92,12 @@ The source is never opened for writing. Nevertheless, a coherent drive image req
 The normal graphical path is restricted to removable or USB-attached whole disks, exact identity binding, guarded unmounting, deterministic JSON, and noninteractive execution after the graphical confirmation.
 .PP
 No final destination pathname is created until verified capture completion. Incomplete temporary files are removed after failure or cancellation. Existing destination files are never replaced.
+.SH TESTING CHECKLIST
+For an engineering or stage package, use an expendable removable drive and destination storage on a different physical disk.
+Confirm that planning reports the expected model and capacity, an existing destination is refused, cancellation leaves no final image, a completed image has the reported size and SHA-256, and the source drive remains readable afterward.
+.PP
+Also confirm that Create USB and Check USB remain disabled while capture is active, the device list refreshes after completion, and reinstalling or removing the package does not alter existing image files.
+Remove the package with the normal Debian package manager; manually created image files are user data and are not deleted automatically.
 .SH EXAMPLES
 Inspect a planned capture without root privileges:
 .PP

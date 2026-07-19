@@ -1,6 +1,6 @@
 #!/bin/sh
-# Persistence is integrated into the main RufusArm64 window.
+# Persistence and verified drive-image backup are integrated into the main window.
 if [ "${1:-}" = "--persistence" ]; then
   shift
 fi
-exec /usr/bin/python3 /usr/lib/rufusarm64/rufusarm64.py "$@"
+exec /usr/bin/python3 -I -c 'import sys; sys.path.insert(0, "/usr/lib/rufusarm64"); from rufusarm64_device_qualify_dialog import run_rufusarm64; raise SystemExit(run_rufusarm64(["rufusarm64", *sys.argv[1:]]))' "$@"

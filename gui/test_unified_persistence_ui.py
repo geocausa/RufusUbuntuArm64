@@ -46,7 +46,9 @@ class UnifiedPersistenceUISourceTests(unittest.TestCase):
         launcher = pathlib.Path("packaging/rufusarm64").read_text(encoding="utf-8")
         desktop = pathlib.Path("packaging/io.github.geocausa.RufusArm64.desktop").read_text(encoding="utf-8")
         self.assertNotIn("rufusarm64_persistence.py", launcher)
-        self.assertIn("rufusarm64.py", launcher)
+        self.assertIn("run_rufusarm64", launcher)
+        self.assertIn("/usr/bin/python3 -I -c", launcher)
+        self.assertIn('sys.path.insert(0, "/usr/lib/rufusarm64")', launcher)
         self.assertIn("Exec=rufusarm64\n", desktop)
         self.assertNotIn("Exec=rufusarm64 --persistence", desktop)
 

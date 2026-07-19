@@ -31,9 +31,20 @@ func TestBackupCommandPackageContract(t *testing.T) {
 			},
 		},
 		{
-			path: filepath.Join(root, "packaging", "rufusarm64.lintian-overrides"),
+			path: filepath.Join(root, "packaging", "rufusarm64"),
 			parts: []string{
-				`rufusarm64: statically-linked-binary [usr/lib/rufusarm64/rufusarm64-device-backup]`,
+				`/usr/bin/python3 -I -c`,
+				`sys.path.insert(0, "/usr/lib/rufusarm64")`,
+				`run_rufusarm64`,
+			},
+		},
+		{
+			path: filepath.Join(root, "internal", "drivebackup", "owner_linux.go"),
+			parts: []string{
+				`PKEXEC_UID`,
+				`file.Chown(uid, -1)`,
+				`file.Sync()`,
+				`int(metadata.Uid) != uid`,
 			},
 		},
 		{
@@ -43,6 +54,7 @@ func TestBackupCommandPackageContract(t *testing.T) {
 				`Existing destination files are never replaced`,
 				`--expected-identity`,
 				`--progress-json`,
+				`Save drive image`,
 			},
 		},
 	}
