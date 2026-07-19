@@ -69,6 +69,16 @@ func run(args []string) error {
 	if os.Getenv("PKEXEC_UID") != "" {
 		return errors.New("graphical device qualification is not implemented; run this utility explicitly from a terminal")
 	}
+	identityArgument := strings.TrimSpace(*expectedIdentity)
+	if *yes && identityArgument == "" {
+		return errors.New("--yes requires --expected-identity")
+	}
+	if *allowFixed && identityArgument == "" {
+		return errors.New("--allow-fixed requires --expected-identity")
+	}
+	if *asJSON && !*dryRun && !*yes {
+		return errors.New("non-dry-run --json requires --yes and --expected-identity")
+	}
 
 	profile, err := parseProfile(*profileText)
 	if err != nil {
@@ -96,7 +106,7 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	identity := strings.TrimSpace(*expectedIdentity)
+	identity := identityArgument
 	if identity == "" {
 		identity = selected.Identity
 	}
@@ -242,8 +252,8 @@ func printReport(report devicequal.Report) {
 }
 
 func confirmDestructive(path string) error {
-	fmt.Printf("WARNING: all tested regions on %s will be overwritten.\n", path)
-	fmt.Printf("Type ERASE %s to continue: ", path)
+	fmt.Fprintf(os.Stderr, "WARNING: all tested regions on %s will be overwritten.\n", path)
+	fmt.Fprintf(os.Stderr, "Type ERASE %s to continue: ", path)
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil {
 		return err
