@@ -23,6 +23,18 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.22.x'
+      - name: Capture focused device qualification tests
+        run: |
+          mkdir -p dist/audit-logs
+          set -o pipefail
+          go test -v ./internal/devicequal 2>&1 | tee dist/audit-logs/devicequal-go122.log
+      - name: Upload focused device qualification log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: devicequal-go122-${{ github.run_id }}
+          path: dist/audit-logs/devicequal-go122.log
+          if-no-files-found: error
       - name: Compile and test the declared minimum Go version
         run: go test ./...
 
