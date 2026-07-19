@@ -27,6 +27,17 @@ type qualificationPlan struct {
 	Plan     devicequal.Plan    `json:"plan"`
 }
 
+type qualificationEvent struct {
+	Event   string             `json:"event"`
+	Stage   string             `json:"stage,omitempty"`
+	Pass    int                `json:"pass,omitempty"`
+	Pattern string             `json:"pattern,omitempty"`
+	Done    uint64             `json:"done,omitempty"`
+	Total   uint64             `json:"total,omitempty"`
+	Offset  uint64             `json:"offset,omitempty"`
+	Report  *devicequal.Report `json:"report,omitempty"`
+}
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -57,6 +68,7 @@ func run(args []string) error {
 	noUnmount := flags.Bool("no-unmount", false, "refuse instead of unmounting mounted removable filesystems")
 	dryRun := flags.Bool("dry-run", false, "validate and display the plan without opening the device for writing")
 	asJSON := flags.Bool("json", false, "output one deterministic JSON plan or report")
+	jsonProgress := flags.Bool("json-progress", false, "emit JSON-lines progress events and a final result event")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -66,8 +78,11 @@ func run(args []string) error {
 	if strings.TrimSpace(*devicePath) == "" {
 		return errors.New("--device is required")
 	}
-	if os.Getenv("PKEXEC_UID") != "" {
-		return errors.New("graphical device qualification is not implemented; run this utility explicitly from a terminal")
+	if *asJSON && *jsonProgress {
+		return errors.New("--json and --json-progress are mutually exclusive")
+	}
+	if *dryRun && *jsonProgress {
+		return errors.New("--json-progress is available only for a qualification run")
 	}
 	identityArgument := strings.TrimSpace(*expectedIdentity)
 	if *yes && identityArgument == "" {
@@ -76,8 +91,11 @@ func run(args []string) error {
 	if *allowFixed && identityArgument == "" {
 		return errors.New("--allow-fixed requires --expected-identity")
 	}
-	if *asJSON && !*dryRun && !*yes {
-		return errors.New("non-dry-run --json requires --yes and --expected-identity")
+	if (*asJSON || *jsonProgress) && !*dryRun && !*yes {
+		return errors.New("non-dry-run machine output requires --yes and --expected-identity")
+	}
+	if os.Getenv("PKEXEC_UID") != "" && !*jsonProgress {
+		return errors.New("graphical device qualification requires --json-progress")
 	}
 
 	profile, err := parseProfile(*profileText)
@@ -133,7 +151,7 @@ func run(args []string) error {
 	if len(device.MountedDescendants(selected)) > 0 && *noUnmount {
 		return errors.New("target has mounted filesystems")
 	}
-	if !*asJSON {
+	if !*asJSON && !*jsonProgress {
 		printPlan(planned)
 	}
 	if !*yes {
@@ -157,13 +175,32 @@ func run(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	encoder := json.NewEncoder(os.Stdout)
 	lastProgress := time.Time{}
+	var streamErr error
 	report, runErr := devicequal.RunDevice(ctx, resolved, devicequal.DeviceOptions{
 		ExpectedDeviceID: kernelDeviceID,
 		ExpectedSize:     selected.Size,
 		Profile:          profile,
 		RegionSize:       regionSize,
 		Progress: func(progress devicequal.Progress) {
+			if *jsonProgress {
+				if streamErr == nil {
+					streamErr = encoder.Encode(qualificationEvent{
+						Event:   "progress",
+						Stage:   progress.Stage,
+						Pass:    progress.Pass,
+						Pattern: progress.Pattern,
+						Done:    progress.Done,
+						Total:   progress.Total,
+						Offset:  progress.Offset,
+					})
+					if streamErr != nil {
+						stop()
+					}
+				}
+				return
+			}
 			if *asJSON {
 				return
 			}
@@ -196,17 +233,21 @@ func run(args []string) error {
 			return safety.VerifyOpenDevice(open, kernelDeviceID, selected.Size)
 		},
 	})
-	if !*asJSON && !lastProgress.IsZero() {
+	if !*asJSON && !*jsonProgress && !lastProgress.IsZero() {
 		fmt.Println()
 	}
+	if *jsonProgress && report.Schema != 0 {
+		resultErr := encoder.Encode(qualificationEvent{Event: "result", Report: &report})
+		return errors.Join(runErr, streamErr, resultErr)
+	}
 	if *asJSON && report.Schema != 0 {
-		if err := json.NewEncoder(os.Stdout).Encode(report); err != nil {
-			return err
+		if err := encoder.Encode(report); err != nil {
+			return errors.Join(runErr, err)
 		}
 	} else if !*asJSON && report.Schema != 0 {
 		printReport(report)
 	}
-	return runErr
+	return errors.Join(runErr, streamErr)
 }
 
 func usage() {
