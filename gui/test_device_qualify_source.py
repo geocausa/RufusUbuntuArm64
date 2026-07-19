@@ -46,8 +46,8 @@ class DeviceQualificationSourceTests(unittest.TestCase):
         source = self.read("cmd/rufus-device-qualify/main.go")
         self.assertIn('jsonProgress := flags.Bool("json-progress"', source)
         self.assertIn('graphical device qualification requires --json-progress', source)
-        self.assertIn('Event: "progress"', source)
-        self.assertIn('Event: "result"', source)
+        self.assertRegex(source, r'Event:\s+"progress"')
+        self.assertRegex(source, r'Event:\s+"result"')
         self.assertIn('non-dry-run machine output requires --yes and --expected-identity', source)
 
     def test_package_contains_both_python_modules(self):
