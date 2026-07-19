@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
-	"math/bits"
 	"time"
 )
 
@@ -17,6 +15,9 @@ const (
 	DefaultBufferSize = 1024 * 1024
 	QuickRegionCount  = 32
 	MaxRegions        = 1 << 20
+	maxBufferSize     = 64 * 1024 * 1024
+	maxRegionSize     = 1<<31 - 1
+	maxRandomOffset   = uint64(1<<63 - 1)
 )
 
 type Profile string
@@ -36,10 +37,8 @@ const (
 
 var ErrVerification = errors.New("device qualification verification failed")
 
-// Backend is the minimal random-access surface required by the qualification
-// engine. This foundation is intentionally exercised through ordinary files
-// and synthetic backends only. Privileged device opening belongs to a later
-// integration layer.
+// Backend is the ordinary-file and simulation surface used by this foundation.
+// Opening a removable block device belongs to a separate privileged layer.
 type Backend interface {
 	io.ReaderAt
 	io.WriterAt
@@ -148,13 +147,13 @@ func BuildPlan(capacity, regionSize uint64, profile Profile) (Plan, error) {
 	if capacity == 0 {
 		return Plan{}, fmt.Errorf("capacity must be greater than zero")
 	}
-	if capacity > math.MaxInt64 {
+	if capacity > maxRandomOffset {
 		return Plan{}, fmt.Errorf("capacity %d exceeds random-access offset limits", capacity)
 	}
 	if regionSize == 0 {
 		regionSize = DefaultRegionSize
 	}
-	if regionSize > math.MaxInt32 {
+	if regionSize > maxRegionSize {
 		return Plan{}, fmt.Errorf("region size %d exceeds the bounded buffer contract", regionSize)
 	}
 
@@ -166,7 +165,7 @@ func BuildPlan(capacity, regionSize uint64, profile Profile) (Plan, error) {
 		return Plan{}, fmt.Errorf("qualification plan requires %d regions; maximum is %d", totalRegions, MaxRegions)
 	}
 
-	indices, err := plannedIndices(totalRegions, profile)
+	indices, err := regionIndices(totalRegions, profile)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -182,7 +181,7 @@ func BuildPlan(capacity, regionSize uint64, profile Profile) (Plan, error) {
 		if remaining := capacity - offset; remaining < length {
 			length = remaining
 		}
-		if math.MaxUint64-plan.PlannedBytes < length {
+		if plan.PlannedBytes > ^uint64(0)-length {
 			return Plan{}, fmt.Errorf("planned-byte total overflow")
 		}
 		plan.Regions = append(plan.Regions, Region{
@@ -192,11 +191,11 @@ func BuildPlan(capacity, regionSize uint64, profile Profile) (Plan, error) {
 		})
 		plan.PlannedBytes += length
 	}
-	plan.SentinelIndices = sentinelIndices(len(plan.Regions), profile)
+	plan.SentinelIndices = makeSentinelIndices(len(plan.Regions), profile)
 	return plan, nil
 }
 
-func plannedIndices(total uint64, profile Profile) ([]uint64, error) {
+func regionIndices(total uint64, profile Profile) ([]uint64, error) {
 	switch profile {
 	case ProfileQuick:
 		count := uint64(QuickRegionCount)
@@ -205,7 +204,10 @@ func plannedIndices(total uint64, profile Profile) ([]uint64, error) {
 		}
 		indices := make([]uint64, 0, int(count))
 		for sample := uint64(0); sample < count; sample++ {
-			index := sampledIndex(sample, count, total)
+			index := uint64(0)
+			if count > 1 {
+				index = (total - 1) * sample / (count - 1)
+			}
 			if len(indices) == 0 || indices[len(indices)-1] != index {
 				indices = append(indices, index)
 			}
@@ -222,17 +224,8 @@ func plannedIndices(total uint64, profile Profile) ([]uint64, error) {
 	}
 }
 
-func sampledIndex(sample, count, total uint64) uint64 {
-	if count <= 1 || total <= 1 {
-		return 0
-	}
-	hi, lo := bits.Mul64(total-1, sample)
-	quotient, _ := bits.Div64(hi, lo, count-1)
-	return quotient
-}
-
-func sentinelIndices(count int, profile Profile) []int {
-	if count <= 0 {
+func makeSentinelIndices(count int, profile Profile) []int {
+	if count == 0 {
 		return nil
 	}
 	if profile == ProfileQuick {
@@ -268,7 +261,7 @@ func Run(ctx context.Context, backend Backend, capacity uint64, config Config) (
 	if config.BufferSize == 0 {
 		config.BufferSize = DefaultBufferSize
 	}
-	if config.BufferSize < 4096 || config.BufferSize > 64*1024*1024 {
+	if config.BufferSize < 4096 || config.BufferSize > maxBufferSize {
 		return Report{}, fmt.Errorf("buffer size %d is outside the 4 KiB to 64 MiB contract", config.BufferSize)
 	}
 	if config.Now == nil {
@@ -309,8 +302,8 @@ func Run(ctx context.Context, backend Backend, capacity uint64, config Config) (
 		passNumber := patternIndex + 1
 		pass := PassReport{Number: passNumber, Pattern: pattern.ID}
 		started := config.Now()
-		if err := contextError(ctx); err != nil {
-			return finishCancelled(report, pass, passNumber, pattern.ID, started, config.Now(), err)
+		if err := ctx.Err(); err != nil {
+			return cancelReport(report, pass, passNumber, pattern.ID, started, config.Now(), err)
 		}
 
 		for _, region := range plan.Regions {
@@ -319,24 +312,24 @@ func Run(ctx context.Context, backend Backend, capacity uint64, config Config) (
 			report.CompletedBytes += written
 			if writeErr != nil {
 				if errors.Is(writeErr, context.Canceled) || errors.Is(writeErr, context.DeadlineExceeded) {
-					return finishCancelled(report, pass, passNumber, pattern.ID, started, config.Now(), writeErr)
+					return cancelReport(report, pass, passNumber, pattern.ID, started, config.Now(), writeErr)
 				}
-				failure := newFailure("write", passNumber, pattern.ID, region, region.Offset+written, writeErr.Error())
-				return finishFailed(report, pass, failure, started, config.Now())
+				failure := ioFailure("write", passNumber, pattern.ID, region, region.Offset+written, writeErr)
+				return failReport(report, pass, failure, started, config.Now())
 			}
 		}
-		if err := backend.Sync(); err != nil {
+		if syncErr := backend.Sync(); syncErr != nil {
 			failure := &Failure{
 				Kind:        "sync",
 				Pass:        passNumber,
 				Pattern:     pattern.ID,
 				RegionIndex: -1,
-				Message:     fmt.Sprintf("flush qualification writes: %v", err),
+				Message:     fmt.Sprintf("flush qualification writes: %v", syncErr),
 			}
-			return finishFailed(report, pass, failure, started, config.Now())
+			return failReport(report, pass, failure, started, config.Now())
 		}
 
-		expectedDigests, digestOwners := expectedDigests(plan.Regions, pattern, expectedBuffer)
+		expected, owners := expectedDigests(plan.Regions, pattern, expectedBuffer)
 		for _, regionIndex := range verificationOrder(len(plan.Regions), plan.SentinelIndices) {
 			region := plan.Regions[regionIndex]
 			verified, failure, verifyErr := verifyRegion(
@@ -346,8 +339,8 @@ func Run(ctx context.Context, backend Backend, capacity uint64, config Config) (
 				pattern,
 				readBuffer,
 				expectedBuffer,
-				expectedDigests[region.Offset],
-				digestOwners,
+				expected[region.Offset],
+				owners,
 				pass.VerifiedBytes,
 				passNumber,
 				plan.PlannedBytes,
@@ -357,15 +350,15 @@ func Run(ctx context.Context, backend Backend, capacity uint64, config Config) (
 			report.CompletedBytes += verified
 			if verifyErr != nil {
 				if errors.Is(verifyErr, context.Canceled) || errors.Is(verifyErr, context.DeadlineExceeded) {
-					return finishCancelled(report, pass, passNumber, pattern.ID, started, config.Now(), verifyErr)
+					return cancelReport(report, pass, passNumber, pattern.ID, started, config.Now(), verifyErr)
 				}
 				if failure == nil {
-					failure = newFailure("read", passNumber, pattern.ID, region, region.Offset+verified, verifyErr.Error())
+					failure = ioFailure("read", passNumber, pattern.ID, region, region.Offset+verified, verifyErr)
 				}
-				return finishFailed(report, pass, failure, started, config.Now())
+				return failReport(report, pass, failure, started, config.Now())
 			}
 		}
-		finishTiming(&pass, started, config.Now())
+		setTiming(&pass, started, config.Now())
 		report.Passes = append(report.Passes, pass)
 	}
 	return report, nil
@@ -388,10 +381,10 @@ func validatePatterns(patterns []Pattern) error {
 func writeRegion(ctx context.Context, backend Backend, region Region, pattern Pattern, buffer []byte, completedBefore uint64, pass int, total uint64, progress ProgressFunc) (uint64, error) {
 	var written uint64
 	for written < region.Length {
-		if err := contextError(ctx); err != nil {
+		if err := ctx.Err(); err != nil {
 			return written, err
 		}
-		chunk := boundedChunk(region.Length-written, len(buffer))
+		chunk := chunkSize(region.Length-written, len(buffer))
 		absolute := region.Offset + written
 		FillPattern(buffer[:chunk], absolute, pattern)
 		n, err := backend.WriteAt(buffer[:chunk], int64(absolute))
@@ -418,18 +411,17 @@ func expectedDigests(regions []Region, pattern Pattern, buffer []byte) (map[uint
 	byOffset := make(map[uint64]string, len(regions))
 	owners := make(map[string]uint64, len(regions))
 	for _, region := range regions {
-		digest := expectedRegionDigest(region, pattern, buffer)
+		digest := expectedDigest(region, pattern, buffer)
 		byOffset[region.Offset] = digest
 		owners[digest] = region.Offset
 	}
 	return byOffset, owners
 }
 
-func expectedRegionDigest(region Region, pattern Pattern, buffer []byte) string {
+func expectedDigest(region Region, pattern Pattern, buffer []byte) string {
 	hasher := sha256.New()
-	var done uint64
-	for done < region.Length {
-		chunk := boundedChunk(region.Length-done, len(buffer))
+	for done := uint64(0); done < region.Length; {
+		chunk := chunkSize(region.Length-done, len(buffer))
 		FillPattern(buffer[:chunk], region.Offset+done, pattern)
 		_, _ = hasher.Write(buffer[:chunk])
 		done += uint64(chunk)
@@ -455,27 +447,27 @@ func verificationOrder(regionCount int, sentinels []int) []int {
 }
 
 func verifyRegion(ctx context.Context, backend Backend, region Region, pattern Pattern, readBuffer, expectedBuffer []byte, expectedDigest string, owners map[string]uint64, completedBefore uint64, pass int, total uint64, progress ProgressFunc) (uint64, *Failure, error) {
-	actualHasher := sha256.New()
+	hasher := sha256.New()
 	var verified uint64
 	var firstMismatch uint64
 	mismatch := false
 	for verified < region.Length {
-		if err := contextError(ctx); err != nil {
+		if err := ctx.Err(); err != nil {
 			return verified, nil, err
 		}
-		chunk := boundedChunk(region.Length-verified, len(readBuffer))
+		chunk := chunkSize(region.Length-verified, len(readBuffer))
 		absolute := region.Offset + verified
-		n, err := backend.ReadAt(readBuffer[:chunk], int64(absolute))
+		n, readErr := backend.ReadAt(readBuffer[:chunk], int64(absolute))
 		verified += uint64(n)
-		if err != nil && !errors.Is(err, io.EOF) {
-			return verified, nil, err
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return verified, nil, readErr
 		}
 		if n != chunk {
 			return verified, nil, io.ErrUnexpectedEOF
 		}
 
 		FillPattern(expectedBuffer[:chunk], absolute, pattern)
-		_, _ = actualHasher.Write(readBuffer[:chunk])
+		_, _ = hasher.Write(readBuffer[:chunk])
 		if !mismatch {
 			for index := 0; index < chunk; index++ {
 				if readBuffer[index] != expectedBuffer[index] {
@@ -483,6 +475,7 @@ func verifyRegion(ctx context.Context, backend Backend, region Region, pattern P
 					mismatch = true
 					break
 				}
+			}
 		}
 		emit(progress, Progress{
 			Stage:   "verify",
@@ -494,7 +487,7 @@ func verifyRegion(ctx context.Context, backend Backend, region Region, pattern P
 		})
 	}
 
-	actualDigest := hex.EncodeToString(actualHasher.Sum(nil))
+	actualDigest := hex.EncodeToString(hasher.Sum(nil))
 	if !mismatch && actualDigest == expectedDigest {
 		return verified, nil, nil
 	}
@@ -538,20 +531,11 @@ func splitMix64(value uint64) uint64 {
 	return value ^ (value >> 31)
 }
 
-func boundedChunk(remaining uint64, bufferSize int) int {
+func chunkSize(remaining uint64, bufferSize int) int {
 	if remaining < uint64(bufferSize) {
 		return int(remaining)
 	}
 	return bufferSize
-}
-
-func contextError(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-		return nil
-	}
 }
 
 func emit(progress ProgressFunc, event Progress) {
@@ -560,7 +544,7 @@ func emit(progress ProgressFunc, event Progress) {
 	}
 }
 
-func newFailure(kind string, pass int, pattern string, region Region, byteOffset uint64, message string) *Failure {
+func ioFailure(kind string, pass int, pattern string, region Region, byteOffset uint64, err error) *Failure {
 	return &Failure{
 		Kind:         kind,
 		Pass:         pass,
@@ -568,21 +552,21 @@ func newFailure(kind string, pass int, pattern string, region Region, byteOffset
 		RegionIndex:  region.Index,
 		RegionOffset: region.Offset,
 		ByteOffset:   byteOffset,
-		Message:      message,
+		Message:      err.Error(),
 	}
 }
 
-func finishFailed(report Report, pass PassReport, failure *Failure, started, finished time.Time) (Report, error) {
+func failReport(report Report, pass PassReport, failure *Failure, started, finished time.Time) (Report, error) {
 	pass.Failure = failure
-	finishTiming(&pass, started, finished)
+	setTiming(&pass, started, finished)
 	report.Passes = append(report.Passes, pass)
 	report.Status = StatusFailed
 	report.Failure = failure
-	report.AliasingDetected = failure != nil && failure.Kind == "alias"
+	report.AliasingDetected = failure.Kind == "alias"
 	return report, ErrVerification
 }
 
-func finishCancelled(report Report, pass PassReport, passNumber int, pattern string, started, finished time.Time, err error) (Report, error) {
+func cancelReport(report Report, pass PassReport, passNumber int, pattern string, started, finished time.Time, err error) (Report, error) {
 	failure := &Failure{
 		Kind:        "cancelled",
 		Pass:        passNumber,
@@ -591,14 +575,14 @@ func finishCancelled(report Report, pass PassReport, passNumber int, pattern str
 		Message:     err.Error(),
 	}
 	pass.Failure = failure
-	finishTiming(&pass, started, finished)
+	setTiming(&pass, started, finished)
 	report.Passes = append(report.Passes, pass)
 	report.Status = StatusCancelled
 	report.Failure = failure
 	return report, err
 }
 
-func finishTiming(pass *PassReport, started, finished time.Time) {
+func setTiming(pass *PassReport, started, finished time.Time) {
 	elapsed := finished.Sub(started)
 	if elapsed < 0 {
 		elapsed = 0
