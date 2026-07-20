@@ -1,4 +1,4 @@
-name: Apply pinned FreeDOS boot-code provenance
+name: Verify pinned FreeDOS boot-code provenance
 
 on:
   push:
@@ -10,25 +10,30 @@ permissions:
   contents: write
 
 jobs:
-  apply:
+  verify:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: feature/freedos-bootcode-provenance
-      - name: Apply and verify pinned assets
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v6
+        with:
+          go-version: '1.22.12'
+      - name: Format and verify provenance code
         shell: bash
         run: |
           set -euxo pipefail
-          tmp="$(mktemp -d)"
-          git clone --filter=blob:none --no-checkout https://github.com/pbatard/rufus.git "$tmp/rufus"
-          git -C "$tmp/rufus" checkout --detach 6d8fbf98305ff37eb531c45cbd6ff44563c53917
-          python3 .github/scripts/apply_freedos_bootcode_provenance.py --rufus-root "$tmp/rufus"
+          gofmt -w internal/freedos/bootassets.go internal/freedos/bootassets_test.go
+          test -z "$(gofmt -l internal/freedos)"
+          go test -race ./internal/freedos
+          go test -shuffle=on -count=3 ./internal/freedos
           python3 scripts/extract-freedos-bootassets.py --check
           (cd vendor/ms-sys && sha256sum -c UPSTREAM-SHA256SUMS)
-          python3 -m py_compile scripts/extract-freedos-bootassets.py .github/scripts/apply_freedos_bootcode_provenance.py
+          python3 -m py_compile scripts/extract-freedos-bootassets.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add vendor/ms-sys internal/freedos/bootassets scripts/extract-freedos-bootassets.py
-          git commit -m 'FreeDOS: pin default Rufus MBR and FAT32 PBR assets'
-          git push origin HEAD:feature/freedos-bootcode-provenance
+          git add internal/freedos/bootassets.go internal/freedos/bootassets_test.go
+          if ! git diff --cached --quiet; then
+            git commit -m 'FreeDOS: format boot-code verifier sources'
+            git push origin HEAD:feature/freedos-bootcode-provenance
+          fi
