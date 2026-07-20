@@ -1,0 +1,34 @@
+name: Apply non-bootable descriptor binding
+
+on:
+  push:
+    branches: [feature/nonbootable-executor]
+    paths:
+      - .github/workflows/apply-nonbootable-fd-binding.yml
+      - .github/scripts/apply_nonbootable_fd_binding.py
+      - internal/nonbootable/binding_linux.go
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/nonbootable-executor
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.22.x'
+      - name: Apply and verify descriptor binding
+        run: |
+          set -eux
+          python3 .github/scripts/apply_nonbootable_fd_binding.py
+          gofmt -w internal/nonbootable/backend_linux.go internal/nonbootable/binding_linux.go
+          go test ./internal/nonbootable ./cmd/rufus-nonbootable-format
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Stage 2: bind formatter tools to verified descriptors"
+          git push origin HEAD:feature/nonbootable-executor
