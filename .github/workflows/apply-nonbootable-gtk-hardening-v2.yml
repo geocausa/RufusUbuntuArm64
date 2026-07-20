@@ -1,0 +1,29 @@
+name: Apply non-bootable GTK hardening v2
+
+on:
+  push:
+    branches: [feature/nonbootable-gtk]
+    paths:
+      - .github/workflows/apply-nonbootable-gtk-hardening-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/nonbootable-gtk
+      - name: Apply and verify hardening
+        run: |
+          set -eux
+          python3 .github/scripts/apply_nonbootable_gtk_hardening.py
+          python3 -m py_compile gui/rufusarm64_nonbootable.py gui/rufusarm64_nonbootable_dialog.py
+          PYTHONPATH=gui python3 -m unittest gui/test_nonbootable_format.py gui/test_nonbootable_dialog.py gui/test_packaged_launcher.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add gui/rufusarm64_nonbootable_dialog.py gui/test_nonbootable_format.py gui/test_nonbootable_dialog.py
+          git commit -m "GTK: bind formatter policy path and canonical labels"
+          git push origin HEAD:feature/nonbootable-gtk
