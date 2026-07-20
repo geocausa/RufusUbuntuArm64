@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -125,6 +126,14 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def sha256_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def git_blob_sha1(data: bytes) -> str:
     header = f"blob {len(data)}\0".encode("ascii")
     return hashlib.sha1(header + data).hexdigest()  # noqa: S324 - Git object identity
@@ -181,11 +190,8 @@ def read_member(archive: Path, member: str) -> bytes:
 
 def validate_source_archive(name: str, data: bytes) -> None:
     record = FILE_RECORDS[name]
-    with zipfile.ZipFile(Path(os.devnull), "w") if False else tempfile.NamedTemporaryFile() as temporary:
-        temporary.write(data)
-        temporary.flush()
-        with zipfile.ZipFile(temporary.name) as handle:
-            members = handle.namelist()
+    with zipfile.ZipFile(io.BytesIO(data)) as handle:
+        members = handle.namelist()
     if len(members) != record["member_count"]:
         raise SystemExit(f"{name}: unexpected source member count {len(members)}")
     members_upper = {member.upper() for member in members}
@@ -224,6 +230,14 @@ def check_repository() -> None:
         if name.endswith("-sources.zip"):
             validate_source_archive(name, data)
 
+    freecom_license_path = METADATA_DIR / "FREECOM-LICENSE"
+    if not freecom_license_path.is_file():
+        raise SystemExit("missing vendor/freedos/metadata/FREECOM-LICENSE")
+    with zipfile.ZipFile(io.BytesIO(loaded["freecom-sources.zip"])) as handle:
+        expected_freecom_license = handle.read("license")
+    if freecom_license_path.read_bytes() != expected_freecom_license:
+        raise SystemExit("FreeCOM licence text differs from the pinned source archive")
+
     validate_payload_pair(loaded["KERNL386.SYS"], loaded["KERNEL.SYS"])
     if b"GNU General Public License, Version 2" not in loaded["FREECOM.LSM"]:
         raise SystemExit("FreeCOM package metadata lost its GPLv2 declaration")
@@ -243,8 +257,7 @@ def verify_package(path: Path, name: str) -> None:
 def extract_from_archive(archive: Path) -> dict[str, bytes]:
     if shutil.which("mcopy") is None:
         raise SystemExit("mcopy is required to extract packages from the FullUSB image")
-    archive_data = archive.read_bytes()
-    if sha256(archive_data) != FULLUSB_SHA256:
+    if sha256_path(archive) != FULLUSB_SHA256:
         raise SystemExit("FD14-FullUSB.zip SHA-256 does not match the official release")
 
     with tempfile.TemporaryDirectory(prefix="rufusarm64-freedos-") as directory:
@@ -303,6 +316,10 @@ def write_repository(files: dict[str, bytes]) -> None:
         path = ROOT / FILE_RECORDS[name]["path"]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
+    with zipfile.ZipFile(io.BytesIO(files["freecom-sources.zip"])) as handle:
+        freecom_license = handle.read("license")
+    METADATA_DIR.mkdir(parents=True, exist_ok=True)
+    (METADATA_DIR / "FREECOM-LICENSE").write_bytes(freecom_license)
     VENDOR_DIR.mkdir(parents=True, exist_ok=True)
     MANIFEST_PATH.write_text(
         json.dumps(canonical_manifest(), indent=2, sort_keys=True) + "\n",

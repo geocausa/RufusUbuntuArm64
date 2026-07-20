@@ -209,6 +209,9 @@ for entry in manifest["assets"]:
     assert hashlib.sha256(source.read_bytes()).hexdigest() == entry["source_sha256"]
 PYFREEDOSBOOT
 
+python3 scripts/extract-freedos-payload.py --check
+python3 -m py_compile scripts/extract-freedos-payload.py
+
 if [[ -f vendor/wimlib/source/wimlib-1.14.5-source.tar.gz ]]; then
   (
     cd vendor/wimlib/source
