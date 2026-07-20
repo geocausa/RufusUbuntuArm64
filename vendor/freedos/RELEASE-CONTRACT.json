@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "scope": "release planning only; no FreeDOS command, runtime installation, device operation, or GTK exposure is authorized",
+  "distribution": "FreeDOS 1.4",
+  "update_policy": {
+    "automatic_updates": false,
+    "runtime_network_access": false,
+    "cadence": "manual review only when an official FreeDOS release or a security-relevant payload correction is intentionally adopted",
+    "required_input": "official checksum-pinned FreeDOS FullUSB archive",
+    "required_checks": [
+      "published archive SHA-256",
+      "nested package SHA-256 and exact members",
+      "source-backed FORCELBA derivation",
+      "Rufus Git blob identity",
+      "complete corresponding source archives",
+      "exact GPLv2 and package metadata",
+      "ordinary-file media verification",
+      "read-only loop-device qualification",
+      "reproducible Debian package"
+    ]
+  },
+  "future_package": {
+    "private_command_path": "/usr/lib/rufusarm64/rufusarm64-freedos-format",
+    "source_root": "/usr/share/doc/rufusarm64/freedos/source",
+    "metadata_root": "/usr/share/doc/rufusarm64/freedos/metadata",
+    "payload_installed_as_separate_files": false,
+    "new_runtime_dependencies": [],
+    "network_access_at_runtime": false
+  },
+  "embedded_assets": [
+    {
+      "path": "internal/freedos/payload/COMMAND.COM",
+      "role": "media payload",
+      "size": 87772,
+      "sha256": "077808379e896476f7f69d62e6c8989d8fc23e8ef58d1c8492db1ac106784107"
+    },
+    {
+      "path": "internal/freedos/payload/KERNL386.SYS",
+      "role": "source-distribution payload used to prove the one-byte kernel derivation",
+      "size": 46256,
+      "sha256": "932c0c155701eddb7b902f7269a1b2ce31f5c82a6dc195172f2336d18a74e1fb"
+    },
+    {
+      "path": "internal/freedos/payload/KERNEL.SYS",
+      "role": "media payload",
+      "size": 46256,
+      "sha256": "57504a0d5e1d57a0407d995e77fcebb9627da2c0dbe0f1cbf7c5fa901d2efc6c"
+    },
+    {
+      "path": "internal/freedos/bootassets/rufus-mbr-code.bin",
+      "role": "MBR bootstrap",
+      "size": 440,
+      "sha256": "4fca7dcfac9f90390d00ab42c2e814952fbce41c83aa87c5c696e663efd60259"
+    },
+    {
+      "path": "internal/freedos/bootassets/fat32-freedos-pbr-0x0.bin",
+      "role": "FAT32 FreeDOS PBR prefix",
+      "size": 11,
+      "sha256": "e08eb0254294a42a6dc29fa094f8c6e4fee38513b4082deb81f305b2c31e5531"
+    },
+    {
+      "path": "internal/freedos/bootassets/fat32-freedos-pbr-0x52.bin",
+      "role": "FAT32 FreeDOS PBR loader",
+      "size": 918,
+      "sha256": "8a6fd500a6c4ca72d0a27149528a2e811954528d4340c9c2d7d284f2c5e897aa"
+    },
+    {
+      "path": "internal/freedos/bootassets/fat32-freedos-pbr-0x3f0.bin",
+      "role": "FAT32 FreeDOS PBR continuation",
+      "size": 528,
+      "sha256": "2435a2b31cfd762807f6538ff3363b21abbc9c3caa2ad936c8a54848da3f6165"
+    }
+  ],
+  "corresponding_source": [
+    {
+      "path": "vendor/freedos/source/freecom-sources.zip",
+      "install_path": "/usr/share/doc/rufusarm64/freedos/source/freecom-sources.zip",
+      "size": 1236304,
+      "sha256": "beef029a2268cac4dd5b729a649ea4e23f30c9cfee1788c4bbd64b4d4ddb093b"
+    },
+    {
+      "path": "vendor/freedos/source/kernel-sources.zip",
+      "install_path": "/usr/share/doc/rufusarm64/freedos/source/kernel-sources.zip",
+      "size": 539853,
+      "sha256": "fda372721899e6a9cabbfa6beed259be19dafd0fe16d90b8f4da1a9397fde574"
+    }
+  ],
+  "license_metadata": [
+    {
+      "path": "vendor/freedos/metadata/FREECOM.LSM",
+      "install_path": "/usr/share/doc/rufusarm64/freedos/metadata/FREECOM.LSM",
+      "size": 585,
+      "sha256": "0c370cb1cbbc41d775a478ce88baf2b01cca24c8a7311f4b1f4d094de2cd29d2"
+    },
+    {
+      "path": "vendor/freedos/metadata/KERNEL.LSM",
+      "install_path": "/usr/share/doc/rufusarm64/freedos/metadata/KERNEL.LSM",
+      "size": 970,
+      "sha256": "fcf0314885a8a4d5f82ecea0a82e81cafbd017a43959ed1de5c7e14011b2351e"
+    },
+    {
+      "path": "vendor/freedos/metadata/KERNEL-COPYING",
+      "install_path": "/usr/share/doc/rufusarm64/freedos/metadata/KERNEL-COPYING",
+      "size": 18330,
+      "sha256": "2ec21c4f10e9fc6bafbc619cf905424162a0b6443e482d599a6d0d7718e9ae58"
+    }
+  ],
+  "totals": {
+    "media_payload_bytes": 134028,
+    "embedded_asset_bytes": 182181,
+    "corresponding_source_bytes": 1776157,
+    "license_metadata_bytes": 19885,
+    "minimum_uncompressed_package_material_bytes": 1978223
+  }
+}
