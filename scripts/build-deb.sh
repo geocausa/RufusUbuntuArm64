@@ -57,6 +57,10 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
   go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \
   -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-device-backup" \
   "${ROOT_DIR}/cmd/rufus-device-backup"
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+  go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \
+  -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-nonbootable-format" \
+  "${ROOT_DIR}/cmd/rufus-nonbootable-format"
 
 install -Dm755 "${ROOT_DIR}/gui/rufusarm64.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64.py"
@@ -231,6 +235,8 @@ ln -s ../lib/rufusarm64/rufusarm64-device-qualify \
   "${PACKAGE_DIR}/usr/bin/rufusarm64-device-qualify"
 ln -s ../lib/rufusarm64/rufusarm64-device-backup \
   "${PACKAGE_DIR}/usr/bin/rufusarm64-device-backup"
+ln -s ../lib/rufusarm64/rufusarm64-nonbootable-format \
+  "${PACKAGE_DIR}/usr/bin/rufusarm64-nonbootable-format"
 install -Dm644 "${ROOT_DIR}/packaging/io.github.geocausa.RufusArm64.desktop" \
   "${PACKAGE_DIR}/usr/share/applications/io.github.geocausa.RufusArm64.desktop"
 install -Dm644 "${ROOT_DIR}/packaging/io.github.geocausa.RufusArm64.Persistence.desktop" \
@@ -262,7 +268,7 @@ install -Dm644 "${ROOT_DIR}/packaging/copyright" \
 install -Dm644 "${ROOT_DIR}/CHANGELOG.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/changelog"
 gzip -9n "${PACKAGE_DIR}/usr/share/doc/rufusarm64/changelog"
-for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify rufusarm64-device-backup; do
+for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify rufusarm64-device-backup rufusarm64-nonbootable-format; do
   install -Dm644 "${ROOT_DIR}/docs/${page}.1" \
     "${PACKAGE_DIR}/usr/share/man/man1/${page}.1"
   gzip -9n "${PACKAGE_DIR}/usr/share/man/man1/${page}.1"
@@ -280,7 +286,7 @@ Priority: optional
 Architecture: ${ARCH}
 Maintainer: geocausa <noreply@github.com>
 Installed-Size: ${INSTALLED_SIZE}
-Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, mount, dosfstools, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils
+Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, mount, fdisk, dosfstools, exfatprogs, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils
 Homepage: https://github.com/geocausa/RufusUbuntuArm64
 Description: Bootable USB creator for Ubuntu ARM64
  A graphical utility that writes Linux ISOHybrid/raw images, creates verified

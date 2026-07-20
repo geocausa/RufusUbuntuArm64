@@ -45,7 +45,7 @@ func TestBuildPlanCanonicalGPTFAT32(t *testing.T) {
 	if plan.PartitionType != "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7" {
 		t.Fatalf("partition type = %q", plan.PartitionType)
 	}
-	wantTools := []string{"sfdisk", "blockdev", "udevadm", "mkfs.vfat", "fsck.vfat"}
+	wantTools := []string{"sfdisk", "blockdev", "mkfs.vfat", "fsck.vfat"}
 	if strings.Join(plan.RequiredTools, ",") != strings.Join(wantTools, ",") {
 		t.Fatalf("tools = %#v", plan.RequiredTools)
 	}
@@ -116,7 +116,7 @@ func TestFilesystemAliasesAndContracts(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", filesystem, err)
 		}
-		if plan.FilesystemDisplay != display || len(plan.RequiredTools) != 5 {
+		if plan.FilesystemDisplay != display || len(plan.RequiredTools) != 4 {
 			t.Fatalf("%s plan = %#v", filesystem, plan)
 		}
 	}
@@ -140,8 +140,8 @@ func TestBuildPlanRejectsUnsafeOrUnsupportedInput(t *testing.T) {
 		{name: "leading space", mutate: func(value *Request) { value.Label = " DATA" }, want: "leading or trailing"},
 		{name: "control", mutate: func(value *Request) { value.Filesystem = "ntfs"; value.Label = "BAD\nLABEL" }, want: "control"},
 		{name: "ext4 bytes", mutate: func(value *Request) { value.Filesystem = "ext4"; value.Label = "ééééééééé" }, want: "16 bytes"},
-		{name: "exfat characters", mutate: func(value *Request) { value.Filesystem = "exfat"; value.Label = "1234567890123456" }, want: "15 characters"},
-		{name: "ntfs characters", mutate: func(value *Request) { value.Filesystem = "ntfs"; value.Label = strings.Repeat("x", 33) }, want: "32 characters"},
+		{name: "exfat characters", mutate: func(value *Request) { value.Filesystem = "exfat"; value.Label = "1234567890123456" }, want: "15 UTF-16 code units"},
+		{name: "ntfs characters", mutate: func(value *Request) { value.Filesystem = "ntfs"; value.Label = strings.Repeat("x", 33) }, want: "32 UTF-16 code units"},
 		{name: "fat capacity", mutate: func(value *Request) { value.DeviceSizeBytes = maximumFAT32Size + 4*1024*1024 }, want: "compatibility contract"},
 	}
 	for _, test := range tests {
@@ -153,6 +153,25 @@ func TestBuildPlanRejectsUnsafeOrUnsupportedInput(t *testing.T) {
 				t.Fatalf("error = %v, want substring %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestUnicodeLabelsUseOnDiskUTF16Limits(t *testing.T) {
+	tests := []struct {
+		filesystem string
+		label      string
+		want       string
+	}{
+		{filesystem: FilesystemExFAT, label: strings.Repeat("😀", 8), want: "15 UTF-16 code units"},
+		{filesystem: FilesystemNTFS, label: strings.Repeat("😀", 17), want: "32 UTF-16 code units"},
+	}
+	for _, test := range tests {
+		request := baseRequest()
+		request.Filesystem = test.filesystem
+		request.Label = test.label
+		if _, err := BuildPlan(request); err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Fatalf("%s label error=%v, want %q", test.filesystem, err, test.want)
+		}
 	}
 }
 

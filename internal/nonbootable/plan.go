@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -75,7 +76,7 @@ type filesystemContract struct {
 	gptType       string
 	mbrType       string
 	maxLabelBytes int
-	maxLabelRunes int
+	maxLabelUTF16 int
 	fatLabel      bool
 	maxSize       uint64
 }
@@ -97,7 +98,7 @@ var filesystemContracts = map[string]filesystemContract{
 		check:         "fsck.exfat",
 		gptType:       "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
 		mbrType:       "07",
-		maxLabelRunes: 15,
+		maxLabelUTF16: 15,
 	},
 	FilesystemNTFS: {
 		display:       "NTFS",
@@ -105,7 +106,7 @@ var filesystemContracts = map[string]filesystemContract{
 		check:         "ntfsfix",
 		gptType:       "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
 		mbrType:       "07",
-		maxLabelRunes: 32,
+		maxLabelUTF16: 32,
 	},
 	FilesystemExt4: {
 		display:       "ext4",
@@ -294,7 +295,7 @@ func canonicalGeometry(deviceSize, sectorSize uint64, contract filesystemContrac
 }
 
 func requiredTools(contract filesystemContract) []string {
-	return []string{"sfdisk", "blockdev", "udevadm", contract.mkfs, contract.check}
+	return []string{"sfdisk", "blockdev", contract.mkfs, contract.check}
 }
 
 func safetyWarnings() []string {
@@ -335,8 +336,8 @@ func normalizeLabel(value string, contract filesystemContract) (string, error) {
 	if contract.maxLabelBytes != 0 && len([]byte(value)) > contract.maxLabelBytes {
 		return "", fmt.Errorf("%s label exceeds %d bytes", contract.display, contract.maxLabelBytes)
 	}
-	if contract.maxLabelRunes != 0 && utf8.RuneCountInString(value) > contract.maxLabelRunes {
-		return "", fmt.Errorf("%s label exceeds %d characters", contract.display, contract.maxLabelRunes)
+	if contract.maxLabelUTF16 != 0 && len(utf16.Encode([]rune(value))) > contract.maxLabelUTF16 {
+		return "", fmt.Errorf("%s label exceeds %d UTF-16 code units", contract.display, contract.maxLabelUTF16)
 	}
 	return value, nil
 }
