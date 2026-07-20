@@ -32,6 +32,12 @@ type DeviceOptions struct {
 
 // ExecuteDevice runs the state machine through the production Linux backend.
 func ExecuteDevice(ctx context.Context, plan Plan, options DeviceOptions) (Report, error) {
+	if options.ExpectedDeviceID == 0 {
+		return Report{}, errors.New("formatter backend requires a bound kernel device identity")
+	}
+	if options.BeforeDestructive == nil {
+		return Report{}, errors.New("formatter backend requires a final pre-destructive safety callback")
+	}
 	backend := &linuxBackend{options: options}
 	if backend.options.PartitionTimeout <= 0 {
 		backend.options.PartitionTimeout = 30 * time.Second
