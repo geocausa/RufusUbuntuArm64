@@ -50,9 +50,10 @@ func ExecuteDevice(ctx context.Context, plan Plan, options DeviceOptions) (Repor
 type linuxBackend struct {
 	options DeviceOptions
 	target  *os.File
+	locked  bool
 }
 
-func (backend *linuxBackend) Prepare(_ context.Context, plan Plan, _ PartitionTable) error {
+func (backend *linuxBackend) Prepare(ctx context.Context, plan Plan, _ PartitionTable) error {
 	for _, name := range append(append([]string(nil), plan.RequiredTools...), "wipefs", "blkid", "sync") {
 		if _, err := exec.LookPath(name); err != nil {
 			return fmt.Errorf("required program %q is not installed", name)
@@ -64,11 +65,15 @@ func (backend *linuxBackend) Prepare(_ context.Context, plan Plan, _ PartitionTa
 	if backend.options.ExpectedSize != plan.DeviceSizeBytes {
 		return errors.New("backend target size does not match the reviewed plan")
 	}
-	file, err := os.OpenFile(plan.DevicePath, os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_EXCL, 0)
+	file, err := safety.OpenReopenableDevice(plan.DevicePath)
 	if err != nil {
-		return fmt.Errorf("open target exclusively: %w", err)
+		return fmt.Errorf("open target for guarded formatting: %w", err)
 	}
 	backend.target = file
+	if err := safety.AcquireExclusiveFlock(ctx, file); err != nil {
+		return fmt.Errorf("another storage operation appears to be using %s: %w", plan.DevicePath, err)
+	}
+	backend.locked = true
 	if err := safety.VerifyOpenDevice(file, backend.options.ExpectedDeviceID, plan.DeviceSizeBytes); err != nil {
 		return err
 	}
@@ -231,12 +236,18 @@ func (backend *linuxBackend) Close() error {
 	if backend.target == nil {
 		return nil
 	}
-	err := backend.target.Close()
-	backend.target = nil
-	if err != nil {
-		return fmt.Errorf("close target: %w", err)
+	var result error
+	if backend.locked {
+		if err := syscall.Flock(int(backend.target.Fd()), syscall.LOCK_UN); err != nil {
+			result = errors.Join(result, fmt.Errorf("unlock target: %w", err))
+		}
 	}
-	return nil
+	if err := backend.target.Close(); err != nil {
+		result = errors.Join(result, fmt.Errorf("close target: %w", err))
+	}
+	backend.target = nil
+	backend.locked = false
+	return result
 }
 
 func (backend *linuxBackend) verifyTarget(plan Plan) error {
