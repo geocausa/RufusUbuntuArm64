@@ -17,13 +17,33 @@ jobs:
         with:
           ref: feature/nonbootable-gtk
       - name: Apply and verify strict contract
+        id: verify
+        shell: bash
+        run: |
+          set +e
+          {
+            set -x
+            python3 .github/scripts/apply_nonbootable_gtk_contract.py
+            python3 -m py_compile gui/rufusarm64_nonbootable.py gui/rufusarm64_nonbootable_dialog.py
+            PYTHONPATH=gui python3 -m unittest -v gui/test_nonbootable_format.py gui/test_nonbootable_dialog.py gui/test_packaged_launcher.py
+          } > contract.log 2>&1
+          status=$?
+          cat contract.log
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          exit 0
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nonbootable-gtk-contract-log
+          path: contract.log
+      - name: Commit verified strict contract
+        if: steps.verify.outputs.status == '0'
         run: |
           set -eux
-          python3 .github/scripts/apply_nonbootable_gtk_contract.py
-          python3 -m py_compile gui/rufusarm64_nonbootable.py gui/rufusarm64_nonbootable_dialog.py
-          PYTHONPATH=gui python3 -m unittest -v gui/test_nonbootable_format.py gui/test_nonbootable_dialog.py gui/test_packaged_launcher.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add gui/rufusarm64_nonbootable.py gui/test_nonbootable_format.py
           git commit -m "GTK: enforce exact non-bootable formatter contracts"
           git push origin HEAD:feature/nonbootable-gtk
+      - name: Fail on verification error
+        if: steps.verify.outputs.status != '0'
+        run: exit 1
