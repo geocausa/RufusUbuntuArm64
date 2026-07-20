@@ -1,0 +1,43 @@
+name: Map pinned FreeDOS boot code
+
+on:
+  push:
+    branches: [feature/freedos-bootcode-provenance]
+    paths:
+      - .github/workflows/map-freedos-bootcode.yml
+
+permissions:
+  contents: write
+
+jobs:
+  map:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/freedos-bootcode-provenance
+      - name: Inspect pinned Rufus source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          tmp="$(mktemp -d)"
+          git clone --filter=blob:none --no-checkout https://github.com/pbatard/rufus.git "$tmp/rufus"
+          git -C "$tmp/rufus" checkout --detach 6d8fbf98305ff37eb531c45cbd6ff44563c53917
+          {
+            echo 'Rufus commit:'
+            git -C "$tmp/rufus" rev-parse HEAD
+            echo
+            echo 'FreeDOS format call sites:'
+            grep -R -n -C 12 -E 'BT_FREEDOS|write_fat_32_fd_br|ExtractFreeDOS' "$tmp/rufus/src/format.c" "$tmp/rufus/src" | head -n 1200
+            echo
+            echo 'FreeDOS/FAT/MS-DOS boot headers:'
+            find "$tmp/rufus/src/ms-sys/inc" -maxdepth 1 -type f -printf '%f\n' | sort | grep -Ei '(^mbr|mbr|fat(16|32).*fd|fd.*fat|dos)'
+            echo
+            echo 'Functions that write MBR code:'
+            grep -R -n -E 'write_.*mbr|mbr.*write_' "$tmp/rufus/src/ms-sys" "$tmp/rufus/src/format.c" | head -n 800
+          } > docs/freedos-rufus-bootcode-map.txt
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs/freedos-rufus-bootcode-map.txt
+          git commit -m 'FreeDOS: map pinned Rufus boot-code paths'
+          git push origin HEAD:feature/freedos-bootcode-provenance
