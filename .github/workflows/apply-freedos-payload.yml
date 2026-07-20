@@ -1,0 +1,37 @@
+name: Apply pinned FreeDOS payload assets
+
+on:
+  push:
+    branches: [feature/freedos-payload-provenance]
+    paths:
+      - .github/workflows/apply-freedos-payload.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/freedos-payload-provenance
+      - name: Reproduce and commit reviewed payloads
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl mtools
+          tmp="$(mktemp -d)"
+          curl --fail --location --retry 5 --retry-all-errors \
+            --output "$tmp/FD14-FullUSB.zip" \
+            https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/distributions/1.4/FD14-FullUSB.zip
+          python3 scripts/extract-freedos-payload.py \
+            --archive "$tmp/FD14-FullUSB.zip" --write --check
+          python3 -m py_compile scripts/extract-freedos-payload.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add internal/freedos/payload vendor/freedos scripts/extract-freedos-payload.py
+          git commit -m 'FreeDOS: pin official minimal payload and sources'
+          git push origin HEAD:feature/freedos-payload-provenance
