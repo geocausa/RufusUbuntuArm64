@@ -15,7 +15,11 @@ import (
 	"github.com/geocausa/RufusArm64/internal/windowsconfig"
 )
 
-const maxWIMMetadataBytes = 8 * 1024 * 1024
+const (
+	maxWIMMetadataBytes = 8 * 1024 * 1024
+	maxWIMImages        = 256
+	maxWIMEditionName   = 256
+)
 
 type wimInfoXML struct {
 	Images []wimImageXML `xml:"IMAGE"`
@@ -79,7 +83,9 @@ func (b *BoundedBuffer) String() string {
 }
 
 // InspectWIMMetadata executes the pinned or system wimlib engine without a
-// shell and caps XML output before parsing it.
+// shell and caps XML output before parsing it. wiminfo can inspect the first
+// part of a split WIM directly because its XML image metadata is stored there;
+// no resource extraction or automatic edition selection is performed.
 func InspectWIMMetadata(ctx context.Context, imagePath string) (windowsconfig.MediaMetadata, error) {
 	wimlib, err := wimlibExecutable()
 	if err != nil {
@@ -101,7 +107,9 @@ func InspectWIMMetadata(ctx context.Context, imagePath string) (windowsconfig.Me
 }
 
 // parseWIMMetadata converts bounded wimlib XML output into the conservative
-// capability metadata shared by Windows setup validation and the GUI.
+// capability metadata shared by Windows setup validation and the GUI. Every
+// edition must agree on generation, family, and architecture before the result
+// is accepted; the bounded edition list is retained only for disclosure.
 func parseWIMMetadata(reader io.Reader) (windowsconfig.MediaMetadata, error) {
 	if reader == nil {
 		return windowsconfig.MediaMetadata{}, errors.New("WIM metadata reader is nil")
@@ -121,8 +129,12 @@ func parseWIMMetadata(reader io.Reader) (windowsconfig.MediaMetadata, error) {
 	if len(document.Images) == 0 {
 		return windowsconfig.MediaMetadata{}, errors.New("WIM metadata contains no Windows images")
 	}
+	if len(document.Images) > maxWIMImages {
+		return windowsconfig.MediaMetadata{}, fmt.Errorf("WIM metadata contains %d images; the safe limit is %d", len(document.Images), maxWIMImages)
+	}
 
 	var result windowsconfig.MediaMetadata
+	seenNames := make(map[string]struct{})
 	for index, image := range document.Images {
 		current := windowsconfig.MediaMetadata{
 			ProductName:      firstNonEmpty(image.Windows.ProductName, image.Name),
@@ -132,12 +144,23 @@ func parseWIMMetadata(reader io.Reader) (windowsconfig.MediaMetadata, error) {
 		}
 		if index == 0 {
 			result = current
-			continue
-		}
-		if metadataClass(result) != metadataClass(current) {
+		} else if metadataClass(result) != metadataClass(current) {
 			return windowsconfig.MediaMetadata{}, errors.New("WIM editions contain conflicting Windows generation, family, or architecture metadata")
 		}
+
+		name := firstNonEmpty(image.Name, image.Windows.ProductName)
+		if len(name) > maxWIMEditionName {
+			return windowsconfig.MediaMetadata{}, fmt.Errorf("WIM edition name exceeds the %d-byte safe limit", maxWIMEditionName)
+		}
+		if name != "" {
+			key := strings.ToLower(name)
+			if _, exists := seenNames[key]; !exists {
+				seenNames[key] = struct{}{}
+				result.EditionNames = append(result.EditionNames, name)
+			}
+		}
 	}
+	result.ImageCount = len(document.Images)
 	return result, nil
 }
 
