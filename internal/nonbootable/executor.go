@@ -70,8 +70,9 @@ type Backend interface {
 }
 
 // Execute applies a reviewed plan through a narrow backend. Cancellation is
-// checked before each phase. Once Erase succeeds the report always states that
-// media changed, even when a later phase fails or is cancelled.
+// checked before each phase. Once the erase operation is invoked the report
+// conservatively states that media may have changed, even if that operation
+// returns an error.
 func Execute(ctx context.Context, plan Plan, backend Backend, now func() time.Time) (Report, error) {
 	if backend == nil {
 		return Report{}, errors.New("formatter backend is required")
@@ -100,11 +101,19 @@ func Execute(ctx context.Context, plan Plan, backend Backend, now func() time.Ti
 		report.CompletedAt = completed.Format(time.RFC3339Nano)
 		report.MediaChanged = mediaChanged
 		report.Reusable = false
+		report.Filesystem = nil
 		report.Failure = &Failure{Phase: phase, Message: failure.Error(), MediaChanged: mediaChanged}
 		if err := ValidateReport(report); err != nil {
 			return Report{}, errors.Join(failure, fmt.Errorf("build formatter report: %w", err))
 		}
 		return report, failure
+	}
+	finishPhaseError := func(phase string, mediaChanged bool, prefix string, failure error) (Report, error) {
+		status := StatusFailed
+		if errors.Is(failure, context.Canceled) || errors.Is(failure, context.DeadlineExceeded) {
+			status = StatusCancelled
+		}
+		return finishFailure(status, phase, mediaChanged, fmt.Errorf("%s: %w", prefix, failure))
 	}
 	checkCancelled := func(phase string, changed bool) (Report, error, bool) {
 		if err := ctx.Err(); err != nil {
@@ -119,45 +128,48 @@ func Execute(ctx context.Context, plan Plan, backend Backend, now func() time.Ti
 		return out, failure
 	}
 	if err := backend.Prepare(ctx, plan, table); err != nil {
-		return finishFailure(StatusFailed, PhasePreflight, false, fmt.Errorf("prepare formatter: %w", err))
+		return finishPhaseError(PhasePreflight, false, "prepare formatter", err)
 	}
 	if out, failure, cancelled := checkCancelled(PhaseErase, false); cancelled {
 		return out, failure
 	}
-	if err := backend.Erase(ctx, plan, table); err != nil {
-		return finishFailure(StatusFailed, PhaseErase, false, fmt.Errorf("erase old signatures: %w", err))
-	}
 	mediaChanged := true
+	if err := backend.Erase(ctx, plan, table); err != nil {
+		return finishPhaseError(PhaseErase, mediaChanged, "erase old signatures", err)
+	}
 	if out, failure, cancelled := checkCancelled(PhasePartition, mediaChanged); cancelled {
 		return out, failure
 	}
 	script, err := SfdiskScript(plan)
 	if err != nil {
-		return finishFailure(StatusFailed, PhasePartition, mediaChanged, fmt.Errorf("build partition table: %w", err))
+		return finishPhaseError(PhasePartition, mediaChanged, "build partition table", err)
 	}
 	partitionPath, err := backend.Partition(ctx, plan, table, script)
 	if err != nil {
-		return finishFailure(StatusFailed, PhasePartition, mediaChanged, fmt.Errorf("publish partition table: %w", err))
+		return finishPhaseError(PhasePartition, mediaChanged, "publish partition table", err)
 	}
 	if partitionPath == "" {
-		return finishFailure(StatusFailed, PhasePartition, mediaChanged, errors.New("partition backend returned an empty path"))
+		return finishPhaseError(PhasePartition, mediaChanged, "publish partition table", errors.New("partition backend returned an empty path"))
 	}
 	if out, failure, cancelled := checkCancelled(PhaseFormat, mediaChanged); cancelled {
 		return out, failure
 	}
 	if err := backend.Format(ctx, plan, table, partitionPath); err != nil {
-		return finishFailure(StatusFailed, PhaseFormat, mediaChanged, fmt.Errorf("create filesystem: %w", err))
+		return finishPhaseError(PhaseFormat, mediaChanged, "create filesystem", err)
 	}
 	if out, failure, cancelled := checkCancelled(PhaseVerify, mediaChanged); cancelled {
 		return out, failure
 	}
 	filesystem, err := backend.Verify(ctx, plan, table, partitionPath)
 	if err != nil {
-		return finishFailure(StatusFailed, PhaseVerify, mediaChanged, fmt.Errorf("verify filesystem: %w", err))
+		return finishPhaseError(PhaseVerify, mediaChanged, "verify filesystem", err)
 	}
 	report.Filesystem = &filesystem
+	if out, failure, cancelled := checkCancelled(PhaseComplete, mediaChanged); cancelled {
+		return out, failure
+	}
 	if err := backend.Finish(ctx, plan, table, filesystem); err != nil {
-		return finishFailure(StatusFailed, PhaseVerify, mediaChanged, fmt.Errorf("finalize filesystem: %w", err))
+		return finishPhaseError(PhaseComplete, mediaChanged, "finalize filesystem", err)
 	}
 	report.Status = StatusPassed
 	report.CompletedAt = now().UTC().Format(time.RFC3339Nano)
@@ -176,10 +188,12 @@ func ValidateReport(report Report) error {
 	if report.Schema != SchemaVersion || report.Mode != Mode || report.Bootable {
 		return errors.New("invalid formatter report envelope")
 	}
-	if _, err := time.Parse(time.RFC3339Nano, report.StartedAt); err != nil {
+	started, err := time.Parse(time.RFC3339Nano, report.StartedAt)
+	if err != nil {
 		return errors.New("formatter report has an invalid start time")
 	}
-	if _, err := time.Parse(time.RFC3339Nano, report.CompletedAt); err != nil {
+	completed, err := time.Parse(time.RFC3339Nano, report.CompletedAt)
+	if err != nil || completed.Before(started) {
 		return errors.New("formatter report has an invalid completion time")
 	}
 	canonical, err := BuildPartitionTable(report.Plan)
@@ -199,8 +213,8 @@ func ValidateReport(report Report) error {
 			return errors.New("successful formatter report does not match the reviewed filesystem")
 		}
 	case StatusFailed, StatusCancelled:
-		if report.Failure == nil || report.Failure.Message == "" || report.Failure.Phase == "" {
-			return errors.New("failed or cancelled formatter report is missing failure details")
+		if report.Failure == nil || report.Failure.Message == "" || !validFailurePhase(report.Failure.Phase) {
+			return errors.New("failed or cancelled formatter report is missing valid failure details")
 		}
 		if report.Reusable || report.Failure.MediaChanged != report.MediaChanged {
 			return errors.New("failed or cancelled formatter report has inconsistent media state")
@@ -212,4 +226,13 @@ func ValidateReport(report Report) error {
 		return fmt.Errorf("unsupported formatter report status %q", report.Status)
 	}
 	return nil
+}
+
+func validFailurePhase(phase string) bool {
+	switch phase {
+	case PhasePreflight, PhaseErase, PhasePartition, PhaseFormat, PhaseVerify, PhaseComplete:
+		return true
+	default:
+		return false
+	}
 }
