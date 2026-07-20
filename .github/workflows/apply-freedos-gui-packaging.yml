@@ -1,5 +1,6 @@
 name: Apply FreeDOS GUI packaging
 
+# One-shot branch applicator. It deletes itself after the package integration is verified.
 on:
   push:
     branches:
