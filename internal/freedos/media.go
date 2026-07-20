@@ -12,15 +12,15 @@ import (
 const (
 	MediaPlanSchema = 1
 
-	freeDOSLogicalSectorSize     = 512
-	freeDOSPartitionStartSector  = 2048
-	freeDOSReservedTailSectors   = 2048
-	freeDOSFATCount              = 2
-	freeDOSFSInfoSector          = 1
-	freeDOSRootCluster           = 2
-	freeDOSDataAlignmentSectors  = 2048
-	freeDOSMinimumClusterCount   = 65536
-	freeDOSMaximumClusterCount   = 0x0fffffff
+	freeDOSLogicalSectorSize       = 512
+	freeDOSPartitionStartSector    = 2048
+	freeDOSReservedTailSectors     = 2048
+	freeDOSFATCount                = 2
+	freeDOSFSInfoSector            = 1
+	freeDOSRootCluster             = 2
+	freeDOSDataAlignmentSectors    = 2048
+	freeDOSMinimumClusterCount     = 65536
+	freeDOSMaximumClusterCount     = 0x0fffffff
 	freeDOSMaximumPartitionSectors = 0xfffffffe
 
 	fat32EndOfChain = 0x0ffffff8
