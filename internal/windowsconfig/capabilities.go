@@ -8,12 +8,15 @@ import (
 
 // MediaMetadata contains the Windows identity facts obtained from inspected
 // installation media. Empty or conflicting facts deliberately produce a
-// fail-closed capability profile.
+// fail-closed capability profile. ImageCount and EditionNames describe the
+// complete bounded edition set that agreed on those identity facts.
 type MediaMetadata struct {
-	ProductName      string `json:"product_name,omitempty"`
-	Version          string `json:"version,omitempty"`
-	Architecture     string `json:"architecture,omitempty"`
-	InstallationType string `json:"installation_type,omitempty"`
+	ProductName      string   `json:"product_name,omitempty"`
+	Version          string   `json:"version,omitempty"`
+	Architecture     string   `json:"architecture,omitempty"`
+	InstallationType string   `json:"installation_type,omitempty"`
+	ImageCount       int      `json:"image_count,omitempty"`
+	EditionNames     []string `json:"edition_names,omitempty"`
 }
 
 // OptionCapability explains whether one setup option is safe for the detected
