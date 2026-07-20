@@ -45,7 +45,7 @@ func TestNonBootableFormatterPackageContract(t *testing.T) {
 				`--expected-identity`,
 				`--cancel-file`,
 				`io.github.geocausa.RufusArm64.format-data`,
-				`media may have changed and is not reusable`,
+				`medium may have changed and is not reusable`,
 			},
 		},
 		{
