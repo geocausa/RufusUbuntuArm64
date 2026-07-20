@@ -22,29 +22,26 @@ jobs:
           from pathlib import Path
 
           build = Path("scripts/build-deb.sh")
-          text = build.read_text(encoding="utf-8")
-          anchor = '''CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \\
-            go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \\
-            -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-device-backup" \\
-            "${ROOT_DIR}/cmd/rufus-device-backup"
-          '''
-          addition = anchor + '''CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \\
-            go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \\
-            -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-nonbootable-format" \\
-            "${ROOT_DIR}/cmd/rufus-nonbootable-format"
-          '''
-          assert text.count(anchor) == 1
-          text = text.replace(anchor, addition, 1)
-          anchor = '''ln -s ../lib/rufusarm64/rufusarm64-device-backup \\
-            "${PACKAGE_DIR}/usr/bin/rufusarm64-device-backup"
-          '''
-          addition = anchor + '''ln -s ../lib/rufusarm64/rufusarm64-nonbootable-format \\
-            "${PACKAGE_DIR}/usr/bin/rufusarm64-nonbootable-format"
-          '''
-          assert text.count(anchor) == 1
-          text = text.replace(anchor, addition, 1)
+          lines = build.read_text(encoding="utf-8").splitlines(keepends=True)
+          marker = '  "${ROOT_DIR}/cmd/rufus-device-backup"\n'
+          assert lines.count(marker) == 1
+          index = lines.index(marker) + 1
+          lines[index:index] = [
+              'CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \\\n',
+              '  go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \\\n',
+              '  -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-nonbootable-format" \\\n',
+              '  "${ROOT_DIR}/cmd/rufus-nonbootable-format"\n',
+          ]
+          marker = '  "${PACKAGE_DIR}/usr/bin/rufusarm64-device-backup"\n'
+          assert lines.count(marker) == 1
+          index = lines.index(marker) + 1
+          lines[index:index] = [
+              'ln -s ../lib/rufusarm64/rufusarm64-nonbootable-format \\\n',
+              '  "${PACKAGE_DIR}/usr/bin/rufusarm64-nonbootable-format"\n',
+          ]
+          text = ''.join(lines)
           old = 'for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify rufusarm64-device-backup; do'
-          new = 'for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify rufusarm64-device-backup rufusarm64-nonbootable-format; do'
+          new = old[:-4] + ' rufusarm64-nonbootable-format; do'
           assert text.count(old) == 1
           text = text.replace(old, new, 1)
           old = 'Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, mount, dosfstools, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils'
@@ -67,18 +64,15 @@ jobs:
           </action>
           '''
           assert text.count('</policyconfig>') == 1
-          text = text.replace('</policyconfig>', action + '</policyconfig>', 1)
-          policy.write_text(text, encoding="utf-8")
+          policy.write_text(text.replace('</policyconfig>', action + '</policyconfig>', 1), encoding="utf-8")
 
           ci = Path(".github/workflows/ci.yml")
-          text = ci.read_text(encoding="utf-8")
-          anchor = '''          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-device-backup" version)" = "${VERSION}"
-          '''
-          addition = anchor + '''          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-nonbootable-format" version)" = "${VERSION}"
-          '''
-          assert text.count(anchor) == 1
-          text = text.replace(anchor, addition, 1)
-          ci.write_text(text, encoding="utf-8")
+          lines = ci.read_text(encoding="utf-8").splitlines(keepends=True)
+          marker = '          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-device-backup" version)" = "${VERSION}"\n'
+          assert lines.count(marker) == 1
+          index = lines.index(marker) + 1
+          lines.insert(index, '          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-nonbootable-format" version)" = "${VERSION}"\n')
+          ci.write_text(''.join(lines), encoding="utf-8")
 
           Path(".github/workflows/apply-nonbootable-package.yml").unlink()
           PY
