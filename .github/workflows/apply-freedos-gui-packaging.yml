@@ -6,13 +6,16 @@ on:
       - feature/freedos-gui
     paths:
       - .github/workflows/apply-freedos-gui-packaging.yml
+  pull_request:
+    paths:
+      - .github/workflows/apply-freedos-gui-packaging.yml
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.event.head_commit.message == 'CI: apply FreeDOS GUI packaging'
+    if: github.event_name == 'pull_request' || github.event.head_commit.message == 'CI: apply FreeDOS GUI packaging'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
