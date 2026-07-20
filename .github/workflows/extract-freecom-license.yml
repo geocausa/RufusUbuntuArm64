@@ -1,0 +1,38 @@
+name: Extract pinned FreeCOM licence
+
+on:
+  push:
+    branches: [feature/freedos-payload-provenance]
+    paths:
+      - .github/workflows/extract-freecom-license.yml
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/freedos-payload-provenance
+      - name: Extract exact licence member
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          source = Path('vendor/freedos/source/freecom-sources.zip')
+          destination = Path('vendor/freedos/metadata/FREECOM-LICENSE')
+          with zipfile.ZipFile(source) as handle:
+              data = handle.read('license')
+          destination.parent.mkdir(parents=True, exist_ok=True)
+          destination.write_bytes(data)
+          PY
+          sha256sum vendor/freedos/metadata/FREECOM-LICENSE
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add vendor/freedos/metadata/FREECOM-LICENSE
+          git commit -m 'FreeDOS: retain exact FreeCOM licence text'
+          git push origin HEAD:feature/freedos-payload-provenance
