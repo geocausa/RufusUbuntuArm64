@@ -55,23 +55,36 @@ The narrowest supportable first version is:
 - no UEFI boot claim;
 - no reuse of the ordinary image writer unless the final design becomes a fully pinned deterministic disk image.
 
+## Resolved boot-code provenance checkpoint
+
+The default Rufus 4.15 FreeDOS path is now pinned and reproducible from GPL `ms-sys` source at the reviewed Rufus commit:
+
+- Rufus MBR bootstrap: 440 bytes from `mbr_rufus.h`, written without replacing the disk signature or partition table;
+- MBR layout contract: the first partition is active and uses FAT32 LBA type `0x0c`;
+- FAT32 prefix: 11 bytes from `br_fat32_0x0.h` at offset `0x00`;
+- FreeDOS FAT32 loader: 918 bytes from `br_fat32fd_0x52.h` at offset `0x52`;
+- FreeDOS continuation: 528 bytes from `br_fat32fd_0x3f0.h` at offset `0x3f0`;
+- both the primary boot region and the backup beginning at logical sector 6 are patched and verified;
+- the offline extractor, source hashes, Git blob IDs, binary hashes, BPB-preservation tests, MBR-metadata tests, and tamper tests are committed.
+
+This checkpoint validates byte transformations on ordinary in-memory images only. It does not authorize a device operation or establish that a physical PC will boot.
+
 ## Unresolved gates
 
 Implementation remains blocked until all of these are resolved:
 
-1. **Boot-code provenance.** Identify the exact FreeDOS MBR and FAT partition boot-code fragments used by Rufus, trace them to pinned GPL ms-sys source, extract reproducible binary assets, and add byte-level tests.
-2. **Payload provenance.** Extract the minimal files directly from the official FreeDOS 1.4 archive, record individual SHA-256 values, preserve corresponding source and licence material, and prove reproducible extraction.
-3. **Kernel configuration.** Rufus sets `FORCELBA` at offset `0x0d` to `0x01`. The implementation must prove this field from FreeDOS source/documentation and reject an unexpected kernel before applying or verifying it.
-4. **Filesystem geometry.** Define the exact FAT type, cluster sizing, partition limits, hidden-sector fields, active flag, CHS/LBA compatibility fields, and backup boot-sector behavior.
-5. **Structural verification.** Implement an ordinary-file disk-image verifier before any loop-device or physical-media test. It must validate MBR/PBR code, FAT BPB consistency, file entries, file bytes, and boot signatures.
-6. **Licensing and maintenance.** Ship notices, corresponding source or a durable source offer as required, upstream archive hashes, extraction tooling, update procedure, and a package-size assessment.
-7. **Safety integration.** Reuse the identity, root-disk refusal, lock, cancellation, media-changed reporting, and final readback contracts already established for non-bootable formatting.
+1. **Payload provenance.** Extract the minimal files directly from the official FreeDOS 1.4 archive, record individual SHA-256 values, preserve corresponding source and licence material, and prove reproducible extraction.
+2. **Kernel configuration.** Rufus sets `FORCELBA` at offset `0x0d` to `0x01`. The implementation must prove this field from FreeDOS source/documentation and reject an unexpected kernel before applying or verifying it.
+3. **Filesystem geometry.** Define the exact FAT cluster sizing, partition limits, hidden-sector fields, CHS/LBA compatibility fields, and size boundaries.
+4. **Structural verification.** Extend the ordinary-file verifier to validate FAT allocation, root-directory entries, payload placement and bytes, and kernel configuration before any loop-device or physical-media test.
+5. **Licensing and maintenance.** Complete the payload notices and corresponding-source offer, extraction/update procedure, and package-size assessment.
+6. **Safety integration.** Reuse the identity, root-disk refusal, lock, cancellation, media-changed reporting, and final readback contracts already established for non-bootable formatting.
 
 ## Gate decision
 
 The feasibility gate is **provisionally positive** because no x86 payload execution is required on the ARM64 host and the required media operations can be expressed as deterministic byte and filesystem transformations.
 
-It is **not implementation-green** until boot-code provenance, reproducible payload extraction, kernel configuration, and an ordinary-file verifier are complete. Until then there must be no GTK option, destructive command, package dependency, or release commitment for FreeDOS.
+It is **not implementation-green** until reproducible payload extraction, kernel configuration proof, complete ordinary-file media verification, licensing, and safety integration are complete. Until then there must be no GTK option, destructive command, runtime package dependency, or release commitment for FreeDOS.
 
 ## Primary references
 

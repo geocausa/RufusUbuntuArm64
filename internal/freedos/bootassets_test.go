@@ -3,6 +3,7 @@ package freedos
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"testing"
 )
 
@@ -62,7 +63,7 @@ func TestRufusMBRVerifierRejectsUnsafeLayout(t *testing.T) {
 
 func TestFreeDOSFAT32BootRegions(t *testing.T) {
 	for _, sectorSize := range []int{512, 4096} {
-		t.Run(string(rune(sectorSize)), func(t *testing.T) {
+		t.Run(fmt.Sprintf("sector-%d", sectorSize), func(t *testing.T) {
 			image := syntheticFAT32BootImage(sectorSize)
 			bases := []int{0, fat32BackupSector * sectorSize}
 			bpbs := make([][]byte, len(bases))
