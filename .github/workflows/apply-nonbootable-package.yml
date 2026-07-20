@@ -18,11 +18,29 @@ jobs:
           ref: feature/nonbootable-executor
       - name: Apply and verify package integration
         run: |
-          set -eux
-          python3 .github/scripts/apply_nonbootable_package.py
-          bash -n scripts/build-deb.sh
-          grep -Fq 'rufusarm64-nonbootable-format' scripts/build-deb.sh
-          grep -Fq 'io.github.geocausa.RufusArm64.format-data' packaging/io.github.geocausa.RufusArm64.policy
+          mkdir -p dist/applicator
+          set +e
+          {
+            set -x
+            python3 .github/scripts/apply_nonbootable_package.py
+            bash -n scripts/build-deb.sh
+            grep -Fq 'rufusarm64-nonbootable-format' scripts/build-deb.sh
+            grep -Fq 'io.github.geocausa.RufusArm64.format-data' packaging/io.github.geocausa.RufusArm64.policy
+          } >dist/applicator/output.log 2>&1
+          status=$?
+          printf '%s\n' "${status}" >dist/applicator/status
+          cat dist/applicator/output.log
+          exit 0
+      - name: Upload applicator diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nonbootable-package-applicator
+          path: dist/applicator/
+      - name: Commit package integration
+        run: |
+          status="$(cat dist/applicator/status)"
+          test "${status}" = 0
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
