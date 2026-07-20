@@ -1,0 +1,95 @@
+.TH RUFUSARM64-FREEDOS-FORMAT 1 "July 2026" "RufusArm64" "User Commands"
+.SH NAME
+rufusarm64-freedos-format \- create verified FreeDOS 1.4 media on one removable drive
+.SH SYNOPSIS
+.B rufusarm64-freedos-format
+.B --device
+.I /dev/DEVICE
+.B --dry-run
+.RI [ --json ]
+.PP
+.B sudo rufusarm64-freedos-format
+.B --device
+.I /dev/DEVICE
+.RI [ --expected-identity\ TOKEN ]
+.RI [ --label\ LABEL ]
+.RI [ --no-unmount ]
+.RI [ --yes ]
+.RI [ --json ]
+.SH DESCRIPTION
+.B rufusarm64-freedos-format
+constructs the pinned minimal FreeDOS 1.4 image directly on a removable whole disk.
+The resulting media targets x86-compatible processors and BIOS or UEFI Legacy/CSM firmware.
+It does not boot ARM64 systems or UEFI-only systems.
+.PP
+The command validates the complete deterministic MBR/FAT32 plan before opening the target,
+requires exact identity and capacity continuity, refuses disks backing the running root filesystem,
+retains an exclusive descriptor lock, performs a final safety check immediately before writing,
+synchronizes the target, and compares a complete byte-for-byte readback before reporting reusable media.
+Software verification does not prove that a particular physical PC will boot.
+.SH OPTIONS
+.TP
+.BI --device " /dev/DEVICE"
+Select one canonical removable whole-disk path. Required.
+.TP
+.BI --expected-identity " TOKEN"
+Require the exact identity token reported by
+.B rufusarm64-cli list --json
+before and after confirmation. Required with
+.B --yes
+and for graphical/pkexec use.
+.TP
+.BI --label " LABEL"
+Set the uppercase FAT volume label. The default is
+.B FREEDOS.
+.TP
+.B --dry-run
+Validate and display the exact deterministic plan without opening the device for writing.
+.TP
+.B --yes
+Skip the interactive phrase only when
+.B --expected-identity
+is also supplied.
+.TP
+.B --no-unmount
+Refuse a mounted target instead of guarded unmounting. This option is unavailable to the graphical path.
+.TP
+.BI --cancel-file " PATH"
+Use an owner-only cancellation marker beneath
+.I /run/user/UID.
+This is reserved for the authenticated graphical helper path.
+.TP
+.B --json
+Emit one deterministic JSON plan or execution report. A destructive JSON run also requires
+.B --yes
+and
+.B --expected-identity.
+.SH CONFIRMATION
+Interactive execution requires this exact phrase, with the selected device substituted:
+.PP
+.nf
+WRITE FREEDOS 1.4 TO /dev/DEVICE FOR X86 BIOS LEGACY
+.fi
+.PP
+Any mismatch stops before the target is opened for writing.
+.SH CANCELLATION AND FAILURE
+After the first accepted byte, cancellation or I/O failure is reported with
+.B media_changed=true
+and
+.B reusable=false.
+The target is reusable only after the complete write, synchronization, byte-for-byte readback,
+final identity validation, unlock, and close all succeed.
+.SH SECURITY
+There is no fixed-disk override. The packaged Polkit action authorizes only the package-private
+.B /usr/lib/rufusarm64/rufusarm64-freedos-format
+helper and does not retain authorization.
+.SH FILES
+.TP
+.I /usr/lib/rufusarm64/rufusarm64-freedos-format
+Package-private privileged helper.
+.TP
+.I /usr/share/doc/rufusarm64/freedos/
+Pinned provenance, release contract, metadata, and complete corresponding source archives.
+.SH SEE ALSO
+.BR rufusarm64-cli (1),
+.BR rufusarm64 (1)
