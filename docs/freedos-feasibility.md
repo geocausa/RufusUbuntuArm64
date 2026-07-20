@@ -69,16 +69,29 @@ The default Rufus 4.15 FreeDOS path is now pinned and reproducible from GPL `ms-
 
 This checkpoint validates byte transformations on ordinary in-memory images only. It does not authorize a device operation or establish that a physical PC will boot.
 
-## Resolved payload and kernel checkpoint
+## Resolved kernel configuration checkpoint
 
-The official checksum-pinned FullUSB archive is now reproduced through its active FAT32 partition and nested BASE packages:
+The pinned FreeDOS kernel source establishes the `KERNEL.SYS` configuration layout without relying on reverse engineering or executing the payload:
+
+- `kernel/kernel.asm` identifies byte zero of `KERNEL.SYS`, emits a two-byte short jump, then writes the `CONFIG` signature, the configuration-size word, and the configuration fields;
+- `hdr/kconfig.h` places `ForceLBA` after the three one-byte `DLASortByDriveNo`, `InitDiskShowDriveAssignment`, and `SkipConfigSeconds` fields;
+- `sys/fdkrncfg.c` reads the configuration structure from file offset 2 and treats `FORCELBA` as present when the configuration area contains at least four fields;
+- `docs/sys.txt` defines `FORCELBA=1` as using extended INT 13 LBA addressing whenever possible.
+
+Those source-backed offsets place `ForceLBA` at file offset `0x0d`. `vendor/freedos-kernel/KERNEL-CONFIG.json` pins the exact source commit and Git blob IDs used for the conclusion. `internal/freedos/kernel.go` parses the header, rejects truncated or malformed configuration areas, requires a binary setting, requires the reviewed Rufus value `0x01`, and independently requires the exact pinned Rufus `KERNEL.SYS` Git blob identity.
+
+This parser accepts ordinary bytes only. It does not execute or modify a FreeDOS kernel and does not authorize a device operation.
+
+## Resolved payload provenance checkpoint
+
+The official checksum-pinned FullUSB archive is reproduced through its active FAT32 partition and nested BASE packages:
 
 - `COMMAND.COM` is extracted from `FREECOM.ZIP` and matches the pinned Rufus Git object;
 - `KERNL386.SYS` is extracted from `KERNEL.ZIP` with `FORCELBA` initially `0x00`;
 - `KERNEL.SYS` changes only offset `0x0d` to `0x01` and then matches Rufus exactly;
 - payload sizes, SHA-256 values, package hashes, Git blob IDs, source archives, LSM metadata, and GPLv2 texts are pinned;
 - the committed extractor supports network-free repository checking and deterministic regeneration from a locally supplied official archive;
-- Go validation rejects any altered payload byte and returns only defensive copies.
+- Go validation rejects any altered payload byte, applies the source-backed kernel verifier, and returns only defensive copies.
 
 Detailed records are in `docs/freedos-payload-provenance.md` and `vendor/freedos/PAYLOADS.json`.
 

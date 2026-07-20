@@ -86,6 +86,16 @@ func validatePayloadSet(originalKernel, configuredKernel, command []byte) error 
 			return err
 		}
 	}
+	originalConfiguration, err := ParseKernelConfiguration(originalKernel)
+	if err != nil {
+		return fmt.Errorf("original FreeDOS kernel configuration: %w", err)
+	}
+	if originalConfiguration.ForceLBA != 0 {
+		return fmt.Errorf("original FreeDOS kernel has FORCELBA value %#x", originalConfiguration.ForceLBA)
+	}
+	if err := VerifyPinnedRufusKernel(configuredKernel); err != nil {
+		return fmt.Errorf("configured FreeDOS kernel: %w", err)
+	}
 	if originalKernel[kernelForceLBAOffset] != 0 {
 		return fmt.Errorf("original FreeDOS kernel has FORCELBA value %#x", originalKernel[kernelForceLBAOffset])
 	}
@@ -102,9 +112,6 @@ func validatePayloadSet(originalKernel, configuredKernel, command []byte) error 
 		if originalKernel[offset] != configuredKernel[offset] {
 			return fmt.Errorf("kernel derivation changed unexpected byte offset %#x", offset)
 		}
-	}
-	if err := VerifyPinnedRufusKernel(configuredKernel); err != nil {
-		return fmt.Errorf("configured kernel verification: %w", err)
 	}
 	return nil
 }
