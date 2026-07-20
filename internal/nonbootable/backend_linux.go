@@ -48,9 +48,15 @@ func ExecuteDevice(ctx context.Context, plan Plan, options DeviceOptions) (Repor
 }
 
 type linuxBackend struct {
-	options DeviceOptions
-	target  *os.File
-	locked  bool
+	options             DeviceOptions
+	target              *os.File
+	stableTargetPath    string
+	locked              bool
+	partition           *os.File
+	partitionPath       string
+	stablePartitionPath string
+	partitionDeviceID   uint64
+	partitionLocked     bool
 }
 
 func (backend *linuxBackend) Prepare(ctx context.Context, plan Plan, _ PartitionTable) error {
@@ -70,6 +76,7 @@ func (backend *linuxBackend) Prepare(ctx context.Context, plan Plan, _ Partition
 		return fmt.Errorf("open target for guarded formatting: %w", err)
 	}
 	backend.target = file
+	backend.stableTargetPath = stableDescriptorPath(file)
 	if err := safety.AcquireExclusiveFlock(ctx, file); err != nil {
 		return fmt.Errorf("another storage operation appears to be using %s: %w", plan.DevicePath, err)
 	}
@@ -86,18 +93,18 @@ func (backend *linuxBackend) Prepare(ctx context.Context, plan Plan, _ Partition
 }
 
 func (backend *linuxBackend) Erase(ctx context.Context, plan Plan, _ PartitionTable) error {
-	if err := backend.verifyTarget(plan); err != nil {
+	if err := backend.verifyTargetPath(plan); err != nil {
 		return err
 	}
-	_, err := runCommand(ctx, nil, "wipefs", "--all", "--force", "--", plan.DevicePath)
+	_, err := runCommand(ctx, nil, "wipefs", "--all", "--force", "--", backend.stableTargetPath)
 	return err
 }
 
 func (backend *linuxBackend) Partition(ctx context.Context, plan Plan, table PartitionTable, script string) (string, error) {
-	if err := backend.verifyTarget(plan); err != nil {
+	if err := backend.verifyTargetPath(plan); err != nil {
 		return "", err
 	}
-	if _, err := runCommand(ctx, []byte(script), "sfdisk", "--no-reread", "--force", "--wipe", "always", "--wipe-partitions", "always", "--", plan.DevicePath); err != nil {
+	if _, err := runCommand(ctx, []byte(script), "sfdisk", "--no-reread", "--force", "--wipe", "always", "--wipe-partitions", "always", "--", backend.stableTargetPath); err != nil {
 		return "", err
 	}
 	if err := backend.target.Sync(); err != nil {
@@ -105,12 +112,25 @@ func (backend *linuxBackend) Partition(ctx context.Context, plan Plan, table Par
 	}
 	// A reread failure can be transient while desktop services release stale
 	// partition nodes. Exact table and kernel-node readback below remains the gate.
-	_, _ = runCommand(ctx, nil, "blockdev", "--rereadpt", plan.DevicePath)
-	return backend.waitForPartition(ctx, plan, table)
+	_, _ = runCommand(ctx, nil, "blockdev", "--rereadpt", backend.stableTargetPath)
+	if err := backend.verifyTargetPath(plan); err != nil {
+		return "", err
+	}
+	partitionPath, err := backend.waitForPartition(ctx, plan, table)
+	if err != nil {
+		return "", err
+	}
+	if err := backend.bindPartition(ctx, partitionPath, plan, table); err != nil {
+		return "", err
+	}
+	return partitionPath, nil
 }
 
 func (backend *linuxBackend) Format(ctx context.Context, plan Plan, _ PartitionTable, partitionPath string) error {
-	if err := backend.verifyTarget(plan); err != nil {
+	if err := backend.verifyTargetPath(plan); err != nil {
+		return err
+	}
+	if err := backend.verifyPartitionPath(plan, partitionPath); err != nil {
 		return err
 	}
 	if err := safety.EnsureNoMountedDescendants(plan.DevicePath); err != nil {
@@ -145,19 +165,24 @@ func (backend *linuxBackend) Format(ctx context.Context, plan Plan, _ PartitionT
 	default:
 		return fmt.Errorf("unsupported filesystem %q", plan.Filesystem)
 	}
-	args = append(args, partitionPath)
-	_, err := runCommand(ctx, nil, name, args...)
-	return err
+	args = append(args, backend.stablePartitionPath)
+	return safety.WithTemporarilyReleasedFlock(backend.partition, func() error {
+		_, err := runCommand(ctx, nil, name, args...)
+		return err
+	})
 }
 
 func (backend *linuxBackend) Verify(ctx context.Context, plan Plan, table PartitionTable, partitionPath string) (FilesystemState, error) {
-	if err := backend.verifyTarget(plan); err != nil {
+	if err := backend.verifyTargetPath(plan); err != nil {
 		return FilesystemState{}, err
 	}
-	if _, err := runCommand(ctx, nil, "blockdev", "--flushbufs", partitionPath); err != nil {
+	if err := backend.verifyPartitionPath(plan, partitionPath); err != nil {
+		return FilesystemState{}, err
+	}
+	if _, err := runCommand(ctx, nil, "blockdev", "--flushbufs", backend.stablePartitionPath); err != nil {
 		return FilesystemState{}, fmt.Errorf("flush formatted partition: %w", err)
 	}
-	checkName, checkArgs, err := filesystemCheck(plan.Filesystem, partitionPath)
+	checkName, checkArgs, err := filesystemCheck(plan.Filesystem, backend.stablePartitionPath)
 	if err != nil {
 		return FilesystemState{}, err
 	}
@@ -167,7 +192,7 @@ func (backend *linuxBackend) Verify(ctx context.Context, plan Plan, table Partit
 	if err := backend.verifyPublishedTable(ctx, plan, table); err != nil {
 		return FilesystemState{}, err
 	}
-	metadata, err := readBlkid(ctx, partitionPath)
+	metadata, err := readBlkid(ctx, backend.stablePartitionPath)
 	if err != nil {
 		return FilesystemState{}, err
 	}
@@ -175,7 +200,7 @@ func (backend *linuxBackend) Verify(ctx context.Context, plan Plan, table Partit
 	if filesystemType == "vfat" {
 		filesystemType = FilesystemFAT32
 	}
-	sizeText, err := commandText(ctx, "blockdev", "--getsize64", partitionPath)
+	sizeText, err := commandText(ctx, "blockdev", "--getsize64", backend.stablePartitionPath)
 	if err != nil {
 		return FilesystemState{}, err
 	}
@@ -183,7 +208,7 @@ func (backend *linuxBackend) Verify(ctx context.Context, plan Plan, table Partit
 	if err != nil {
 		return FilesystemState{}, fmt.Errorf("parse formatted partition size: %w", err)
 	}
-	readOnlyText, err := commandText(ctx, "blockdev", "--getro", partitionPath)
+	readOnlyText, err := commandText(ctx, "blockdev", "--getro", backend.stablePartitionPath)
 	if err != nil {
 		return FilesystemState{}, err
 	}
@@ -211,7 +236,7 @@ func (backend *linuxBackend) Verify(ctx context.Context, plan Plan, table Partit
 }
 
 func (backend *linuxBackend) Finish(ctx context.Context, plan Plan, table PartitionTable, filesystem FilesystemState) error {
-	if err := backend.verifyTarget(plan); err != nil {
+	if err := backend.verifyTargetPath(plan); err != nil {
 		return err
 	}
 	if err := backend.verifyPublishedTable(ctx, plan, table); err != nil {
@@ -223,7 +248,10 @@ func (backend *linuxBackend) Finish(ctx context.Context, plan Plan, table Partit
 	if err := backend.target.Sync(); err != nil {
 		return fmt.Errorf("sync target: %w", err)
 	}
-	if _, err := runCommand(ctx, nil, "blockdev", "--flushbufs", plan.DevicePath); err != nil {
+	if err := backend.verifyPartitionPath(plan, filesystem.Path); err != nil {
+		return err
+	}
+	if _, err := runCommand(ctx, nil, "blockdev", "--flushbufs", backend.stableTargetPath); err != nil {
 		return fmt.Errorf("flush target: %w", err)
 	}
 	if _, err := runCommand(ctx, nil, "sync"); err != nil {
@@ -233,10 +261,13 @@ func (backend *linuxBackend) Finish(ctx context.Context, plan Plan, table Partit
 }
 
 func (backend *linuxBackend) Close() error {
-	if backend.target == nil {
-		return nil
-	}
 	var result error
+	if err := backend.closePartition(); err != nil {
+		result = errors.Join(result, err)
+	}
+	if backend.target == nil {
+		return result
+	}
 	if backend.locked {
 		if err := syscall.Flock(int(backend.target.Fd()), syscall.LOCK_UN); err != nil {
 			result = errors.Join(result, fmt.Errorf("unlock target: %w", err))
@@ -246,6 +277,7 @@ func (backend *linuxBackend) Close() error {
 		result = errors.Join(result, fmt.Errorf("close target: %w", err))
 	}
 	backend.target = nil
+	backend.stableTargetPath = ""
 	backend.locked = false
 	return result
 }
@@ -280,6 +312,12 @@ func (backend *linuxBackend) waitForPartition(ctx context.Context, plan Plan, ta
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
+		if err := backend.verifyTargetPath(plan); err != nil {
+			return "", err
+		}
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		document, err := readSfdisk(ctx, plan.DevicePath)
 		if err == nil {
 			err = validateSfdiskDocument(document, plan, table)
@@ -303,6 +341,9 @@ func (backend *linuxBackend) waitForPartition(ctx context.Context, plan Plan, ta
 }
 
 func (backend *linuxBackend) verifyPublishedTable(ctx context.Context, plan Plan, table PartitionTable) error {
+	if err := backend.verifyTargetPath(plan); err != nil {
+		return err
+	}
 	document, err := readSfdisk(ctx, plan.DevicePath)
 	if err != nil {
 		return err
