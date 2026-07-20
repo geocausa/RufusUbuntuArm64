@@ -1,4 +1,4 @@
-name: Finalize FreeDOS payload checkpoint
+name: Diagnose FreeDOS payload finalizer
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  finalize:
+  diagnose:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -19,24 +19,29 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v6
         with:
           go-version: '1.22.12'
-      - name: Integrate and verify checkpoint
+      - name: Capture exact failure
         shell: bash
         run: |
-          set -euxo pipefail
-          python3 .github/scripts/finalize_freedos_payload.py
-          gofmt -w internal/freedos
-          test -z "$(gofmt -l internal/freedos)"
-          go test -race ./internal/freedos
-          go test -shuffle=on -count=3 ./internal/freedos
-          go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
-          staticcheck ./internal/freedos
-          python3 scripts/extract-freedos-payload.py --check
-          python3 -m py_compile scripts/extract-freedos-payload.py .github/scripts/finalize_freedos_payload.py
-          bash -n scripts/test.sh
+          set +e
+          {
+            set -x
+            python3 .github/scripts/finalize_freedos_payload.py
+            gofmt -w internal/freedos
+            test -z "$(gofmt -l internal/freedos)"
+            go test -race ./internal/freedos
+            go test -shuffle=on -count=3 ./internal/freedos
+            go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+            staticcheck ./internal/freedos
+            python3 scripts/extract-freedos-payload.py --check
+            python3 -m py_compile scripts/extract-freedos-payload.py .github/scripts/finalize_freedos_payload.py
+            bash -n scripts/test.sh
+          } > docs/freedos-finalizer-diagnostic.txt 2>&1
+          status=$?
+          printf '\nEXIT_STATUS=%s\n' "$status" >> docs/freedos-finalizer-diagnostic.txt
+          cat docs/freedos-finalizer-diagnostic.txt
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add scripts/extract-freedos-payload.py scripts/test.sh docs/freedos-feasibility.md \
-            internal/freedos/no_exposure_test.go internal/freedos/payload.go \
-            internal/freedos/payload_test.go internal/freedos/payload_package_test.go
-          git commit -m 'FreeDOS: integrate official payload provenance'
+          git add docs/freedos-finalizer-diagnostic.txt
+          git commit -m 'Maintenance: record FreeDOS finalizer diagnostic'
           git push origin HEAD:feature/freedos-payload-provenance
+          exit "$status"
