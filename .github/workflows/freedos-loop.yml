@@ -2,6 +2,10 @@ name: FreeDOS loop qualification
 
 on:
   push:
+    branches:
+      - main
+      - stage2/0.13.0
+      - 'release/**'
   pull_request:
 
 permissions:
