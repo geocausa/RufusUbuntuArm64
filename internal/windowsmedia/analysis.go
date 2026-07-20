@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/geocausa/RufusArm64/internal/sourcefile"
@@ -20,6 +21,8 @@ type CapabilityAnalysis struct {
 	Metadata         windowsconfig.MediaMetadata     `json:"metadata"`
 	Capabilities     windowsconfig.CapabilityProfile `json:"capabilities"`
 	BootArchitecture string                          `json:"boot_architecture,omitempty"`
+	PayloadKind      string                          `json:"payload_kind"`
+	PayloadParts     int                             `json:"payload_parts"`
 }
 
 // AnalyzeCapabilities mounts an identity-bound Windows ISO read-only, inspects
@@ -68,6 +71,10 @@ func AnalyzeCapabilities(ctx context.Context, isoPath string, expectedSource sou
 	if err != nil {
 		return CapabilityAnalysis{}, err
 	}
+	payloadKind, payloadParts, err := capabilityPayloadFacts(plan)
+	if err != nil {
+		return CapabilityAnalysis{}, err
+	}
 	payloadPath, err := customizationImagePath(plan)
 	if err != nil {
 		return CapabilityAnalysis{}, err
@@ -80,5 +87,21 @@ func AnalyzeCapabilities(ctx context.Context, isoPath string, expectedSource sou
 		Metadata:         metadata,
 		Capabilities:     windowsconfig.Capabilities(metadata),
 		BootArchitecture: plan.Architecture,
+		PayloadKind:      payloadKind,
+		PayloadParts:     payloadParts,
 	}, nil
+}
+
+func capabilityPayloadFacts(plan mediaPlan) (string, int, error) {
+	if len(plan.ExistingSplitFiles) > 0 {
+		return "SWM", len(plan.ExistingSplitFiles), nil
+	}
+	switch strings.ToLower(filepath.Ext(plan.InstallPath)) {
+	case ".wim":
+		return "WIM", 1, nil
+	case ".esd":
+		return "ESD", 1, nil
+	default:
+		return "", 0, errors.New("windows installation payload type is unavailable for capability reporting")
+	}
 }
