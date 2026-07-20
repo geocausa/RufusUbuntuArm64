@@ -14,19 +14,28 @@ The ordinary Create USB action preserves supported Linux raw/ISOHybrid images
 byte-for-byte. Persistent-live creation is a separate guarded workflow.
 .PP
 The separate
-.B Non bootable...
-action erases the selected removable drive and creates one verified data-only
-partition using GPT or MBR and FAT32, exFAT, NTFS, or ext4. RufusArm64 first
-runs an unprivileged dry-run, displays the exact device identity, geometry,
-filesystem, label, required tools, and warnings, and requires the generated
-FORMAT phrase before administrator authentication. The graphical path cannot
-enable fixed-disk override or bypass guarded unmounting.
+.B Restore / format...
+action erases the selected removable drive, removes any existing boot layout,
+and creates one verified data-only partition using GPT or MBR and FAT32,
+exFAT, NTFS, or ext4. RufusArm64 first runs an unprivileged dry-run, displays
+the exact device identity, geometry, filesystem, label, required tools, and
+warnings, and requires the generated FORMAT phrase before administrator
+authentication. The graphical path cannot enable fixed-disk override or bypass
+guarded unmounting.
 .PP
 Cancellation is reported precisely. A cancellation before erasure leaves the
 drive unchanged. Cancellation or failure after erasure may leave incomplete
 media that must be formatted again before use. A successful report confirms
 the partition geometry and filesystem readback but explicitly does not claim
 that the result is bootable.
+.PP
+After the main image writer finishes, RufusArm64 keeps the selected image and
+shows explicit next steps. The completed medium can be left unchanged, another
+copy can be created after choosing a different removable drive, or the exact
+operation target can be passed to Restore drive for storage. That restoration
+still performs a fresh identity-bound, unprivileged plan and requires the exact
+FORMAT phrase before any erase. Failed or cancelled writes are conservatively
+reported as potentially incomplete and are never reformatted automatically.
 .PP
 The separate
 .B FreeDOS...
