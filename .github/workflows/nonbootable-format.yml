@@ -1,0 +1,40 @@
+name: Non-bootable formatter
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nonbootable-format-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  loop-filesystems:
+    name: GPT/MBR filesystem loop qualification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.22.x'
+      - name: Install formatter and verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            util-linux dosfstools exfatprogs ntfs-3g e2fsprogs
+      - name: Exercise every enabled filesystem on real loop devices
+        env:
+          RUFUS_REAL_BLOCK_TEST: '1'
+        run: |
+          sudo modprobe loop || true
+          go test -c -o "${RUNNER_TEMP}/nonbootable-loop.test" ./internal/nonbootable
+          sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
+            "${RUNNER_TEMP}/nonbootable-loop.test" \
+            -test.run '^TestExecuteDeviceFormatsRealLoopDevices$' \
+            -test.v
