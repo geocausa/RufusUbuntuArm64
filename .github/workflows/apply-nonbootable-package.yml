@@ -1,0 +1,90 @@
+name: Apply non-bootable package integration
+
+on:
+  push:
+    branches: [feature/nonbootable-executor]
+    paths:
+      - .github/workflows/apply-nonbootable-package.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/nonbootable-executor
+      - name: Install dedicated formatter in package contracts
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          build = Path("scripts/build-deb.sh")
+          text = build.read_text(encoding="utf-8")
+          anchor = '''CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \\
+            go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \\
+            -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-device-backup" \\
+            "${ROOT_DIR}/cmd/rufus-device-backup"
+          '''
+          addition = anchor + '''CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \\
+            go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \\
+            -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-nonbootable-format" \\
+            "${ROOT_DIR}/cmd/rufus-nonbootable-format"
+          '''
+          assert text.count(anchor) == 1
+          text = text.replace(anchor, addition, 1)
+          anchor = '''ln -s ../lib/rufusarm64/rufusarm64-device-backup \\
+            "${PACKAGE_DIR}/usr/bin/rufusarm64-device-backup"
+          '''
+          addition = anchor + '''ln -s ../lib/rufusarm64/rufusarm64-nonbootable-format \\
+            "${PACKAGE_DIR}/usr/bin/rufusarm64-nonbootable-format"
+          '''
+          assert text.count(anchor) == 1
+          text = text.replace(anchor, addition, 1)
+          old = 'for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify rufusarm64-device-backup; do'
+          new = 'for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify rufusarm64-device-backup rufusarm64-nonbootable-format; do'
+          assert text.count(old) == 1
+          text = text.replace(old, new, 1)
+          old = 'Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, mount, dosfstools, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils'
+          new = 'Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, mount, fdisk, dosfstools, exfatprogs, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils'
+          assert text.count(old) == 1
+          text = text.replace(old, new, 1)
+          build.write_text(text, encoding="utf-8")
+
+          policy = Path("packaging/io.github.geocausa.RufusArm64.policy")
+          text = policy.read_text(encoding="utf-8")
+          action = '''  <action id="io.github.geocausa.RufusArm64.format-data">
+            <description>Format a removable drive as data-only media</description>
+            <message>Administrator authentication is required to erase and format the selected removable drive.</message>
+            <defaults>
+              <allow_any>no</allow_any>
+              <allow_inactive>no</allow_inactive>
+              <allow_active>auth_admin</allow_active>
+            </defaults>
+            <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/rufusarm64/rufusarm64-nonbootable-format</annotate>
+          </action>
+          '''
+          assert text.count('</policyconfig>') == 1
+          text = text.replace('</policyconfig>', action + '</policyconfig>', 1)
+          policy.write_text(text, encoding="utf-8")
+
+          ci = Path(".github/workflows/ci.yml")
+          text = ci.read_text(encoding="utf-8")
+          anchor = '''          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-device-backup" version)" = "${VERSION}"
+          '''
+          addition = anchor + '''          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-nonbootable-format" version)" = "${VERSION}"
+          '''
+          assert text.count(anchor) == 1
+          text = text.replace(anchor, addition, 1)
+          ci.write_text(text, encoding="utf-8")
+
+          Path(".github/workflows/apply-nonbootable-package.yml").unlink()
+          PY
+          bash -n scripts/build-deb.sh
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Stage 2: package dedicated non-bootable formatter"
+          git push origin HEAD:feature/nonbootable-executor
