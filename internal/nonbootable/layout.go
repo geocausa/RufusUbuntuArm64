@@ -96,9 +96,13 @@ func validatePartitionTable(table PartitionTable, plan Plan) error {
 	if table.StartSector > ^uint64(0)-table.SizeSectors {
 		return errors.New("partition table sector range overflows")
 	}
+	endExclusive := table.StartSector + table.SizeSectors
 	deviceSectors := plan.DeviceSizeBytes / plan.LogicalSectorSize
-	if table.StartSector+table.SizeSectors > deviceSectors {
-		return fmt.Errorf("partition table exceeds the device: end=%d sectors device=%d sectors", table.StartSector+table.SizeSectors, deviceSectors)
+	if endExclusive > deviceSectors {
+		return fmt.Errorf("partition table exceeds the device: end=%d sectors device=%d sectors", endExclusive, deviceSectors)
+	}
+	if table.Scheme == SchemeMBR && endExclusive > mbrAddressSpaceSectors {
+		return fmt.Errorf("MBR cannot represent the reviewed partition end sector %d; use GPT for this drive", endExclusive-1)
 	}
 	if table.Filesystem != plan.Filesystem || table.FilesystemDisplay != plan.FilesystemDisplay || table.Label != plan.Label {
 		return errors.New("partition table does not match the reviewed filesystem contract")
