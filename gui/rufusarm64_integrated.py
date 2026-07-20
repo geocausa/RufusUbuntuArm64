@@ -20,6 +20,8 @@ LAST_ISO_DESCRIPTOR = 64
 MAX_BOOT_CATALOGUE_BYTES = 2048
 MAX_BOOT_IMAGE_PROBE_BYTES = 64 * 1024
 MAX_BOOT_ENTRIES = 32
+MAX_WINDOWS_EDITIONS = 256
+MAX_WINDOWS_EDITION_NAME = 256
 
 
 def _selected_target(window):
@@ -323,6 +325,78 @@ def install_verified_acquisition(window_class):
     window_class._verified_acquisition_installed = True
 
 
+def windows_payload_summary(analysis):
+    """Render a fail-closed multi-edition and payload summary for setup options."""
+    if not isinstance(analysis, dict):
+        return "Setup customizations are unavailable: Windows capability analysis returned invalid data."
+    capabilities = analysis.get("capabilities")
+    metadata = analysis.get("metadata")
+    if not isinstance(capabilities, dict) or not isinstance(metadata, dict):
+        return "Setup customizations are unavailable: Windows capability analysis is incomplete."
+    if not capabilities.get("recognized"):
+        return "Setup customizations are unavailable: " + str(
+            capabilities.get("reason") or "the Windows version and architecture could not be identified safely."
+        )
+
+    try:
+        image_count = int(metadata.get("image_count") or 0)
+        payload_parts = int(analysis.get("payload_parts") or 0)
+    except (TypeError, ValueError):
+        return "Setup customizations are unavailable: Windows edition or payload counts are invalid."
+    edition_names = metadata.get("edition_names") or []
+    payload_kind = str(analysis.get("payload_kind") or "").upper()
+    if (
+        image_count < 1
+        or image_count > MAX_WINDOWS_EDITIONS
+        or not isinstance(edition_names, list)
+        or len(edition_names) > image_count
+        or payload_kind not in {"WIM", "ESD", "SWM"}
+        or payload_parts < 1
+        or (payload_kind != "SWM" and payload_parts != 1)
+    ):
+        return "Setup customizations are unavailable: Windows edition or payload reporting is inconsistent."
+
+    normalized_names = []
+    seen = set()
+    for item in edition_names:
+        name = str(item or "").strip()
+        if not name or len(name) > MAX_WINDOWS_EDITION_NAME:
+            return "Setup customizations are unavailable: Windows edition reporting is invalid."
+        key = name.casefold()
+        if key not in seen:
+            seen.add(key)
+            normalized_names.append(name)
+    shown_names = normalized_names[:4]
+    if shown_names:
+        edition_detail = f"{image_count} edition" + ("s" if image_count != 1 else "") + ": " + ", ".join(shown_names)
+        if len(normalized_names) > len(shown_names):
+            edition_detail += f" and {len(normalized_names) - len(shown_names)} more"
+    else:
+        edition_detail = f"{image_count} edition" + ("s" if image_count != 1 else "")
+    payload_detail = (
+        f"{payload_parts}-part SWM payload" if payload_kind == "SWM" else f"{payload_kind} payload"
+    )
+    generation = capabilities.get("generation") or "unknown generation"
+    family = capabilities.get("family") or "unknown family"
+    architecture = capabilities.get("architecture") or "unknown architecture"
+    return (
+        f"Detected Windows {generation} {family} media "
+        f"({architecture}; {edition_detail}; {payload_detail}). Unsupported options are disabled below."
+    )
+
+
+def install_windows_payload_reporting(dialog_class):
+    """Install the exact read-only Windows payload summary in the options dialog."""
+    if getattr(dialog_class, "_payload_reporting_installed", False):
+        return
+
+    def capability_summary(dialog):
+        return windows_payload_summary(dialog.capability_analysis)
+
+    dialog_class.capability_summary = capability_summary
+    dialog_class._payload_reporting_installed = True
+
+
 def install_post_operation_reuse(window_class):
     """Install explicit, non-destructive next-step actions around the main writer."""
     if getattr(window_class, "_post_operation_reuse_installed", False):
@@ -582,8 +656,9 @@ def install_accessibility(window_class):
 
 def run_rufusarm64(argv=None):
     """Run the main GTK application after installing the reviewed extensions."""
-    from rufusarm64 import RufusApp, RufusWindow
+    from rufusarm64 import RufusApp, RufusWindow, WindowsOptionsDialog
 
+    install_windows_payload_reporting(WindowsOptionsDialog)
     install_drive_backup(RufusWindow)
     install_nonbootable(RufusWindow)
     install_freedos(RufusWindow)
