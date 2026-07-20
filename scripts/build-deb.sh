@@ -95,6 +95,8 @@ if grep -Fq "Open Persistent USB Creator" "${GUI_TARGET}"; then
   exit 1
 fi
 grep -Fq "Checksums…" "${GUI_TARGET}"
+grep -Fq 'Gtk.Button(label="Non bootable…")' "${ROOT_DIR}/gui/rufusarm64_nonbootable_dialog.py"
+grep -Fq 'install_nonbootable(RufusWindow)' "${ROOT_DIR}/gui/rufusarm64_integrated.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_logic.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_logic.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_checksums.py" \
@@ -103,6 +105,12 @@ install -Dm644 "${ROOT_DIR}/gui/rufusarm64_device_qualify.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_device_qualify.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_device_qualify_dialog.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_device_qualify_dialog.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_nonbootable.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable_dialog.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_nonbootable_dialog.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_integrated.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_integrated.py"
 install -Dm755 "${ROOT_DIR}/gui/rufusarm64_persistence.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_persistence.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_persistence_logic.py" \

@@ -27,7 +27,7 @@ class PackagedLauncherTests(unittest.TestCase):
         original_gi = sys.modules.get("gi")
 
         def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
-            if name == "rufusarm64_device_qualify_dialog":
+            if name == "rufusarm64_integrated":
                 self.assertEqual(pin_calls, [("Gtk", "3.0")])
                 module = types.ModuleType(name)
                 module.run_rufusarm64 = lambda argv: 0
