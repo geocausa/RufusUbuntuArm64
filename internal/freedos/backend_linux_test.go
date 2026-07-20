@@ -15,6 +15,47 @@ import (
 	"github.com/geocausa/RufusArm64/internal/safety"
 )
 
+func TestExecuteLinuxDeviceRejectsUnboundOptions(t *testing.T) {
+	plan := testFreeDOSDevicePlan(t)
+	noop := func(*os.File) error { return nil }
+	tests := []struct {
+		name    string
+		options LinuxDeviceOptions
+		want    string
+	}{
+		{
+			name:    "missing identity",
+			options: LinuxDeviceOptions{Revalidate: noop},
+			want:    "bound kernel device identity",
+		},
+		{
+			name:    "missing revalidation",
+			options: LinuxDeviceOptions{ExpectedDeviceID: 1},
+			want:    "live policy and identity callback",
+		},
+		{
+			name: "size mismatch",
+			options: LinuxDeviceOptions{
+				ExpectedDeviceID: 1,
+				ExpectedSize:     plan.DeviceSizeBytes + 512,
+				Revalidate:       noop,
+			},
+			want: "size does not match",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			report, err := ExecuteLinuxDevice(context.Background(), plan, test.options, ExecutionOptions{})
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v; want text %q", err, test.want)
+			}
+			if report.Schema != 0 || report.MediaChanged || report.BytesWritten != 0 || report.Reusable {
+				t.Fatalf("invalid backend options produced execution state: %+v", report)
+			}
+		})
+	}
+}
+
 func TestExecuteLinuxDeviceThroughRealLoop(t *testing.T) {
 	if os.Getenv("RUFUS_REAL_BLOCK_TEST") != "1" {
 		t.Skip("set RUFUS_REAL_BLOCK_TEST=1 and run as root for the destructive loop regression")
