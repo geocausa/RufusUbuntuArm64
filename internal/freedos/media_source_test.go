@@ -25,17 +25,17 @@ type mediaGeometryPin struct {
 		Heads                uint16 `json:"heads"`
 	} `json:"initial_scope"`
 	FAT32 struct {
-		BaseReservedSectors        uint32 `json:"base_reserved_sectors"`
-		FATCount                   uint32 `json:"fat_count"`
-		BackupBootSector           uint32 `json:"backup_boot_sector"`
-		FSInfoSector               uint32 `json:"fsinfo_sector"`
-		RootCluster                uint32 `json:"root_cluster"`
-		DataAlignmentSectors       uint32 `json:"data_alignment_sectors"`
-		MinimumClusterCount        uint32 `json:"minimum_cluster_count"`
-		MaximumClusterCount        uint32 `json:"maximum_cluster_count"`
+		BaseReservedSectors          uint32 `json:"base_reserved_sectors"`
+		FATCount                     uint32 `json:"fat_count"`
+		BackupBootSector             uint32 `json:"backup_boot_sector"`
+		FSInfoSector                 uint32 `json:"fsinfo_sector"`
+		RootCluster                  uint32 `json:"root_cluster"`
+		DataAlignmentSectors         uint32 `json:"data_alignment_sectors"`
+		MinimumClusterCount          uint32 `json:"minimum_cluster_count"`
+		MaximumClusterCount          uint32 `json:"maximum_cluster_count"`
 		MaximumTotalSectorsExclusive uint64 `json:"maximum_total_sectors_exclusive"`
-		MediaDescriptor            byte   `json:"media_descriptor"`
-		ClusterSizes               []struct {
+		MediaDescriptor              byte   `json:"media_descriptor"`
+		ClusterSizes                 []struct {
 			PartitionBytesBelow uint64 `json:"partition_bytes_below"`
 			Bytes               uint64 `json:"bytes"`
 		} `json:"cluster_size_bytes"`
