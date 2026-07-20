@@ -35,7 +35,8 @@ go test -cover ./...
 python3 -m py_compile \
   gui/rufusarm64.py gui/rufusarm64_logic.py gui/rufusarm64_checksums.py \
   gui/rufusarm64_device_qualify.py gui/rufusarm64_device_qualify_dialog.py \
-  gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py
+  gui/rufusarm64_nonbootable.py gui/rufusarm64_nonbootable_dialog.py \
+  gui/rufusarm64_integrated.py gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py
 PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
 
 native_dir="$(mktemp -d)"
