@@ -27,6 +27,22 @@ drive unchanged. Cancellation or failure after erasure may leave incomplete
 media that must be formatted again before use. A successful report confirms
 the partition geometry and filesystem readback but explicitly does not claim
 that the result is bootable.
+.PP
+The separate
+.B FreeDOS...
+action erases the selected removable drive and creates deterministic FreeDOS
+1.4 media from the package's checksum-pinned kernel and FreeCOM payload. It
+plans without elevation, binds the refreshed device identity and capacity,
+requires 512-byte logical sectors, displays the exact MBR/FAT32 geometry and
+platform warnings, and requires the generated
+.B WRITE FREEDOS 1.4 TO /dev/DEVICE FOR X86 BIOS LEGACY
+phrase before administrator authentication. The graphical path exposes no
+fixed-disk override or guarded-unmount bypass.
+.PP
+FreeDOS media created by this action is limited to x86-compatible processors
+using BIOS or UEFI Legacy/CSM firmware. It does not boot ARM64 or UEFI-only
+systems. Complete structural readback and SHA-256 verification do not prove
+that a particular physical computer will boot the drive.
 .SH OPTIONS
 .TP
 .B --persistence
@@ -38,4 +54,5 @@ does not prove that particular firmware will boot the media.
 .SH SEE ALSO
 .BR rufusarm64-cli (1),
 .BR rufusarm64-nonbootable-format (1),
+.BR rufusarm64-freedos-format (1),
 .BR rufusarm64-persistence (1)
