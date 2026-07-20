@@ -4,6 +4,7 @@ package nonbootable
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 )
