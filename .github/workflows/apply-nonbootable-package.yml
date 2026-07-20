@@ -55,7 +55,7 @@ jobs:
           new = 'Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, mount, fdisk, dosfstools, exfatprogs, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils'
           assert text.count(old) == 1, "dependency marker"
           text = text.replace(old, new, 1)
-          assert text.count('rufusarm64-nonbootable-format') == 4
+          assert text.count('rufusarm64-nonbootable-format') == 5
           build.write_text(text, encoding="utf-8")
 
           policy = Path("packaging/io.github.geocausa.RufusArm64.policy")
