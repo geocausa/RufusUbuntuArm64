@@ -1,0 +1,94 @@
+name: Apply non-bootable exclusive-open correction
+
+on:
+  push:
+    branches: [feature/nonbootable-executor]
+    paths:
+      - .github/workflows/apply-nonbootable-lock-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/nonbootable-executor
+      - name: Remove redundant advisory lock and clean loop flags
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          backend = Path("internal/nonbootable/backend_linux.go")
+          text = backend.read_text(encoding="utf-8")
+          old = '''type linuxBackend struct {
+          \toptions DeviceOptions
+          \ttarget  *os.File
+          \tlocked  bool
+          }
+          '''
+          new = '''type linuxBackend struct {
+          \toptions DeviceOptions
+          \ttarget  *os.File
+          }
+          '''
+          assert old in text
+          text = text.replace(old, new, 1)
+          old = '''\tif err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+          \t\treturn fmt.Errorf("another storage operation appears to be using %s: %w", plan.DevicePath, err)
+          \t}
+          \tbackend.locked = true
+          '''
+          assert old in text
+          text = text.replace(old, '', 1)
+          old = '''\tvar result error
+          \tif backend.locked {
+          \t\tif err := syscall.Flock(int(backend.target.Fd()), syscall.LOCK_UN); err != nil {
+          \t\t\tresult = errors.Join(result, fmt.Errorf("unlock target: %w", err))
+          \t\t}
+          \t}
+          \tif err := backend.target.Close(); err != nil {
+          \t\tresult = errors.Join(result, fmt.Errorf("close target: %w", err))
+          \t}
+          \tbackend.target = nil
+          \tbackend.locked = false
+          \treturn result
+          '''
+          new = '''\terr := backend.target.Close()
+          \tbackend.target = nil
+          \tif err != nil {
+          \t\treturn fmt.Errorf("close target: %w", err)
+          \t}
+          \treturn nil
+          '''
+          assert old in text
+          text = text.replace(old, new, 1)
+          text = text.replace('\tdecoder.DisallowUnknownFields()\n', '', 1)
+          backend.write_text(text, encoding="utf-8")
+
+          loop_test = Path("internal/nonbootable/backend_loop_test.go")
+          text = loop_test.read_text(encoding="utf-8")
+          assert '\t"testing"\n' in text
+          text = text.replace('\t"testing"\n', '\t"syscall"\n\t"testing"\n', 1)
+          old = '''func syscallOpenFlags() int {
+          \treturn 0x80 | 0x20000 // O_EXCL | O_NOFOLLOW on Linux.
+          }
+          '''
+          new = '''func syscallOpenFlags() int {
+          \treturn syscall.O_EXCL | syscall.O_NOFOLLOW
+          }
+          '''
+          assert old in text
+          text = text.replace(old, new, 1)
+          loop_test.write_text(text, encoding="utf-8")
+
+          Path(".github/workflows/apply-nonbootable-lock-fix.yml").unlink()
+          PY
+          gofmt -w internal/nonbootable/backend_linux.go internal/nonbootable/backend_loop_test.go
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Stage 2: rely on kernel-exclusive formatter target"
+          git push origin HEAD:feature/nonbootable-executor
