@@ -10,6 +10,20 @@ opens the graphical RufusArm64 application. It creates raw Linux media and
 supported Windows installation USB media after explicit target confirmation
 and administrator authentication.
 .PP
+The
+.B Download...
+action opens the verified acquisition workflow. A package-enabled built-in
+channel uses threshold-signed root and catalogue metadata with expiry and
+rollback protection. The advanced recovery path accepts only a separately
+trusted local catalogue, detached signature, and public key. Downloads perform
+storage-space preflight, stream progress, can be cancelled, retain only an
+owner-private signed-identity partial for later resume, and install the final
+file only after its signed size and SHA-256 match. A failed or cancelled
+transfer never installs an unverified image. The upstream project package may
+ship with the built-in network channel disabled until public catalogue and
+mirror operations are provisioned; the local signed-catalogue path remains
+available.
+.PP
 The ordinary Create USB action preserves supported Linux raw/ISOHybrid images
 byte-for-byte. Persistent-live creation is a separate guarded workflow.
 .PP

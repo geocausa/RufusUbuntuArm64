@@ -252,6 +252,77 @@ def install_linux_compatibility(window_class):
     window_class._linux_compatibility_installed = True
 
 
+def _resumable_download_builder(builder):
+    """Add the reviewed resumable-partial contract to an existing acquisition command."""
+    def wrapped(*args, **kwargs):
+        command = list(builder(*args, **kwargs))
+        if "--resume" not in command:
+            command.append("--resume")
+        return command
+
+    return wrapped
+
+
+def install_verified_acquisition(window_class):
+    """Expose the existing signed, cancellable, storage-preflighted acquisition workflow."""
+    if getattr(window_class, "_verified_acquisition_installed", False):
+        return
+
+    original_init = window_class.__init__
+    original_set_busy = window_class.set_busy
+    original_finish_download = window_class.finish_download
+    method_globals = window_class.open_acquisition.__globals__
+    for name in (
+        "build_acquisition_channel_download_command",
+        "build_acquisition_download_command",
+    ):
+        builder = method_globals.get(name)
+        if builder is not None and not getattr(builder, "_rufusarm64_resumable", False):
+            wrapped = _resumable_download_builder(builder)
+            wrapped._rufusarm64_resumable = True
+            method_globals[name] = wrapped
+
+    def integrated_init(window, app):
+        original_init(window, app)
+        window.download_button.set_label("Download…")
+        window.download_button.set_tooltip_text(
+            "Choose an image from a verified signed catalog; downloads can be cancelled and safely resumed"
+        )
+        window.download_button.connect("clicked", window.open_acquisition)
+        window.download_button.set_sensitive(True)
+
+    def integrated_set_busy(window, busy):
+        original_set_busy(window, busy)
+        background_idle = not window.inspection_running and not window.device_refreshing
+        window.download_button.set_sensitive(not busy and background_idle)
+
+    def integrated_finish_download(window, return_code, payload):
+        was_cancelled = bool(window.cancel_requested)
+        result = original_finish_download(window, return_code, payload)
+        resumed = 0
+        if isinstance(payload, dict):
+            try:
+                resumed = max(0, int(payload.get("resumed_bytes") or 0))
+            except (TypeError, ValueError):
+                resumed = 0
+        if return_code == 0 and resumed:
+            window.append_log(f"Resumed verified download after {resumed} previously checked bytes.")
+        elif was_cancelled:
+            window.progress_detail.set_text(
+                "No unverified image was installed. The private signed-catalog partial was retained for automatic resume."
+            )
+        elif return_code != 0:
+            window.progress_detail.set_text(
+                "No unverified image was installed. A compatible private partial may be retained for a later verified resume."
+            )
+        return result
+
+    window_class.__init__ = integrated_init
+    window_class.set_busy = integrated_set_busy
+    window_class.finish_download = integrated_finish_download
+    window_class._verified_acquisition_installed = True
+
+
 def install_post_operation_reuse(window_class):
     """Install explicit, non-destructive next-step actions around the main writer."""
     if getattr(window_class, "_post_operation_reuse_installed", False):
@@ -395,5 +466,6 @@ def run_rufusarm64(argv=None):
     install_nonbootable(RufusWindow)
     install_freedos(RufusWindow)
     install_linux_compatibility(RufusWindow)
+    install_verified_acquisition(RufusWindow)
     install_post_operation_reuse(RufusWindow)
     return RufusApp().run(list(sys.argv[1:] if argv is None else argv))
