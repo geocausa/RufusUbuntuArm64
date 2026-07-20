@@ -1,6 +1,6 @@
 # FreeDOS media feasibility on Ubuntu ARM64
 
-Status: **feasible in principle; the ordinary-file media contract is verified, but device implementation and GTK exposure are not yet approved**.
+Status: **feasible for deterministic construction and read-only loop qualification; destructive device implementation and GTK exposure are not yet approved**.
 
 This record answers whether an Ubuntu ARM64 host can construct Rufus-style FreeDOS media without executing x86 software on the host or weakening the existing removable-drive safety boundary.
 
@@ -36,9 +36,9 @@ The same architecture can be implemented with native Go and standard Ubuntu ARM6
 3. require exact destructive confirmation;
 4. authenticate through a dedicated Polkit action;
 5. retain the whole-disk descriptor lock and revalidate immediately before erasure;
-6. create one active MBR partition and a FAT filesystem;
+6. construct the reviewed whole-disk bytes without executing a guest payload;
 7. install pinned FreeDOS MBR and partition boot code without executing DOS utilities;
-8. copy pinned payload bytes and verify them by size and SHA-256;
+8. place pinned payload bytes and verify them by size and SHA-256;
 9. verify the partition table, FAT metadata, active flag, boot signatures, allocation chains, payload placement, and kernel configuration;
 10. report that the result is BIOS/Legacy x86 media and is not validated on physical hardware.
 
@@ -104,7 +104,19 @@ The first ordinary-file media contract is source-pinned in `vendor/rufus/FREEDOS
 - the whole-image verifier checks the exact MBR/PBR code, LBA and CHS fields, hidden-sector and BPB geometry, primary and backup boot regions and FSInfo sectors, identical FAT copies, reserved entries, root records, hidden/system payload attributes, contiguous allocation chains, exact payload bytes, zero final-cluster slack, free-cluster accounting, and absence of orphan allocations;
 - the deterministic ordinary-file fixture exercises the exact 65,536-cluster lower boundary and rejects MBR, BPB, FSInfo, FAT, directory, allocation, payload, and orphan-cluster tampering.
 
-All completed checkpoints operate on ordinary bytes only. They do not authorize a device operation or establish that a physical PC will boot.
+## Resolved deterministic construction and loop qualification checkpoint
+
+`internal/freedos/builder.go` now constructs the complete reviewed image in native Go and verifies the final bytes before returning them:
+
+- the builder writes the active MBR entry, exact Rufus MBR and FreeDOS FAT32 boot regions, complete BPB and mirrored FSInfo metadata, two identical FATs, the volume label, and exactly two hidden/system payload records;
+- payload chains are contiguous and deterministic, final-cluster slack remains zero, and identical plans must produce byte-identical images;
+- an independently assembled test fixture must match builder output exactly, preventing the builder and verifier from serving as their own only oracle;
+- the Linux qualification test writes only a temporary ordinary file, attaches it as a read-only partition-scanning loop device, and never opens the loop for writing;
+- the kernel-reported logical sector size, whole-disk size, partition start, partition size, and partition type must match the plan;
+- `blkid` must recognize the partition as the planned labeled FAT filesystem and `fsck.vfat -n` must accept it without repair;
+- exact whole-device and partition-node readback must match the constructed bytes, and the complete in-repository verifier runs again over the kernel readback.
+
+This qualification demonstrates native construction and Linux block-layer interpretation. It does not authorize a destructive executor and does not establish that a physical PC will boot.
 
 ## Unresolved gates
 
@@ -112,14 +124,14 @@ Implementation remains blocked until all of these are resolved:
 
 1. **Safety integration.** Build a dedicated identity-bound executor that retains root-disk refusal, descriptor locking, final pre-destructive revalidation, guarded cancellation, media-changed reporting, and complete final readback. Do not widen the ordinary image writer.
 2. **Release maintenance.** Measure installed package impact, define the payload/source update procedure and cadence, and confirm the final Debian copyright and source-distribution contract before runtime installation.
-3. **Product exposure.** Add terminal and GTK workflows only after the executor and real loop-device structural qualification pass. The graphical path must have no fixed-disk override and must disclose the x86 BIOS/Legacy-only boundary before authentication.
+3. **Product exposure.** Add terminal and GTK workflows only after the executor and release-maintenance contract pass. The graphical path must have no fixed-disk override and must disclose the x86 BIOS/Legacy-only boundary before authentication.
 4. **Physical evidence.** Treat successful boot on representative x86 BIOS/Legacy hardware as a separate evidence claim, never as a consequence of software verification.
 
 ## Gate decision
 
-The feasibility gate is **positive for deterministic ARM64-host construction and ordinary-file verification**. No x86 execution is required on the host, and the complete reviewed media structure can be expressed and rejected byte-for-byte in native Go.
+The feasibility gate is **positive for deterministic ARM64-host construction, ordinary-file verification, and read-only real loop-device qualification**. No x86 execution is required on the host, and the complete reviewed media structure can be constructed and rejected byte-for-byte in native Go.
 
-It is **not device-implementation-green** until safety integration, real loop-device qualification, and release package planning are complete. Until then there must be no FreeDOS command, Polkit action, runtime payload installation, GTK option, release commitment, or physical-boot claim.
+It is **not destructive-device-implementation-green** until safety integration and release package planning are complete. Until then there must be no FreeDOS command, Polkit action, runtime payload installation, GTK option, release commitment, or physical-boot claim.
 
 ## Primary references
 
