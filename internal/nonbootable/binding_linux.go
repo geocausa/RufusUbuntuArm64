@@ -36,7 +36,7 @@ func (backend *linuxBackend) verifyTargetPath(plan Plan) error {
 	return nil
 }
 
-func (backend *linuxBackend) bindPartition(ctx context.Context, partitionPath string, plan Plan, table PartitionTable) (returnErr error) {
+func (backend *linuxBackend) bindPartition(ctx context.Context, partitionPath string, plan Plan, table PartitionTable) error {
 	if backend.partition != nil {
 		return errors.New("formatter partition is already bound")
 	}
@@ -54,33 +54,33 @@ func (backend *linuxBackend) bindPartition(ctx context.Context, partitionPath st
 	if err != nil {
 		return fmt.Errorf("open formatter partition: %w", err)
 	}
-	defer func() {
-		if returnErr != nil {
-			_ = partition.Close()
-		}
-	}()
+	cleanupLocal := func() {
+		_ = syscall.Flock(int(partition.Fd()), syscall.LOCK_UN)
+		_ = partition.Close()
+	}
 	if err := safety.AcquireExclusiveFlock(ctx, partition); err != nil {
+		_ = partition.Close()
 		return fmt.Errorf("lock formatter partition: %w", err)
 	}
-	locked := true
-	defer func() {
-		if returnErr != nil && locked {
-			_ = syscall.Flock(int(partition.Fd()), syscall.LOCK_UN)
-		}
-	}()
 	if err := safety.VerifyOpenDevice(partition, deviceID, plan.PartitionSizeBytes); err != nil {
+		cleanupLocal()
 		return err
 	}
 	if err := verifyKernelPartition(partitionPath, plan, table); err != nil {
+		cleanupLocal()
 		return err
 	}
+
 	backend.partition = partition
 	backend.partitionPath = partitionPath
 	backend.stablePartitionPath = stableDescriptorPath(partition)
 	backend.partitionDeviceID = deviceID
 	backend.partitionLocked = true
-	locked = false
-	return backend.verifyPartitionPath(plan, partitionPath)
+	if err := backend.verifyPartitionPath(plan, partitionPath); err != nil {
+		cleanupErr := backend.closePartition()
+		return errors.Join(err, cleanupErr)
+	}
+	return nil
 }
 
 func (backend *linuxBackend) verifyPartitionPath(plan Plan, partitionPath string) error {
