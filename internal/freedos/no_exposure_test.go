@@ -7,20 +7,23 @@ import (
 	"testing"
 )
 
-func TestCommandStageAllowsOnlyGuardedNonGUIExposure(t *testing.T) {
+func TestGUIStageAllowsOnlyGuardedReviewedExposure(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
-	command := filepath.Join(root, "cmd", "rufus-freedos-format", "main.go")
-	if info, err := os.Stat(command); err != nil || info.IsDir() {
-		t.Fatalf("guarded FreeDOS formatter command is missing: %v", err)
+	for _, path := range []string{
+		filepath.Join(root, "cmd", "rufus-freedos-format", "main.go"),
+		filepath.Join(root, "gui", "rufusarm64_freedos.py"),
+		filepath.Join(root, "gui", "rufusarm64_freedos_dialog.py"),
+	} {
+		if info, err := os.Stat(path); err != nil || info.IsDir() {
+			t.Fatalf("reviewed FreeDOS product path is missing at %s: %v", path, err)
+		}
 	}
 	for _, path := range []string{
 		filepath.Join(root, "cmd", "rufus-freedos"),
-		filepath.Join(root, "gui", "rufusarm64_freedos.py"),
-		filepath.Join(root, "gui", "rufusarm64_freedos_dialog.py"),
 		filepath.Join(root, "packaging", "io.github.geocausa.RufusArm64.freedos.policy"),
 	} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			t.Fatalf("FreeDOS command stage exposed an unreviewed product path: %s", path)
+			t.Fatalf("FreeDOS GUI stage exposed an unreviewed product path: %s", path)
 		}
 	}
 
@@ -59,6 +62,8 @@ func TestNoFreeDOSResearchApplicatorRemains(t *testing.T) {
 		filepath.Join(root, ".github", "workflows", "sync-freedos-payload-stage2.yml"),
 		filepath.Join(root, ".github", "workflows", "diagnose-freedos-media.yml"),
 		filepath.Join(root, ".github", "workflows", "freedos-command-diagnostic.yml"),
+		filepath.Join(root, ".github", "workflows", "apply-freedos-gui-packaging.yml"),
+		filepath.Join(root, ".github", "scripts", "apply_freedos_gui_packaging.py"),
 		filepath.Join(root, ".github", "scripts", "finalize_freedos_payload.py"),
 		filepath.Join(root, "docs", "freedos-payload-map.txt"),
 		filepath.Join(root, "docs", "freedos-finalizer-diagnostic.txt"),
