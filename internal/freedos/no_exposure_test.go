@@ -38,6 +38,7 @@ func TestNoFreeDOSResearchApplicatorRemains(t *testing.T) {
 		filepath.Join(root, ".github", "scripts", "finalize_freedos_payload.py"),
 		filepath.Join(root, "docs", "freedos-payload-map.txt"),
 		filepath.Join(root, "docs", "freedos-finalizer-diagnostic.txt"),
+		filepath.Join(root, "docs", "freedos-sync-diagnostic.txt"),
 	} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("temporary FreeDOS research applicator remains at %s", path)
