@@ -12,23 +12,23 @@ const ManifestSchema = 1
 // Manifest records the immutable upstream evidence for the FreeDOS feasibility
 // gate. It authorizes no device operation and contains no executable payload.
 type Manifest struct {
-	Schema                 int      `json:"schema"`
-	Distribution           string   `json:"distribution"`
-	Version                string   `json:"version"`
-	TargetCPU              string   `json:"target_cpu"`
-	Firmware               string   `json:"firmware"`
-	HostExecutionRequired  bool     `json:"host_execution_required"`
-	FullUSBArchiveSHA256   string   `json:"full_usb_archive_sha256"`
-	LiteUSBArchiveSHA256   string   `json:"lite_usb_archive_sha256"`
-	RufusReferenceCommit   string   `json:"rufus_reference_commit"`
-	KernelSourceCommit     string   `json:"kernel_source_commit"`
-	FreeCOMSourceCommit    string   `json:"freecom_source_commit"`
-	RufusKernelBlobSHA1    string   `json:"rufus_kernel_blob_sha1"`
-	RufusCommandBlobSHA1   string   `json:"rufus_command_blob_sha1"`
-	KernelForceLBAOffset   uint64   `json:"kernel_force_lba_offset"`
-	KernelForceLBAValue    byte     `json:"kernel_force_lba_value"`
-	RequiredRootFiles      []string `json:"required_root_files"`
-	SafetyWarnings         []string `json:"safety_warnings"`
+	Schema                int      `json:"schema"`
+	Distribution          string   `json:"distribution"`
+	Version               string   `json:"version"`
+	TargetCPU             string   `json:"target_cpu"`
+	Firmware              string   `json:"firmware"`
+	HostExecutionRequired bool     `json:"host_execution_required"`
+	FullUSBArchiveSHA256  string   `json:"full_usb_archive_sha256"`
+	LiteUSBArchiveSHA256  string   `json:"lite_usb_archive_sha256"`
+	RufusReferenceCommit  string   `json:"rufus_reference_commit"`
+	KernelSourceCommit    string   `json:"kernel_source_commit"`
+	FreeCOMSourceCommit   string   `json:"freecom_source_commit"`
+	RufusKernelBlobSHA1   string   `json:"rufus_kernel_blob_sha1"`
+	RufusCommandBlobSHA1  string   `json:"rufus_command_blob_sha1"`
+	KernelForceLBAOffset  uint64   `json:"kernel_force_lba_offset"`
+	KernelForceLBAValue   byte     `json:"kernel_force_lba_value"`
+	RequiredRootFiles     []string `json:"required_root_files"`
+	SafetyWarnings        []string `json:"safety_warnings"`
 }
 
 // PinnedManifest returns the evidence reviewed for the first feasibility
