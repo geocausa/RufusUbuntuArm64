@@ -1,6 +1,7 @@
 """Packaged RufusArm64 entry point with all reviewed main-window integrations."""
 
 import os
+import stat
 import struct
 import sys
 
@@ -150,20 +151,25 @@ def linux_compatibility_profile(path, inspection):
         return {}
 
     resolved = os.path.realpath(str(path or ""))
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
     try:
         descriptor = os.open(resolved, flags)
     except OSError:
         return {}
     try:
-        stat = os.fstat(descriptor)
-        if not stat.st_size or not os.path.isfile(resolved):
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size <= 0:
             return {}
         with os.fdopen(descriptor, "rb", closefd=False) as handle:
             disk_layout = _has_disk_layout(handle)
             has_iso, catalogue_lba = _iso_boot_catalogue(handle)
             entries = _catalogue_boot_entries(handle, catalogue_lba) if has_iso else []
-            bootloaders = _bootloader_fingerprints(handle, entries, stat.st_size)
+            bootloaders = _bootloader_fingerprints(handle, entries, metadata.st_size)
     except (OSError, struct.error):
         return {}
     finally:
