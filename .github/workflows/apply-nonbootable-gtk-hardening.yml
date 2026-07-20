@@ -1,0 +1,73 @@
+name: Apply non-bootable GTK hardening
+
+on:
+  push:
+    branches: [feature/nonbootable-gtk]
+    paths:
+      - .github/workflows/apply-nonbootable-gtk-hardening.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/nonbootable-gtk
+      - name: Bind policy path and canonical FAT32 labels
+        run: |
+          set -eux
+          python3 - <<'PY'
+          from pathlib import Path
+
+          dialog = Path('gui/rufusarm64_nonbootable_dialog.py')
+          text = dialog.read_text(encoding='utf-8')
+          old = 'NONBOOTABLE_FORMATTER = "/usr/bin/rufusarm64-nonbootable-format"'
+          new = 'NONBOOTABLE_FORMATTER = "/usr/lib/rufusarm64/rufusarm64-nonbootable-format"'
+          if text.count(old) != 1:
+              raise SystemExit('formatter path marker is not unique')
+          text = text.replace(old, new, 1)
+          old = '''    def current_choices(self):
+              return (
+                  self.scheme.get_active_id() or "gpt",
+                  self.filesystem.get_active_id() or "fat32",
+                  self.volume_label.get_text(),
+              )
+'''
+          new = '''    def current_choices(self):
+              scheme = self.scheme.get_active_id() or "gpt"
+              filesystem = self.filesystem.get_active_id() or "fat32"
+              label = self.volume_label.get_text()
+              if filesystem == "fat32":
+                  label = label.upper()
+              return scheme, filesystem, label
+'''
+          if text.count(old) != 1:
+              raise SystemExit('current choices marker is not unique')
+          dialog.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          tests = Path('gui/test_nonbootable_format.py')
+          text = tests.read_text(encoding='utf-8')
+          text = text.replace(
+              '/usr/bin/rufusarm64-nonbootable-format',
+              '/usr/lib/rufusarm64/rufusarm64-nonbootable-format',
+          )
+          tests.write_text(text, encoding='utf-8')
+
+          structure = Path('gui/test_nonbootable_dialog.py')
+          text = structure.read_text(encoding='utf-8')
+          marker = '        self.assertIn("/usr/lib/rufusarm64/rufusarm64-nonbootable-format", self.policy_source)\n'
+          addition = marker + '        self.assertIn(\'NONBOOTABLE_FORMATTER = "/usr/lib/rufusarm64/rufusarm64-nonbootable-format"\', self.dialog_source)\n'
+          if text.count(marker) != 1:
+              raise SystemExit('policy assertion marker is not unique')
+          structure.write_text(text.replace(marker, addition, 1), encoding='utf-8')
+          PY
+          python3 -m py_compile gui/rufusarm64_nonbootable.py gui/rufusarm64_nonbootable_dialog.py
+          PYTHONPATH=gui python3 -m unittest gui/test_nonbootable_format.py gui/test_nonbootable_dialog.py gui/test_packaged_launcher.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add gui/rufusarm64_nonbootable_dialog.py gui/test_nonbootable_format.py gui/test_nonbootable_dialog.py
+          git commit -m "GTK: bind formatter policy path and canonical labels"
+          git push origin HEAD:feature/nonbootable-gtk
