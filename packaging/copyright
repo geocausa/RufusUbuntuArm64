@@ -17,10 +17,12 @@ License: GPL-3+
 Files: internal/freedos/payload/* vendor/freedos/*
 Copyright: FreeDOS kernel and FreeCOM contributors
 License: GPL-2
- The minimal FreeDOS kernel and command-shell binaries are retained with the
- exact official package metadata, GNU GPL version 2 texts, and complete
- corresponding source archives extracted from the same checksum-pinned FreeDOS
- 1.4 distribution packages. They are not yet installed as a runtime feature.
+ The minimal FreeDOS kernel and command-shell binaries are reproduced from the
+ checksum-pinned official FreeDOS 1.4 FullUSB distribution. The configured
+ KERNEL.SYS differs from KERNL386.SYS only at the source-backed FORCELBA byte.
+ Exact package metadata, GNU GPL version 2 text, release-contract records, and
+ complete corresponding FreeCOM and kernel source archives are installed under
+ /usr/share/doc/rufusarm64/freedos/ whenever the formatter command is shipped.
  .
  On Debian systems, the complete text of the GNU General Public License
  version 2 is available in /usr/share/common-licenses/GPL-2.
@@ -36,11 +38,13 @@ License: GPL-3+
  On Debian systems, the complete text of the GNU General Public License
  version 3 is available in /usr/share/common-licenses/GPL-3.
 
-Files: vendor/ms-sys/*
+Files: vendor/ms-sys/* internal/freedos/bootassets/*
 Copyright: ms-sys and Rufus contributors
 License: GPL-2+
  The pinned source fragments carry their upstream GPL-2.0-or-later notices and
- are installed under /usr/share/doc/rufusarm64/ms-sys/.
+ are installed under /usr/share/doc/rufusarm64/ms-sys/. The exact FreeDOS MBR
+ and FAT32 PBR binary regions embedded by the formatter are reproducibly derived
+ from those installed source fragments and pinned manifests.
  .
  On Debian systems, the complete text of the GNU General Public License
  version 2 is available in /usr/share/common-licenses/GPL-2.
