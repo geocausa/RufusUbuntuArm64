@@ -32,9 +32,18 @@ jobs:
         env:
           RUFUS_REAL_BLOCK_TEST: '1'
         run: |
+          mkdir -p dist/audit-logs
           sudo modprobe loop || true
           go test -c -o "${RUNNER_TEMP}/nonbootable-loop.test" ./internal/nonbootable
+          set -o pipefail
           sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
             "${RUNNER_TEMP}/nonbootable-loop.test" \
             -test.run '^TestExecuteDeviceFormatsRealLoopDevices$' \
-            -test.v
+            -test.v 2>&1 | tee dist/audit-logs/nonbootable-loop.log
+      - name: Upload formatter loop transcript
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nonbootable-loop-${{ github.run_id }}
+          path: dist/audit-logs/nonbootable-loop.log
+          if-no-files-found: warn
