@@ -103,6 +103,9 @@ func validatePayloadSet(originalKernel, configuredKernel, command []byte) error 
 			return fmt.Errorf("kernel derivation changed unexpected byte offset %#x", offset)
 		}
 	}
+	if err := VerifyPinnedRufusKernel(configuredKernel); err != nil {
+		return fmt.Errorf("configured kernel verification: %w", err)
+	}
 	return nil
 }
 
