@@ -1,0 +1,50 @@
+name: FreeDOS loop qualification
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: freedos-loop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  loop-readback:
+    name: Build and verify through a real loop device
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - name: Install loop qualification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dosfstools util-linux
+      - name: Exercise deterministic FreeDOS media through the kernel
+        env:
+          RUFUS_REAL_BLOCK_TEST: '1'
+        run: |
+          mkdir -p dist/audit-logs
+          set -o pipefail
+          {
+            sudo modprobe loop || true
+            go test -c -o "${RUNNER_TEMP}/freedos-loop.test" ./internal/freedos
+            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
+              "${RUNNER_TEMP}/freedos-loop.test" \
+              -test.run '^TestBuildMediaImageSupportsRealLoopReadback$' \
+              -test.v
+          } 2>&1 | tee dist/audit-logs/freedos-loop-qualification.log
+      - name: Upload qualification log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: freedos-loop-${{ github.run_id }}
+          path: dist/audit-logs/freedos-loop-qualification.log
+          if-no-files-found: warn
