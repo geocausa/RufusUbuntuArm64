@@ -50,7 +50,6 @@ func ExecuteDevice(ctx context.Context, plan Plan, options DeviceOptions) (Repor
 type linuxBackend struct {
 	options DeviceOptions
 	target  *os.File
-	locked  bool
 }
 
 func (backend *linuxBackend) Prepare(_ context.Context, plan Plan, _ PartitionTable) error {
@@ -73,10 +72,6 @@ func (backend *linuxBackend) Prepare(_ context.Context, plan Plan, _ PartitionTa
 	if err := safety.VerifyOpenDevice(file, backend.options.ExpectedDeviceID, plan.DeviceSizeBytes); err != nil {
 		return err
 	}
-	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return fmt.Errorf("another storage operation appears to be using %s: %w", plan.DevicePath, err)
-	}
-	backend.locked = true
 	if backend.options.BeforeDestructive != nil {
 		if err := backend.options.BeforeDestructive(file); err != nil {
 			return fmt.Errorf("final target safety check: %w", err)
@@ -236,18 +231,12 @@ func (backend *linuxBackend) Close() error {
 	if backend.target == nil {
 		return nil
 	}
-	var result error
-	if backend.locked {
-		if err := syscall.Flock(int(backend.target.Fd()), syscall.LOCK_UN); err != nil {
-			result = errors.Join(result, fmt.Errorf("unlock target: %w", err))
-		}
-	}
-	if err := backend.target.Close(); err != nil {
-		result = errors.Join(result, fmt.Errorf("close target: %w", err))
-	}
+	err := backend.target.Close()
 	backend.target = nil
-	backend.locked = false
-	return result
+	if err != nil {
+		return fmt.Errorf("close target: %w", err)
+	}
+	return nil
 }
 
 func (backend *linuxBackend) verifyTarget(plan Plan) error {
@@ -320,7 +309,6 @@ func readSfdisk(ctx context.Context, devicePath string) (sfdiskDocument, error) 
 	}
 	var document sfdiskDocument
 	decoder := json.NewDecoder(bytes.NewReader(stdout))
-	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&document); err != nil {
 		return sfdiskDocument{}, fmt.Errorf("parse sfdisk JSON: %w", err)
 	}

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -141,5 +142,5 @@ func waitForFormatterLoopLock(t *testing.T, path string) {
 }
 
 func syscallOpenFlags() int {
-	return 0x80 | 0x20000 // O_EXCL | O_NOFOLLOW on Linux.
+	return syscall.O_EXCL | syscall.O_NOFOLLOW
 }
