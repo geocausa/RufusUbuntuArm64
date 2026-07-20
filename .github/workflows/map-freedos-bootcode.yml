@@ -1,4 +1,4 @@
-name: Verify pinned FreeDOS boot-code provenance
+name: Finalize pinned FreeDOS boot-code provenance
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  verify:
+  finalize:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -19,21 +19,21 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v6
         with:
           go-version: '1.22.12'
-      - name: Format and verify provenance code
+      - name: Apply repository integration and verify
         shell: bash
         run: |
           set -euxo pipefail
+          python3 .github/scripts/finalize_freedos_bootcode_provenance.py
           gofmt -w internal/freedos/bootassets.go internal/freedos/bootassets_test.go
           test -z "$(gofmt -l internal/freedos)"
           go test -race ./internal/freedos
           go test -shuffle=on -count=3 ./internal/freedos
           python3 scripts/extract-freedos-bootassets.py --check
           (cd vendor/ms-sys && sha256sum -c UPSTREAM-SHA256SUMS)
-          python3 -m py_compile scripts/extract-freedos-bootassets.py
+          python3 -m py_compile scripts/extract-freedos-bootassets.py .github/scripts/finalize_freedos_bootcode_provenance.py
+          bash -n scripts/test.sh scripts/build-deb.sh
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add internal/freedos/bootassets.go internal/freedos/bootassets_test.go
-          if ! git diff --cached --quiet; then
-            git commit -m 'FreeDOS: format boot-code verifier sources'
-            git push origin HEAD:feature/freedos-bootcode-provenance
-          fi
+          git add docs/freedos-feasibility.md internal/freedos/bootassets_test.go scripts/test.sh scripts/build-deb.sh
+          git commit -m 'FreeDOS: integrate pinned boot-code provenance'
+          git push origin HEAD:feature/freedos-bootcode-provenance
