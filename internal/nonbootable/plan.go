@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -147,14 +148,9 @@ func BuildPlan(request Request) (Plan, error) {
 		return Plan{}, err
 	}
 
-	start := alignUp(alignmentBytes, sectorSize)
-	usableEnd := alignDown(request.DeviceSizeBytes-tailReserveBytes, sectorSize)
-	if usableEnd <= start {
-		return Plan{}, errors.New("device has no usable aligned partition capacity")
-	}
-	partitionSize := usableEnd - start
-	if contract.maxSize != 0 && partitionSize > contract.maxSize {
-		return Plan{}, fmt.Errorf("%s is limited to %d bytes by the current compatibility contract", contract.display, contract.maxSize)
+	start, partitionSize, err := canonicalGeometry(request.DeviceSizeBytes, sectorSize, contract)
+	if err != nil {
+		return Plan{}, err
 	}
 	partitionType := contract.gptType
 	if scheme == SchemeMBR {
@@ -178,17 +174,8 @@ func BuildPlan(request Request) (Plan, error) {
 		PartitionStartBytes: start,
 		PartitionSizeBytes:  partitionSize,
 		PartitionType:       partitionType,
-		RequiredTools: []string{
-			"sfdisk",
-			"blockdev",
-			"udevadm",
-			contract.mkfs,
-			contract.check,
-		},
-		Warnings: []string{
-			"This operation erases the complete selected drive.",
-			"The resulting media is data-only and is not claimed bootable.",
-		},
+		RequiredTools:       requiredTools(contract),
+		Warnings:            safetyWarnings(),
 	}
 	if err := validatePlan(plan); err != nil {
 		return Plan{}, err
@@ -225,7 +212,8 @@ func NormalizeFilesystem(value string) (string, error) {
 }
 
 // ConfirmationPhrase binds the exact device, filesystem, scheme, and label that
-// were reviewed before authentication.
+// were reviewed before authentication. A tampered or merely plausible plan is
+// refused; only the exact canonical geometry and contracts are accepted.
 func ConfirmationPhrase(plan Plan) (string, error) {
 	if err := validatePlan(plan); err != nil {
 		return "", err
@@ -241,11 +229,13 @@ func validatePlan(plan Plan) error {
 	if plan.Schema != SchemaVersion || plan.Mode != Mode || plan.Bootable || !plan.Destructive {
 		return errors.New("invalid non-bootable plan envelope")
 	}
-	if _, err := normalizeDevicePath(plan.DevicePath); err != nil {
-		return err
+	path, err := normalizeDevicePath(plan.DevicePath)
+	if err != nil || path != plan.DevicePath {
+		return errors.New("plan contains a non-canonical device path")
 	}
-	if strings.TrimSpace(plan.ExpectedIdentity) == "" {
-		return errors.New("plan is missing expected device identity")
+	identity := strings.TrimSpace(plan.ExpectedIdentity)
+	if identity == "" || identity != plan.ExpectedIdentity {
+		return errors.New("plan is missing a canonical expected device identity")
 	}
 	if plan.LogicalSectorSize != 512 && plan.LogicalSectorSize != 4096 {
 		return errors.New("plan has an unsupported logical sector size")
@@ -257,14 +247,12 @@ func validatePlan(plan Plan) error {
 	if plan.Scheme != SchemeGPT && plan.Scheme != SchemeMBR {
 		return errors.New("plan has an unsupported partition scheme")
 	}
-	if plan.PartitionNumber != 1 || plan.PartitionStartBytes == 0 || plan.PartitionSizeBytes == 0 {
-		return errors.New("plan has invalid partition geometry")
+	expectedStart, expectedSize, err := canonicalGeometry(plan.DeviceSizeBytes, plan.LogicalSectorSize, contract)
+	if err != nil {
+		return err
 	}
-	if plan.PartitionStartBytes%plan.LogicalSectorSize != 0 || plan.PartitionSizeBytes%plan.LogicalSectorSize != 0 {
-		return errors.New("plan partition geometry is not sector aligned")
-	}
-	if plan.PartitionStartBytes+plan.PartitionSizeBytes > plan.DeviceSizeBytes {
-		return errors.New("plan partition geometry exceeds the device")
+	if plan.PartitionNumber != 1 || plan.PartitionStartBytes != expectedStart || plan.PartitionSizeBytes != expectedSize {
+		return errors.New("plan partition geometry is not canonical for the device")
 	}
 	expectedType := contract.gptType
 	if plan.Scheme == SchemeMBR {
@@ -277,13 +265,43 @@ func validatePlan(plan Plan) error {
 	if err != nil || label != plan.Label {
 		return errors.New("plan contains a non-canonical filesystem label")
 	}
-	if len(plan.RequiredTools) != 5 || plan.RequiredTools[3] != contract.mkfs || plan.RequiredTools[4] != contract.check {
+	if !slices.Equal(plan.RequiredTools, requiredTools(contract)) {
 		return errors.New("plan required-tool contract is inconsistent")
 	}
-	if len(plan.Warnings) != 2 {
-		return errors.New("plan safety warnings are incomplete")
+	if !slices.Equal(plan.Warnings, safetyWarnings()) {
+		return errors.New("plan safety warnings are incomplete or altered")
 	}
 	return nil
+}
+
+func canonicalGeometry(deviceSize, sectorSize uint64, contract filesystemContract) (uint64, uint64, error) {
+	if sectorSize != 512 && sectorSize != 4096 {
+		return 0, 0, errors.New("unsupported logical sector size")
+	}
+	if deviceSize < minimumDriveSize {
+		return 0, 0, fmt.Errorf("device is too small for guarded formatting: %d bytes", deviceSize)
+	}
+	start := alignUp(alignmentBytes, sectorSize)
+	usableEnd := alignDown(deviceSize-tailReserveBytes, sectorSize)
+	if usableEnd <= start {
+		return 0, 0, errors.New("device has no usable aligned partition capacity")
+	}
+	partitionSize := usableEnd - start
+	if contract.maxSize != 0 && partitionSize > contract.maxSize {
+		return 0, 0, fmt.Errorf("%s is limited to %d bytes by the current compatibility contract", contract.display, contract.maxSize)
+	}
+	return start, partitionSize, nil
+}
+
+func requiredTools(contract filesystemContract) []string {
+	return []string{"sfdisk", "blockdev", "udevadm", contract.mkfs, contract.check}
+}
+
+func safetyWarnings() []string {
+	return []string{
+		"This operation erases the complete selected drive.",
+		"The resulting media is data-only and is not claimed bootable.",
+	}
 }
 
 func normalizeDevicePath(value string) (string, error) {
