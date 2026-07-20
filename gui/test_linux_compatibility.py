@@ -30,7 +30,7 @@ class LinuxCompatibilityTests(unittest.TestCase):
         }
         body = []
         for node in tree.body:
-            if isinstance(node, ast.Import) and any(alias.name in {"os", "struct"} for alias in node.names):
+            if isinstance(node, ast.Import) and any(alias.name in {"os", "stat", "struct"} for alias in node.names):
                 body.append(node)
             elif isinstance(node, ast.Assign):
                 targets = {target.id for target in node.targets if isinstance(target, ast.Name)}
@@ -166,6 +166,8 @@ class LinuxCompatibilityTests(unittest.TestCase):
         self.assertIn("MAX_BOOT_CATALOGUE_BYTES = 2048", self.source)
         self.assertIn("MAX_BOOT_IMAGE_PROBE_BYTES = 64 * 1024", self.source)
         self.assertIn('getattr(os, "O_NOFOLLOW", 0)', self.source)
+        self.assertIn('getattr(os, "O_NONBLOCK", 0)', self.source)
+        self.assertIn("stat.S_ISREG", self.source)
         self.assertIn("install_linux_compatibility(RufusWindow)", self.source)
         self.assertIn("original_finish_image_inspection", self.source)
         self.assertNotIn("subprocess", self.source)
