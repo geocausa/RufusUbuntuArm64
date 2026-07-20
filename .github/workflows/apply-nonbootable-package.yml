@@ -5,6 +5,7 @@ on:
     branches: [feature/nonbootable-executor]
     paths:
       - .github/workflows/apply-nonbootable-package.yml
+      - .github/scripts/apply_nonbootable_package.py
 
 permissions:
   contents: write
@@ -41,6 +42,7 @@ jobs:
         run: |
           status="$(cat dist/applicator/status)"
           test "${status}" = 0
+          rm -rf dist/applicator
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
