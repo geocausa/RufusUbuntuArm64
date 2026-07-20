@@ -1,0 +1,66 @@
+name: Apply non-bootable GTK packaging
+
+on:
+  push:
+    branches: [feature/nonbootable-gtk]
+    paths:
+      - .github/workflows/apply-nonbootable-gtk-package.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/nonbootable-gtk
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.22.x'
+      - name: Package and test the GTK integration
+        run: |
+          set -eux
+          python3 - <<'PY'
+          from pathlib import Path
+
+          build = Path('scripts/build-deb.sh')
+          text = build.read_text(encoding='utf-8')
+          marker = '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_device_qualify_dialog.py" \\
+            "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_device_qualify_dialog.py"\n'''
+          addition = marker + '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable.py" \\
+            "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_nonbootable.py"\ninstall -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable_dialog.py" \\
+            "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_nonbootable_dialog.py"\ninstall -Dm644 "${ROOT_DIR}/gui/rufusarm64_integrated.py" \\
+            "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_integrated.py"\n'''
+          if text.count(marker) != 1:
+              raise SystemExit('build-deb GUI marker is not unique')
+          text = text.replace(marker, addition, 1)
+          check_marker = 'grep -Fq "Checksums…" "${GUI_TARGET}"\n'
+          checks = check_marker + '''grep -Fq 'Gtk.Button(label="Non bootable…")' "${ROOT_DIR}/gui/rufusarm64_nonbootable_dialog.py"\ngrep -Fq 'install_nonbootable(RufusWindow)' "${ROOT_DIR}/gui/rufusarm64_integrated.py"\n'''
+          if text.count(check_marker) != 1:
+              raise SystemExit('build-deb check marker is not unique')
+          build.write_text(text.replace(check_marker, checks, 1), encoding='utf-8')
+
+          tests = Path('scripts/test.sh')
+          text = tests.read_text(encoding='utf-8')
+          marker = '''  gui/rufusarm64_device_qualify.py gui/rufusarm64_device_qualify_dialog.py \\
+            gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py\n'''
+          replacement = '''  gui/rufusarm64_device_qualify.py gui/rufusarm64_device_qualify_dialog.py \\
+            gui/rufusarm64_nonbootable.py gui/rufusarm64_nonbootable_dialog.py \\
+            gui/rufusarm64_integrated.py gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py\n'''
+          if text.count(marker) != 1:
+              raise SystemExit('test py_compile marker is not unique')
+          tests.write_text(text.replace(marker, replacement, 1), encoding='utf-8')
+          PY
+          python3 -m py_compile \
+            gui/rufusarm64_nonbootable.py \
+            gui/rufusarm64_nonbootable_dialog.py \
+            gui/rufusarm64_integrated.py
+          PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
+          go test ./...
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/build-deb.sh scripts/test.sh
+          git commit -m "GTK: package and test non-bootable formatting"
+          git push origin HEAD:feature/nonbootable-gtk
