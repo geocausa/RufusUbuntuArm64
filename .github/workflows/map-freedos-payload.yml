@@ -1,0 +1,127 @@
+name: Map official FreeDOS payload provenance
+
+on:
+  push:
+    branches: [feature/freedos-payload-provenance]
+    paths:
+      - .github/workflows/map-freedos-payload.yml
+
+permissions:
+  contents: write
+
+jobs:
+  map:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/freedos-payload-provenance
+      - name: Extract and compare official payloads
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl unzip mtools fdisk jq
+          tmp="$(mktemp -d)"
+          archive="$tmp/FD14-FullUSB.zip"
+          curl --fail --location --retry 5 --retry-all-errors \
+            --output "$archive" \
+            https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/distributions/1.4/FD14-FullUSB.zip
+          echo 'cd440cd165f5a8a184870cb615f525af182660c15f9bcf1e9d198ca19cedcaff  '"$archive" | sha256sum --check --status
+          image_member="$(unzip -Z1 "$archive" | grep -Ei '\.img$' | head -n 1)"
+          test -n "$image_member"
+          unzip -p "$archive" "$image_member" > "$tmp/fullusb.img"
+          sector_size="$(sfdisk --json "$tmp/fullusb.img" | jq -r '.partitiontable.sectorsize // 512')"
+          start_sector="$(sfdisk --json "$tmp/fullusb.img" | jq -r '.partitiontable.partitions[0].start // 0')"
+          offset="$((sector_size * start_sector))"
+          image_spec="$tmp/fullusb.img@@$offset"
+          mcopy -i "$image_spec" '::/PACKAGES/BASE/FREECOM.ZIP' "$tmp/freecom.zip"
+          mcopy -i "$image_spec" '::/PACKAGES/BASE/KERNEL.ZIP' "$tmp/kernel.zip"
+          python3 - "$tmp" <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import subprocess
+          import sys
+          import zipfile
+
+          root = pathlib.Path(sys.argv[1])
+          records = {}
+          requests = {
+              "COMMAND.COM": (root / "freecom.zip", "BIN/COMMAND.COM"),
+              "KERNEL.SYS.unmodified": (root / "kernel.zip", "BIN/KERNL386.SYS"),
+          }
+          for output_name, (archive, member) in requests.items():
+              with zipfile.ZipFile(archive) as handle:
+                  names = {name.upper(): name for name in handle.namelist()}
+                  actual = names.get(member.upper())
+                  if actual is None:
+                      raise SystemExit(f"missing {member} in {archive.name}")
+                  data = handle.read(actual)
+              destination = root / output_name
+              destination.write_bytes(data)
+              records[output_name] = {
+                  "package": archive.name,
+                  "member": actual,
+                  "size": len(data),
+                  "sha256": hashlib.sha256(data).hexdigest(),
+                  "git_blob_sha1": subprocess.check_output(
+                      ["git", "hash-object", str(destination)], text=True
+                  ).strip(),
+              }
+
+          kernel = bytearray((root / "KERNEL.SYS.unmodified").read_bytes())
+          if len(kernel) <= 0x0D:
+              raise SystemExit("kernel is too short for FORCELBA")
+          records["KERNEL.SYS.unmodified"]["force_lba_original"] = kernel[0x0D]
+          kernel[0x0D] = 0x01
+          (root / "KERNEL.SYS").write_bytes(kernel)
+          records["KERNEL.SYS"] = {
+              "derived_from": "KERNEL.SYS.unmodified",
+              "force_lba_offset": 13,
+              "force_lba_value": 1,
+              "size": len(kernel),
+              "sha256": hashlib.sha256(kernel).hexdigest(),
+              "git_blob_sha1": subprocess.check_output(
+                  ["git", "hash-object", str(root / "KERNEL.SYS")], text=True
+              ).strip(),
+          }
+          for name in ("freecom.zip", "kernel.zip"):
+              data = (root / name).read_bytes()
+              records[name] = {
+                  "size": len(data),
+                  "sha256": hashlib.sha256(data).hexdigest(),
+              }
+          (root / "payload-map.json").write_text(
+              json.dumps(records, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          PY
+          git clone --filter=blob:none --no-checkout https://github.com/pbatard/rufus.git "$tmp/rufus"
+          git -C "$tmp/rufus" checkout --detach 6d8fbf98305ff37eb531c45cbd6ff44563c53917
+          cmp "$tmp/COMMAND.COM" "$tmp/rufus/res/freedos/COMMAND.COM"
+          cmp "$tmp/KERNEL.SYS" "$tmp/rufus/res/freedos/KERNEL.SYS"
+          {
+            echo 'Official archive:'
+            sha256sum "$archive"
+            echo "Image member: $image_member"
+            echo "Logical sector size: $sector_size"
+            echo "Partition start sector: $start_sector"
+            echo
+            echo 'Payload map:'
+            cat "$tmp/payload-map.json"
+            echo
+            echo 'freecom.zip members:'
+            unzip -Z1 "$tmp/freecom.zip"
+            echo
+            echo 'kernel.zip members:'
+            unzip -Z1 "$tmp/kernel.zip"
+            echo
+            echo 'Rufus payload object IDs:'
+            git -C "$tmp/rufus" hash-object res/freedos/COMMAND.COM res/freedos/KERNEL.SYS
+          } > docs/freedos-payload-map.txt
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs/freedos-payload-map.txt
+          git commit -m 'FreeDOS: map official payload extraction'
+          git push origin HEAD:feature/freedos-payload-provenance
