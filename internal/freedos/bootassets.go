@@ -84,7 +84,7 @@ func VerifyRufusFreeDOSMBR(mbr []byte) error {
 		return errors.New("MBR sector is shorter than 512 bytes")
 	}
 	if !bytes.Equal(mbr[:440], rufusMBRCode) {
-		return errors.New("Rufus MBR bootstrap does not match the pinned asset")
+		return errors.New("rufus MBR bootstrap does not match the pinned asset")
 	}
 	if mbr[510] != 0x55 || mbr[511] != 0xaa {
 		return errors.New("MBR boot marker is invalid")
@@ -148,7 +148,7 @@ func VerifyFreeDOSFAT32BootRegions(image []byte, sectorSize int) error {
 		if !bytes.Equal(image[base:base+len(fat32FreeDOSPBR0)], fat32FreeDOSPBR0) ||
 			!bytes.Equal(image[base+0x52:base+0x52+len(fat32FreeDOSPBR52)], fat32FreeDOSPBR52) ||
 			!bytes.Equal(image[base+0x3f0:base+0x3f0+len(fat32FreeDOSPBR3F0)], fat32FreeDOSPBR3F0) {
-			return fmt.Errorf("FreeDOS FAT32 boot region at byte offset %d does not match pinned assets", base)
+			return fmt.Errorf("pinned FreeDOS FAT32 boot region at byte offset %d does not match assets", base)
 		}
 	}
 	return nil
