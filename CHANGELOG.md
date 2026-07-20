@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.13.0 — 2026-07-20
+
+- Added a guarded **Restore / format…** workflow for GPT or MBR data-only media using FAT32, exFAT, NTFS, or ext4, with identity-bound planning, exact FORMAT confirmation, cancellation, filesystem checks, and conservative incomplete-media reporting.
+- Added deterministic FreeDOS 1.4 media creation from checksum-pinned, source-retained FreeDOS and FreeCOM payloads, with complete MBR/FAT32 verification, real loop-device qualification, terminal and GTK workflows, and an explicit x86 BIOS/UEFI-Legacy-only boundary.
+- Added explicit post-operation actions to create another USB from the retained image or restore the exact completed/failed target to ordinary storage through the existing guarded formatter.
+- Added bounded read-only Linux compatibility reporting for hybrid disk layouts, optical-only ISOs, validated El Torito BIOS/UEFI entries, and ISOLINUX/SYSLINUX/GRUB fingerprints without mounting or executing image content.
+- Exposed the existing threshold-signed/local-signed acquisition stack in the composed GTK application, enabled SHA-bound resumable partials, retained safe cancellation and storage preflight, and kept the production built-in channel disabled pending public offline-signing and mirror operations.
+- Added GTK keyboard mnemonics, safe visible accelerators, assistive-technology names/descriptions, and selectable compatibility and operation-detail text without binding shortcuts directly to erasure or cancellation.
+- Strengthened Windows setup analysis with bounded multi-edition metadata and WIM, ESD, or validated split-SWM payload reporting, while rejecting conflicting edition classes, payload families, part sequences, and inconsistent graphical reports.
+- Preserved every existing source/target identity, privilege, destructive confirmation, cancellation, verification, reproducibility, and native ARM64 gate. Physical hardware boot and persistence qualification remain separate release evidence.
+
 ## 0.12.1 — 2026-07-20
 
 - Fixed the packaged graphical launcher so GTK 3 is selected before any integrated dialog imports `Gtk`, preventing silent startup failure on systems that also provide GTK 4 introspection.
