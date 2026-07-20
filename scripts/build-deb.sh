@@ -227,12 +227,15 @@ done
 
 # Ship the exact GPL ms-sys source fragments used to derive the embedded
 # Windows MBR/PBR byte arrays, plus the pin metadata and upstream hashes.
-for file in PINNED-UPSTREAM.txt UPSTREAM-SHA256SUMS br.c ntfs.c fat32.c \
-  mbr_win7.h br_ntfs_0x0.h br_ntfs_0x54.h br_fat32_0x0.h \
+for file in PINNED-UPSTREAM.txt UPSTREAM-SHA256SUMS FREEDOS-BOOTASSETS.json \
+  br.c ntfs.c fat32.c mbr_win7.h mbr_rufus.h br_ntfs_0x0.h br_ntfs_0x54.h \
+  br_fat32_0x0.h br_fat32fd_0x52.h br_fat32fd_0x3f0.h \
   br_fat32pe_0x52.h br_fat32pe_0x3f0.h br_fat32pe_0x1800.h; do
   install -Dm644 "${ROOT_DIR}/vendor/ms-sys/${file}" \
     "${PACKAGE_DIR}/usr/share/doc/rufusarm64/ms-sys/${file}"
 done
+install -Dm644 "${ROOT_DIR}/scripts/extract-freedos-bootassets.py" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/ms-sys/extract-freedos-bootassets.py"
 install -Dm755 "${ROOT_DIR}/packaging/rufusarm64" \
   "${PACKAGE_DIR}/usr/bin/rufusarm64"
 install -Dm755 "${ROOT_DIR}/packaging/rufusarm64-persistence" \
@@ -267,6 +270,8 @@ install -Dm644 "${ROOT_DIR}/docs/persistence-user-guide.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/persistence-user-guide.md"
 install -Dm644 "${ROOT_DIR}/docs/persistence-qualification.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/persistence-qualification.md"
+install -Dm644 "${ROOT_DIR}/docs/freedos-feasibility.md" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-feasibility.md"
 install -Dm644 "${ROOT_DIR}/NOTICE" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/NOTICE"
 install -Dm644 "${ROOT_DIR}/LICENSE" \

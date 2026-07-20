@@ -1,0 +1,64 @@
+{
+  "assets": [
+    {
+      "name": "rufus-mbr-code.bin",
+      "role": "Rufus default conventional MBR bootstrap; partition table and disk signature remain outside the array",
+      "sha256": "4fca7dcfac9f90390d00ab42c2e814952fbce41c83aa87c5c696e663efd60259",
+      "size": 440,
+      "source": "mbr_rufus.h",
+      "source_git_blob_sha1": "770fe9d1333b95743ca333a5d327fa87f4d1d161",
+      "source_path": "src/ms-sys/inc/mbr_rufus.h",
+      "source_sha256": "464d2584142959be7e7db4e4254ba3ea1976c828ba7fa51ee7fe53a51b8f96cc",
+      "write_offset": 0
+    },
+    {
+      "name": "fat32-freedos-pbr-0x0.bin",
+      "role": "FAT32 jump/OEM prefix before the BIOS parameter block",
+      "sha256": "e08eb0254294a42a6dc29fa094f8c6e4fee38513b4082deb81f305b2c31e5531",
+      "size": 11,
+      "source": "br_fat32_0x0.h",
+      "source_git_blob_sha1": "b5ce2b6ddc94e05c5b6973eb2f18b7bbd3cc5ebe",
+      "source_path": "src/ms-sys/inc/br_fat32_0x0.h",
+      "source_sha256": "043237b08779d0b43bd521dfd899f46c395d5029c60d1222ee4e89ea87dd41b1",
+      "write_offset": 0
+    },
+    {
+      "name": "fat32-freedos-pbr-0x52.bin",
+      "role": "FreeDOS FAT32 loader code after the BIOS parameter block",
+      "sha256": "8a6fd500a6c4ca72d0a27149528a2e811954528d4340c9c2d7d284f2c5e897aa",
+      "size": 918,
+      "source": "br_fat32fd_0x52.h",
+      "source_git_blob_sha1": "a90640b52432729f48e6386f5bb0f9b203ab9566",
+      "source_path": "src/ms-sys/inc/br_fat32fd_0x52.h",
+      "source_sha256": "b001c3bbe329650bb7d60e17a662e70b103a8a852946c05237e51f9a4e8c433e",
+      "write_offset": 82
+    },
+    {
+      "name": "fat32-freedos-pbr-0x3f0.bin",
+      "role": "FreeDOS FAT32 continuation code after filesystem metadata",
+      "sha256": "2435a2b31cfd762807f6538ff3363b21abbc9c3caa2ad936c8a54848da3f6165",
+      "size": 528,
+      "source": "br_fat32fd_0x3f0.h",
+      "source_git_blob_sha1": "05be4d31481627524fa192a574cc8801a3f7f9ca",
+      "source_path": "src/ms-sys/inc/br_fat32fd_0x3f0.h",
+      "source_sha256": "41119997fac52f9eb511fe9a52dfb9c9f03547a20ae4cf92cb2ad4f692ba6bdc",
+      "write_offset": 1008
+    }
+  ],
+  "rufus_commit": "6d8fbf98305ff37eb531c45cbd6ff44563c53917",
+  "rufus_default_path": {
+    "active_partition_status": "0x80",
+    "backup_boot_region_sector": 6,
+    "filesystem": "fat32",
+    "mbr_writer": "write_rufus_mbr",
+    "partition_scheme": "mbr",
+    "partition_type": "0x0c",
+    "pbr_writer": "write_fat_32_fd_br",
+    "preserve_fat32_bpb_and_fsinfo_fields": true,
+    "preserve_mbr_disk_signature_and_partition_table": true,
+    "primary_boot_region_sector": 0
+  },
+  "schema": 1,
+  "scope": "FreeDOS default MBR/FAT32 path only; no device operation is authorized",
+  "upstream": "https://github.com/pbatard/rufus"
+}

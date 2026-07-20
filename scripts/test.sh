@@ -165,6 +165,50 @@ for name in ("PINNED-UPSTREAM.txt", "UPSTREAM-SHA256SUMS", "br.c", "ntfs.c", "fa
         raise SystemExit(f"missing pinned ms-sys source: {name}")
 PYBOOT
 
+python3 scripts/extract-freedos-bootassets.py --check
+(
+  cd vendor/ms-sys
+  sha256sum -c UPSTREAM-SHA256SUMS
+)
+python3 - <<'PYFREEDOSBOOT'
+import hashlib
+import json
+from pathlib import Path
+
+root = Path("internal/freedos/bootassets")
+vendor = Path("vendor/ms-sys")
+manifest = json.loads((vendor / "FREEDOS-BOOTASSETS.json").read_text(encoding="utf-8"))
+assert manifest["schema"] == 1
+assert manifest["rufus_commit"] == "6d8fbf98305ff37eb531c45cbd6ff44563c53917"
+path = manifest["rufus_default_path"]
+assert path == {
+    "active_partition_status": "0x80",
+    "backup_boot_region_sector": 6,
+    "filesystem": "fat32",
+    "mbr_writer": "write_rufus_mbr",
+    "partition_scheme": "mbr",
+    "partition_type": "0x0c",
+    "pbr_writer": "write_fat_32_fd_br",
+    "preserve_fat32_bpb_and_fsinfo_fields": True,
+    "preserve_mbr_disk_signature_and_partition_table": True,
+    "primary_boot_region_sector": 0,
+}
+expected_names = {
+    "rufus-mbr-code.bin",
+    "fat32-freedos-pbr-0x0.bin",
+    "fat32-freedos-pbr-0x52.bin",
+    "fat32-freedos-pbr-0x3f0.bin",
+}
+assert {entry["name"] for entry in manifest["assets"]} == expected_names
+for entry in manifest["assets"]:
+    data = (root / entry["name"]).read_bytes()
+    source = vendor / entry["source"]
+    assert len(data) == entry["size"]
+    assert hashlib.sha256(data).hexdigest() == entry["sha256"]
+    assert source.is_file()
+    assert hashlib.sha256(source.read_bytes()).hexdigest() == entry["source_sha256"]
+PYFREEDOSBOOT
+
 if [[ -f vendor/wimlib/source/wimlib-1.14.5-source.tar.gz ]]; then
   (
     cd vendor/wimlib/source
