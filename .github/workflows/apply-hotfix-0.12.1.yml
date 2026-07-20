@@ -1,0 +1,35 @@
+name: Apply 0.12.1 hotfix metadata
+
+on:
+  push:
+    branches:
+      - hotfix/0.12.1-gtk-launch
+    paths:
+      - scripts/apply-hotfix-0.12.1.py
+      - .github/workflows/apply-hotfix-0.12.1.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+      - name: Apply synchronized patch-release metadata
+        run: python3 scripts/apply-hotfix-0.12.1.py
+      - name: Run focused release and launcher checks
+        run: |
+          python3 scripts/check-version-sync.py
+          PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_packaged_launcher.py'
+          sh -n packaging/rufusarm64
+      - name: Remove one-shot applicator and commit the clean hotfix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm scripts/apply-hotfix-0.12.1.py .github/workflows/apply-hotfix-0.12.1.yml
+          git add VERSION CHANGELOG.md README.md docs packaging gui/test_packaged_launcher.py
+          git commit -m "Release: prepare RufusArm64 0.12.1 GTK startup hotfix"
+          git push origin HEAD:hotfix/0.12.1-gtk-launch
