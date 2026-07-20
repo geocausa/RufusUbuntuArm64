@@ -18,36 +18,39 @@ jobs:
           ref: feature/nonbootable-executor
       - name: Install dedicated formatter in package contracts
         run: |
+          set -eux
           python3 - <<'PY'
           from pathlib import Path
 
+          continuation = chr(92)
           build = Path("scripts/build-deb.sh")
           lines = build.read_text(encoding="utf-8").splitlines(keepends=True)
           marker = '  "${ROOT_DIR}/cmd/rufus-device-backup"\n'
-          assert lines.count(marker) == 1
+          assert lines.count(marker) == 1, "backup build marker"
           index = lines.index(marker) + 1
           lines[index:index] = [
-              'CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \\\n',
-              '  go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \\\n',
-              '  -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-nonbootable-format" \\\n',
+              f'CGO_ENABLED=0 GOOS=linux GOARCH=arm64 {continuation}\n',
+              f'  go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${{VERSION}}" {continuation}\n',
+              f'  -o "${{PACKAGE_DIR}}/usr/lib/rufusarm64/rufusarm64-nonbootable-format" {continuation}\n',
               '  "${ROOT_DIR}/cmd/rufus-nonbootable-format"\n',
           ]
           marker = '  "${PACKAGE_DIR}/usr/bin/rufusarm64-device-backup"\n'
-          assert lines.count(marker) == 1
+          assert lines.count(marker) == 1, "backup symlink marker"
           index = lines.index(marker) + 1
           lines[index:index] = [
-              'ln -s ../lib/rufusarm64/rufusarm64-nonbootable-format \\\n',
+              f'ln -s ../lib/rufusarm64/rufusarm64-nonbootable-format {continuation}\n',
               '  "${PACKAGE_DIR}/usr/bin/rufusarm64-nonbootable-format"\n',
           ]
           text = ''.join(lines)
           old = 'for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify rufusarm64-device-backup; do'
-          new = old[:-4] + ' rufusarm64-nonbootable-format; do'
-          assert text.count(old) == 1
+          new = 'for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify rufusarm64-device-backup rufusarm64-nonbootable-format; do'
+          assert text.count(old) == 1, "man page loop marker"
           text = text.replace(old, new, 1)
           old = 'Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, mount, dosfstools, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils'
           new = 'Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, mount, fdisk, dosfstools, exfatprogs, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils'
-          assert text.count(old) == 1
+          assert text.count(old) == 1, "dependency marker"
           text = text.replace(old, new, 1)
+          assert text.count('rufusarm64-nonbootable-format') == 4
           build.write_text(text, encoding="utf-8")
 
           policy = Path("packaging/io.github.geocausa.RufusArm64.policy")
@@ -63,13 +66,15 @@ jobs:
             <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/rufusarm64/rufusarm64-nonbootable-format</annotate>
           </action>
           '''
-          assert text.count('</policyconfig>') == 1
-          policy.write_text(text.replace('</policyconfig>', action + '</policyconfig>', 1), encoding="utf-8")
+          assert text.count('</policyconfig>') == 1, "policy closing marker"
+          text = text.replace('</policyconfig>', action + '</policyconfig>', 1)
+          assert text.count('io.github.geocausa.RufusArm64.format-data') == 1
+          policy.write_text(text, encoding="utf-8")
 
           ci = Path(".github/workflows/ci.yml")
           lines = ci.read_text(encoding="utf-8").splitlines(keepends=True)
           marker = '          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-device-backup" version)" = "${VERSION}"\n'
-          assert lines.count(marker) == 1
+          assert lines.count(marker) == 1, "packaged backup smoke marker"
           index = lines.index(marker) + 1
           lines.insert(index, '          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-nonbootable-format" version)" = "${VERSION}"\n')
           ci.write_text(''.join(lines), encoding="utf-8")
@@ -77,6 +82,8 @@ jobs:
           Path(".github/workflows/apply-nonbootable-package.yml").unlink()
           PY
           bash -n scripts/build-deb.sh
+          grep -Fq 'rufusarm64-nonbootable-format' scripts/build-deb.sh
+          grep -Fq 'io.github.geocausa.RufusArm64.format-data' packaging/io.github.geocausa.RufusArm64.policy
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
