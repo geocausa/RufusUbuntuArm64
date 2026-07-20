@@ -49,8 +49,8 @@ func PinnedManifest() Manifest {
 		FreeCOMSourceCommit:   "04fc21a9f6792abe9048598e8f2d048b4f6cd0e5",
 		RufusKernelBlobSHA1:   "6b524a99481f2286a5ddcb06c4fbccfe2bc5cfbd",
 		RufusCommandBlobSHA1:  "255525acc562e0411e3e5f000bc1ba788733056d",
-		KernelForceLBAOffset:  0x0d,
-		KernelForceLBAValue:   0x01,
+		KernelForceLBAOffset:  uint64(kernelForceLBAOffset),
+		KernelForceLBAValue:   kernelForceLBAValue,
 		RequiredRootFiles:     []string{"KERNEL.SYS", "COMMAND.COM"},
 		SafetyWarnings: []string{
 			"FreeDOS runs only on x86-compatible processors.",
