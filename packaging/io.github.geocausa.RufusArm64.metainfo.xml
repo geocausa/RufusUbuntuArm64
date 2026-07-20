@@ -19,6 +19,11 @@
     <binary>rufusarm64-persistence</binary>
   </provides>
   <releases>
+    <release version="0.13.0" date="2026-07-20">
+      <description>
+        <p>Adds guarded data-only restoration and FreeDOS media, explicit post-operation recovery, Linux boot compatibility reporting, resumable verified acquisition, keyboard and accessibility polish, and bounded Windows multi-edition payload disclosure.</p>
+      </description>
+    </release>
     <release version="0.12.1" date="2026-07-20">
       <description>
         <p>Fixes packaged GTK startup on desktops that provide both GTK 3 and GTK 4 introspection by pinning GTK 3 before integrated dialog imports.</p>
