@@ -3,4 +3,4 @@
 if [ "${1:-}" = "--persistence" ]; then
   shift
 fi
-exec /usr/bin/python3 -I -c 'import sys; sys.path.insert(0, "/usr/lib/rufusarm64"); from rufusarm64_device_qualify_dialog import run_rufusarm64; raise SystemExit(run_rufusarm64(["rufusarm64", *sys.argv[1:]]))' "$@"
+exec /usr/bin/python3 -I -c 'import gi, sys; gi.require_version("Gtk", "3.0"); sys.path.insert(0, "/usr/lib/rufusarm64"); from rufusarm64_device_qualify_dialog import run_rufusarm64; raise SystemExit(run_rufusarm64(["rufusarm64", *sys.argv[1:]]))' "$@"
