@@ -15,3 +15,9 @@ The helper also embeds byte arrays derived from Rufus 4.15's GPL ms-sys Windows
 7 MBR, NTFS PBR, and FAT32 Windows PE PBR source. The exact upstream source
 fragments, commit pin, and SHA-256 manifest are installed in
 /usr/share/doc/rufusarm64/ms-sys/ and included in the source release.
+
+The source tree also retains the minimal FreeDOS 1.4 `KERNEL.SYS` and
+`COMMAND.COM` bytes reviewed against Rufus 4.15. The official package metadata,
+GPLv2 texts, complete corresponding source archives, extraction tool, and
+checksum manifest are retained under vendor/freedos/. These files are not yet
+installed as a runtime feature or exposed by the graphical application.
