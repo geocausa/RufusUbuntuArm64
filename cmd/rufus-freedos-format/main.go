@@ -35,10 +35,10 @@ type arguments struct {
 }
 
 type plannedFormat struct {
-	Device       device.BlockDevice  `json:"device"`
-	Identity     string              `json:"identity"`
-	Plan         freedos.DevicePlan  `json:"plan"`
-	Confirmation string              `json:"confirmation"`
+	Device       device.BlockDevice `json:"device"`
+	Identity     string             `json:"identity"`
+	Plan         freedos.DevicePlan `json:"plan"`
+	Confirmation string             `json:"confirmation"`
 }
 
 func main() {
