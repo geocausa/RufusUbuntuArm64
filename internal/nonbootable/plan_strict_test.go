@@ -17,6 +17,8 @@ func TestConfirmationRejectsAllCanonicalPlanTampering(t *testing.T) {
 		{name: "device size", mutate: func(plan *Plan) { plan.DeviceSizeBytes += 512 }},
 		{name: "partition start", mutate: func(plan *Plan) { plan.PartitionStartBytes += plan.LogicalSectorSize }},
 		{name: "partition size", mutate: func(plan *Plan) { plan.PartitionSizeBytes -= plan.LogicalSectorSize }},
+		{name: "partition type", mutate: func(plan *Plan) { plan.PartitionType = "83" }},
+		{name: "filesystem display", mutate: func(plan *Plan) { plan.FilesystemDisplay = "FAT" }},
 		{name: "tool", mutate: func(plan *Plan) { plan.RequiredTools[0] = "parted" }},
 		{name: "warning", mutate: func(plan *Plan) { plan.Warnings[0] = "Formatting may erase data." }},
 		{name: "bootable", mutate: func(plan *Plan) { plan.Bootable = true }},
