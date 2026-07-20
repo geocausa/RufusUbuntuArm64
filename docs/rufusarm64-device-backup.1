@@ -24,8 +24,8 @@ to its kernel identity and capacity, and revalidated before and after capture.
 .PP
 The completed image is published atomically only after every byte is copied,
 SHA-256 is calculated, the file is synchronized, and source and destination
-identities are rechecked. Existing files are never replaced. Incomplete output
-is removed after failure or cancellation.
+identities are rechecked. Existing destination files are never replaced.
+Incomplete output is removed after failure or cancellation.
 .PP
 The destination must have enough available space and reside on a different
 physical disk from the selected source. Mounted removable filesystems are
