@@ -74,6 +74,32 @@ FreeDOS media created by this action is limited to x86-compatible processors
 using BIOS or UEFI Legacy/CSM firmware. It does not boot ARM64 or UEFI-only
 systems. Complete structural readback and SHA-256 verification do not prove
 that a particular physical computer will boot the drive.
+.SH KEYBOARD AND ACCESSIBILITY
+The main image and USB-drive labels are keyboard mnemonics. Primary actions
+also expose underlined mnemonics without bypassing their normal validation or
+confirmation dialogs. Additional shortcuts are:
+.TP
+.B Ctrl+R
+Refresh removable USB drives.
+.TP
+.B Ctrl+D
+Open verified image acquisition.
+.TP
+.B Ctrl+K
+Open image checksums.
+.TP
+.B Ctrl+U
+Open read-only UEFI media validation.
+.TP
+.B F1
+Open About and licence information.
+.PP
+Icon-only controls, image compatibility, progress, operation details,
+diagnostics, and post-operation actions have explicit assistive-technology
+names. Compatibility and progress-detail text can be selected and copied. No
+shortcut is bound directly to erasure or to cancellation of an active write;
+the existing final confirmation and safe cancellation controls remain in
+force.
 .SH OPTIONS
 .TP
 .B --persistence

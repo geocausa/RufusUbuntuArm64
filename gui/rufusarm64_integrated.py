@@ -458,6 +458,128 @@ def install_post_operation_reuse(window_class):
     window_class._post_operation_reuse_installed = True
 
 
+def _walk_widgets(widget):
+    yield widget
+    if isinstance(widget, Gtk.Container):
+        for child in widget.get_children():
+            yield from _walk_widgets(child)
+
+
+def _set_accessible(widget, name, description=""):
+    if widget is None:
+        return
+    accessible = widget.get_accessible()
+    if accessible is None:
+        return
+    accessible.set_name(name)
+    if description:
+        accessible.set_description(description)
+
+
+def _append_shortcut_tooltip(widget, shortcut):
+    current = str(widget.get_tooltip_text() or "").strip()
+    suffix = f"Keyboard: {shortcut}"
+    widget.set_tooltip_text((current + "\n" if current else "") + suffix)
+
+
+def _set_button_mnemonic(button, label):
+    if button is None:
+        return
+    button.set_use_underline(True)
+    button.set_label(label)
+
+
+def _add_button_accelerator(window, button, accelerator):
+    if button is None:
+        return
+    key, modifiers = Gtk.accelerator_parse(accelerator)
+    if not key:
+        return
+    button.add_accelerator(
+        "clicked",
+        window._accessibility_accel_group,
+        key,
+        modifiers,
+        Gtk.AccelFlags.VISIBLE,
+    )
+    _append_shortcut_tooltip(button, accelerator.replace("<Primary>", "Ctrl+").replace("F1", "F1"))
+
+
+def install_accessibility(window_class):
+    """Install keyboard navigation and assistive-technology metadata after all extensions."""
+    if getattr(window_class, "_accessibility_installed", False):
+        return
+    original_init = window_class.__init__
+
+    def integrated_init(window, app):
+        original_init(window, app)
+        window._accessibility_accel_group = Gtk.AccelGroup()
+        window.add_accel_group(window._accessibility_accel_group)
+
+        label_targets = {
+            "Boot image": ("_Boot image", window.image_chooser),
+            "USB drive": ("_USB drive", window.target_combo),
+        }
+        about_button = None
+        for widget in _walk_widgets(window):
+            if isinstance(widget, Gtk.Label):
+                text = widget.get_text()
+                if text in label_targets:
+                    mnemonic, target = label_targets[text]
+                    widget.set_text(mnemonic)
+                    widget.set_use_underline(True)
+                    widget.set_mnemonic_widget(target)
+            if isinstance(widget, Gtk.Button) and widget.get_tooltip_text() == "About RufusArm64":
+                about_button = widget
+
+        _set_button_mnemonic(window.download_button, "_Download…")
+        _set_button_mnemonic(window.checksum_button, "C_hecksums…")
+        _set_button_mnemonic(window.start_button, "_Create USB")
+        _set_button_mnemonic(window.cancel_button, "C_ancel")
+        _set_button_mnemonic(window.uefi_validation_button, "_Validate UEFI Media…")
+        _set_button_mnemonic(getattr(window, "nonbootable_button", None), "Restore / for_mat…")
+        _set_button_mnemonic(getattr(window, "freedos_button", None), "_FreeDOS…")
+
+        _add_button_accelerator(window, window.refresh_button, "<Primary>r")
+        _add_button_accelerator(window, window.download_button, "<Primary>d")
+        _add_button_accelerator(window, window.checksum_button, "<Primary>k")
+        _add_button_accelerator(window, window.uefi_validation_button, "<Primary>u")
+        _add_button_accelerator(window, about_button, "F1")
+
+        _set_accessible(
+            window.image_chooser,
+            "Boot image",
+            "Choose an ISO or disk image that RufusArm64 will inspect before writing.",
+        )
+        _set_accessible(
+            window.target_combo,
+            "USB target drive",
+            "Choose the removable whole drive that will be erased only after confirmation.",
+        )
+        _set_accessible(window.refresh_button, "Refresh USB drives", "Rescan removable whole drives. Shortcut Ctrl+R.")
+        _set_accessible(window.download_button, "Download verified image", "Open signed image acquisition. Shortcut Ctrl+D.")
+        _set_accessible(window.checksum_button, "Calculate image checksums", "Calculate comparison hashes. Shortcut Ctrl+K.")
+        _set_accessible(window.qualify_button, "Check USB capacity and blocks", "Open the separate destructive drive qualification workflow.")
+        _set_accessible(window.start_button, "Create USB", "Open the final erase confirmation for the selected image and drive.")
+        _set_accessible(window.cancel_button, "Cancel active operation", "Request safe cancellation and wait for cleanup to finish.")
+        _set_accessible(window.uefi_validation_button, "Validate UEFI media", "Open read-only UEFI media validation. Shortcut Ctrl+U.")
+        _set_accessible(about_button, "About RufusArm64", "Show application and licence information. Shortcut F1.")
+        _set_accessible(window.mode_value, "Image compatibility and write path")
+        _set_accessible(window.verify, "Verify copied data after writing")
+        _set_accessible(window.progress, "Operation progress")
+        _set_accessible(window.progress_detail, "Operation status details")
+        _set_accessible(window.log, "Technical diagnostic log")
+        _set_accessible(getattr(window, "nonbootable_button", None), "Restore or format drive for storage")
+        _set_accessible(getattr(window, "freedos_button", None), "Create FreeDOS media")
+        _set_accessible(getattr(window, "post_operation_bar", None), "Post-operation actions")
+
+        window.mode_value.set_selectable(True)
+        window.progress_detail.set_selectable(True)
+
+    window_class.__init__ = integrated_init
+    window_class._accessibility_installed = True
+
+
 def run_rufusarm64(argv=None):
     """Run the main GTK application after installing the reviewed extensions."""
     from rufusarm64 import RufusApp, RufusWindow
@@ -468,4 +590,5 @@ def run_rufusarm64(argv=None):
     install_linux_compatibility(RufusWindow)
     install_verified_acquisition(RufusWindow)
     install_post_operation_reuse(RufusWindow)
+    install_accessibility(RufusWindow)
     return RufusApp().run(list(sys.argv[1:] if argv is None else argv))
