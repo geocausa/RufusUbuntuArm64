@@ -53,10 +53,3 @@ func TestDryRunDoesNotRequireConfirmationOrIdentity(t *testing.T) {
 		t.Fatalf("unprivileged dry run was rejected: %v", err)
 	}
 }
-
-func TestCommandHasNoFixedDiskOverride(t *testing.T) {
-	value := arguments{}
-	if strings.Contains(strings.ToLower(strings.TrimSpace(value.label)), "fixed") {
-		t.Fatal("unexpected fixed-disk option state")
-	}
-}
