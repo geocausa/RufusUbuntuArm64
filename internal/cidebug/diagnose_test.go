@@ -11,7 +11,9 @@ import (
 
 func TestDiagnoseRepositoryGo122Failure(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
-	listed, err := exec.Command("go", "list", "./...").Output()
+	listCommand := exec.Command("go", "list", "./...")
+	listCommand.Dir = root
+	listed, err := listCommand.Output()
 	if err != nil {
 		t.Fatalf("list packages: %v", err)
 	}
