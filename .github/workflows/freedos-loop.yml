@@ -50,8 +50,6 @@ jobs:
           GOBIN="${audit_bin}" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           echo "${audit_bin}" >> "${GITHUB_PATH}"
       - name: Run complete static, loop, package, and reproducibility qualification
-        env:
-          RUFUS_REAL_BLOCK_TEST: '1'
         run: |
           mkdir -p dist/audit-logs
           set -o pipefail
@@ -59,17 +57,17 @@ jobs:
             bash ./scripts/static-audit.sh
             sudo modprobe loop || true
             go test -c -o "${RUNNER_TEMP}/safety-loop.test" ./internal/safety
-            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
+            sudo env RUFUS_REAL_BLOCK_TEST=1 \
               "${RUNNER_TEMP}/safety-loop.test" \
               -test.run '^TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop$' \
               -test.v
             go test -c -o "${RUNNER_TEMP}/devicequal-loop.test" ./internal/devicequal
-            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
+            sudo env RUFUS_REAL_BLOCK_TEST=1 \
               "${RUNNER_TEMP}/devicequal-loop.test" \
               -test.run '^TestRunDeviceQualifiesRealLoopDevice$' \
               -test.v
             go test -c -o "${RUNNER_TEMP}/freedos-loop.test" ./internal/freedos
-            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
+            sudo env RUFUS_REAL_BLOCK_TEST=1 \
               "${RUNNER_TEMP}/freedos-loop.test" \
               -test.run '^(TestBuildMediaImageSupportsRealLoopReadback|TestExecuteLinuxDeviceThroughRealLoop)$' \
               -test.v
