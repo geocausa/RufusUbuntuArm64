@@ -19,7 +19,7 @@ concurrency:
 jobs:
   apply-gui-packaging:
     name: Apply reviewed FreeDOS GUI packaging
-    if: github.event_name == 'push' && github.event.head_commit.message == 'CI: apply FreeDOS GUI packaging through loop gate'
+    if: ${{ github.event_name == 'push' && github.event.head_commit.message == 'CI: apply FreeDOS GUI packaging through loop gate' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -31,101 +31,9 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26.5'
-      - name: Apply, verify, and remove temporary workflow changes
+      - name: Apply, verify, and remove temporary files
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          def replace_once(text, old, new, label):
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{label}: expected one match, found {count}")
-              return text.replace(old, new, 1)
-
-          build_path = Path("scripts/build-deb.sh")
-          build = build_path.read_text(encoding="utf-8")
-          build = replace_once(
-              build,
-              '''grep -Fq 'Gtk.Button(label="Non bootable…")' "${ROOT_DIR}/gui/rufusarm64_nonbootable_dialog.py"
-          grep -Fq 'install_nonbootable(RufusWindow)' "${ROOT_DIR}/gui/rufusarm64_integrated.py"
-          ''',
-              '''grep -Fq 'Gtk.Button(label="Non bootable…")' "${ROOT_DIR}/gui/rufusarm64_nonbootable_dialog.py"
-          grep -Fq 'install_nonbootable(RufusWindow)' "${ROOT_DIR}/gui/rufusarm64_integrated.py"
-          grep -Fq 'Gtk.Button(label="FreeDOS…")' "${ROOT_DIR}/gui/rufusarm64_freedos_dialog.py"
-          grep -Fq 'install_freedos(RufusWindow)' "${ROOT_DIR}/gui/rufusarm64_integrated.py"
-          ''',
-              "FreeDOS GUI source gates",
-          )
-          build = replace_once(
-              build,
-              '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable_dialog.py" \\
-            "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_nonbootable_dialog.py"
-          install -Dm644 "${ROOT_DIR}/gui/rufusarm64_integrated.py" \\
-          ''',
-              '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable_dialog.py" \\
-            "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_nonbootable_dialog.py"
-          install -Dm644 "${ROOT_DIR}/gui/rufusarm64_freedos.py" \\
-            "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_freedos.py"
-          install -Dm644 "${ROOT_DIR}/gui/rufusarm64_freedos_dialog.py" \\
-            "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_freedos_dialog.py"
-          install -Dm644 "${ROOT_DIR}/gui/rufusarm64_integrated.py" \\
-          ''',
-              "FreeDOS GUI installation",
-          )
-          build = replace_once(
-              build,
-              '''install -Dm644 "${ROOT_DIR}/docs/freedos-linux-backend.md" \\
-            "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-linux-backend.md"
-          install -Dm644 "${ROOT_DIR}/NOTICE" \\
-          ''',
-              '''install -Dm644 "${ROOT_DIR}/docs/freedos-linux-backend.md" \\
-            "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-linux-backend.md"
-          install -Dm644 "${ROOT_DIR}/docs/freedos-user-guide.md" \\
-            "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-user-guide.md"
-          install -Dm644 "${ROOT_DIR}/NOTICE" \\
-          ''',
-              "FreeDOS user guide installation",
-          )
-          build_path.write_text(build, encoding="utf-8")
-
-          test_path = Path("scripts/test.sh")
-          test = test_path.read_text(encoding="utf-8")
-          test = replace_once(
-              test,
-              '''  gui/rufusarm64_nonbootable.py gui/rufusarm64_nonbootable_dialog.py \\
-            gui/rufusarm64_integrated.py gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py
-          ''',
-              '''  gui/rufusarm64_nonbootable.py gui/rufusarm64_nonbootable_dialog.py \\
-            gui/rufusarm64_freedos.py gui/rufusarm64_freedos_dialog.py \\
-            gui/rufusarm64_integrated.py gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py
-          ''',
-              "FreeDOS Python compilation",
-          )
-          test = replace_once(
-              test,
-              '''[[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_device_qualify_dialog.py" ]]
-          [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_persistence.py" ]]
-          ''',
-              '''[[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_device_qualify_dialog.py" ]]
-          [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_freedos.py" ]]
-          [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_freedos_dialog.py" ]]
-          [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_persistence.py" ]]
-          ''',
-              "FreeDOS installed Python checks",
-          )
-          test = replace_once(
-              test,
-              '''[[ -f "${extract_dir}/usr/share/doc/rufusarm64/persistence-qualification.md" ]]
-          [[ ! -e "${extract_dir}/usr/bin/rufus-channel-admin" ]]
-          ''',
-              '''[[ -f "${extract_dir}/usr/share/doc/rufusarm64/persistence-qualification.md" ]]
-          [[ -f "${extract_dir}/usr/share/doc/rufusarm64/freedos-user-guide.md" ]]
-          [[ ! -e "${extract_dir}/usr/bin/rufus-channel-admin" ]]
-          ''',
-              "FreeDOS installed guide check",
-          )
-          test_path.write_text(test, encoding="utf-8")
-          PY
+          python3 .github/scripts/apply_freedos_gui_packaging.py
           python3 -m py_compile \
             gui/rufusarm64_freedos.py gui/rufusarm64_freedos_dialog.py \
             gui/rufusarm64_integrated.py
@@ -136,11 +44,10 @@ jobs:
           git show origin/stage2/0.13.0:.github/workflows/freedos-loop.yml \
             > .github/workflows/freedos-loop.yml
           rm -f .github/workflows/apply-freedos-gui-packaging.yml
+          rm -f .github/scripts/apply_freedos_gui_packaging.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add scripts/build-deb.sh scripts/test.sh \
-            .github/workflows/freedos-loop.yml \
-            .github/workflows/apply-freedos-gui-packaging.yml
+          git add -A
           git commit -m 'FreeDOS: package graphical workflow'
           git push origin HEAD:feature/freedos-gui
 
