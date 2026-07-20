@@ -1,6 +1,6 @@
 # FreeDOS media feasibility on Ubuntu ARM64
 
-Status: **feasible for deterministic construction and read-only loop qualification; destructive device implementation and GTK exposure are not yet approved**.
+Status: **feasible for deterministic construction, read-only loop qualification, and supportable release maintenance; destructive device implementation and GTK exposure are not yet approved**.
 
 This record answers whether an Ubuntu ARM64 host can construct Rufus-style FreeDOS media without executing x86 software on the host or weakening the existing removable-drive safety boundary.
 
@@ -106,7 +106,7 @@ The first ordinary-file media contract is source-pinned in `vendor/rufus/FREEDOS
 
 ## Resolved deterministic construction and loop qualification checkpoint
 
-`internal/freedos/builder.go` now constructs the complete reviewed image in native Go and verifies the final bytes before returning them:
+`internal/freedos/builder.go` constructs the complete reviewed image in native Go and verifies the final bytes before returning them:
 
 - the builder writes the active MBR entry, exact Rufus MBR and FreeDOS FAT32 boot regions, complete BPB and mirrored FSInfo metadata, two identical FATs, the volume label, and exactly two hidden/system payload records;
 - payload chains are contiguous and deterministic, final-cluster slack remains zero, and identical plans must produce byte-identical images;
@@ -118,20 +118,33 @@ The first ordinary-file media contract is source-pinned in `vendor/rufus/FREEDOS
 
 This qualification demonstrates native construction and Linux block-layer interpretation. It does not authorize a destructive executor and does not establish that a physical PC will boot.
 
+## Resolved release maintenance checkpoint
+
+The machine-readable contract in `vendor/freedos/RELEASE-CONTRACT.json` and the procedure in `docs/freedos-release-maintenance.md` establish a bounded maintenance path:
+
+- payload changes are manual, intentional events beginning only from an official checksum-pinned FullUSB archive;
+- automatic updates, runtime network acquisition, mutable payload fallback, and host execution remain prohibited;
+- every update must repeat archive, nested-package, source-backed kernel derivation, Rufus object, structural media, real-loop, and reproducible-package gates;
+- the minimal target payload is 134,028 bytes, all embedded payload and boot assets total 182,181 bytes, corresponding source archives total 1,776,157 bytes, and retained metadata/licence material totals 19,885 bytes;
+- the minimum uncompressed package material is therefore 1,978,223 bytes before Go code, documentation, archive overhead, and compression;
+- a future exposed package must retain the complete corresponding source archives and package metadata under `/usr/share/doc/rufusarm64/freedos/` and identify all upstream GPL obligations in Debian copyright data;
+- no new runtime dependency is required by the reviewed native builder and verifier.
+
+The final compressed `.deb` and installed-size deltas remain measurements for the eventual implementation PR, but the support, update, and source-distribution obligations are defined and test-enforced.
+
 ## Unresolved gates
 
 Implementation remains blocked until all of these are resolved:
 
 1. **Safety integration.** Build a dedicated identity-bound executor that retains root-disk refusal, descriptor locking, final pre-destructive revalidation, guarded cancellation, media-changed reporting, and complete final readback. Do not widen the ordinary image writer.
-2. **Release maintenance.** Measure installed package impact, define the payload/source update procedure and cadence, and confirm the final Debian copyright and source-distribution contract before runtime installation.
-3. **Product exposure.** Add terminal and GTK workflows only after the executor and release-maintenance contract pass. The graphical path must have no fixed-disk override and must disclose the x86 BIOS/Legacy-only boundary before authentication.
-4. **Physical evidence.** Treat successful boot on representative x86 BIOS/Legacy hardware as a separate evidence claim, never as a consequence of software verification.
+2. **Product exposure.** Add terminal and GTK workflows only after the executor passes its destructive real-loop, package, privilege, and cancellation gates. The graphical path must have no fixed-disk override and must disclose the x86 BIOS/Legacy-only boundary before authentication.
+3. **Physical evidence.** Treat successful boot on representative x86 BIOS/Legacy hardware as a separate evidence claim, never as a consequence of software verification.
 
 ## Gate decision
 
-The feasibility gate is **positive for deterministic ARM64-host construction, ordinary-file verification, and read-only real loop-device qualification**. No x86 execution is required on the host, and the complete reviewed media structure can be constructed and rejected byte-for-byte in native Go.
+The feasibility gate is **positive for deterministic ARM64-host construction, ordinary-file verification, read-only real loop-device qualification, and supportable release maintenance**. No x86 execution is required on the host, the complete reviewed media structure can be constructed and rejected byte-for-byte in native Go, and the payload can be maintained with bounded source-distribution obligations.
 
-It is **not destructive-device-implementation-green** until safety integration and release package planning are complete. Until then there must be no FreeDOS command, Polkit action, runtime payload installation, GTK option, release commitment, or physical-boot claim.
+It is **not destructive-device-implementation-green** until safety integration is complete. Until then there must be no FreeDOS command, Polkit action, runtime payload installation, GTK option, release commitment, or physical-boot claim.
 
 ## Primary references
 
