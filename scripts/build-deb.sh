@@ -101,6 +101,8 @@ fi
 grep -Fq "Checksums…" "${GUI_TARGET}"
 grep -Fq 'Gtk.Button(label="Non bootable…")' "${ROOT_DIR}/gui/rufusarm64_nonbootable_dialog.py"
 grep -Fq 'install_nonbootable(RufusWindow)' "${ROOT_DIR}/gui/rufusarm64_integrated.py"
+grep -Fq 'Gtk.Button(label="FreeDOS…")' "${ROOT_DIR}/gui/rufusarm64_freedos_dialog.py"
+grep -Fq 'install_freedos(RufusWindow)' "${ROOT_DIR}/gui/rufusarm64_integrated.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_logic.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_logic.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_checksums.py" \
@@ -113,6 +115,10 @@ install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_nonbootable.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable_dialog.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_nonbootable_dialog.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_freedos.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_freedos.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_freedos_dialog.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_freedos_dialog.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_integrated.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_integrated.py"
 install -Dm755 "${ROOT_DIR}/gui/rufusarm64_persistence.py" \
@@ -298,6 +304,8 @@ install -Dm644 "${ROOT_DIR}/docs/freedos-release-maintenance.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-release-maintenance.md"
 install -Dm644 "${ROOT_DIR}/docs/freedos-linux-backend.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-linux-backend.md"
+install -Dm644 "${ROOT_DIR}/docs/freedos-user-guide.md" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-user-guide.md"
 install -Dm644 "${ROOT_DIR}/NOTICE" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/NOTICE"
 install -Dm644 "${ROOT_DIR}/LICENSE" \

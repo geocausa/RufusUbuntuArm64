@@ -5,63 +5,17 @@ on:
     branches:
       - main
       - stage2/0.13.0
-      - feature/freedos-gui
       - 'release/**'
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: freedos-loop-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  apply-gui-packaging:
-    name: Apply reviewed FreeDOS GUI packaging
-    if: "${{ github.event_name == 'push' && github.event.head_commit.message == 'CI: apply FreeDOS GUI packaging through loop gate' }}"
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          ref: feature/freedos-gui
-          persist-credentials: true
-          fetch-depth: 0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version: '1.26.5'
-      - name: Apply, verify, and remove temporary files
-        run: |
-          mkdir -p dist/audit-logs
-          set -o pipefail
-          {
-            python3 .github/scripts/apply_freedos_gui_packaging.py
-            python3 -m py_compile \
-              gui/rufusarm64_freedos.py gui/rufusarm64_freedos_dialog.py \
-              gui/rufusarm64_integrated.py
-            PYTHONPATH=gui python3 -m unittest \
-              gui.test_freedos_format gui.test_freedos_dialog
-            git fetch origin stage2/0.13.0
-            git show origin/stage2/0.13.0:.github/workflows/freedos-loop.yml \
-              > .github/workflows/freedos-loop.yml
-            rm -f .github/workflows/apply-freedos-gui-packaging.yml
-            rm -f .github/scripts/apply_freedos_gui_packaging.py
-            go test ./internal/freedos ./cmd/rufus-freedos-format
-            git config user.name github-actions[bot]
-            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add -A
-            git commit -m 'FreeDOS: package graphical workflow'
-            git push origin HEAD:feature/freedos-gui
-          } 2>&1 | tee dist/audit-logs/freedos-gui-apply.log
-      - name: Upload graphical packaging diagnostics
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: freedos-gui-apply-${{ github.run_id }}
-          path: dist/audit-logs/freedos-gui-apply.log
-          if-no-files-found: error
-
   loop-readback:
     name: Build and verify through a real loop device
     runs-on: ubuntu-24.04
