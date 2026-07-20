@@ -1,114 +1,198 @@
 Official archive:
-cd440cd165f5a8a184870cb615f525af182660c15f9bcf1e9d198ca19cedcaff  /tmp/tmp.gPpOXmLSfC/FD14-FullUSB.zip
+cd440cd165f5a8a184870cb615f525af182660c15f9bcf1e9d198ca19cedcaff  /tmp/tmp.ofOQpnWtEs/FD14-FullUSB.zip
 Image member: FD14FULL.img
 Logical sector size: 512
 Partition start sector: 63
 
-Payload map:
+Payload and source map:
 {
-  "COMMAND.COM": {
-    "git_blob_sha1": "255525acc562e0411e3e5f000bc1ba788733056d",
-    "member": "BIN/COMMAND.COM",
-    "package": "freecom.zip",
-    "sha256": "077808379e896476f7f69d62e6c8989d8fc23e8ef58d1c8492db1ac106784107",
-    "size": 87772
+  "records": {
+    "COMMAND.COM": {
+      "git_blob_sha1": "255525acc562e0411e3e5f000bc1ba788733056d",
+      "member": "BIN/COMMAND.COM",
+      "package": "freecom.zip",
+      "sha256": "077808379e896476f7f69d62e6c8989d8fc23e8ef58d1c8492db1ac106784107",
+      "size": 87772
+    },
+    "FREECOM.LSM": {
+      "git_blob_sha1": "9d3ff146e410c383030c03eee2ddd679f9a22e29",
+      "member": "APPINFO/FREECOM.LSM",
+      "package": "freecom.zip",
+      "sha256": "0c370cb1cbbc41d775a478ce88baf2b01cca24c8a7311f4b1f4d094de2cd29d2",
+      "size": 585
+    },
+    "KERNEL-COPYING": {
+      "git_blob_sha1": "c478510e039a94aafa5f13cbac01dc6c31c3431e",
+      "member": "DOC/KERNEL/COPYING",
+      "package": "kernel.zip",
+      "sha256": "2ec21c4f10e9fc6bafbc619cf905424162a0b6443e482d599a6d0d7718e9ae58",
+      "size": 18330
+    },
+    "KERNEL.LSM": {
+      "git_blob_sha1": "bc7d1d7ee4530a4aa481b9ec3dc5752a6a8e5d9a",
+      "member": "APPINFO/KERNEL.LSM",
+      "package": "kernel.zip",
+      "sha256": "fcf0314885a8a4d5f82ecea0a82e81cafbd017a43959ed1de5c7e14011b2351e",
+      "size": 970
+    },
+    "KERNEL.SYS": {
+      "derived_from": "KERNEL.SYS.unmodified",
+      "force_lba_offset": 13,
+      "force_lba_value": 1,
+      "git_blob_sha1": "6b524a99481f2286a5ddcb06c4fbccfe2bc5cfbd",
+      "sha256": "57504a0d5e1d57a0407d995e77fcebb9627da2c0dbe0f1cbf7c5fa901d2efc6c",
+      "size": 46256
+    },
+    "KERNEL.SYS.unmodified": {
+      "force_lba_original": 0,
+      "git_blob_sha1": "bfe7cdfe616dc71ded366bc57fa8c370a548faa6",
+      "member": "BIN/KERNL386.SYS",
+      "package": "kernel.zip",
+      "sha256": "932c0c155701eddb7b902f7269a1b2ce31f5c82a6dc195172f2336d18a74e1fb",
+      "size": 46256
+    },
+    "freecom-sources.zip": {
+      "git_blob_sha1": "ae07a929c0ee7e29fd4e0a986186eddb4784d167",
+      "member": "SOURCE/FREECOM/SOURCES.ZIP",
+      "package": "freecom.zip",
+      "sha256": "beef029a2268cac4dd5b729a649ea4e23f30c9cfee1788c4bbd64b4d4ddb093b",
+      "size": 1236304
+    },
+    "freecom.zip": {
+      "sha256": "2529cf15c2ee7d7030ed99a6a88df2cf5eef87b9fe10f1c0fb643c38ea6aaa8e",
+      "size": 2037468
+    },
+    "kernel-sources.zip": {
+      "git_blob_sha1": "189e2d1e2264f1649c67e3e52cd00d3466c58a6a",
+      "member": "SOURCE/KERNEL/SOURCES.ZIP",
+      "package": "kernel.zip",
+      "sha256": "fda372721899e6a9cabbfa6beed259be19dafd0fe16d90b8f4da1a9397fde574",
+      "size": 539853
+    },
+    "kernel.zip": {
+      "sha256": "38ce3c63e399c8f18ab6230d8988a5d1a1aa9be4e109d15c6f4842b5e8fe61e6",
+      "size": 772721
+    }
   },
-  "KERNEL.SYS": {
-    "derived_from": "KERNEL.SYS.unmodified",
-    "force_lba_offset": 13,
-    "force_lba_value": 1,
-    "git_blob_sha1": "6b524a99481f2286a5ddcb06c4fbccfe2bc5cfbd",
-    "sha256": "57504a0d5e1d57a0407d995e77fcebb9627da2c0dbe0f1cbf7c5fa901d2efc6c",
-    "size": 46256
-  },
-  "KERNEL.SYS.unmodified": {
-    "force_lba_original": 0,
-    "git_blob_sha1": "bfe7cdfe616dc71ded366bc57fa8c370a548faa6",
-    "member": "BIN/KERNL386.SYS",
-    "package": "kernel.zip",
-    "sha256": "932c0c155701eddb7b902f7269a1b2ce31f5c82a6dc195172f2336d18a74e1fb",
-    "size": 46256
-  },
-  "freecom.zip": {
-    "sha256": "2529cf15c2ee7d7030ed99a6a88df2cf5eef87b9fe10f1c0fb643c38ea6aaa8e",
-    "size": 2037468
-  },
-  "kernel.zip": {
-    "sha256": "38ce3c63e399c8f18ab6230d8988a5d1a1aa9be4e109d15c6f4842b5e8fe61e6",
-    "size": 772721
+  "source_inventory": {
+    "freecom-sources.zip": {
+      "licence_candidates": [
+        "license",
+        "suppl/src/copying",
+        "suppl/src/copying.lb"
+      ],
+      "member_count": 825,
+      "top_level": [
+        "FILE_ID.DIZ",
+        "README.md",
+        "VERSION.TXT",
+        "bin",
+        "build.bat",
+        "build.sh",
+        "buildall.bat",
+        "ci_build.sh",
+        "ci_prereq.sh",
+        "ci_test.sh",
+        "clean.bat",
+        "clean.sh",
+        "cmd",
+        "command.lsm",
+        "config.b",
+        "config.h",
+        "config.std",
+        "criter",
+        "docs",
+        "err_fcts.h",
+        "include",
+        "lib",
+        "license",
+        "makefile",
+        "mkdist.bat",
+        "mkfiles",
+        "scripts",
+        "shell",
+        "strings",
+        "suppl",
+        "tests",
+        "tools",
+        "utils"
+      ]
+    },
+    "kernel-sources.zip": {
+      "licence_candidates": [
+        "COPYING"
+      ],
+      "member_count": 196,
+      "top_level": [
+        "COPYING",
+        "MAKEPKGS.BAT",
+        "README.md",
+        "RELEASE.BAT",
+        "bin",
+        "boot",
+        "build.bat",
+        "buildall.bat",
+        "ci_build.sh",
+        "ci_test.sh",
+        "clean.bat",
+        "clobber.bat",
+        "config.b",
+        "config.m",
+        "default.bat",
+        "docs",
+        "drivers",
+        "filelist",
+        "hdr",
+        "kernel",
+        "lib",
+        "makefile",
+        "mkfiles",
+        "setver",
+        "share",
+        "sys",
+        "tests",
+        "utils"
+      ]
+    }
   }
 }
 
-freecom.zip members:
-APPINFO/
-APPINFO/FREECOM.DE
-APPINFO/FREECOM.FR
-APPINFO/FREECOM.LSM
-APPINFO/FREECOM.SV
-APPINFO/FREECOM.TR
-BIN/
-BIN/COMMAND.COM
-BIN/FREECOM/
-BIN/FREECOM/FDCOM.ICO
-BIN/FREECOM/XSWAP/
-BIN/FREECOM/XSWAP/CMD-DE.COM
-BIN/FREECOM/XSWAP/CMD-EN.COM
-BIN/FREECOM/XSWAP/CMD-ES.COM
-BIN/FREECOM/XSWAP/CMD-FI.COM
-BIN/FREECOM/XSWAP/CMD-FR.COM
-BIN/FREECOM/XSWAP/CMD-IT.COM
-BIN/FREECOM/XSWAP/CMD-NL.COM
-BIN/FREECOM/XSWAP/CMD-PO.COM
-BIN/FREECOM/XSWAP/CMD-PTR.COM
-BIN/FREECOM/XSWAP/CMD-RU.COM
-BIN/FREECOM/XSWAP/CMD-SE.COM
-BIN/FREECOM/XSWAP/CMD-SI.COM
-BIN/FREECOM/XSWAP/CMD-Ser.COM
-BIN/FREECOM/XSWAP/CMD-TR.COM
-BIN/FREECOM/XSWAP/CMD-UKR.COM
-BIN/FREECOM/XSWAP/CMD-YUG.COM
-BIN/FREECOM/XSWAP/MAKECMD.BAT
-DOC/
-DOC/FREECOM/
-DOC/FREECOM/VERSION.TXT
-SOURCE/
-SOURCE/FREECOM/
-SOURCE/FREECOM/SOURCES.ZIP
+FreeCOM package metadata:
+Begin3
+Title:          FreeCom
+Version:        0.86a
+Entered-date:   2025-02-21
+Description:    The FreeDOS Command Shell
+Keywords:       freecom freedos command shell
+Author:         freedos-devel@lists.sourceforge.net (developers)
+Maintained-by:  freedos-devel@lists.sourceforge.net (maintainers)
+Primary-site:   https://github.com/FDOS/freecom
+Alternate-site: http://www.freedos.org/
+Platforms:      dos dosemu
+Copying-policy: GNU General Public License, Version 2 (GPL)
+Wiki-site:      http://wiki.freedos.org/wiki/index.php/Command
+Modified-date:  2025-03-16.0
+End
 
-kernel.zip members:
-APPINFO/
-APPINFO/KERNEL.DE
-APPINFO/KERNEL.FR
-APPINFO/KERNEL.LSM
-APPINFO/KERNEL.SV
-APPINFO/KERNEL.TR
-BIN/
-BIN/COUNTRY.SYS
-BIN/KERNL386.SYS
-BIN/KERNL86.SYS
-BIN/KERNL86N.SYS
-BIN/SETVER.SYS
-BIN/SYS.COM
-DOC/
-DOC/KERNEL/
-DOC/KERNEL/COPYING
-DOC/KERNEL/bugs.txt
-DOC/KERNEL/build.txt
-DOC/KERNEL/config.txt
-DOC/KERNEL/contrib.txt
-DOC/KERNEL/history.txt
-DOC/KERNEL/index.md
-DOC/KERNEL/intfns.txt
-DOC/KERNEL/lfnapi.txt
-DOC/KERNEL/memdisk.txt
-DOC/KERNEL/mkboot.txt
-DOC/KERNEL/nls.txt
-DOC/KERNEL/readme.cvs
-DOC/KERNEL/readme.txt
-DOC/KERNEL/sys.txt
-SOURCE/
-SOURCE/KERNEL/
-SOURCE/KERNEL/SOURCES.ZIP
+Kernel package metadata:
+Begin3
+Title:                 The FreeDOS Kernel
+Version:               2043
+Entered-date:          2021-05-14
+Description:           The FreeDOS Kernel
+Summary:               The FreeDOS Kernel (supports FAT12/FAT16/FAT32). Includes COUNTRY.SYS, SETVER.SYS and SYS.COM.
+Keywords:              kernel, FreeDOS, DOS, MSDOS
+Author:                (developers: can be reached on the freedos-kernel mailing list)
+Maintained-by:         freedos-devel@lists.sourceforge.net
+Primary-site:          https://github.com/FDOS/kernel
+Alternate-site:        https://svn.code.sf.net/p/freedos/svn/
+Alternate-site:        https://svn.code.sf.net/p/freedos/svn/
+Platforms:             DOS, FreeDOS, DOSEMU (OpenWatcom C or Turbo C, NASM, UPX)
+Copying-policy:        GNU General Public License, Version 2
+Defunct-original-site: http://www.gcfl.net/pub/FreeDOS/kernel
+Defunct-primary-site:  http://freedos.sourceforge.net/kernel/
+Modified-date:         2025-03-16.0
+End
 
 Rufus payload object IDs:
 255525acc562e0411e3e5f000bc1ba788733056d
