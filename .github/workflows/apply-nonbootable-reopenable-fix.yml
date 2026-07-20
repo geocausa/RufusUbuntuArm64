@@ -1,0 +1,90 @@
+name: Apply non-bootable reopenable-device correction
+
+on:
+  push:
+    branches: [feature/nonbootable-executor]
+    paths:
+      - .github/workflows/apply-nonbootable-reopenable-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/nonbootable-executor
+      - name: Use the audited reopenable whole-disk lock pattern
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("internal/nonbootable/backend_linux.go")
+          text = path.read_text(encoding="utf-8")
+          old = '''type linuxBackend struct {
+          \toptions DeviceOptions
+          \ttarget  *os.File
+          }
+          '''
+          new = '''type linuxBackend struct {
+          \toptions DeviceOptions
+          \ttarget  *os.File
+          \tlocked  bool
+          }
+          '''
+          assert old in text
+          text = text.replace(old, new, 1)
+          text = text.replace('func (backend *linuxBackend) Prepare(_ context.Context, plan Plan, _ PartitionTable) error {', 'func (backend *linuxBackend) Prepare(ctx context.Context, plan Plan, _ PartitionTable) error {', 1)
+          old = '''\tfile, err := os.OpenFile(plan.DevicePath, os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_EXCL, 0)
+          \tif err != nil {
+          \t\treturn fmt.Errorf("open target exclusively: %w", err)
+          \t}
+          \tbackend.target = file
+          \tif err := safety.VerifyOpenDevice(file, backend.options.ExpectedDeviceID, plan.DeviceSizeBytes); err != nil {
+          '''
+          new = '''\tfile, err := safety.OpenReopenableDevice(plan.DevicePath)
+          \tif err != nil {
+          \t\treturn fmt.Errorf("open target for guarded formatting: %w", err)
+          \t}
+          \tbackend.target = file
+          \tif err := safety.AcquireExclusiveFlock(ctx, file); err != nil {
+          \t\treturn fmt.Errorf("another storage operation appears to be using %s: %w", plan.DevicePath, err)
+          \t}
+          \tbackend.locked = true
+          \tif err := safety.VerifyOpenDevice(file, backend.options.ExpectedDeviceID, plan.DeviceSizeBytes); err != nil {
+          '''
+          assert old in text
+          text = text.replace(old, new, 1)
+          old = '''\terr := backend.target.Close()
+          \tbackend.target = nil
+          \tif err != nil {
+          \t\treturn fmt.Errorf("close target: %w", err)
+          \t}
+          \treturn nil
+          '''
+          new = '''\tvar result error
+          \tif backend.locked {
+          \t\tif err := syscall.Flock(int(backend.target.Fd()), syscall.LOCK_UN); err != nil {
+          \t\t\tresult = errors.Join(result, fmt.Errorf("unlock target: %w", err))
+          \t\t}
+          \t}
+          \tif err := backend.target.Close(); err != nil {
+          \t\tresult = errors.Join(result, fmt.Errorf("close target: %w", err))
+          \t}
+          \tbackend.target = nil
+          \tbackend.locked = false
+          \treturn result
+          '''
+          assert old in text
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+          Path(".github/workflows/apply-nonbootable-reopenable-fix.yml").unlink()
+          PY
+          gofmt -w internal/nonbootable/backend_linux.go
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Stage 2: use reopenable whole-disk formatter lock"
+          git push origin HEAD:feature/nonbootable-executor
