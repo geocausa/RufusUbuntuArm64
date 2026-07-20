@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: feature/freedos-payload-provenance
-      - name: Extract and compare official payloads
+      - name: Extract and compare official payloads and sources
         shell: bash
         run: |
           set -euxo pipefail
@@ -48,11 +48,13 @@ jobs:
 
           root = pathlib.Path(sys.argv[1])
           records = {}
-          requests = {
-              "COMMAND.COM": (root / "freecom.zip", "BIN/COMMAND.COM"),
-              "KERNEL.SYS.unmodified": (root / "kernel.zip", "BIN/KERNL386.SYS"),
-          }
-          for output_name, (archive, member) in requests.items():
+
+          def digest_record(path):
+              data = path.read_bytes()
+              return {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+
+          def extract(package_name, member, output_name):
+              archive = root / package_name
               with zipfile.ZipFile(archive) as handle:
                   names = {name.upper(): name for name in handle.namelist()}
                   actual = names.get(member.upper())
@@ -61,15 +63,24 @@ jobs:
                   data = handle.read(actual)
               destination = root / output_name
               destination.write_bytes(data)
-              records[output_name] = {
-                  "package": archive.name,
+              record = digest_record(destination)
+              record.update({
+                  "package": package_name,
                   "member": actual,
-                  "size": len(data),
-                  "sha256": hashlib.sha256(data).hexdigest(),
                   "git_blob_sha1": subprocess.check_output(
                       ["git", "hash-object", str(destination)], text=True
                   ).strip(),
-              }
+              })
+              records[output_name] = record
+              return destination
+
+          extract("freecom.zip", "BIN/COMMAND.COM", "COMMAND.COM")
+          extract("kernel.zip", "BIN/KERNL386.SYS", "KERNEL.SYS.unmodified")
+          extract("freecom.zip", "SOURCE/FREECOM/SOURCES.ZIP", "freecom-sources.zip")
+          extract("kernel.zip", "SOURCE/KERNEL/SOURCES.ZIP", "kernel-sources.zip")
+          extract("freecom.zip", "APPINFO/FREECOM.LSM", "FREECOM.LSM")
+          extract("kernel.zip", "APPINFO/KERNEL.LSM", "KERNEL.LSM")
+          extract("kernel.zip", "DOC/KERNEL/COPYING", "KERNEL-COPYING")
 
           kernel = bytearray((root / "KERNEL.SYS.unmodified").read_bytes())
           if len(kernel) <= 0x0D:
@@ -77,24 +88,34 @@ jobs:
           records["KERNEL.SYS.unmodified"]["force_lba_original"] = kernel[0x0D]
           kernel[0x0D] = 0x01
           (root / "KERNEL.SYS").write_bytes(kernel)
-          records["KERNEL.SYS"] = {
+          records["KERNEL.SYS"] = digest_record(root / "KERNEL.SYS")
+          records["KERNEL.SYS"].update({
               "derived_from": "KERNEL.SYS.unmodified",
               "force_lba_offset": 13,
               "force_lba_value": 1,
-              "size": len(kernel),
-              "sha256": hashlib.sha256(kernel).hexdigest(),
               "git_blob_sha1": subprocess.check_output(
                   ["git", "hash-object", str(root / "KERNEL.SYS")], text=True
               ).strip(),
-          }
+          })
           for name in ("freecom.zip", "kernel.zip"):
-              data = (root / name).read_bytes()
-              records[name] = {
-                  "size": len(data),
-                  "sha256": hashlib.sha256(data).hexdigest(),
+              records[name] = digest_record(root / name)
+
+          source_inventory = {}
+          for name in ("freecom-sources.zip", "kernel-sources.zip"):
+              with zipfile.ZipFile(root / name) as handle:
+                  members = handle.namelist()
+              source_inventory[name] = {
+                  "member_count": len(members),
+                  "licence_candidates": [
+                      member for member in members
+                      if any(token in member.upper() for token in ("COPYING", "LICENSE", "COPYRIGHT"))
+                  ],
+                  "top_level": sorted({member.split("/", 1)[0] for member in members if member}),
               }
+
+          output = {"records": records, "source_inventory": source_inventory}
           (root / "payload-map.json").write_text(
-              json.dumps(records, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+              json.dumps(output, indent=2, sort_keys=True) + "\n", encoding="utf-8"
           )
           PY
           git clone --filter=blob:none --no-checkout https://github.com/pbatard/rufus.git "$tmp/rufus"
@@ -108,14 +129,14 @@ jobs:
             echo "Logical sector size: $sector_size"
             echo "Partition start sector: $start_sector"
             echo
-            echo 'Payload map:'
+            echo 'Payload and source map:'
             cat "$tmp/payload-map.json"
             echo
-            echo 'freecom.zip members:'
-            unzip -Z1 "$tmp/freecom.zip"
+            echo 'FreeCOM package metadata:'
+            cat "$tmp/FREECOM.LSM"
             echo
-            echo 'kernel.zip members:'
-            unzip -Z1 "$tmp/kernel.zip"
+            echo 'Kernel package metadata:'
+            cat "$tmp/KERNEL.LSM"
             echo
             echo 'Rufus payload object IDs:'
             git -C "$tmp/rufus" hash-object res/freedos/COMMAND.COM res/freedos/KERNEL.SYS
@@ -123,5 +144,5 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add docs/freedos-payload-map.txt
-          git commit -m 'FreeDOS: map official payload extraction'
+          git commit -m 'FreeDOS: map payload source archives'
           git push origin HEAD:feature/freedos-payload-provenance
