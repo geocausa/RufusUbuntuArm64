@@ -18,7 +18,7 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 ## Install on Ubuntu ARM64
 
 ```bash
-sudo apt install ./rufusarm64_0.12.0_arm64.deb
+sudo apt install ./rufusarm64_0.12.1_arm64.deb
 ```
 
 The package upgrades older `rufusarm64` installations in place. One visible **RufusArm64** application entry is installed. Its normal launch opens the ordinary writer, and its **Create Persistent Live USB** desktop action opens the guarded persistence wizard.
@@ -39,7 +39,7 @@ The **Create USB** button in the ordinary writer always performs the normal imag
 
 ## Persistent Linux media
 
-Version 0.12.0 retains the separate guarded persistence wizard internally while presenting only one desktop application icon. Open it from the same RufusArm64 application entry using the **Create Persistent Live USB** action. The direct command remains available for troubleshooting:
+Version 0.12.1 retains the separate guarded persistence wizard internally while presenting only one desktop application icon. Open it from the same RufusArm64 application entry using the **Create Persistent Live USB** action. The direct command remains available for troubleshooting:
 
 ```text
 rufusarm64 --persistence
@@ -162,7 +162,7 @@ Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, the ver
 The installer is produced at:
 
 ```text
-dist/rufusarm64_0.12.0_arm64.deb
+dist/rufusarm64_0.12.1_arm64.deb
 ```
 
 ## Command-line examples
@@ -185,7 +185,7 @@ sudo rufusarm64-cli write \
 
 The single visible graphical application entry supplies the ordinary writer and the persistent-live action while retaining separate guarded helpers internally. The selected-image **Checksums…** action calculates MD5, SHA-1, SHA-256, and SHA-512 through the unprivileged descriptor-bound helper without changing writer state; MD5 and SHA-1 are legacy comparison values only. The main window also provides a read-only **Validate UEFI Media…** dialog for mounted or extracted media; it reports fallback-loader, PE/EFI, DBX, and SBAT results, and can compare against either a trusted local SbatLevel CSV or the running shim firmware SBAT level without changing the write path.
 
-That pre-boot structural/Secure Boot analysis is separate from the boot-time media-integrity option. Version 0.12.0 also provides descriptor-safe manifest generation and verification through the unprivileged CLI and an opt-in transactional ARM64 wrapper in the guarded persistent-media workflow; the wrapper is unsigned and is not offered by other writer modes.
+That pre-boot structural/Secure Boot analysis is separate from the boot-time media-integrity option. Version 0.12.1 also provides descriptor-safe manifest generation and verification through the unprivileged CLI and an opt-in transactional ARM64 wrapper in the guarded persistent-media workflow; the wrapper is unsigned and is not offered by other writer modes.
 
 ## License
 

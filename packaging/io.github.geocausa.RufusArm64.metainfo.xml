@@ -19,6 +19,11 @@
     <binary>rufusarm64-persistence</binary>
   </provides>
   <releases>
+    <release version="0.12.1" date="2026-07-20">
+      <description>
+        <p>Fixes packaged GTK startup on desktops that provide both GTK 3 and GTK 4 introspection by pinning GTK 3 before integrated dialog imports.</p>
+      </description>
+    </release>
     <release version="0.12.0" date="2026-07-19">
       <description>
         <p>Adds the guarded graphical drive-image backup workflow and closes audited privilege, progress-channel, process-reaping, and report-validation edge cases before the Stage 1 release.</p>
