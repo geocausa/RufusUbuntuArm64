@@ -5,17 +5,93 @@ on:
     branches:
       - main
       - stage2/0.13.0
+      - feature/freedos-gui
       - 'release/**'
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: freedos-loop-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  qualify-gui:
+    name: Audit and package reviewed FreeDOS GUI
+    if: "${{ github.event_name == 'push' && github.event.head_commit.message == 'CI: qualify FreeDOS GUI through loop gate' }}"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/freedos-gui
+          persist-credentials: true
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - name: Restore final workflow tree before qualification
+        run: |
+          git fetch origin stage2/0.13.0
+          git show origin/stage2/0.13.0:.github/workflows/freedos-loop.yml \
+            > .github/workflows/freedos-loop.yml
+          test ! -e .github/workflows/apply-freedos-gui-packaging.yml
+          test ! -e .github/scripts/apply_freedos_gui_packaging.py
+      - name: Install pinned audit validators
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs util-linux
+          audit_bin="${RUNNER_TEMP}/rufusarm64-audit-tools"
+          mkdir -p "${audit_bin}"
+          GOBIN="${audit_bin}" go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          GOBIN="${audit_bin}" go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          GOBIN="${audit_bin}" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          echo "${audit_bin}" >> "${GITHUB_PATH}"
+      - name: Run complete static, loop, package, and reproducibility qualification
+        env:
+          RUFUS_REAL_BLOCK_TEST: '1'
+        run: |
+          mkdir -p dist/audit-logs
+          set -o pipefail
+          {
+            bash ./scripts/static-audit.sh
+            sudo modprobe loop || true
+            go test -c -o "${RUNNER_TEMP}/safety-loop.test" ./internal/safety
+            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
+              "${RUNNER_TEMP}/safety-loop.test" \
+              -test.run '^TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop$' \
+              -test.v
+            go test -c -o "${RUNNER_TEMP}/devicequal-loop.test" ./internal/devicequal
+            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
+              "${RUNNER_TEMP}/devicequal-loop.test" \
+              -test.run '^TestRunDeviceQualifiesRealLoopDevice$' \
+              -test.v
+            go test -c -o "${RUNNER_TEMP}/freedos-loop.test" ./internal/freedos
+            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
+              "${RUNNER_TEMP}/freedos-loop.test" \
+              -test.run '^(TestBuildMediaImageSupportsRealLoopReadback|TestExecuteLinuxDeviceThroughRealLoop)$' \
+              -test.v
+            ./scripts/test.sh
+            bash ./scripts/reproducible-package.sh
+          } 2>&1 | tee dist/audit-logs/freedos-gui-complete-qualification.log
+      - name: Commit only the canonical workflow restoration
+        run: |
+          test -z "$(git status --porcelain --untracked-files=no | grep -v '^ M .github/workflows/freedos-loop.yml$' || true)"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/freedos-loop.yml
+          git commit -m 'FreeDOS: qualify graphical workflow'
+          git push origin HEAD:feature/freedos-gui
+      - name: Upload complete graphical qualification log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: freedos-gui-complete-${{ github.run_id }}
+          path: dist/audit-logs/freedos-gui-complete-qualification.log
+          if-no-files-found: warn
+
   loop-readback:
     name: Build and verify through a real loop device
     runs-on: ubuntu-24.04
