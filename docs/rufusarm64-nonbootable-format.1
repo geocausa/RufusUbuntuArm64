@@ -17,8 +17,8 @@ rufusarm64-nonbootable-format \- erase and format a removable drive as data-only
 is the dedicated identity-bound data-only formatter. It erases one explicitly
 selected whole block device, writes one GPT or MBR partition, creates FAT32,
 exFAT, NTFS, or ext4, and verifies the published partition table, kernel
-geometry, filesystem type, label, and read-only checker result. It never claims
-the result is bootable.
+geometry, filesystem type, label, and read-only checker result. The result is
+not claimed bootable.
 .PP
 The unprivileged dry run resolves the current kernel device, checks the selected
 identity, exact capacity and logical sector size, validates the requested label,
