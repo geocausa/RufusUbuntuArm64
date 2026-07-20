@@ -1,6 +1,8 @@
 """Pure contracts for the GTK non-bootable formatting workflow."""
 
+from datetime import datetime
 import os
+import unicodedata
 
 
 FILESYSTEM_DISPLAYS = {
@@ -9,6 +11,29 @@ FILESYSTEM_DISPLAYS = {
     "ntfs": "NTFS",
     "ext4": "ext4",
 }
+FILESYSTEM_TOOLS = {
+    "fat32": ["sfdisk", "blockdev", "mkfs.vfat", "fsck.vfat"],
+    "exfat": ["sfdisk", "blockdev", "mkfs.exfat", "fsck.exfat"],
+    "ntfs": ["sfdisk", "blockdev", "mkfs.ntfs", "ntfsfix"],
+    "ext4": ["sfdisk", "blockdev", "mkfs.ext4", "e2fsck"],
+}
+PARTITION_TYPES = {
+    ("gpt", "fat32"): "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
+    ("gpt", "exfat"): "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
+    ("gpt", "ntfs"): "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
+    ("gpt", "ext4"): "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
+    ("mbr", "fat32"): "0c",
+    ("mbr", "exfat"): "07",
+    ("mbr", "ntfs"): "07",
+    ("mbr", "ext4"): "83",
+}
+SAFETY_WARNINGS = [
+    "This operation erases the complete selected drive.",
+    "The resulting media is data-only and is not claimed bootable.",
+]
+ALIGNMENT_BYTES = 1024 * 1024
+TAIL_RESERVE_BYTES = 1024 * 1024
+MAX_FAT32_BYTES = 2 * 1024 * 1024 * 1024 * 1024
 SCHEMES = {"gpt", "mbr"}
 STATUSES = {"passed", "failed", "cancelled"}
 FAILURE_PHASES = {"preflight", "erase", "partition", "format", "verify", "complete"}
@@ -111,6 +136,10 @@ def normalize_report(payload, reviewed_plan=None):
         raise ValueError("Formatting report contains an invalid status.")
     if value.get("bootable") is not False:
         raise ValueError("Formatting report must not claim bootable media.")
+    started_at = _timestamp(value.get("started_at"), "start time")
+    completed_at = _timestamp(value.get("completed_at"), "completion time")
+    if completed_at < started_at:
+        raise ValueError("Formatting report completion time precedes its start time.")
 
     plan = _normalize_plan_fields(value.get("plan"))
     table = _normalize_table(value.get("partition_table"), plan)
@@ -171,6 +200,8 @@ def normalize_report(payload, reviewed_plan=None):
             "media_changed": media_changed,
             "reusable": reusable,
             "bootable": False,
+            "started_at": value["started_at"],
+            "completed_at": value["completed_at"],
         }
     )
     return normalized
@@ -219,7 +250,7 @@ def _normalize_plan_fields(payload):
     if plan.get("bootable") is not False or plan.get("destructive") is not True:
         raise ValueError("Formatting plan contains an invalid safety envelope.")
     device_path = _text(plan.get("device_path"), "Formatting plan is missing its device path.")
-    if not device_path.startswith("/dev/"):
+    if not os.path.isabs(device_path) or not device_path.startswith("/dev/") or os.path.normpath(device_path) != device_path:
         raise ValueError("Formatting plan contains an invalid device path.")
     identity = _text(plan.get("expected_identity"), "Formatting plan is missing its expected identity.")
     scheme = _text(plan.get("scheme"), "Formatting plan is missing its partition scheme.").lower()
@@ -235,17 +266,27 @@ def _normalize_plan_fields(payload):
     device_size = _positive_integer(plan.get("device_size_bytes"), "device capacity")
     start = _positive_integer(plan.get("partition_start_bytes"), "partition start")
     size = _positive_integer(plan.get("partition_size_bytes"), "partition size")
-    if start % sector_size or size % sector_size or start + size > device_size:
-        raise ValueError("Formatting plan contains invalid partition geometry.")
+    expected_start = ((ALIGNMENT_BYTES + sector_size - 1) // sector_size) * sector_size
+    usable_end = ((device_size - TAIL_RESERVE_BYTES) // sector_size) * sector_size
+    expected_size = usable_end - expected_start
+    if start != expected_start or size != expected_size or start + size > device_size:
+        raise ValueError("Formatting plan contains non-canonical partition geometry.")
+    if filesystem == "fat32" and size > MAX_FAT32_BYTES:
+        raise ValueError("Formatting plan exceeds the FAT32 compatibility boundary.")
+    if scheme == "mbr" and (start + size) // sector_size > 1 << 32:
+        raise ValueError("Formatting plan exceeds the MBR address space.")
     if _integer(plan.get("partition_number"), "partition number") != 1:
         raise ValueError("Formatting plan must contain exactly one data partition.")
     partition_type = _text(plan.get("partition_type"), "Formatting plan is missing its partition type.")
+    if partition_type != PARTITION_TYPES[(scheme, filesystem)]:
+        raise ValueError("Formatting plan contains an inconsistent partition type.")
+    label = _normalize_label(plan.get("label"), filesystem)
     tools = plan.get("required_tools")
     warnings = plan.get("warnings")
-    if not isinstance(tools, list) or len(tools) != 4 or not all(isinstance(item, str) and item for item in tools):
+    if tools != FILESYSTEM_TOOLS[filesystem]:
         raise ValueError("Formatting plan contains an invalid required-tool contract.")
-    if not isinstance(warnings, list) or not warnings or not all(isinstance(item, str) and item for item in warnings):
-        raise ValueError("Formatting plan is missing its safety warnings.")
+    if warnings != SAFETY_WARNINGS:
+        raise ValueError("Formatting plan safety warnings are incomplete or altered.")
     return {
         "schema": 1,
         "mode": "non-bootable",
@@ -258,7 +299,7 @@ def _normalize_plan_fields(payload):
         "scheme": scheme,
         "filesystem": filesystem,
         "filesystem_display": display,
-        "label": str(plan.get("label") or ""),
+        "label": label,
         "partition_number": 1,
         "partition_start_bytes": start,
         "partition_size_bytes": size,
@@ -318,6 +359,38 @@ def _validate_request(binary, device, identity, scheme, filesystem, label):
         raise ValueError("Filesystem must be FAT32, exFAT, NTFS, or ext4.")
     if not isinstance(label, str):
         raise ValueError("Volume label must be text.")
+
+
+def _normalize_label(value, filesystem):
+    if not isinstance(value, str):
+        raise ValueError("Formatting label must be text.")
+    if value.strip() != value:
+        raise ValueError("Formatting label must not have leading or trailing whitespace.")
+    if any(unicodedata.category(character) == "Cc" for character in value):
+        raise ValueError("Formatting label must not contain control characters.")
+    if filesystem == "fat32":
+        if value != value.upper():
+            raise ValueError("FAT32 label must be canonical uppercase text.")
+        allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-")
+        if any(character not in allowed for character in value) or len(value.encode("utf-8")) > 11:
+            raise ValueError("FAT32 label violates its canonical on-disk contract.")
+    elif filesystem == "ext4":
+        if len(value.encode("utf-8")) > 16:
+            raise ValueError("ext4 label exceeds 16 bytes.")
+    else:
+        limit = 15 if filesystem == "exfat" else 32
+        units = len(value.encode("utf-16-le")) // 2
+        if units > limit:
+            raise ValueError(f"{FILESYSTEM_DISPLAYS[filesystem]} label exceeds {limit} UTF-16 code units.")
+    return value
+
+
+def _timestamp(value, label):
+    text = _text(value, f"Formatting report is missing its {label}.")
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"Formatting report has an invalid {label}.") from exc
 
 
 def _mapping(value, message):

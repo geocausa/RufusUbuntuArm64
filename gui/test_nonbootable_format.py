@@ -34,7 +34,10 @@ def sample_plan():
         "partition_size_bytes": PARTITION_SIZE,
         "partition_type": "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
         "required_tools": ["sfdisk", "blockdev", "mkfs.vfat", "fsck.vfat"],
-        "warnings": ["This operation erases the complete selected drive."],
+        "warnings": [
+            "This operation erases the complete selected drive.",
+            "The resulting media is data-only and is not claimed bootable.",
+        ],
     }
     table = {
         "schema": 1,
@@ -98,6 +101,10 @@ class NonBootableFormatContractTests(unittest.TestCase):
 
         for mutation in (
             lambda value: value["plan"].__setitem__("bootable", True),
+            lambda value: value["plan"].__setitem__("partition_type", "0FC63DAF-8483-4772-8E79-3D69D8477DE4"),
+            lambda value: value["plan"].__setitem__("required_tools", ["sfdisk", "blockdev", "mkfs.ext4", "e2fsck"]),
+            lambda value: value["plan"].__setitem__("warnings", ["This operation erases the complete selected drive."]),
+            lambda value: value["plan"].__setitem__("label", "data"),
             lambda value: value["partition_table"].__setitem__("size_sectors", 1),
             lambda value: value.__setitem__("identity", "other-device"),
             lambda value: value.__setitem__("confirmation", "FORMAT /dev/sdb AS FAT32 USING GPT WITHOUT A LABEL"),
@@ -136,6 +143,11 @@ class NonBootableFormatContractTests(unittest.TestCase):
 
         altered = copy.deepcopy(report)
         altered["filesystem"]["type"] = "ext4"
+        with self.assertRaises(ValueError):
+            normalize_report(altered, reviewed)
+
+        altered = copy.deepcopy(report)
+        altered["completed_at"] = "2026-07-19T23:59:59Z"
         with self.assertRaises(ValueError):
             normalize_report(altered, reviewed)
 
