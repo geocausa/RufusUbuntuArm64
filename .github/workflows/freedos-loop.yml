@@ -42,7 +42,7 @@ jobs:
             go test -c -o "${RUNNER_TEMP}/freedos-loop.test" ./internal/freedos
             sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
               "${RUNNER_TEMP}/freedos-loop.test" \
-              -test.run '^TestBuildMediaImageSupportsRealLoopReadback$' \
+              -test.run '^(TestBuildMediaImageSupportsRealLoopReadback|TestExecuteLinuxDeviceThroughRealLoop)$' \
               -test.v
           } 2>&1 | tee dist/audit-logs/freedos-loop-qualification.log
       - name: Upload qualification log
