@@ -34,11 +34,11 @@ type releaseContract struct {
 	CorrespondingSource []releaseContractFile `json:"corresponding_source"`
 	LicenseMetadata     []releaseContractFile `json:"license_metadata"`
 	Totals              struct {
-		MediaPayloadBytes                 uint64 `json:"media_payload_bytes"`
-		EmbeddedAssetBytes                uint64 `json:"embedded_asset_bytes"`
-		CorrespondingSourceBytes          uint64 `json:"corresponding_source_bytes"`
-		LicenseMetadataBytes              uint64 `json:"license_metadata_bytes"`
-		MinimumUncompressedPackageBytes   uint64 `json:"minimum_uncompressed_package_material_bytes"`
+		MediaPayloadBytes               uint64 `json:"media_payload_bytes"`
+		EmbeddedAssetBytes              uint64 `json:"embedded_asset_bytes"`
+		CorrespondingSourceBytes        uint64 `json:"corresponding_source_bytes"`
+		LicenseMetadataBytes            uint64 `json:"license_metadata_bytes"`
+		MinimumUncompressedPackageBytes uint64 `json:"minimum_uncompressed_package_material_bytes"`
 	} `json:"totals"`
 }
 
