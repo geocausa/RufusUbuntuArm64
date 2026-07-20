@@ -35,9 +35,12 @@ jobs:
             echo
             echo 'Functions that write MBR code:'
             grep -R -n -E 'write_.*mbr|mbr.*write_' "$tmp/rufus/src/ms-sys" "$tmp/rufus/src/format.c" | head -n 800
+            echo
+            echo 'Current RufusArm64 vendor/ms-sys tree:'
+            find vendor/ms-sys -maxdepth 3 -type f -printf '%P\n' | sort
           } > docs/freedos-rufus-bootcode-map.txt
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add docs/freedos-rufus-bootcode-map.txt
-          git commit -m 'FreeDOS: map pinned Rufus boot-code paths'
+          git commit -m 'FreeDOS: map existing ms-sys vendor layout'
           git push origin HEAD:feature/freedos-bootcode-provenance
