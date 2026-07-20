@@ -19,7 +19,7 @@ concurrency:
 jobs:
   apply-gui-packaging:
     name: Apply reviewed FreeDOS GUI packaging
-    if: ${{ github.event_name == 'push' && github.event.head_commit.message == 'CI: apply FreeDOS GUI packaging through loop gate' }}
+    if: "${{ github.event_name == 'push' && github.event.head_commit.message == 'CI: apply FreeDOS GUI packaging through loop gate' }}"
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
