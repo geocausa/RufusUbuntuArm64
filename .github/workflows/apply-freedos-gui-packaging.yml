@@ -62,6 +62,20 @@ jobs:
           ''',
               "FreeDOS GUI installation",
           )
+          build = replace_once(
+              build,
+              '''install -Dm644 "${ROOT_DIR}/docs/freedos-linux-backend.md" \\
+            "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-linux-backend.md"
+          install -Dm644 "${ROOT_DIR}/NOTICE" \\
+          ''',
+              '''install -Dm644 "${ROOT_DIR}/docs/freedos-linux-backend.md" \\
+            "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-linux-backend.md"
+          install -Dm644 "${ROOT_DIR}/docs/freedos-user-guide.md" \\
+            "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-user-guide.md"
+          install -Dm644 "${ROOT_DIR}/NOTICE" \\
+          ''',
+              "FreeDOS user guide installation",
+          )
           build_path.write_text(build, encoding="utf-8")
 
           test_path = Path("scripts/test.sh")
@@ -88,6 +102,17 @@ jobs:
           [[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_persistence.py" ]]
           ''',
               "FreeDOS installed Python checks",
+          )
+          test = replace_once(
+              test,
+              '''[[ -f "${extract_dir}/usr/share/doc/rufusarm64/persistence-qualification.md" ]]
+          [[ ! -e "${extract_dir}/usr/bin/rufus-channel-admin" ]]
+          ''',
+              '''[[ -f "${extract_dir}/usr/share/doc/rufusarm64/persistence-qualification.md" ]]
+          [[ -f "${extract_dir}/usr/share/doc/rufusarm64/freedos-user-guide.md" ]]
+          [[ ! -e "${extract_dir}/usr/bin/rufus-channel-admin" ]]
+          ''',
+              "FreeDOS installed guide check",
           )
           test_path.write_text(test, encoding="utf-8")
           PY
