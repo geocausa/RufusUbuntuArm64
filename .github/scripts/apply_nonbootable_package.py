@@ -78,15 +78,4 @@ text = text.replace("</policyconfig>", action + "</policyconfig>", 1)
 require_once(text, 'id="io.github.geocausa.RufusArm64.format-data"', "formatter Polkit action")
 policy.write_text(text, encoding="utf-8")
 
-ci = Path(".github/workflows/ci.yml")
-lines = ci.read_text(encoding="utf-8").splitlines(keepends=True)
-insert_after_unique(
-    lines,
-    '          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-device-backup" version)" = "${VERSION}"\n',
-    ['          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-nonbootable-format" version)" = "${VERSION}"\n'],
-    "packaged backup smoke marker",
-)
-ci.write_text("".join(lines), encoding="utf-8")
-
-Path(".github/workflows/apply-nonbootable-package.yml").unlink()
 Path(".github/scripts/apply_nonbootable_package.py").unlink()
