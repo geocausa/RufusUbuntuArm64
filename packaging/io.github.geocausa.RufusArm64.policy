@@ -46,4 +46,14 @@
     </defaults>
     <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/rufusarm64/rufusarm64-nonbootable-format</annotate>
   </action>
+  <action id="io.github.geocausa.RufusArm64.format-freedos">
+    <description>Create verified FreeDOS media on a removable drive</description>
+    <message>Administrator authentication is required to erase the selected removable drive and create x86 BIOS/Legacy FreeDOS media.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/rufusarm64/rufusarm64-freedos-format</annotate>
+  </action>
 </policyconfig>

@@ -61,6 +61,10 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
   go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \
   -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-nonbootable-format" \
   "${ROOT_DIR}/cmd/rufus-nonbootable-format"
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+  go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \
+  -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-freedos-format" \
+  "${ROOT_DIR}/cmd/rufus-freedos-format"
 
 install -Dm755 "${ROOT_DIR}/gui/rufusarm64.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64.py"
@@ -226,7 +230,7 @@ for file in README-RUFUS-UEFI-NTFS.txt SHA256SUMS; do
 done
 
 # Ship the exact GPL ms-sys source fragments used to derive the embedded
-# Windows MBR/PBR byte arrays, plus the pin metadata and upstream hashes.
+# Windows and FreeDOS MBR/PBR byte arrays, plus the pin metadata and hashes.
 for file in PINNED-UPSTREAM.txt UPSTREAM-SHA256SUMS FREEDOS-BOOTASSETS.json \
   br.c ntfs.c fat32.c mbr_win7.h mbr_rufus.h br_ntfs_0x0.h br_ntfs_0x54.h \
   br_fat32_0x0.h br_fat32fd_0x52.h br_fat32fd_0x3f0.h \
@@ -236,6 +240,22 @@ for file in PINNED-UPSTREAM.txt UPSTREAM-SHA256SUMS FREEDOS-BOOTASSETS.json \
 done
 install -Dm644 "${ROOT_DIR}/scripts/extract-freedos-bootassets.py" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/ms-sys/extract-freedos-bootassets.py"
+
+# Ship the complete corresponding source and exact metadata for the installed
+# FreeDOS kernel and FreeCOM payload. The command never downloads at runtime.
+for file in freecom-sources.zip kernel-sources.zip; do
+  install -Dm644 "${ROOT_DIR}/vendor/freedos/source/${file}" \
+    "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos/source/${file}"
+done
+for file in FREECOM.LSM KERNEL.LSM KERNEL-COPYING; do
+  install -Dm644 "${ROOT_DIR}/vendor/freedos/metadata/${file}" \
+    "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos/metadata/${file}"
+done
+for file in PAYLOADS.json RELEASE-CONTRACT.json; do
+  install -Dm644 "${ROOT_DIR}/vendor/freedos/${file}" \
+    "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos/${file}"
+done
+
 install -Dm755 "${ROOT_DIR}/packaging/rufusarm64" \
   "${PACKAGE_DIR}/usr/bin/rufusarm64"
 install -Dm755 "${ROOT_DIR}/packaging/rufusarm64-persistence" \
@@ -248,6 +268,8 @@ ln -s ../lib/rufusarm64/rufusarm64-device-backup \
   "${PACKAGE_DIR}/usr/bin/rufusarm64-device-backup"
 ln -s ../lib/rufusarm64/rufusarm64-nonbootable-format \
   "${PACKAGE_DIR}/usr/bin/rufusarm64-nonbootable-format"
+ln -s ../lib/rufusarm64/rufusarm64-freedos-format \
+  "${PACKAGE_DIR}/usr/bin/rufusarm64-freedos-format"
 install -Dm644 "${ROOT_DIR}/packaging/io.github.geocausa.RufusArm64.desktop" \
   "${PACKAGE_DIR}/usr/share/applications/io.github.geocausa.RufusArm64.desktop"
 install -Dm644 "${ROOT_DIR}/packaging/io.github.geocausa.RufusArm64.Persistence.desktop" \
@@ -272,6 +294,10 @@ install -Dm644 "${ROOT_DIR}/docs/persistence-qualification.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/persistence-qualification.md"
 install -Dm644 "${ROOT_DIR}/docs/freedos-feasibility.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-feasibility.md"
+install -Dm644 "${ROOT_DIR}/docs/freedos-release-maintenance.md" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-release-maintenance.md"
+install -Dm644 "${ROOT_DIR}/docs/freedos-linux-backend.md" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-linux-backend.md"
 install -Dm644 "${ROOT_DIR}/NOTICE" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/NOTICE"
 install -Dm644 "${ROOT_DIR}/LICENSE" \
@@ -281,7 +307,7 @@ install -Dm644 "${ROOT_DIR}/packaging/copyright" \
 install -Dm644 "${ROOT_DIR}/CHANGELOG.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/changelog"
 gzip -9n "${PACKAGE_DIR}/usr/share/doc/rufusarm64/changelog"
-for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify rufusarm64-device-backup rufusarm64-nonbootable-format; do
+for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify rufusarm64-device-backup rufusarm64-nonbootable-format rufusarm64-freedos-format; do
   install -Dm644 "${ROOT_DIR}/docs/${page}.1" \
     "${PACKAGE_DIR}/usr/share/man/man1/${page}.1"
   gzip -9n "${PACKAGE_DIR}/usr/share/man/man1/${page}.1"
@@ -304,7 +330,8 @@ Homepage: https://github.com/geocausa/RufusUbuntuArm64
 Description: Bootable USB creator for Ubuntu ARM64
  A graphical utility that writes Linux ISOHybrid/raw images, creates verified
  persistent Ubuntu/Debian live media, creates Windows installation USB media,
- and captures verified images of removable drives. It supports GPT or MBR,
+ creates verified x86 BIOS/Legacy FreeDOS 1.4 media, and captures verified
+ images of removable drives. It supports GPT or MBR,
  UEFI or x86-family BIOS/CSM, FAT32 or NTFS, compressed or virtual-disk inputs,
  Secure Boot DBX checks, verified boot assets, WIM splitting, and optional drivers.
 CONTROL

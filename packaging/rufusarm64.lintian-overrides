@@ -6,3 +6,4 @@ rufusarm64: statically-linked-binary [usr/lib/rufusarm64/rufusarm64-persistence-
 rufusarm64: statically-linked-binary [usr/lib/rufusarm64/rufusarm64-device-qualify]
 rufusarm64: statically-linked-binary [usr/lib/rufusarm64/rufusarm64-device-backup]
 rufusarm64: statically-linked-binary [usr/lib/rufusarm64/rufusarm64-nonbootable-format]
+rufusarm64: statically-linked-binary [usr/lib/rufusarm64/rufusarm64-freedos-format]
