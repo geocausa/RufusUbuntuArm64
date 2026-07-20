@@ -102,7 +102,7 @@ func TestVerifyMediaImageRejectsTampering(t *testing.T) {
 	}{
 		{"MBR CHS", func(image []byte) { image[447] ^= 1 }, "CHS"},
 		{"backup BPB", func(image []byte) { image[partitionStart+6*512+0x1c] ^= 1 }, "BIOS parameter blocks differ"},
-		{"FSInfo", func(image []byte) { image[partitionStart+512] ^= 1 }, "FSInfo"},
+		{"FSInfo", func(image []byte) { image[partitionStart+512+488] ^= 1 }, "FSInfo"},
 		{"FAT copies", func(image []byte) { image[fat2Start+3*4] ^= 1 }, "FAT copies differ"},
 		{"command chain", func(image []byte) {
 			putFATEntry(image[fat1Start:], 3, 0x0fffffff)
