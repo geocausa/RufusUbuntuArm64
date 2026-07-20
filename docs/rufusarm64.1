@@ -24,6 +24,15 @@ ship with the built-in network channel disabled until public catalogue and
 mirror operations are provisioned; the local signed-catalogue path remains
 available.
 .PP
+Before Windows setup customizations are offered, RufusArm64 mounts the exact
+identity-bound ISO read-only and inspects the complete installation metadata.
+The options dialog reports the bounded edition count and names, whether the
+payload is WIM, ESD, or a validated split SWM sequence, and the split-part
+count. All editions must agree on Windows generation, client/server family,
+and architecture or customization is disabled. RufusArm64 does not select an
+edition automatically and ordinary media creation remains available without
+customizations when product metadata cannot be classified safely.
+.PP
 The ordinary Create USB action preserves supported Linux raw/ISOHybrid images
 byte-for-byte. Persistent-live creation is a separate guarded workflow.
 .PP
