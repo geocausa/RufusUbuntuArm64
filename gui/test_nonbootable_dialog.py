@@ -79,6 +79,7 @@ class NonBootableDialogStructureTests(unittest.TestCase):
         self.assertIn("gui/rufusarm64_integrated.py", self.package_source)
         self.assertIn('id="io.github.geocausa.RufusArm64.format-data"', self.policy_source)
         self.assertIn("/usr/lib/rufusarm64/rufusarm64-nonbootable-format", self.policy_source)
+        self.assertIn('NONBOOTABLE_FORMATTER = "/usr/lib/rufusarm64/rufusarm64-nonbootable-format"', self.dialog_source)
 
 
 if __name__ == "__main__":

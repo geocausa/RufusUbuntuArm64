@@ -61,21 +61,21 @@ def sample_plan():
 class NonBootableFormatContractTests(unittest.TestCase):
     def test_commands_keep_dry_run_unprivileged_and_execution_identity_bound(self):
         dry = build_dry_run_command(
-            "/usr/bin/rufusarm64-nonbootable-format",
+            "/usr/lib/rufusarm64/rufusarm64-nonbootable-format",
             "/dev/sdb",
             "identity-token",
             "gpt",
             "fat32",
             "DATA",
         )
-        self.assertEqual(dry[0], "/usr/bin/rufusarm64-nonbootable-format")
+        self.assertEqual(dry[0], "/usr/lib/rufusarm64/rufusarm64-nonbootable-format")
         self.assertIn("--dry-run", dry)
         self.assertIn("--json", dry)
         self.assertNotIn("pkexec", " ".join(dry))
 
         run = build_run_command(
             "/usr/bin/pkexec",
-            "/usr/bin/rufusarm64-nonbootable-format",
+            "/usr/lib/rufusarm64/rufusarm64-nonbootable-format",
             "/dev/sdb",
             "identity-token",
             "gpt",
@@ -83,7 +83,7 @@ class NonBootableFormatContractTests(unittest.TestCase):
             "DATA",
             "/run/user/1000/rufusarm64.cancel",
         )
-        self.assertEqual(run[:2], ["/usr/bin/pkexec", "/usr/bin/rufusarm64-nonbootable-format"])
+        self.assertEqual(run[:2], ["/usr/bin/pkexec", "/usr/lib/rufusarm64/rufusarm64-nonbootable-format"])
         self.assertIn("--expected-identity", run)
         self.assertIn("--cancel-file", run)
         self.assertIn("--yes", run)

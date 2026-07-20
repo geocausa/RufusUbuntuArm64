@@ -20,7 +20,7 @@ from rufusarm64_nonbootable import (
 )
 
 
-NONBOOTABLE_FORMATTER = "/usr/bin/rufusarm64-nonbootable-format"
+NONBOOTABLE_FORMATTER = "/usr/lib/rufusarm64/rufusarm64-nonbootable-format"
 PKEXEC = "/usr/bin/pkexec"
 
 
@@ -165,11 +165,12 @@ class NonBootableFormatDialog(Gtk.Dialog):
         return label
 
     def current_choices(self):
-        return (
-            self.scheme.get_active_id() or "gpt",
-            self.filesystem.get_active_id() or "fat32",
-            self.volume_label.get_text(),
-        )
+        scheme = self.scheme.get_active_id() or "gpt"
+        filesystem = self.filesystem.get_active_id() or "fat32"
+        label = self.volume_label.get_text()
+        if filesystem == "fat32":
+            label = label.upper()
+        return scheme, filesystem, label
 
     def selection_changed(self, *_):
         if self.running:
