@@ -52,30 +52,3 @@ jobs:
           name: freedos-loop-${{ github.run_id }}
           path: dist/audit-logs/freedos-loop-qualification.log
           if-no-files-found: warn
-
-  go-minimum-diagnostic:
-    name: Capture Go 1.22 command diagnostics
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version: '1.22.x'
-      - name: Capture complete Go test output
-        run: |
-          mkdir -p dist/audit-logs
-          set +e
-          go test ./... >dist/audit-logs/freedos-command-go-1.22.log 2>&1
-          status=$?
-          cat dist/audit-logs/freedos-command-go-1.22.log
-          exit "${status}"
-      - name: Upload Go 1.22 diagnostics
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: freedos-command-go-1.22-${{ github.run_id }}
-          path: dist/audit-logs/freedos-command-go-1.22.log
-          if-no-files-found: error
