@@ -24,6 +24,7 @@ jobs:
           {
             set -x
             python3 .github/scripts/apply_nonbootable_gtk_contract.py
+            python3 .github/scripts/fix_nonbootable_gtk_fixture.py
             python3 -m py_compile gui/rufusarm64_nonbootable.py gui/rufusarm64_nonbootable_dialog.py
             PYTHONPATH=gui python3 -m unittest -v gui/test_nonbootable_format.py gui/test_nonbootable_dialog.py gui/test_packaged_launcher.py
           } > contract.log 2>&1
