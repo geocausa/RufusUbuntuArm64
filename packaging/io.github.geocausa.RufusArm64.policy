@@ -36,4 +36,14 @@
     </defaults>
     <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/rufusarm64/rufusarm64-device-backup</annotate>
   </action>
+  <action id="io.github.geocausa.RufusArm64.format-data">
+    <description>Format a removable drive as data-only media</description>
+    <message>Administrator authentication is required to erase and format the selected removable drive.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/rufusarm64/rufusarm64-nonbootable-format</annotate>
+  </action>
 </policyconfig>
