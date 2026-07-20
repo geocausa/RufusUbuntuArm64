@@ -14,6 +14,17 @@ License: GPL-3+
  On Debian systems, the complete text of the GNU General Public License
  version 3 is available in /usr/share/common-licenses/GPL-3.
 
+Files: internal/freedos/payload/* vendor/freedos/*
+Copyright: FreeDOS kernel and FreeCOM contributors
+License: GPL-2
+ The minimal FreeDOS kernel and command-shell binaries are retained with the
+ exact official package metadata, GNU GPL version 2 texts, and complete
+ corresponding source archives extracted from the same checksum-pinned FreeDOS
+ 1.4 distribution packages. They are not yet installed as a runtime feature.
+ .
+ On Debian systems, the complete text of the GNU General Public License
+ version 2 is available in /usr/share/common-licenses/GPL-2.
+
 Files: vendor/wimlib/*
 Copyright: wimlib contributors
 License: GPL-3+

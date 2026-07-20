@@ -78,25 +78,39 @@ The pinned FreeDOS kernel source establishes the `KERNEL.SYS` configuration layo
 - `sys/fdkrncfg.c` reads the configuration structure from file offset 2 and treats `FORCELBA` as present when the configuration area contains at least four fields;
 - `docs/sys.txt` defines `FORCELBA=1` as using extended INT 13 LBA addressing whenever possible.
 
-Those source-backed offsets place `ForceLBA` at file offset `0x0d`. `vendor/freedos-kernel/KERNEL-CONFIG.json` pins the exact source commit and Git blob IDs used for the conclusion. `internal/freedos/kernel.go` now parses the header, rejects truncated or malformed configuration areas, requires a binary setting, requires the reviewed Rufus value `0x01`, and independently requires the exact pinned Rufus `KERNEL.SYS` Git blob identity.
+Those source-backed offsets place `ForceLBA` at file offset `0x0d`. `vendor/freedos-kernel/KERNEL-CONFIG.json` pins the exact source commit and Git blob IDs used for the conclusion. `internal/freedos/kernel.go` parses the header, rejects truncated or malformed configuration areas, requires a binary setting, requires the reviewed Rufus value `0x01`, and independently requires the exact pinned Rufus `KERNEL.SYS` Git blob identity.
 
-This parser accepts ordinary bytes only. It does not embed, execute, modify, package, or copy a FreeDOS kernel and does not authorize a device operation.
+This parser accepts ordinary bytes only. It does not execute or modify a FreeDOS kernel and does not authorize a device operation.
+
+## Resolved payload provenance checkpoint
+
+The official checksum-pinned FullUSB archive is reproduced through its active FAT32 partition and nested BASE packages:
+
+- `COMMAND.COM` is extracted from `FREECOM.ZIP` and matches the pinned Rufus Git object;
+- `KERNL386.SYS` is extracted from `KERNEL.ZIP` with `FORCELBA` initially `0x00`;
+- `KERNEL.SYS` changes only offset `0x0d` to `0x01` and then matches Rufus exactly;
+- payload sizes, SHA-256 values, package hashes, Git blob IDs, source archives, LSM metadata, and GPLv2 texts are pinned;
+- the committed extractor supports network-free repository checking and deterministic regeneration from a locally supplied official archive;
+- Go validation rejects any altered payload byte, applies the source-backed kernel verifier, and returns only defensive copies.
+
+Detailed records are in `docs/freedos-payload-provenance.md` and `vendor/freedos/PAYLOADS.json`.
+
+These checkpoints validate ordinary-file transformations only. They do not authorize a device operation or establish that a physical PC will boot.
 
 ## Unresolved gates
 
 Implementation remains blocked until all of these are resolved:
 
-1. **Payload provenance.** Extract the minimal files directly from the official FreeDOS 1.4 archive, record individual SHA-256 values, preserve corresponding source and licence material, and prove reproducible extraction.
-2. **Filesystem geometry.** Define the exact FAT cluster sizing, partition limits, hidden-sector fields, CHS/LBA compatibility fields, and size boundaries.
-3. **Structural verification.** Extend the ordinary-file verifier to validate FAT allocation, root-directory entries, payload placement and bytes, and invoke the pinned kernel configuration verifier before any loop-device or physical-media test.
-4. **Licensing and maintenance.** Complete the payload notices and corresponding-source offer, extraction/update procedure, and package-size assessment.
-5. **Safety integration.** Reuse the identity, root-disk refusal, lock, cancellation, media-changed reporting, and final readback contracts already established for non-bootable formatting.
+1. **Filesystem geometry.** Define the exact FAT cluster sizing, partition limits, hidden-sector fields, CHS/LBA compatibility fields, and size boundaries.
+2. **Structural verification.** Extend the ordinary-file verifier to validate FAT allocation, root-directory entries, payload placement and bytes, kernel configuration, and all boot regions before any loop-device or physical-media test.
+3. **Release maintenance.** Measure the eventual installed package impact and define the payload update cadence before runtime installation.
+4. **Safety integration.** Reuse the identity, root-disk refusal, lock, cancellation, media-changed reporting, and final readback contracts already established for non-bootable formatting.
 
 ## Gate decision
 
 The feasibility gate is **provisionally positive** because no x86 payload execution is required on the ARM64 host and the required media operations can be expressed as deterministic byte and filesystem transformations.
 
-It is **not implementation-green** until reproducible payload extraction, complete ordinary-file media verification, licensing, and safety integration are complete. Until then there must be no GTK option, destructive command, runtime package dependency, or release commitment for FreeDOS.
+It is **not implementation-green** until complete ordinary-file FAT media verification, package planning, and safety integration are complete. Until then there must be no GTK option, destructive command, runtime package dependency, or release commitment for FreeDOS.
 
 ## Primary references
 

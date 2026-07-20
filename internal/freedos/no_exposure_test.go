@@ -29,6 +29,16 @@ func TestNoFreeDOSResearchApplicatorRemains(t *testing.T) {
 		filepath.Join(root, ".github", "scripts", "apply_freedos_bootcode_provenance.py"),
 		filepath.Join(root, ".github", "scripts", "finalize_freedos_bootcode_provenance.py"),
 		filepath.Join(root, "docs", "freedos-rufus-bootcode-map.txt"),
+		filepath.Join(root, ".github", "workflows", "map-freedos-payload.yml"),
+		filepath.Join(root, ".github", "workflows", "apply-freedos-payload.yml"),
+		filepath.Join(root, ".github", "workflows", "verify-freedos-payload.yml"),
+		filepath.Join(root, ".github", "workflows", "extract-freecom-license.yml"),
+		filepath.Join(root, ".github", "workflows", "finalize-freedos-payload.yml"),
+		filepath.Join(root, ".github", "workflows", "sync-freedos-payload-stage2.yml"),
+		filepath.Join(root, ".github", "scripts", "finalize_freedos_payload.py"),
+		filepath.Join(root, "docs", "freedos-payload-map.txt"),
+		filepath.Join(root, "docs", "freedos-finalizer-diagnostic.txt"),
+		filepath.Join(root, "docs", "freedos-sync-diagnostic.txt"),
 	} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("temporary FreeDOS research applicator remains at %s", path)
