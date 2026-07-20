@@ -47,9 +47,13 @@ func TestSfdiskReadbackValidation(t *testing.T) {
 		{name: "sector size", mutate: func(value *sfdiskDocument) { value.PartitionTable.SectorSize = 4096 }},
 		{name: "start", mutate: func(value *sfdiskDocument) { value.PartitionTable.Partitions[0].Start++ }},
 		{name: "size", mutate: func(value *sfdiskDocument) { value.PartitionTable.Partitions[0].Size-- }},
-		{name: "type", mutate: func(value *sfdiskDocument) { value.PartitionTable.Partitions[0].Type = "0FC63DAF-8483-4772-8E79-3D69D8477DE4" }},
+		{name: "type", mutate: func(value *sfdiskDocument) {
+			value.PartitionTable.Partitions[0].Type = "0FC63DAF-8483-4772-8E79-3D69D8477DE4"
+		}},
 		{name: "name", mutate: func(value *sfdiskDocument) { value.PartitionTable.Partitions[0].Name = "EFI SYSTEM" }},
-		{name: "second partition", mutate: func(value *sfdiskDocument) { value.PartitionTable.Partitions = append(value.PartitionTable.Partitions, value.PartitionTable.Partitions[0]) }},
+		{name: "second partition", mutate: func(value *sfdiskDocument) {
+			value.PartitionTable.Partitions = append(value.PartitionTable.Partitions, value.PartitionTable.Partitions[0])
+		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

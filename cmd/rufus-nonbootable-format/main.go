@@ -38,11 +38,11 @@ type arguments struct {
 }
 
 type plannedFormat struct {
-	Device       device.BlockDevice           `json:"device"`
-	Identity     string                       `json:"identity"`
-	Plan         nonbootable.Plan             `json:"plan"`
-	Table        nonbootable.PartitionTable   `json:"partition_table"`
-	Confirmation string                       `json:"confirmation"`
+	Device       device.BlockDevice         `json:"device"`
+	Identity     string                     `json:"identity"`
+	Plan         nonbootable.Plan           `json:"plan"`
+	Table        nonbootable.PartitionTable `json:"partition_table"`
+	Confirmation string                     `json:"confirmation"`
 }
 
 func main() {
