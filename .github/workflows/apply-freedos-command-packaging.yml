@@ -1,0 +1,305 @@
+name: Apply FreeDOS command packaging
+
+on:
+  push:
+    branches:
+      - feature/freedos-command
+    paths:
+      - .github/workflows/apply-freedos-command-packaging.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.head_commit.message == 'CI: apply FreeDOS command packaging integration'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/freedos-command
+          persist-credentials: true
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - name: Patch packaging and package tests
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one match, found {count}")
+              return text.replace(old, new, 1)
+
+          build_path = Path("scripts/build-deb.sh")
+          build = build_path.read_text(encoding="utf-8")
+          build = replace_once(
+              build,
+              '''CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \\
+            go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \\
+            -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-nonbootable-format" \\
+            "${ROOT_DIR}/cmd/rufus-nonbootable-format"
+          ''',
+              '''CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \\
+            go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \\
+            -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-nonbootable-format" \\
+            "${ROOT_DIR}/cmd/rufus-nonbootable-format"
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \\
+            go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \\
+            -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-freedos-format" \\
+            "${ROOT_DIR}/cmd/rufus-freedos-format"
+          ''',
+              "FreeDOS helper build",
+          )
+          build = replace_once(
+              build,
+              '''install -Dm644 "${ROOT_DIR}/scripts/extract-freedos-bootassets.py" \\
+            "${PACKAGE_DIR}/usr/share/doc/rufusarm64/ms-sys/extract-freedos-bootassets.py"
+          install -Dm755 "${ROOT_DIR}/packaging/rufusarm64" \\
+          ''',
+              '''install -Dm644 "${ROOT_DIR}/scripts/extract-freedos-bootassets.py" \\
+            "${PACKAGE_DIR}/usr/share/doc/rufusarm64/ms-sys/extract-freedos-bootassets.py"
+
+          # Ship the complete corresponding FreeDOS source, exact package metadata,
+          # and machine-readable release contract beside the installed formatter.
+          for file in freecom-sources.zip kernel-sources.zip; do
+            install -Dm644 "${ROOT_DIR}/vendor/freedos/source/${file}" \\
+              "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos/source/${file}"
+          done
+          for file in FREECOM.LSM KERNEL.LSM KERNEL-COPYING; do
+            install -Dm644 "${ROOT_DIR}/vendor/freedos/metadata/${file}" \\
+              "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos/metadata/${file}"
+          done
+          for file in PAYLOADS.json RELEASE-CONTRACT.json; do
+            install -Dm644 "${ROOT_DIR}/vendor/freedos/${file}" \\
+              "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos/${file}"
+          done
+          install -Dm755 "${ROOT_DIR}/packaging/rufusarm64" \\
+          ''',
+              "FreeDOS corresponding source installation",
+          )
+          build = replace_once(
+              build,
+              '''ln -s ../lib/rufusarm64/rufusarm64-nonbootable-format \\
+            "${PACKAGE_DIR}/usr/bin/rufusarm64-nonbootable-format"
+          install -Dm644 "${ROOT_DIR}/packaging/io.github.geocausa.RufusArm64.desktop" \\
+          ''',
+              '''ln -s ../lib/rufusarm64/rufusarm64-nonbootable-format \\
+            "${PACKAGE_DIR}/usr/bin/rufusarm64-nonbootable-format"
+          ln -s ../lib/rufusarm64/rufusarm64-freedos-format \\
+            "${PACKAGE_DIR}/usr/bin/rufusarm64-freedos-format"
+          install -Dm644 "${ROOT_DIR}/packaging/io.github.geocausa.RufusArm64.desktop" \\
+          ''',
+              "FreeDOS public symlink",
+          )
+          build = replace_once(
+              build,
+              '''install -Dm644 "${ROOT_DIR}/docs/freedos-feasibility.md" \\
+            "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-feasibility.md"
+          install -Dm644 "${ROOT_DIR}/NOTICE" \\
+          ''',
+              '''install -Dm644 "${ROOT_DIR}/docs/freedos-feasibility.md" \\
+            "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-feasibility.md"
+          install -Dm644 "${ROOT_DIR}/docs/freedos-release-maintenance.md" \\
+            "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-release-maintenance.md"
+          install -Dm644 "${ROOT_DIR}/docs/freedos-linux-backend.md" \\
+            "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-linux-backend.md"
+          install -Dm644 "${ROOT_DIR}/NOTICE" \\
+          ''',
+              "FreeDOS installed documentation",
+          )
+          build = replace_once(
+              build,
+              '''for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify rufusarm64-device-backup rufusarm64-nonbootable-format; do
+          ''',
+              '''for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify rufusarm64-device-backup rufusarm64-nonbootable-format rufusarm64-freedos-format; do
+          ''',
+              "FreeDOS manual page",
+          )
+          build = replace_once(
+              build,
+              ''' persistent Ubuntu/Debian live media, creates Windows installation USB media,
+           and captures verified images of removable drives. It supports GPT or MBR,
+          ''',
+              ''' persistent Ubuntu/Debian live media, creates Windows installation USB media,
+           creates verified x86 BIOS/Legacy FreeDOS 1.4 media, and captures verified
+           images of removable drives. It supports GPT or MBR,
+          ''',
+              "FreeDOS package description",
+          )
+          build_path.write_text(build, encoding="utf-8")
+
+          test_path = Path("scripts/test.sh")
+          test = test_path.read_text(encoding="utf-8")
+          test = replace_once(
+              test,
+              '''native_device_qualify="${native_dir}/rufusarm64-device-qualify"
+          go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_helper}" ./cmd/rufus-linux
+          ''',
+              '''native_device_qualify="${native_dir}/rufusarm64-device-qualify"
+          native_freedos_format="${native_dir}/rufusarm64-freedos-format"
+          go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_helper}" ./cmd/rufus-linux
+          ''',
+              "native FreeDOS variable",
+          )
+          test = replace_once(
+              test,
+              '''go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_device_qualify}" ./cmd/rufus-device-qualify
+          [[ "$("${native_helper}" version)" == "${VERSION}" ]]
+          [[ "$("${native_device_qualify}" version)" == "${VERSION}" ]]
+          ''',
+              '''go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_device_qualify}" ./cmd/rufus-device-qualify
+          go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_freedos_format}" ./cmd/rufus-freedos-format
+          [[ "$("${native_helper}" version)" == "${VERSION}" ]]
+          [[ "$("${native_device_qualify}" version)" == "${VERSION}" ]]
+          [[ "$("${native_freedos_format}" version)" == "${VERSION}" ]]
+          ''',
+              "native FreeDOS build",
+          )
+          test = replace_once(
+              test,
+              '''CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/device-qualify-amd64" ./cmd/rufus-device-qualify
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o "${native_dir}/channel-admin-arm64" ./cmd/rufus-channel-admin
+          ''',
+              '''CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/device-qualify-amd64" ./cmd/rufus-device-qualify
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/freedos-format-arm64" ./cmd/rufus-freedos-format
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${native_dir}/freedos-format-amd64" ./cmd/rufus-freedos-format
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o "${native_dir}/channel-admin-arm64" ./cmd/rufus-channel-admin
+          ''',
+              "cross FreeDOS build",
+          )
+          test = replace_once(
+              test,
+              '''readelf -h "${native_dir}/device-qualify-amd64" | grep -q 'Machine:.*Advanced Micro Devices X86-64'
+          readelf -h "${native_dir}/channel-admin-arm64" | grep -q 'Machine:.*AArch64'
+          ''',
+              '''readelf -h "${native_dir}/device-qualify-amd64" | grep -q 'Machine:.*Advanced Micro Devices X86-64'
+          readelf -h "${native_dir}/freedos-format-arm64" | grep -q 'Machine:.*AArch64'
+          readelf -h "${native_dir}/freedos-format-amd64" | grep -q 'Machine:.*Advanced Micro Devices X86-64'
+          readelf -h "${native_dir}/channel-admin-arm64" | grep -q 'Machine:.*AArch64'
+          ''',
+              "cross FreeDOS ELF checks",
+          )
+          test = replace_once(
+              test,
+              '''device_qualify="${extract_dir}/usr/lib/rufusarm64/rufusarm64-device-qualify"
+          installed_gui="${extract_dir}/usr/lib/rufusarm64/rufusarm64.py"
+          ''',
+              '''device_qualify="${extract_dir}/usr/lib/rufusarm64/rufusarm64-device-qualify"
+          freedos_format="${extract_dir}/usr/lib/rufusarm64/rufusarm64-freedos-format"
+          installed_gui="${extract_dir}/usr/lib/rufusarm64/rufusarm64.py"
+          ''',
+              "installed FreeDOS variable",
+          )
+          test = replace_once(
+              test,
+              '''[[ -x "${device_qualify}" ]]
+          [[ -f "${installed_gui}" ]]
+          ''',
+              '''[[ -x "${device_qualify}" ]]
+          [[ -x "${freedos_format}" ]]
+          [[ -f "${installed_gui}" ]]
+          ''',
+              "installed FreeDOS executable",
+          )
+          test = replace_once(
+              test,
+              '''[[ -L "${extract_dir}/usr/bin/rufusarm64-cli" ]]
+          [[ -x "${extract_dir}/usr/bin/rufusarm64-persistence" ]]
+          ''',
+              '''[[ -L "${extract_dir}/usr/bin/rufusarm64-cli" ]]
+          [[ -L "${extract_dir}/usr/bin/rufusarm64-freedos-format" ]]
+          [[ "$(readlink "${extract_dir}/usr/bin/rufusarm64-freedos-format")" == "../lib/rufusarm64/rufusarm64-freedos-format" ]]
+          [[ -x "${extract_dir}/usr/bin/rufusarm64-persistence" ]]
+          for file in freecom-sources.zip kernel-sources.zip; do
+            [[ -f "${extract_dir}/usr/share/doc/rufusarm64/freedos/source/${file}" ]]
+            cmp -s "vendor/freedos/source/${file}" "${extract_dir}/usr/share/doc/rufusarm64/freedos/source/${file}"
+          done
+          for file in FREECOM.LSM KERNEL.LSM KERNEL-COPYING; do
+            [[ -f "${extract_dir}/usr/share/doc/rufusarm64/freedos/metadata/${file}" ]]
+            cmp -s "vendor/freedos/metadata/${file}" "${extract_dir}/usr/share/doc/rufusarm64/freedos/metadata/${file}"
+          done
+          for file in PAYLOADS.json RELEASE-CONTRACT.json; do
+            [[ -f "${extract_dir}/usr/share/doc/rufusarm64/freedos/${file}" ]]
+            cmp -s "vendor/freedos/${file}" "${extract_dir}/usr/share/doc/rufusarm64/freedos/${file}"
+          done
+          ''',
+              "FreeDOS package contents",
+          )
+          test = replace_once(
+              test,
+              '''for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify; do
+          ''',
+              '''for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify rufusarm64-freedos-format; do
+          ''',
+              "FreeDOS package manual",
+          )
+          test = replace_once(
+              test,
+              '''file "${device_qualify}" | grep -q 'statically linked'
+          readelf -h "${helper}" | grep -q 'Machine:.*AArch64'
+          ''',
+              '''file "${device_qualify}" | grep -q 'statically linked'
+          file "${freedos_format}" | grep -q 'ARM aarch64'
+          file "${freedos_format}" | grep -q 'statically linked'
+          readelf -h "${helper}" | grep -q 'Machine:.*AArch64'
+          ''',
+              "FreeDOS package ELF type",
+          )
+          test = replace_once(
+              test,
+              '''readelf -h "${device_qualify}" | grep -q 'Machine:.*AArch64'
+          if readelf -l "${helper}" | grep -q 'Requesting program interpreter'; then echo 'main helper must be static' >&2; exit 1; fi
+          ''',
+              '''readelf -h "${device_qualify}" | grep -q 'Machine:.*AArch64'
+          readelf -h "${freedos_format}" | grep -q 'Machine:.*AArch64'
+          if readelf -l "${helper}" | grep -q 'Requesting program interpreter'; then echo 'main helper must be static' >&2; exit 1; fi
+          ''',
+              "FreeDOS package ELF architecture",
+          )
+          test = replace_once(
+              test,
+              '''if readelf -l "${device_qualify}" | grep -q 'Requesting program interpreter'; then echo 'device qualification utility must be static' >&2; exit 1; fi
+          grep -q '^Architecture: arm64$' "${extract_dir}/DEBIAN/control"
+          ''',
+              '''if readelf -l "${device_qualify}" | grep -q 'Requesting program interpreter'; then echo 'device qualification utility must be static' >&2; exit 1; fi
+          if readelf -l "${freedos_format}" | grep -q 'Requesting program interpreter'; then echo 'FreeDOS formatter must be static' >&2; exit 1; fi
+          grep -q '^Architecture: arm64$' "${extract_dir}/DEBIAN/control"
+          ''',
+              "FreeDOS package static check",
+          )
+          test = replace_once(
+              test,
+              '''grep -q '<allow_inactive>no</allow_inactive>' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"
+          if grep -q 'auth_admin_keep' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"; then echo 'Polkit authorization must not be retained' >&2; exit 1; fi
+          ''',
+              '''grep -q '<allow_inactive>no</allow_inactive>' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"
+          grep -q '<action id="io.github.geocausa.RufusArm64.format-freedos">' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"
+          grep -q '/usr/lib/rufusarm64/rufusarm64-freedos-format' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"
+          if grep -q 'auth_admin_keep' "${extract_dir}/usr/share/polkit-1/actions/io.github.geocausa.RufusArm64.policy"; then echo 'Polkit authorization must not be retained' >&2; exit 1; fi
+          ''',
+              "FreeDOS Polkit package boundary",
+          )
+          test_path.write_text(test, encoding="utf-8")
+          PY
+      - name: Verify generated integration
+        run: |
+          gofmt -w cmd/rufus-freedos-format internal/freedos
+          go test ./...
+          bash -n scripts/build-deb.sh
+          bash -n scripts/test.sh
+          grep -Fq 'rufusarm64-freedos-format' scripts/build-deb.sh
+          grep -Fq 'freecom-sources.zip' scripts/build-deb.sh
+          grep -Fq 'format-freedos' packaging/io.github.geocausa.RufusArm64.policy
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/apply-freedos-command-packaging.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'FreeDOS: package guarded formatter and complete source'
+          git push origin HEAD:feature/freedos-command
