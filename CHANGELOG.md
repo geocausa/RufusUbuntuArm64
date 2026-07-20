@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.1 — 2026-07-20
+
+- Fixed the packaged graphical launcher so GTK 3 is selected before any integrated dialog imports `Gtk`, preventing silent startup failure on systems that also provide GTK 4 introspection.
+- Added a regression that executes the exact isolated launcher payload and requires the GTK 3 version pin to occur before the integrated dialog import.
+- Kept the Stage 1 feature set unchanged; this is a focused field-reported startup patch over 0.12.0.
+
 ## 0.12.0 — 2026-07-19
 
 - Added an identity-bound, read-only drive-to-image command and graphical **Save drive image…** workflow with destination planning, exact confirmation, progress, cancellation, SHA-256 reporting, atomic no-replace publication, and desktop-user ownership handoff.
