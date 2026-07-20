@@ -13,6 +13,14 @@ and administrator authentication.
 The ordinary Create USB action preserves supported Linux raw/ISOHybrid images
 byte-for-byte. Persistent-live creation is a separate guarded workflow.
 .PP
+For a plain recognized Linux raw or ISO image, RufusArm64 also performs a
+bounded read-only compatibility inspection before erasure. It distinguishes a
+hybrid disk layout from an optical-only ISO, validates El Torito BIOS and UEFI
+catalogue entries, and reports ISOLINUX, SYSLINUX, or GRUB fingerprints found
+in the referenced boot images. Optical-only media is disclosed as potentially
+dependent on firmware USB-CD emulation. The inspection never executes or
+mounts image content and does not claim that a physical computer will boot it.
+.PP
 The separate
 .B Restore / format...
 action erases the selected removable drive, removes any existing boot layout,
