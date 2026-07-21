@@ -1,0 +1,71 @@
+name: Audit persistent finalization materializer
+
+on:
+  push:
+    branches:
+      - audit/persistent-finalization
+
+permissions:
+  contents: read
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - name: Apply reviewed persistent finalization edits
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('internal/linuxmedia/create.go')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  'func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts PersistentCreateOptions, emit PersistentEventFunc) (result PersistentCreateResult, returnErr error) {\n\tif opts.ExpectedSource == (sourcefile.Identity{}) {',
+                  'func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts PersistentCreateOptions, emit PersistentEventFunc) (result PersistentCreateResult, returnErr error) {\n\tcompleted := false\n\tdefer func() {\n\t\temitPersistentCompletion(completed, returnErr, emit)\n\t}()\n\tif opts.ExpectedSource == (sourcefile.Identity{}) {'
+              ),
+              (
+                  '\tdefer isoFile.Close()\n\tstableISOPath :=',
+                  '\tdefer func() {\n\t\treturnErr = finishPersistentFile(returnErr, isoFile, false, "selected Linux image")\n\t}()\n\tstableISOPath :='
+              ),
+              (
+                  '\tdefer target.Close()\n\tif err := safety.VerifyOpenDevice(target, opts.ExpectedDeviceID, opts.TargetSize); err != nil {',
+                  '\ttargetLocked := false\n\tdefer func() {\n\t\treturnErr = finishPersistentFile(returnErr, target, targetLocked, "persistent Linux target")\n\t}()\n\tif err := safety.VerifyOpenDevice(target, opts.ExpectedDeviceID, opts.TargetSize); err != nil {'
+              ),
+              (
+                  '\tdefer syscall.Flock(int(target.Fd()), syscall.LOCK_UN) // best effort\n\tstableTargetPath :=',
+                  '\ttargetLocked = true\n\tstableTargetPath :='
+              ),
+              (
+                  '\tdefer func() {\n\t\t_ = syscall.Flock(int(bootFile.Fd()), syscall.LOCK_UN)\n\t\tif err := bootFile.Close(); err != nil {\n\t\t\treturnErr = errors.Join(returnErr, fmt.Errorf("close writable boot partition: %w", err))\n\t\t}\n\t}()\n\tbootFDPath :=',
+                  '\tdefer func() {\n\t\treturnErr = finishPersistentFile(returnErr, bootFile, true, "writable boot partition")\n\t}()\n\tbootFDPath :='
+              ),
+              (
+                  '\tsendPersistent(emit, PersistentEvent{Stage: "complete", Message: "Experimental persistent Linux USB created and verified."})\n\treturn result, nil\n}',
+                  '\tcompleted = true\n\treturn result, nil\n}'
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one match, found {count}: {old[:100]!r}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+          gofmt -w internal/linuxmedia/create.go
+          go test ./internal/linuxmedia
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: persistent-finalization-create-go
+          path: internal/linuxmedia/create.go
+          if-no-files-found: error
