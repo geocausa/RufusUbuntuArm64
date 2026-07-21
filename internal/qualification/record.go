@@ -187,7 +187,11 @@ func ParseRecord(data []byte) (CreationRecord, string, error) {
 }
 
 func WriteRecord(root string, record CreationRecord) (StoredRecord, error) {
-	data, digest, err := MarshalRecord(record)
+	normalized, err := NormalizeRecord(record)
+	if err != nil {
+		return StoredRecord{}, err
+	}
+	data, digest, err := MarshalRecord(normalized)
 	if err != nil {
 		return StoredRecord{}, err
 	}
@@ -203,7 +207,7 @@ func WriteRecord(root string, record CreationRecord) (StoredRecord, error) {
 	if err := writeRecordPair(recordPath, data, digest); err != nil {
 		return StoredRecord{}, err
 	}
-	return StoredRecord{Record: record, SHA256: digest, Path: filepath.ToSlash(filepath.Join(metadataDirName, RecordFileName))}, nil
+	return StoredRecord{Record: normalized, SHA256: digest, Path: filepath.ToSlash(filepath.Join(metadataDirName, RecordFileName))}, nil
 }
 
 func LoadVerifiedRecord(path string) (StoredRecord, error) {
