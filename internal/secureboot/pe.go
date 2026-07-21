@@ -13,7 +13,6 @@ import (
 	"io"
 	"os"
 	"sort"
-	"strings"
 )
 
 const (
