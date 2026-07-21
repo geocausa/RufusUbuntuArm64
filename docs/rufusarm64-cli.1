@@ -25,6 +25,10 @@ rufusarm64-cli \- inspect images and safely create bootable USB media on Linux
 .RI "verify|list|download|channel list|channel download"
 .RI [ options ]
 .PP
+.B rufusarm64-cli dbx
+.RI "inspect|update|check|scan"
+.RI [ options ]
+.PP
 .B rufusarm64-cli uefi
 .RI "validate|integrity manifest|integrity verify"
 .RI [ options ]
@@ -152,6 +156,32 @@ Resumable mode retains only an owner-private partial bound to the signed image
 identity and rehashes it before reuse. Cancellation or failure never installs
 an unverified image. The production built-in channel remains disabled until
 reviewed public mirrors and offline trust metadata are provisioned.
+.SH SECURE BOOT DBX
+.B dbx inspect
+parses one bounded, stable, non-empty regular file or the exact running firmware
+DBX variable. It reports direct SHA-256 and exact X.509 certificate revocations
+without modifying firmware.
+.PP
+.B dbx update
+supports x86, amd64, ARM, and ARM64. It downloads from one reviewed immutable
+commit in Microsoft's public secureboot_objects repository and verifies the
+exact Git blob object identity before parsing, creating a cache directory, or
+replacing a cached file. IA-64 online update is refused because the reviewed
+commit contains no corresponding object. JSON output includes the reviewed
+repository commit, verified Git blob SHA-1, file SHA-256, and parsed summary.
+.PP
+Git SHA-1 is used only as the official repository object identifier for the
+reviewed immutable file. It is not a general acquisition checksum or an
+independent signature. The `authenticated_update_format` result means the file
+has the expected UEFI authenticated-variable update structure; it does not
+claim independent PKCS#7 signer-chain verification. Pin changes follow the
+review ceremony in `docs/dbx-pin-refresh.md`.
+.PP
+.B dbx check
+and
+.B dbx scan
+compare EFI Authenticode image hashes and embedded certificate bytes with a
+selected DBX. They do not install the DBX or alter firmware state.
 .SH UEFI MEDIA VALIDATION
 .B uefi validate
 performs a bounded descriptor-rooted read-only scan of mounted or extracted

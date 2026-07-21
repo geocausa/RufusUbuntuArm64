@@ -1,7 +1,6 @@
 package secureboot
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -9,9 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -277,128 +274,6 @@ func ArchitectureName(value string) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported DBX architecture %q", value)
 	}
-}
-
-func MicrosoftDBXURL(arch string) (string, error) {
-	normalized, err := ArchitectureName(arch)
-	if err != nil {
-		return "", err
-	}
-	return "https://raw.githubusercontent.com/microsoft/secureboot_objects/main/PostSignedObjects/DBX/" + normalized + "/DBXUpdate.bin", nil
-}
-
-type DownloadResult struct {
-	Path    string  `json:"path"`
-	URL     string  `json:"url"`
-	SHA256  string  `json:"sha256"`
-	Summary Summary `json:"summary"`
-}
-
-func validateDBXRedirect(req *http.Request, via []*http.Request) error {
-	if req == nil || req.URL == nil {
-		return errors.New("invalid DBX download redirect")
-	}
-	if len(via) >= 5 {
-		return errors.New("too many DBX download redirects")
-	}
-	if !strings.EqualFold(req.URL.Scheme, "https") {
-		return fmt.Errorf("refusing DBX redirect to non-HTTPS URL %q", req.URL.String())
-	}
-	if req.URL.User != nil {
-		return errors.New("refusing DBX redirect with URL credentials")
-	}
-	host := strings.ToLower(req.URL.Hostname())
-	if host != "raw.githubusercontent.com" && host != "github.com" && host != "objects.githubusercontent.com" {
-		return fmt.Errorf("refusing DBX redirect to untrusted host %q", host)
-	}
-	return nil
-}
-
-func DownloadMicrosoftDBX(ctx context.Context, arch, destination string) (DownloadResult, error) {
-	if ctx == nil {
-		return DownloadResult{}, errors.New("DBX download context is required")
-	}
-	url, err := MicrosoftDBXURL(arch)
-	if err != nil {
-		return DownloadResult{}, err
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return DownloadResult{}, err
-	}
-	request.Header.Set("User-Agent", "RufusArm64-secureboot/1")
-	client := &http.Client{
-		Timeout:       60 * time.Second,
-		CheckRedirect: validateDBXRedirect,
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		return DownloadResult{}, fmt.Errorf("download Microsoft DBX: %w", err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return DownloadResult{}, fmt.Errorf("download Microsoft DBX: HTTP %s", response.Status)
-	}
-	if response.ContentLength > maxDBXDownload {
-		return DownloadResult{}, errors.New("downloaded DBX response is unexpectedly large")
-	}
-	limited := io.LimitReader(response.Body, maxDBXDownload+1)
-	data, err := io.ReadAll(limited)
-	if err != nil {
-		return DownloadResult{}, fmt.Errorf("read Microsoft DBX response: %w", err)
-	}
-	if int64(len(data)) > maxDBXDownload {
-		return DownloadResult{}, errors.New("downloaded DBX response is unexpectedly large")
-	}
-	db, err := Parse(data, url)
-	if err != nil {
-		return DownloadResult{}, fmt.Errorf("validate downloaded Microsoft DBX: %w", err)
-	}
-	if !db.Authenticated {
-		return DownloadResult{}, errors.New("downloaded DBX does not use the authenticated UEFI variable-update format")
-	}
-	if destination == "" {
-		cacheRoot, err := os.UserCacheDir()
-		if err != nil {
-			return DownloadResult{}, fmt.Errorf("locate user cache: %w", err)
-		}
-		normalized, _ := ArchitectureName(arch)
-		destination = filepath.Join(cacheRoot, "rufusarm64", "dbx", normalized+"-DBXUpdate.bin")
-	}
-	destination, err = filepath.Abs(destination)
-	if err != nil {
-		return DownloadResult{}, fmt.Errorf("resolve DBX destination: %w", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
-		return DownloadResult{}, fmt.Errorf("create DBX cache directory: %w", err)
-	}
-	temp, err := os.CreateTemp(filepath.Dir(destination), ".dbx-download-")
-	if err != nil {
-		return DownloadResult{}, fmt.Errorf("create DBX temporary file: %w", err)
-	}
-	tempName := temp.Name()
-	cleanup := func() { temp.Close(); os.Remove(tempName) }
-	if err := temp.Chmod(0o600); err != nil {
-		cleanup()
-		return DownloadResult{}, err
-	}
-	if _, err := temp.Write(data); err != nil {
-		cleanup()
-		return DownloadResult{}, fmt.Errorf("write DBX temporary file: %w", err)
-	}
-	if err := temp.Sync(); err != nil {
-		cleanup()
-		return DownloadResult{}, fmt.Errorf("sync DBX temporary file: %w", err)
-	}
-	if err := temp.Close(); err != nil {
-		os.Remove(tempName)
-		return DownloadResult{}, fmt.Errorf("close DBX temporary file: %w", err)
-	}
-	if err := os.Rename(tempName, destination); err != nil {
-		os.Remove(tempName)
-		return DownloadResult{}, fmt.Errorf("install DBX cache: %w", err)
-	}
-	return DownloadResult{Path: destination, URL: url, SHA256: db.FileSHA256, Summary: db.Summary()}, nil
 }
 
 func MarshalSummary(db *Database) ([]byte, error) {
