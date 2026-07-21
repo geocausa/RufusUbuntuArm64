@@ -112,7 +112,9 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 	if err != nil {
 		return err
 	}
-	defer isoFile.Close()
+	defer func() {
+		returnErr = finishWindowsMediaFile(returnErr, isoFile, false, "selected Windows ISO")
+	}()
 	stableISOPath := fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), isoFile.Fd())
 
 	hashPinnedISO := func(stage, message string) ([sha256.Size]byte, error) {
@@ -152,14 +154,17 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 	if err != nil {
 		return fmt.Errorf("open target for locking: %w", err)
 	}
-	defer lock.Close()
+	lockHeld := false
+	defer func() {
+		returnErr = finishWindowsMediaFile(returnErr, lock, lockHeld, "Windows media target")
+	}()
 	if err := safety.VerifyOpenDevice(lock, opts.ExpectedDeviceID, opts.TargetSize); err != nil {
 		return err
 	}
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		return fmt.Errorf("another writer appears to be using %s: %w", devicePath, err)
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) // best effort
+	lockHeld = true
 
 	workDir, err := createWorkDir()
 	if err != nil {
