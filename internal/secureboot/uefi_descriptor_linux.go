@@ -19,10 +19,10 @@ import (
 )
 
 const (
-	uefiDirectoryReadBatch    = 256
-	defaultUEFIMaxEntries     = 32 * 1024
-	defaultUEFIMaxDepth       = 64
-	defaultUEFIMaxTotalBytes  = int64(512 * 1024 * 1024)
+	uefiDirectoryReadBatch   = 256
+	defaultUEFIMaxEntries    = 32 * 1024
+	defaultUEFIMaxDepth      = 64
+	defaultUEFIMaxTotalBytes = int64(512 * 1024 * 1024)
 )
 
 type uefiTraversalHook func(stage, relative string)
