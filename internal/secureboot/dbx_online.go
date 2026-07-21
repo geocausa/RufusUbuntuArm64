@@ -43,7 +43,7 @@ func MicrosoftDBXPinForArchitecture(arch string) (MicrosoftDBXPin, error) {
 	}
 	blob, ok := microsoftDBXBlobSHA1[normalized]
 	if !ok {
-		return MicrosoftDBXPin{}, fmt.Errorf("Microsoft publishes no reviewed pinned DBX object for architecture %q", normalized)
+		return MicrosoftDBXPin{}, fmt.Errorf("microsoft publishes no reviewed pinned DBX object for architecture %q", normalized)
 	}
 	pin := MicrosoftDBXPin{
 		Architecture:     normalized,
@@ -72,7 +72,7 @@ func validateMicrosoftDBXPin(pin MicrosoftDBXPin) error {
 		return err
 	}
 	if architecture != pin.Architecture {
-		return errors.New("Microsoft DBX pin architecture must use its canonical name")
+		return errors.New("microsoft DBX pin architecture must use its canonical name")
 	}
 	commit, err := decodeGitObjectID(pin.RepositoryCommit, "repository commit")
 	if err != nil {
@@ -83,12 +83,12 @@ func validateMicrosoftDBXPin(pin MicrosoftDBXPin) error {
 		return err
 	}
 	if len(commit) != sha1.Size || len(blob) != sha1.Size {
-		return errors.New("Microsoft DBX pin object IDs must be complete SHA-1 values")
+		return errors.New("microsoft DBX pin object IDs must be complete SHA-1 values")
 	}
 	expectedURL := "https://raw.githubusercontent.com/microsoft/secureboot_objects/" + strings.ToLower(pin.RepositoryCommit) +
 		"/PostSignedObjects/DBX/" + architecture + "/DBXUpdate.bin"
 	if pin.URL != expectedURL {
-		return errors.New("Microsoft DBX pin URL does not match its immutable commit and architecture")
+		return errors.New("microsoft DBX pin URL does not match its immutable commit and architecture")
 	}
 	return nil
 }
