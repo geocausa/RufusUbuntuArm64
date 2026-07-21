@@ -1,4 +1,5 @@
 import ast
+import os
 import pathlib
 import struct
 import tempfile
@@ -25,8 +26,11 @@ class LinuxCompatibilityTests(unittest.TestCase):
             "_platform_name",
             "_catalogue_boot_entries",
             "_bootloader_fingerprints",
+            "_snapshot_from_metadata",
+            "_source_snapshot",
             "linux_compatibility_profile",
             "enrich_linux_inspection",
+            "install_linux_compatibility",
         }
         body = []
         for node in tree.body:
@@ -42,6 +46,8 @@ class LinuxCompatibilityTests(unittest.TestCase):
         exec(compile(ast.Module(body=body, type_ignores=[]), str(source_path), "exec"), namespace)
         cls.profile = staticmethod(namespace["linux_compatibility_profile"])
         cls.enrich = staticmethod(namespace["enrich_linux_inspection"])
+        cls.snapshot = staticmethod(namespace["_source_snapshot"])
+        cls.install = staticmethod(namespace["install_linux_compatibility"])
 
     @staticmethod
     def _catalogue_validation(platform=0):
@@ -155,12 +161,85 @@ class LinuxCompatibilityTests(unittest.TestCase):
             path = pathlib.Path(directory) / "dual.iso"
             self._write_iso(path)
             original = self._inspection()
-            enriched = self.enrich(path, original)
-            repeated = self.enrich(path, enriched)
+            snapshot = self.snapshot(path)
+            enriched = self.enrich(path, original, snapshot)
+            repeated = self.enrich(path, enriched, snapshot)
         self.assertIsNot(enriched, original)
         self.assertIs(repeated, enriched)
         self.assertIn(original["description"], enriched["description"])
         self.assertIn("compatibility_profile", enriched)
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are unavailable")
+    def test_retargeted_symlink_cannot_reuse_an_inspection_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            first = root / "first.iso"
+            second = root / "second.iso"
+            selected = root / "selected.iso"
+            self._write_iso(first)
+            self._write_iso(second, hybrid=False)
+            selected.symlink_to(first)
+            snapshot = self.snapshot(selected)
+            selected.unlink()
+            selected.symlink_to(second)
+            self.assertEqual(self.profile(selected, self._inspection(), snapshot), {})
+
+    def test_in_place_mutation_cannot_reuse_an_inspection_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "dual.iso"
+            self._write_iso(path)
+            snapshot = self.snapshot(path)
+            with path.open("r+b") as handle:
+                handle.seek(0)
+                handle.write(b"changed!")
+                handle.flush()
+                os.fsync(handle.fileno())
+            self.assertEqual(self.profile(path, self._inspection(), snapshot), {})
+
+    def test_window_discards_helper_result_when_source_changes_during_inspection(self):
+        class Chooser:
+            def __init__(self, path):
+                self.path = str(path)
+
+            def get_filename(self):
+                return self.path
+
+        class Window:
+            def __init__(self, path):
+                self.image_chooser = Chooser(path)
+                self.closed = False
+                self.inspection_generation = 1
+                self.inspection = {}
+                self.busy = False
+                self.logs = []
+
+            def _run_image_inspection(self, _path, _generation):
+                return None
+
+            def _finish_image_inspection(self, _path, _generation, inspection):
+                self.inspection = inspection
+                return False
+
+            def update_layout(self, _inspection):
+                return None
+
+            def set_busy(self, _busy):
+                return None
+
+            def append_log(self, text):
+                self.logs.append(text)
+
+        self.install(Window)
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "dual.iso"
+            self._write_iso(path)
+            window = Window(path)
+            window._run_image_inspection(str(path), 1)
+            path.write_bytes(b"replacement")
+            window._finish_image_inspection(str(path), 1, self._inspection())
+        self.assertFalse(window.inspection["recognized"])
+        self.assertIn("changed while", window.inspection["description"])
+        self.assertTrue(any("discarded" in line for line in window.logs))
 
     def test_source_boundary_is_read_only_bounded_and_installed(self):
         self.assertIn("MAX_BOOT_CATALOGUE_BYTES = 2048", self.source)
@@ -168,8 +247,9 @@ class LinuxCompatibilityTests(unittest.TestCase):
         self.assertIn('getattr(os, "O_NOFOLLOW", 0)', self.source)
         self.assertIn('getattr(os, "O_NONBLOCK", 0)', self.source)
         self.assertIn("stat.S_ISREG", self.source)
+        self.assertIn("_snapshot_from_metadata(resolved, os.fstat(descriptor))", self.source)
+        self.assertIn("window_class._run_image_inspection = integrated_run_image_inspection", self.source)
         self.assertIn("install_linux_compatibility(RufusWindow)", self.source)
-        self.assertIn("original_finish_image_inspection", self.source)
         self.assertNotIn("subprocess", self.source)
         self.assertNotIn("mount", self.source.lower())
         self.assertNotIn("pkexec", self.source.lower())
