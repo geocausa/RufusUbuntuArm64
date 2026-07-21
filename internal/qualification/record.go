@@ -312,7 +312,10 @@ func writeAtomicNoFollow(path string, data []byte, mode os.FileMode) (returnErr 
 		}
 		return err
 	}
-	if err := os.Rename(name, path); err != nil {
+	if err := renameMetadataNoReplace(name, path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return errors.New("metadata destination appeared during write")
+		}
 		return err
 	}
 	directory, err := os.Open(parent)
