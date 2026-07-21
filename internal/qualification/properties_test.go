@@ -26,7 +26,7 @@ func TestNormalizeRecordRejectsPropertyKeyCollisions(t *testing.T) {
 func TestMarshalRecordKeepsNonCollidingPropertiesCanonical(t *testing.T) {
 	record := validRecord()
 	record.Properties = map[string]string{
-		" channel ":   " stable ",
+		" channel ":    " stable ",
 		"architecture": " arm64 ",
 	}
 	first, firstDigest, err := MarshalRecord(record)
