@@ -4,6 +4,7 @@ package linuxmedia
 
 import "errors"
 
+// alignLayoutChecked rounds byte geometry upward without allowing uint64 wrap.
 func alignLayoutChecked(value, alignment uint64) (uint64, error) {
 	if alignment == 0 {
 		return 0, errors.New("layout alignment is zero")
