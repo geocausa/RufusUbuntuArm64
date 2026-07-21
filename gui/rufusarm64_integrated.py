@@ -22,6 +22,10 @@ MAX_BOOT_IMAGE_PROBE_BYTES = 64 * 1024
 MAX_BOOT_ENTRIES = 32
 MAX_WINDOWS_EDITIONS = 256
 MAX_WINDOWS_EDITION_NAME = 256
+ACQUISITION_DOWNLOAD_BUILDERS = (
+    "build_acquisition_channel_download_command",
+    "build_acquisition_download_command",
+)
 
 
 def _selected_target(window):
@@ -140,8 +144,45 @@ def _bootloader_fingerprints(handle, entries, file_size):
     return sorted(found)
 
 
-def linux_compatibility_profile(path, inspection):
-    """Return a bounded read-only compatibility explanation for one plain raw image."""
+def _snapshot_from_metadata(resolved, metadata):
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_size <= 0:
+        return ()
+    return (
+        str(resolved),
+        int(metadata.st_dev),
+        int(metadata.st_ino),
+        int(metadata.st_size),
+        int(metadata.st_mtime_ns),
+        int(metadata.st_ctime_ns),
+    )
+
+
+def _source_snapshot(path):
+    """Resolve and hold one non-empty regular-file identity without following the resolved final component."""
+    try:
+        resolved = os.path.realpath(os.path.abspath(os.fspath(path)))
+    except (OSError, TypeError, ValueError):
+        return ()
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
+    try:
+        descriptor = os.open(resolved, flags)
+    except OSError:
+        return ()
+    try:
+        return _snapshot_from_metadata(resolved, os.fstat(descriptor))
+    except OSError:
+        return ()
+    finally:
+        os.close(descriptor)
+
+
+def linux_compatibility_profile(path, inspection, expected_snapshot=None):
+    """Return bounded compatibility facts only for the stable source snapshot inspected by the helper."""
     if not isinstance(inspection, dict):
         return {}
     if not inspection.get("recognized") or inspection.get("mode") != "raw":
@@ -152,7 +193,10 @@ def linux_compatibility_profile(path, inspection):
     if container not in {"", "plain"}:
         return {}
 
-    resolved = os.path.realpath(str(path or ""))
+    expected = tuple(expected_snapshot or _source_snapshot(path))
+    if len(expected) != 6 or _source_snapshot(path) != expected:
+        return {}
+    resolved = expected[0]
     flags = (
         os.O_RDONLY
         | getattr(os, "O_CLOEXEC", 0)
@@ -165,13 +209,15 @@ def linux_compatibility_profile(path, inspection):
         return {}
     try:
         metadata = os.fstat(descriptor)
-        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size <= 0:
+        if _snapshot_from_metadata(resolved, metadata) != expected:
             return {}
         with os.fdopen(descriptor, "rb", closefd=False) as handle:
             disk_layout = _has_disk_layout(handle)
             has_iso, catalogue_lba = _iso_boot_catalogue(handle)
             entries = _catalogue_boot_entries(handle, catalogue_lba) if has_iso else []
             bootloaders = _bootloader_fingerprints(handle, entries, metadata.st_size)
+        if _snapshot_from_metadata(resolved, os.fstat(descriptor)) != expected:
+            return {}
     except (OSError, struct.error):
         return {}
     finally:
@@ -216,11 +262,11 @@ def linux_compatibility_profile(path, inspection):
     }
 
 
-def enrich_linux_inspection(path, inspection):
+def enrich_linux_inspection(path, inspection, expected_snapshot=None):
     """Attach an idempotent Linux compatibility profile to a helper result."""
     if not isinstance(inspection, dict) or inspection.get("compatibility_profile"):
         return inspection
-    profile = linux_compatibility_profile(path, inspection)
+    profile = linux_compatibility_profile(path, inspection, expected_snapshot)
     if not profile:
         return inspection
     enriched = dict(inspection)
@@ -231,17 +277,40 @@ def enrich_linux_inspection(path, inspection):
 
 
 def install_linux_compatibility(window_class):
-    """Install bounded image-specific Linux compatibility reporting."""
+    """Bind native inspection and bounded compatibility reporting to one stable source snapshot."""
     if getattr(window_class, "_linux_compatibility_installed", False):
         return
+    original_run_image_inspection = window_class._run_image_inspection
     original_finish_image_inspection = window_class._finish_image_inspection
 
+    def integrated_run_image_inspection(window, path, generation):
+        snapshots = getattr(window, "_linux_inspection_snapshots", None)
+        if not isinstance(snapshots, dict):
+            snapshots = {}
+            window._linux_inspection_snapshots = snapshots
+        snapshots[generation] = _source_snapshot(path)
+        return original_run_image_inspection(window, path, generation)
+
     def integrated_finish_image_inspection(window, path, generation, inspection):
-        result = original_finish_image_inspection(window, path, generation, inspection)
+        snapshots = getattr(window, "_linux_inspection_snapshots", {})
+        expected = snapshots.pop(generation, ()) if isinstance(snapshots, dict) else ()
         current_path = window.image_chooser.get_filename() or ""
         if window.closed or generation != window.inspection_generation or current_path != path:
+            return original_finish_image_inspection(window, path, generation, inspection)
+        if not expected or _source_snapshot(path) != expected:
+            result = original_finish_image_inspection(
+                window,
+                path,
+                generation,
+                {
+                    "recognized": False,
+                    "description": "The selected image changed while it was being inspected. Choose the image again.",
+                },
+            )
+            window.append_log("Image inspection was discarded because the selected source snapshot changed.")
             return result
-        enriched = enrich_linux_inspection(path, window.inspection)
+        result = original_finish_image_inspection(window, path, generation, inspection)
+        enriched = enrich_linux_inspection(path, window.inspection, expected)
         if enriched is not window.inspection:
             window.inspection = enriched
             window.update_layout(enriched)
@@ -250,6 +319,7 @@ def install_linux_compatibility(window_class):
             window.append_log("Linux image compatibility:\n" + str(profile.get("summary") or ""))
         return result
 
+    window_class._run_image_inspection = integrated_run_image_inspection
     window_class._finish_image_inspection = integrated_finish_image_inspection
     window_class._linux_compatibility_installed = True
 
@@ -265,8 +335,24 @@ def _resumable_download_builder(builder):
     return wrapped
 
 
+def _install_resumable_download_builders(method_globals):
+    """Install every required resumable adapter and report missing command boundaries."""
+    missing = []
+    for name in ACQUISITION_DOWNLOAD_BUILDERS:
+        builder = method_globals.get(name)
+        if not callable(builder):
+            missing.append(name)
+            continue
+        if getattr(builder, "_rufusarm64_resumable", False):
+            continue
+        wrapped = _resumable_download_builder(builder)
+        wrapped._rufusarm64_resumable = True
+        method_globals[name] = wrapped
+    return tuple(missing)
+
+
 def install_verified_acquisition(window_class):
-    """Expose the existing signed, cancellable, storage-preflighted acquisition workflow."""
+    """Expose acquisition only when both signed download commands retain resumable semantics."""
     if getattr(window_class, "_verified_acquisition_installed", False):
         return
 
@@ -274,29 +360,30 @@ def install_verified_acquisition(window_class):
     original_set_busy = window_class.set_busy
     original_finish_download = window_class.finish_download
     method_globals = window_class.open_acquisition.__globals__
-    for name in (
-        "build_acquisition_channel_download_command",
-        "build_acquisition_download_command",
-    ):
-        builder = method_globals.get(name)
-        if builder is not None and not getattr(builder, "_rufusarm64_resumable", False):
-            wrapped = _resumable_download_builder(builder)
-            wrapped._rufusarm64_resumable = True
-            method_globals[name] = wrapped
+    missing_builders = _install_resumable_download_builders(method_globals)
+    acquisition_available = not missing_builders
 
     def integrated_init(window, app):
         original_init(window, app)
-        window.download_button.set_label("Download…")
-        window.download_button.set_tooltip_text(
-            "Choose an image from a verified signed catalog; downloads can be cancelled and safely resumed"
-        )
-        window.download_button.connect("clicked", window.open_acquisition)
-        window.download_button.set_sensitive(True)
+        if acquisition_available:
+            window.download_button.set_label("Download…")
+            window.download_button.set_tooltip_text(
+                "Choose an image from a verified signed catalog; downloads can be cancelled and safely resumed"
+            )
+            window.download_button.connect("clicked", window.open_acquisition)
+            window.download_button.set_sensitive(True)
+        else:
+            window.download_button.set_label("Download unavailable")
+            window.download_button.set_tooltip_text(
+                "Verified acquisition is disabled because the installed package is missing a required resumable command boundary."
+            )
+            window.download_button.set_sensitive(False)
+            window.append_log("Verified acquisition was disabled: missing " + ", ".join(missing_builders) + ".")
 
     def integrated_set_busy(window, busy):
         original_set_busy(window, busy)
         background_idle = not window.inspection_running and not window.device_refreshing
-        window.download_button.set_sensitive(not busy and background_idle)
+        window.download_button.set_sensitive(acquisition_available and not busy and background_idle)
 
     def integrated_finish_download(window, return_code, payload):
         was_cancelled = bool(window.cancel_requested)
@@ -314,9 +401,7 @@ def install_verified_acquisition(window_class):
                 "No unverified image was installed. The private signed-catalog partial was retained for automatic resume."
             )
         elif return_code != 0:
-            window.progress_detail.set_text(
-                "No unverified image was installed. A compatible private partial may be retained for a later verified resume."
-            )
+            window.append_log("A compatible private partial may be retained for a later verified resume.")
         return result
 
     window_class.__init__ = integrated_init
