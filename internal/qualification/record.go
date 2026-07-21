@@ -119,18 +119,11 @@ func NormalizeRecord(record CreationRecord) (CreationRecord, error) {
 			record.PatchedPaths = append(record.PatchedPaths, value)
 		}
 	}
-	if record.Properties != nil {
-		clean := make(map[string]string, len(record.Properties))
-		for key, value := range record.Properties {
-			key = strings.TrimSpace(key)
-			value = strings.TrimSpace(value)
-			if key == "" || len(key) > 64 || len(value) > 256 {
-				return record, errors.New("creation record property is invalid")
-			}
-			clean[key] = value
-		}
-		record.Properties = clean
+	properties, err := normalizeRecordProperties(record.Properties)
+	if err != nil {
+		return record, err
 	}
+	record.Properties = properties
 	return record, nil
 }
 
