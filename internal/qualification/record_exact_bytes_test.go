@@ -10,6 +10,7 @@ import (
 	"testing"
 )
 
+// The checksum contract is meaningful only when the parser accepts the exact canonical bytes.
 func TestParseRecordRequiresExactCanonicalBytes(t *testing.T) {
 	canonical, _, err := MarshalRecord(validRecord())
 	if err != nil {
