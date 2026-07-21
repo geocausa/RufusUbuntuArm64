@@ -13,14 +13,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"time"
 )
 
 const (
-	maxDBXDownload       = int64(64 * 1024 * 1024)
-	maxSignatureListSize = uint32(64 * 1024 * 1024)
+	maxDBXDownload          = int64(64 * 1024 * 1024)
+	maxSignatureListSize    = uint32(64 * 1024 * 1024)
+	firmwareDBXVariablePath = "/sys/firmware/efi/efivars/dbx-d719b2cb-3d3a-4596-a3bc-dad00e67656f"
 )
 
 var (
@@ -143,9 +143,9 @@ func Parse(data []byte, source string) (*Database, error) {
 }
 
 func ParseFile(path string) (*Database, error) {
-	data, err := os.ReadFile(path)
+	data, err := readStableDBXFile(path, maxDBXDownload)
 	if err != nil {
-		return nil, fmt.Errorf("read DBX file: %w", err)
+		return nil, err
 	}
 	return Parse(data, path)
 }
@@ -207,20 +207,24 @@ func parseSignatureLists(payload []byte, db *Database) error {
 }
 
 func parseEFITime(data []byte) (time.Time, bool) {
-	if len(data) < 16 {
+	if len(data) < 16 || data[7] != 0 || data[15] != 0 {
 		return time.Time{}, false
 	}
 	year := int(binary.LittleEndian.Uint16(data[0:2]))
 	month, day := time.Month(data[2]), int(data[3])
 	hour, minute, second := int(data[4]), int(data[5]), int(data[6])
-	if year < 1998 || year > 9999 || month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 60 {
+	if year < 1998 || year > 9999 || month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59 {
 		return time.Time{}, false
 	}
 	nanosecond := int(binary.LittleEndian.Uint32(data[8:12]))
-	if nanosecond < 0 || nanosecond >= 1_000_000_000 {
+	if nanosecond >= 1_000_000_000 {
 		return time.Time{}, false
 	}
-	return time.Date(year, month, day, hour, minute, second, nanosecond, time.UTC), true
+	result := time.Date(year, month, day, hour, minute, second, nanosecond, time.UTC)
+	if result.Year() != year || result.Month() != month || result.Day() != day || result.Hour() != hour || result.Minute() != minute || result.Second() != second || result.Nanosecond() != nanosecond {
+		return time.Time{}, false
+	}
+	return result, true
 }
 
 func allZero(data []byte) bool {
@@ -233,22 +237,25 @@ func allZero(data []byte) bool {
 }
 
 func FirmwareDBX() (*Database, error) {
-	paths, err := filepath.Glob("/sys/firmware/efi/efivars/dbx-*")
+	db, err := firmwareDBXFromPath(firmwareDBXVariablePath)
 	if err != nil {
-		return nil, fmt.Errorf("locate firmware DBX variable: %w", err)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, errors.New("firmware DBX variable is unavailable; the system may not be booted in UEFI mode or efivarfs may not be mounted")
+		}
+		return nil, err
 	}
-	if len(paths) == 0 {
-		return nil, errors.New("firmware DBX variable is unavailable; the system may not be booted in UEFI mode or efivarfs may not be mounted")
-	}
-	sort.Strings(paths)
-	data, err := os.ReadFile(paths[0])
+	return db, nil
+}
+
+func firmwareDBXFromPath(path string) (*Database, error) {
+	data, err := readStableDBXFile(path, maxDBXDownload+4)
 	if err != nil {
 		return nil, fmt.Errorf("read firmware DBX variable: %w", err)
 	}
 	if len(data) <= 4 {
 		return nil, errors.New("firmware DBX variable is empty")
 	}
-	return Parse(data[4:], paths[0]) // efivarfs prepends uint32 attributes.
+	return Parse(data[4:], path) // efivarfs prepends uint32 attributes.
 }
 
 func ArchitectureName(value string) (string, error) {
@@ -287,7 +294,30 @@ type DownloadResult struct {
 	Summary Summary `json:"summary"`
 }
 
+func validateDBXRedirect(req *http.Request, via []*http.Request) error {
+	if req == nil || req.URL == nil {
+		return errors.New("invalid DBX download redirect")
+	}
+	if len(via) >= 5 {
+		return errors.New("too many DBX download redirects")
+	}
+	if !strings.EqualFold(req.URL.Scheme, "https") {
+		return fmt.Errorf("refusing DBX redirect to non-HTTPS URL %q", req.URL.String())
+	}
+	if req.URL.User != nil {
+		return errors.New("refusing DBX redirect with URL credentials")
+	}
+	host := strings.ToLower(req.URL.Hostname())
+	if host != "raw.githubusercontent.com" && host != "github.com" && host != "objects.githubusercontent.com" {
+		return fmt.Errorf("refusing DBX redirect to untrusted host %q", host)
+	}
+	return nil
+}
+
 func DownloadMicrosoftDBX(ctx context.Context, arch, destination string) (DownloadResult, error) {
+	if ctx == nil {
+		return DownloadResult{}, errors.New("DBX download context is required")
+	}
 	url, err := MicrosoftDBXURL(arch)
 	if err != nil {
 		return DownloadResult{}, err
@@ -298,17 +328,8 @@ func DownloadMicrosoftDBX(ctx context.Context, arch, destination string) (Downlo
 	}
 	request.Header.Set("User-Agent", "RufusArm64-secureboot/1")
 	client := &http.Client{
-		Timeout: 60 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return errors.New("too many DBX download redirects")
-			}
-			host := strings.ToLower(req.URL.Hostname())
-			if host != "raw.githubusercontent.com" && host != "github.com" && host != "objects.githubusercontent.com" {
-				return fmt.Errorf("refusing DBX redirect to untrusted host %q", host)
-			}
-			return nil
-		},
+		Timeout:       60 * time.Second,
+		CheckRedirect: validateDBXRedirect,
 	}
 	response, err := client.Do(request)
 	if err != nil {
@@ -317,6 +338,9 @@ func DownloadMicrosoftDBX(ctx context.Context, arch, destination string) (Downlo
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return DownloadResult{}, fmt.Errorf("download Microsoft DBX: HTTP %s", response.Status)
+	}
+	if response.ContentLength > maxDBXDownload {
+		return DownloadResult{}, errors.New("downloaded DBX response is unexpectedly large")
 	}
 	limited := io.LimitReader(response.Body, maxDBXDownload+1)
 	data, err := io.ReadAll(limited)
