@@ -32,8 +32,8 @@ var microsoftDBXBlobSHA1 = map[string]string{
 type MicrosoftDBXPin struct {
 	Architecture     string `json:"architecture"`
 	RepositoryCommit string `json:"repository_commit"`
-	GitBlobSHA1       string `json:"git_blob_sha1"`
-	URL               string `json:"url"`
+	GitBlobSHA1      string `json:"git_blob_sha1"`
+	URL              string `json:"url"`
 }
 
 func MicrosoftDBXPinForArchitecture(arch string) (MicrosoftDBXPin, error) {
@@ -48,7 +48,7 @@ func MicrosoftDBXPinForArchitecture(arch string) (MicrosoftDBXPin, error) {
 	pin := MicrosoftDBXPin{
 		Architecture:     normalized,
 		RepositoryCommit: microsoftDBXRepositoryCommit,
-		GitBlobSHA1:       blob,
+		GitBlobSHA1:      blob,
 		URL: "https://raw.githubusercontent.com/microsoft/secureboot_objects/" + microsoftDBXRepositoryCommit +
 			"/PostSignedObjects/DBX/" + normalized + "/DBXUpdate.bin",
 	}
