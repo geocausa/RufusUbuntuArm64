@@ -63,11 +63,11 @@ func TestParseEFITimeRejectsNormalizedValues(t *testing.T) {
 		t.Fatalf("valid EFI time rejected: %v %t", when, ok)
 	}
 	cases := map[string]func([]byte){
-		"impossible day": func(value []byte) { value[3] = 30 },
+		"impossible day":            func(value []byte) { value[3] = 30 },
 		"leap second normalization": func(value []byte) { value[6] = 60 },
-		"pad1": func(value []byte) { value[7] = 1 },
-		"pad2": func(value []byte) { value[15] = 1 },
-		"nanosecond overflow": func(value []byte) { binary.LittleEndian.PutUint32(value[8:12], 1_000_000_000) },
+		"pad1":                      func(value []byte) { value[7] = 1 },
+		"pad2":                      func(value []byte) { value[15] = 1 },
+		"nanosecond overflow":       func(value []byte) { binary.LittleEndian.PutUint32(value[8:12], 1_000_000_000) },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
