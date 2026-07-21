@@ -69,6 +69,10 @@ type PersistentCreateResult struct {
 // intentionally not called by the graphical writer. The caller must have
 // already applied whole-disk policy, confirmation, and identity selection.
 func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts PersistentCreateOptions, emit PersistentEventFunc) (result PersistentCreateResult, returnErr error) {
+	completed := false
+	defer func() {
+		emitPersistentCompletion(completed, returnErr, emit)
+	}()
 	if opts.ExpectedSource == (sourcefile.Identity{}) {
 		return result, errors.New("persistent Linux creation requires an identity-bound source image")
 	}
@@ -76,7 +80,9 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 	if err != nil {
 		return result, err
 	}
-	defer isoFile.Close()
+	defer func() {
+		returnErr = finishPersistentFile(returnErr, isoFile, false, "selected Linux image")
+	}()
 	stableISOPath := fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), isoFile.Fd())
 
 	sourceDigest, err := hashPersistentSource(ctx, isoFile, opts.ExpectedSource, emit, "hash_source", "Hashing the selected Linux image…")
@@ -97,14 +103,17 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 	if err != nil {
 		return result, fmt.Errorf("open target for persistent Linux creation: %w", err)
 	}
-	defer target.Close()
+	targetLocked := false
+	defer func() {
+		returnErr = finishPersistentFile(returnErr, target, targetLocked, "persistent Linux target")
+	}()
 	if err := safety.VerifyOpenDevice(target, opts.ExpectedDeviceID, opts.TargetSize); err != nil {
 		return result, err
 	}
 	if err := syscall.Flock(int(target.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		return result, fmt.Errorf("another writer appears to be using %s: %w", devicePath, err)
 	}
-	defer syscall.Flock(int(target.Fd()), syscall.LOCK_UN) // best effort
+	targetLocked = true
 	stableTargetPath := fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), target.Fd())
 	targetInfo, err := target.Stat()
 	if err != nil {
@@ -288,10 +297,7 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 		return result, fmt.Errorf("identity-bind writable boot partition: %w", err)
 	}
 	defer func() {
-		_ = syscall.Flock(int(bootFile.Fd()), syscall.LOCK_UN)
-		if err := bootFile.Close(); err != nil {
-			returnErr = errors.Join(returnErr, fmt.Errorf("close writable boot partition: %w", err))
-		}
+		returnErr = finishPersistentFile(returnErr, bootFile, true, "writable boot partition")
 	}()
 	bootFDPath := "/proc/self/fd/3"
 	sendPersistent(emit, PersistentEvent{Stage: "format", Message: fmt.Sprintf("Formatting the writable UEFI boot partition as FAT32 (%s)…", label)})
@@ -470,7 +476,7 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 		}
 		mountedISO = false
 	}
-	sendPersistent(emit, PersistentEvent{Stage: "complete", Message: "Experimental persistent Linux USB created and verified."})
+	completed = true
 	return result, nil
 }
 
