@@ -86,9 +86,9 @@ An empty label uses `WITHOUT A LABEL`. A mismatch stops before the target is
 opened for formatting.
 .SH FAILURE AND CANCELLATION
 Cancellation before erasure reports that the medium was unchanged. Once an
-erase command is invoked, cancellation or failure conservatively reports the
-medium changed and non-reusable until a complete format succeeds. Do not remove
-the drive while an operation is active.
+erase command is invoked, cancellation or failure conservatively reports that
+the medium may have changed and is not reusable until a complete format
+succeeds. Do not remove the drive while an operation is active.
 .SH POLKIT BOUNDARY
 The installed graphical action
 .B io.github.geocausa.RufusArm64.format-data
