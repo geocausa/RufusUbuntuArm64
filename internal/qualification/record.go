@@ -192,11 +192,7 @@ func WriteRecord(root string, record CreationRecord) (StoredRecord, error) {
 		return StoredRecord{}, err
 	}
 	recordPath := filepath.Join(metadata, RecordFileName)
-	if err := writeAtomicNoFollow(recordPath, data, 0o600); err != nil {
-		return StoredRecord{}, err
-	}
-	checksum := []byte(fmt.Sprintf("%s  %s\n", digest, RecordFileName))
-	if err := writeAtomicNoFollow(recordPath+".sha256", checksum, 0o600); err != nil {
+	if err := writeRecordPair(recordPath, data, digest); err != nil {
 		return StoredRecord{}, err
 	}
 	return StoredRecord{Record: record, SHA256: digest, Path: filepath.ToSlash(filepath.Join(metadataDirName, RecordFileName))}, nil
