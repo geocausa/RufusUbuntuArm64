@@ -43,14 +43,7 @@ func ExecuteDevice(ctx context.Context, plan Plan, options DeviceOptions) (Repor
 		backend.options.PartitionTimeout = 30 * time.Second
 	}
 	report, runErr := Execute(ctx, plan, backend, time.Now)
-	closeErr := backend.Close()
-	if closeErr != nil {
-		if runErr == nil {
-			return Report{}, closeErr
-		}
-		return report, errors.Join(runErr, closeErr)
-	}
-	return report, runErr
+	return finishDeviceExecution(report, runErr, backend.Close(), time.Now)
 }
 
 type linuxBackend struct {
