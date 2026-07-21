@@ -91,7 +91,15 @@ func NormalizeRecord(record CreationRecord) (CreationRecord, error) {
 	if err := validatePartition(record.Persistence, 2); err != nil {
 		return record, fmt.Errorf("persistence partition: %w", err)
 	}
-	if record.Boot.StartBytes+record.Boot.SizeBytes > record.TargetSize || record.Persistence.StartBytes+record.Persistence.SizeBytes > record.TargetSize || record.Boot.StartBytes+record.Boot.SizeBytes > record.Persistence.StartBytes {
+	bootEnd, err := partitionExtentEnd(record.Boot.StartBytes, record.Boot.SizeBytes)
+	if err != nil {
+		return record, fmt.Errorf("boot partition extent: %w", err)
+	}
+	persistenceEnd, err := partitionExtentEnd(record.Persistence.StartBytes, record.Persistence.SizeBytes)
+	if err != nil {
+		return record, fmt.Errorf("persistence partition extent: %w", err)
+	}
+	if bootEnd > record.TargetSize || persistenceEnd > record.TargetSize || bootEnd > record.Persistence.StartBytes {
 		return record, errors.New("creation record partitions overlap or exceed the target")
 	}
 	if record.BootParameter == "" || record.ManifestEntries <= 0 || record.ManifestBytes == 0 {
