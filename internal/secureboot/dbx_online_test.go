@@ -57,8 +57,8 @@ func TestMicrosoftDBXPinValidationRejectsMutableOrMalformedReferences(t *testing
 	base := MicrosoftDBXPin{
 		Architecture:     "arm64",
 		RepositoryCommit: strings.Repeat("a", 40),
-		GitBlobSHA1:       strings.Repeat("b", 40),
-		URL:               "https://raw.githubusercontent.com/microsoft/secureboot_objects/" + strings.Repeat("a", 40) + "/PostSignedObjects/DBX/arm64/DBXUpdate.bin",
+		GitBlobSHA1:      strings.Repeat("b", 40),
+		URL:              "https://raw.githubusercontent.com/microsoft/secureboot_objects/" + strings.Repeat("a", 40) + "/PostSignedObjects/DBX/arm64/DBXUpdate.bin",
 	}
 	cases := map[string]func(*MicrosoftDBXPin){
 		"moving branch URL": func(pin *MicrosoftDBXPin) {
@@ -89,8 +89,8 @@ func TestPinnedDBXValidationPrecedesCachePublication(t *testing.T) {
 	pin := MicrosoftDBXPin{
 		Architecture:     "arm64",
 		RepositoryCommit: commit,
-		GitBlobSHA1:       blob,
-		URL:               "https://raw.githubusercontent.com/microsoft/secureboot_objects/" + commit + "/PostSignedObjects/DBX/arm64/DBXUpdate.bin",
+		GitBlobSHA1:      blob,
+		URL:              "https://raw.githubusercontent.com/microsoft/secureboot_objects/" + commit + "/PostSignedObjects/DBX/arm64/DBXUpdate.bin",
 	}
 	root := t.TempDir()
 	destination := filepath.Join(root, "cache", "arm64-DBXUpdate.bin")
