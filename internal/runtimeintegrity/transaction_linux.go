@@ -568,10 +568,7 @@ func descriptorPath(directory *os.File, name string) string {
 }
 
 func publishNoReplace(directory *os.File, temporary, target string) error {
-	if err := os.Link(descriptorPath(directory, temporary), descriptorPath(directory, target)); err != nil {
-		return err
-	}
-	return removeExact(directory, temporary)
+	return renameNoReplaceAt(directory, temporary, target)
 }
 
 func replaceFromTemporary(directory *os.File, temporary, target string) error {
