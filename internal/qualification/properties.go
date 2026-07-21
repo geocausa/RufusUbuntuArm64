@@ -3,6 +3,7 @@
 package qualification
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -16,7 +17,7 @@ func normalizeRecordProperties(properties map[string]string) (map[string]string,
 		key := strings.TrimSpace(rawKey)
 		value := strings.TrimSpace(rawValue)
 		if key == "" || len(key) > 64 || len(value) > 256 {
-			return nil, fmt.Errorf("creation record property is invalid")
+			return nil, errors.New("creation record property is invalid")
 		}
 		if _, exists := clean[key]; exists {
 			return nil, fmt.Errorf("creation record properties collide after normalization at %q", key)
