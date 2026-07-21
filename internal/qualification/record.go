@@ -172,8 +172,7 @@ func ParseRecord(data []byte) (CreationRecord, string, error) {
 	if err != nil {
 		return record, "", err
 	}
-	trimmed := append(bytes.TrimSpace(data), '\n')
-	if !bytes.Equal(canonical, trimmed) {
+	if !bytes.Equal(canonical, data) {
 		return record, "", errors.New("creation record is not in canonical form")
 	}
 	return normalized, digest, nil
