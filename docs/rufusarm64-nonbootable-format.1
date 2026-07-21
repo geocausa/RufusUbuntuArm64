@@ -90,10 +90,11 @@ erase command is invoked, cancellation or failure conservatively reports the
 medium changed and non-reusable until a complete format succeeds. Do not remove
 the drive while an operation is active.
 .SH POLKIT BOUNDARY
-The installed graphical action executes only the package-private formatter with
-noninteractive JSON, exact identity, owner-private cancellation, normal
-removable-media policy, and guarded unmounting. Fixed-disk and no-unmount
-overrides are terminal-only.
+The installed graphical action
+.B io.github.geocausa.RufusArm64.format-data
+executes only the package-private formatter with noninteractive JSON, exact
+identity, owner-private cancellation, normal removable-media policy, and
+guarded unmounting. Fixed-disk and no-unmount overrides are terminal-only.
 .SH SEE ALSO
 .BR rufusarm64 (1),
 .BR rufusarm64-cli (1),
