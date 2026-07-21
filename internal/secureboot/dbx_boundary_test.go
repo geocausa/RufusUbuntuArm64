@@ -114,6 +114,7 @@ func TestValidateDBXRedirectPolicy(t *testing.T) {
 }
 
 func TestDownloadMicrosoftDBXRequiresContext(t *testing.T) {
+	//lint:ignore SA1012 This regression deliberately verifies the fail-closed nil-context boundary.
 	if _, err := DownloadMicrosoftDBX(nil, "arm64", ""); err == nil || !strings.Contains(err.Error(), "context") {
 		t.Fatalf("nil context error=%v", err)
 	}
