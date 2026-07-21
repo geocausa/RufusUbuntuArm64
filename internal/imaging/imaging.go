@@ -66,7 +66,7 @@ func WriteImage(ctx context.Context, imagePath, devicePath string, opts WriteOpt
 // descriptor open across the final safety checks, signature wipe, write, and
 // verification prevents path replacement from changing the selected image
 // after the user confirms the destructive operation.
-func WriteOpenImage(ctx context.Context, src *os.File, devicePath string, opts WriteOptions) (uint64, error) {
+func WriteOpenImage(ctx context.Context, src *os.File, devicePath string, opts WriteOptions) (writtenResult uint64, resultErr error) {
 	if opts.BufferSize <= 0 {
 		opts.BufferSize = DefaultBufferSize
 	}
@@ -108,14 +108,17 @@ func WriteOpenImage(ctx context.Context, src *os.File, devicePath string, opts W
 	if err != nil {
 		return 0, fmt.Errorf("open target device: %w", err)
 	}
-	defer dst.Close()
+	locked := false
+	defer func() {
+		resultErr = finishWriteTarget(resultErr, dst, locked)
+	}()
 	if err := safety.VerifyOpenDevice(dst, opts.ExpectedDeviceID, opts.TargetSize); err != nil {
 		return 0, err
 	}
 	if err := syscall.Flock(int(dst.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		return 0, fmt.Errorf("acquire exclusive writer lock on target: %w", err)
 	}
-	defer syscall.Flock(int(dst.Fd()), syscall.LOCK_UN) // best effort
+	locked = true
 
 	if opts.BeforeWrite != nil {
 		if err := opts.BeforeWrite(src); err != nil {
