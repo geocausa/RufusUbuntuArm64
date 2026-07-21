@@ -11,8 +11,8 @@ import (
 
 type recordFileWriter func(string, []byte, os.FileMode) error
 
-// writeRecordPair publishes the canonical creation record and its checksum as
-// one recoverable pair. Multi-file publication cannot be atomic, so the second
+// writeRecordPair publishes one metadata document and its checksum as a
+// recoverable pair. Multi-file publication cannot be atomic, so the second
 // failure path removes only the first file published by this call and syncs the
 // metadata directory before returning.
 func writeRecordPair(recordPath string, data []byte, digest string) error {
@@ -20,8 +20,9 @@ func writeRecordPair(recordPath string, data []byte, digest string) error {
 }
 
 func writeRecordPairWith(recordPath string, data []byte, digest string, writeFile recordFileWriter) error {
+	description := metadataDocumentDescription(recordPath)
 	if writeFile == nil {
-		return errors.New("creation record writer is nil")
+		return fmt.Errorf("%s writer is nil", description)
 	}
 	checksumPath := recordPath + ".sha256"
 	for _, path := range []string{recordPath, checksumPath} {
@@ -35,21 +36,28 @@ func writeRecordPairWith(recordPath string, data []byte, digest string, writeFil
 	}
 	published, err := os.Lstat(recordPath)
 	if err != nil {
-		return fmt.Errorf("reinspect published creation record: %w", err)
+		return fmt.Errorf("reinspect published %s: %w", description, err)
 	}
 	if !published.Mode().IsRegular() {
-		return errors.New("published creation record is not a regular file")
+		return fmt.Errorf("published %s is not a regular file", description)
 	}
 
 	checksum := []byte(fmt.Sprintf("%s  %s\n", digest, filepath.Base(recordPath)))
 	if err := writeFile(checksumPath, checksum, 0o600); err != nil {
-		rollbackErr := removePublishedRecord(recordPath, published)
+		rollbackErr := removePublishedRecord(recordPath, published, description)
 		if rollbackErr != nil {
-			return errors.Join(err, fmt.Errorf("rollback creation record after checksum failure: %w", rollbackErr))
+			return errors.Join(err, fmt.Errorf("rollback %s after checksum failure: %w", description, rollbackErr))
 		}
 		return err
 	}
 	return nil
+}
+
+func metadataDocumentDescription(path string) string {
+	if filepath.Base(path) == RecordFileName {
+		return "creation record"
+	}
+	return "qualification evidence"
 }
 
 func requireMetadataDestinationAbsent(path string) error {
@@ -61,16 +69,16 @@ func requireMetadataDestinationAbsent(path string) error {
 	return nil
 }
 
-func removePublishedRecord(path string, expected os.FileInfo) error {
+func removePublishedRecord(path string, expected os.FileInfo, description string) error {
 	current, err := os.Lstat(path)
 	if err != nil {
-		return fmt.Errorf("reinspect creation record for rollback: %w", err)
+		return fmt.Errorf("reinspect %s for rollback: %w", description, err)
 	}
 	if !current.Mode().IsRegular() || !os.SameFile(expected, current) {
-		return errors.New("creation record changed before rollback; refusing to remove it")
+		return fmt.Errorf("%s changed before rollback; refusing to remove it", description)
 	}
 	if err := os.Remove(path); err != nil {
-		return fmt.Errorf("remove incomplete creation record: %w", err)
+		return fmt.Errorf("remove incomplete %s: %w", description, err)
 	}
 	directory, err := os.Open(filepath.Dir(path))
 	if err != nil {
