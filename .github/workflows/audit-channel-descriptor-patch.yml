@@ -1,0 +1,77 @@
+name: Apply acquisition descriptor-read audit patch
+
+on:
+  push:
+    branches:
+      - audit/channel-descriptor-read
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: audit/channel-descriptor-read
+          fetch-depth: 0
+      - name: Wire the hardened descriptor reader
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('internal/acquisition/channel.go')
+          text = path.read_text()
+          old = '''func readRegularLimited(path string, limit int) ([]byte, error) {
+          before, err := os.Lstat(path)
+          if err != nil {
+          	return nil, err
+          }
+          if !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 {
+          	return nil, errors.New("input is not a real regular file")
+          }
+          file, err := os.Open(path)
+          if err != nil {
+          	return nil, err
+          }
+          defer file.Close()
+          info, err := file.Stat()
+          if err != nil {
+          	return nil, err
+          }
+          if !os.SameFile(before, info) {
+          	return nil, errors.New("input changed while it was being opened")
+          }
+          if !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > int64(limit) {
+          	return nil, fmt.Errorf("input is not a regular file within the %d-byte limit", limit)
+          }
+          data, err := io.ReadAll(io.LimitReader(file, int64(limit)+1))
+          if err != nil {
+          	return nil, err
+          }
+          if len(data) > limit {
+          	return nil, fmt.Errorf("input exceeds the %d-byte limit", limit)
+          }
+          return data, nil
+          }
+          '''
+          old = old.replace('          ', '', 1)
+          old = '\n'.join(line[10:] if line.startswith('          ') else line for line in old.splitlines()) + '\n'
+          new = '''func readRegularLimited(path string, limit int) ([]byte, error) {
+          	return readRegularLimitedWithOpen(path, limit, openChannelMetadataNoFollow)
+          }
+          '''
+          new = '\n'.join(line[10:] if line.startswith('          ') else line for line in new.splitlines()) + '\n'
+          if old not in text:
+              raise SystemExit('expected readRegularLimited implementation not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          git rm .github/workflows/audit-channel-descriptor-patch.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add internal/acquisition/channel.go
+          git commit -m "Wire hardened acquisition metadata reads"
+          git push origin HEAD:audit/channel-descriptor-read
