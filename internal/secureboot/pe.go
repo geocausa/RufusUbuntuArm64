@@ -2,6 +2,7 @@ package secureboot
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/asn1"
@@ -11,9 +12,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 )
 
 const (
@@ -194,39 +193,40 @@ type CheckResult struct {
 
 func CheckPEFile(path string, db *Database) CheckResult {
 	result := CheckResult{Path: path}
-	peHash, err := AuthenticodeSHA256File(path)
+	if db == nil {
+		result.Error = "Secure Boot revocation database is required"
+		return result
+	}
+	file, err := os.Open(path)
 	if err != nil {
-		result.Error = err.Error()
+		result.Error = fmt.Sprintf("open PE image: %v", err)
 		return result
 	}
-	result.AuthenticodeSHA256 = peHash.SHA256
-	result.Machine = peHash.Machine
-	digestBytes, err := hex.DecodeString(peHash.SHA256)
-	if err == nil && len(digestBytes) == sha256.Size {
-		var digest [sha256.Size]byte
-		copy(digest[:], digestBytes)
-		result.DirectHashRevoked = db.IsSHA256Revoked(digest)
-	}
-	certificates, certErr := EmbeddedAuthenticodeCertificates(path)
-	if certErr != nil {
-		// The direct image hash remains useful even when a malformed certificate
-		// table prevents certificate-based checking. Surface the distinction.
-		result.Error = certErr.Error()
+	defer file.Close()
+	before, err := file.Stat()
+	if err != nil {
+		result.Error = fmt.Sprintf("stat PE image: %v", err)
 		return result
 	}
-	result.X509RevocationChecked = true
-	result.EmbeddedCertificates = len(certificates)
-	for _, certificate := range certificates {
-		if db.IsX509Revoked(certificate.Raw) {
-			result.X509CertificateRevoked = true
-			name := strings.TrimSpace(certificate.Subject.String())
-			if name == "" {
-				name = certificate.SerialNumber.String()
-			}
-			result.RevokedCertificates = append(result.RevokedCertificates, name)
-		}
+	if !before.Mode().IsRegular() || before.Size() <= 0 || before.Size() > maxPEFileSize {
+		result.Error = "PE image must be a non-empty regular file smaller than 2 GiB"
+		return result
 	}
-	return result
+	data, err := io.ReadAll(io.LimitReader(file, maxPEFileSize+1))
+	if err != nil {
+		result.Error = fmt.Sprintf("read PE image: %v", err)
+		return result
+	}
+	after, err := file.Stat()
+	if err != nil {
+		result.Error = fmt.Sprintf("restat PE image: %v", err)
+		return result
+	}
+	if !os.SameFile(before, after) || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) || int64(len(data)) != before.Size() {
+		result.Error = "PE image changed while it was being read"
+		return result
+	}
+	return checkPEData(path, data, db)
 }
 
 // EmbeddedAuthenticodeCertificates returns the X.509 certificates carried in
@@ -351,48 +351,8 @@ func allZeroBytes(data []byte) bool {
 	return true
 }
 
+// ScanEFIDirectory is the compatibility wrapper for the context-aware,
+// descriptor-rooted DBX scanner used by current callers.
 func ScanEFIDirectory(root string, db *Database, maxFiles int) ([]CheckResult, error) {
-	if maxFiles <= 0 {
-		maxFiles = 512
-	}
-	absolute, err := filepath.Abs(root)
-	if err != nil {
-		return nil, err
-	}
-	var paths []string
-	err = filepath.WalkDir(absolute, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		name := strings.ToLower(entry.Name())
-		if strings.HasSuffix(name, ".efi") || name == "bootmgr" {
-			paths = append(paths, path)
-			if len(paths) > maxFiles {
-				return fmt.Errorf("more than %d EFI boot files found; refusing an unbounded scan", maxFiles)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(paths)
-	results := make([]CheckResult, 0, len(paths))
-	for _, path := range paths {
-		result := CheckPEFile(path, db)
-		if relative, err := filepath.Rel(absolute, path); err == nil {
-			result.Path = filepath.ToSlash(relative)
-		}
-		results = append(results, result)
-	}
-	return results, nil
+	return ScanEFIDirectoryContext(context.Background(), root, db, maxFiles)
 }
