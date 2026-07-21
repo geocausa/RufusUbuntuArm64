@@ -1,4 +1,4 @@
-.TH RUFUSARM64-DEVICE-QUALIFY 1 "19 July 2026" "RufusArm64 0.12.1" "User Commands"
+.TH RUFUSARM64-DEVICE-QUALIFY 1 "20 July 2026" "RufusArm64 0.13.0" "User Commands"
 .SH NAME
 rufusarm64-device-qualify \- destructively test removable-media capacity and readback
 .SH SYNOPSIS
@@ -13,13 +13,12 @@ rufusarm64-device-qualify \- destructively test removable-media capacity and rea
 .SH DESCRIPTION
 .B rufusarm64-device-qualify
 runs the RufusArm64 address-pattern qualification engine against one explicitly
-selected whole device. It is separate from the normal image writer.
+selected whole device. It is separate from the normal image writer and destroys
+all previous content in every tested region.
 .PP
-The command is destructive. Every tested region is overwritten and previous
-content is not restored. The target is validated as a whole disk, checked against
-the running system disk, bound to the listed identity and live capacity, opened
-exclusively, locked, flushed through the held descriptor, and revalidated during
-the run.
+The target is validated as a whole disk, checked against the running system
+disk, bound to the listed identity and live capacity, opened exclusively,
+locked, flushed through the held descriptor, and revalidated during the run.
 .SH OPTIONS
 .TP
 .BI --device " PATH"

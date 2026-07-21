@@ -1,4 +1,4 @@
-.TH RUFUSARM64-PERSISTENCE 1 "19 July 2026" "RufusArm64 0.12.1" "User Commands"
+.TH RUFUSARM64-PERSISTENCE 1 "20 July 2026" "RufusArm64 0.13.0" "User Commands"
 .SH NAME
 rufusarm64-persistence \- guarded persistent live-USB creator
 .SH SYNOPSIS
@@ -9,13 +9,19 @@ opens the dedicated graphical workflow for supported Ubuntu casper and Debian
 live-boot images. Compatibility analysis is read-only. Creation uses a fresh
 GPT layout with a FAT32 live-media partition and an ext4 persistence partition.
 .PP
-The workflow is deliberately narrow and experimental. It refuses unrecognized
-boot layouts, unsupported persistence contracts, unsafe targets, and images
-that cannot be represented safely on FAT32.
+The workflow is deliberately narrow. It refuses unrecognized boot layouts,
+unsupported persistence contracts, unsafe targets, and images that cannot be
+represented safely on FAT32. Creation remains identity-bound, requires exact
+target confirmation and fresh administrator authentication, supports guarded
+cancellation, and verifies the copied media and both filesystems.
 .SH QUALIFICATION
 Creation success does not prove physical boot or persistence across reboot.
 Use the qualification commands documented in
-/usr/share/doc/rufusarm64/persistence-qualification.md.
+/usr/share/doc/rufusarm64/persistence-qualification.md and retain the reports
+for the exact image, USB, controller, firmware, and computer.
+.PP
+The optional package-owned ARM64 boot-time integrity loader is unsigned.
+Secure Boot compatibility is not established.
 .SH SEE ALSO
 .BR rufusarm64 (1),
 .BR rufusarm64-cli (1)
