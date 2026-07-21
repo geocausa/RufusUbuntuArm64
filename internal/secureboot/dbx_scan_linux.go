@@ -25,7 +25,7 @@ func scanEFIDirectoryContextWithHook(ctx context.Context, root string, db *Datab
 		return nil, errors.New("DBX scan context is required")
 	}
 	if db == nil {
-		return nil, errors.New("Secure Boot revocation database is required")
+		return nil, errors.New("secure boot revocation database is required")
 	}
 	if maxFiles <= 0 {
 		maxFiles = 512
