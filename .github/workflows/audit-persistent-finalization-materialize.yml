@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - audit/persistent-finalization
+  pull_request:
+    branches:
+      - stage2/0.13.0
 
 permissions:
   contents: read
