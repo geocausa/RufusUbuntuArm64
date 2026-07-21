@@ -38,6 +38,28 @@ func TestFinishDeviceRunDowngradesPassedReportOnCloseFailure(t *testing.T) {
 	}
 }
 
+func TestFinishDeviceRunPreservesExistingFailureAndPassDetails(t *testing.T) {
+	failure := &Failure{Kind: "write", RegionIndex: 2, Message: "write failed"}
+	report := Report{
+		Schema:  1,
+		Status:  StatusFailed,
+		Failure: failure,
+		Passes:  []PassReport{{Number: 1, Pattern: "address-a", Failure: failure}},
+	}
+	closeErr := errors.New("close failed")
+
+	result, err := finishDeviceRun(report, ErrVerification, closeErr)
+	if !errors.Is(err, ErrVerification) {
+		t.Fatalf("qualification failure identity was lost: %v", err)
+	}
+	if result.Status != StatusFailed || result.Failure != failure || result.Passes[0].Failure != failure {
+		t.Fatalf("failed report or pass state changed: %+v", result)
+	}
+	if !strings.Contains(result.Failure.Message, "close qualification target") {
+		t.Fatalf("structured failure omitted close failure: %+v", result.Failure)
+	}
+}
+
 func TestFinishDeviceRunPreservesCancellationAndJoinsCloseFailure(t *testing.T) {
 	failure := &Failure{Kind: "cancelled", RegionIndex: -1, Message: context.Canceled.Error()}
 	report := Report{Schema: 1, Status: StatusCancelled, Failure: failure}
