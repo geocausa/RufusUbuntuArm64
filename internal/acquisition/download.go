@@ -239,14 +239,14 @@ func existingDownload(path string, image Image, replace bool) (DownloadResult, b
 }
 
 // installDownloadedFile preserves the no-replace contract at the final atomic
-// boundary. The temporary file is created in the destination directory, so a
-// hard link installs the verified inode without a cross-filesystem copy and
-// fails atomically if another process created the destination during transfer.
+// boundary. The temporary file is created in the destination directory, so an
+// atomic no-replace rename installs the verified inode without a cross-filesystem
+// copy and fails if another process created the destination during transfer.
 func installDownloadedFile(tempName, destination string, replace bool) error {
 	if replace {
 		return os.Rename(tempName, destination)
 	}
-	if err := os.Link(tempName, destination); err != nil {
+	if err := renameDownloadedFileNoReplace(tempName, destination); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return errors.New("download destination was created while the image was downloading; refusing to replace it")
 		}
