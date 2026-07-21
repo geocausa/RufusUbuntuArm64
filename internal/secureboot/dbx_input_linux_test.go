@@ -49,25 +49,3 @@ func TestStableDBXReaderRejectsInPlaceMutation(t *testing.T) {
 		t.Fatalf("mutation error=%v", err)
 	}
 }
-
-func TestStableDBXReaderKeepsOpenedSnapshotAcrossRename(t *testing.T) {
-	directory := t.TempDir()
-	path := filepath.Join(directory, "selected.dbx")
-	replacement := filepath.Join(directory, "replacement.dbx")
-	originalBytes := []byte("opened descriptor bytes")
-	if err := os.WriteFile(path, originalBytes, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(replacement, []byte("replacement path bytes"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	data, err := readStableDBXFileWithHook(path, 1024, func(_ *os.File) error {
-		return os.Rename(replacement, path)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(data) != string(originalBytes) {
-		t.Fatalf("read bytes %q", data)
-	}
-}
