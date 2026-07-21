@@ -1,0 +1,51 @@
+name: Audit persistent layout alignment materializer
+
+on:
+  push:
+    branches:
+      - audit/persistent-layout-align-overflow
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.22.x'
+      - name: Apply and commit checked alignment integration
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('internal/linuxmedia/layout.go')
+          text = path.read_text(encoding='utf-8')
+          if 'align writable boot partition size' in text:
+              raise SystemExit(0)
+          old = '\tbootSize := alignLayout(copiedBytes+margin, layoutAlignment)\n'
+          new = '''\tbootSize, err := alignLayoutChecked(copiedBytes+margin, layoutAlignment)
+\tif err != nil {
+\t\treturn PersistentLayout{}, fmt.Errorf("align writable boot partition size: %w", err)
+\t}
+'''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'expected one boot alignment call, found {count}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          gofmt -w internal/linuxmedia/layout.go internal/linuxmedia/alignment.go internal/linuxmedia/alignment_test.go
+          go test ./internal/linuxmedia
+          if git diff --quiet -- internal/linuxmedia/layout.go internal/linuxmedia/alignment.go internal/linuxmedia/alignment_test.go; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add internal/linuxmedia/layout.go internal/linuxmedia/alignment.go internal/linuxmedia/alignment_test.go
+          git commit -m 'Reject persistent boot alignment overflow'
+          git push origin HEAD:audit/persistent-layout-align-overflow
