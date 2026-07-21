@@ -329,7 +329,17 @@ func writeAtomicNoFollow(path string, data []byte, mode os.FileMode) (returnErr 
 	return directory.Close()
 }
 
+type metadataOpenFunc func(string) (*os.File, error)
+
+func openMetadataNoFollow(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+}
+
 func readRegularNoFollow(path string, limit int64) ([]byte, error) {
+	return readRegularNoFollowWithOpen(path, limit, openMetadataNoFollow)
+}
+
+func readRegularNoFollowWithOpen(path string, limit int64, open metadataOpenFunc) ([]byte, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
@@ -337,11 +347,21 @@ func readRegularNoFollow(path string, limit int64) ([]byte, error) {
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > limit {
 		return nil, errors.New("metadata input must be a bounded real regular file")
 	}
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	file, err := open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !openedInfo.Mode().IsRegular() || openedInfo.Size() < 0 || openedInfo.Size() > limit {
+		return nil, errors.New("metadata input must be a bounded real regular file")
+	}
+	if !os.SameFile(info, openedInfo) {
+		return nil, errors.New("metadata input changed while opening")
+	}
 	data, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
 		return nil, err
