@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   apply:
@@ -17,11 +16,10 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           ref: fix/report-dialogs-small-screens
-      - name: Extract and apply reviewed patch
+      - name: Apply reviewed patch
+        id: patch
         run: |
-          set -o pipefail
-          {
-            python3 - <<'PYEXTRACT'
+          python3 - <<'PYEXTRACT'
           from pathlib import Path
 
           workflow = Path('.github/workflows/apply-small-screen-dialogs.yml').read_text(encoding='utf-8')
@@ -33,41 +31,57 @@ jobs:
           script = script.replace("if count != 1:", "if count < 1:")
           Path('/tmp/apply-small-screen-dialogs.py').write_text(script, encoding='utf-8')
           PYEXTRACT
-            python3 /tmp/apply-small-screen-dialogs.py
-          } 2>&1 | tee /tmp/small-screen-patch.log
+          set +e
+          python3 /tmp/apply-small-screen-dialogs.py > /tmp/patch.log 2>&1
+          status=$?
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          exit 0
       - name: Validate focused dialog contracts
+        id: validate
+        if: steps.patch.outputs.status == '0'
         run: |
-          python3 -m py_compile gui/rufusarm64_device_qualify_dialog.py gui/rufusarm64_freedos_dialog.py
-          python3 -m unittest \
-            gui.test_device_qualify_dialog \
-            gui.test_device_backup_dialog \
-            gui.test_freedos_dialog
-      - name: Publish reviewed patch and remove staging workflows
+          set +e
+          {
+            python3 -m py_compile gui/rufusarm64_device_qualify_dialog.py gui/rufusarm64_freedos_dialog.py
+            python3 -m unittest \
+              gui.test_device_qualify_dialog \
+              gui.test_device_backup_dialog \
+              gui.test_freedos_dialog
+          } > /tmp/test.log 2>&1
+          status=$?
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Publish source or diagnostic and remove staging workflows
         run: |
+          patch_status='${{ steps.patch.outputs.status }}'
+          test_status='${{ steps.validate.outputs.status }}'
           rm .github/workflows/apply-small-screen-dialogs.yml
           rm .github/workflows/run-small-screen-dialog-patch.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add gui/rufusarm64_device_qualify_dialog.py \
-                  gui/rufusarm64_freedos_dialog.py \
-                  gui/test_device_qualify_dialog.py \
-                  gui/test_device_backup_dialog.py \
-                  gui/test_freedos_dialog.py \
-                  .github/workflows/apply-small-screen-dialogs.yml \
-                  .github/workflows/run-small-screen-dialog-patch.yml
-          git commit -m "GTK: keep report-dialog controls visible on small screens"
-          git push origin HEAD:fix/report-dialogs-small-screens
-      - name: Report patch failure
-        if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          detail="Patch executor failed before source publication."
-          if [ -s /tmp/small-screen-patch.log ]; then
-            detail="$(tail -n 40 /tmp/small-screen-patch.log)"
+          if [ "${patch_status}" = "0" ] && [ "${test_status}" = "0" ]; then
+            rm -f small-screen-patch-diagnostic.txt
+            git add gui/rufusarm64_device_qualify_dialog.py \
+                    gui/rufusarm64_freedos_dialog.py \
+                    gui/test_device_qualify_dialog.py \
+                    gui/test_device_backup_dialog.py \
+                    gui/test_freedos_dialog.py
+            message='GTK: keep report-dialog controls visible on small screens'
+          else
+            {
+              echo "patch_status=${patch_status}"
+              echo "test_status=${test_status}"
+              echo
+              echo '--- patch log ---'
+              cat /tmp/patch.log 2>/dev/null || true
+              echo
+              echo '--- test log ---'
+              cat /tmp/test.log 2>/dev/null || true
+            } > small-screen-patch-diagnostic.txt
+            git add small-screen-patch-diagnostic.txt
+            message='CI: record small-screen patch diagnostic'
           fi
-          gh pr comment 236 --body "### One-shot patch diagnostic
-
-\`\`\`
-${detail}
-\`\`\`"
+          git add .github/workflows/apply-small-screen-dialogs.yml \
+                  .github/workflows/run-small-screen-dialog-patch.yml
+          git commit -m "${message}"
+          git push origin HEAD:fix/report-dialogs-small-screens
