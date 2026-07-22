@@ -73,6 +73,21 @@ class NonBootableDialogStructureTests(unittest.TestCase):
         self.assertIn("media_changed", self.logic_source)
         self.assertIn("must be reformatted", self.logic_source)
 
+    def test_dialog_body_scrolls_without_hiding_close_action(self):
+        self.assertIn("self.set_default_size(760, 560)", self.dialog_class_source)
+        self.assertIn("self.set_resizable(True)", self.dialog_class_source)
+        self.assertIn("content_scroll = Gtk.ScrolledWindow()", self.dialog_class_source)
+        self.assertIn("self.get_content_area().pack_start(content_scroll, True, True, 0)", self.dialog_class_source)
+        self.assertIn("content_scroll.add(box)", self.dialog_class_source)
+        self.assertIn("result_scroll.set_min_content_height(160)", self.dialog_class_source)
+        self.assertIn("result_scroll.set_max_content_height(240)", self.dialog_class_source)
+        self.assertIn("box.pack_start(result_scroll, False, False, 0)", self.dialog_class_source)
+        self.assertIn('self.add_button("Close", Gtk.ResponseType.CLOSE)', self.dialog_class_source)
+        self.assertLess(
+            self.dialog_class_source.index('self.add_button("Close", Gtk.ResponseType.CLOSE)'),
+            self.dialog_class_source.index("content_scroll = Gtk.ScrolledWindow()"),
+        )
+
     def test_package_and_polkit_contracts_are_explicit(self):
         self.assertIn("gui/rufusarm64_nonbootable.py", self.package_source)
         self.assertIn("gui/rufusarm64_nonbootable_dialog.py", self.package_source)
