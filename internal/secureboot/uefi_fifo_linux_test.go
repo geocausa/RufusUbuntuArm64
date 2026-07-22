@@ -12,6 +12,28 @@ import (
 	"time"
 )
 
+func TestOpenUEFIEntryAcceptsRegularFile(t *testing.T) {
+	root := t.TempDir()
+	path := writeSyntheticEFI(t, root, "BOOTAA64.EFI", syntheticUEFIPE(imageFileMachineARM64, imageSubsystemEFIApp))
+	parent, err := os.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer parent.Close()
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := openUEFIEntry(parent, filepath.Base(path), info, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if opened, err := file.Stat(); err != nil || !opened.Mode().IsRegular() {
+		t.Fatalf("opened UEFI entry is not regular: info=%v err=%v", opened, err)
+	}
+}
+
 func TestValidateUEFIMediaRejectsFIFOReplacementWithoutBlocking(t *testing.T) {
 	root := t.TempDir()
 	relative := "EFI/BOOT/BOOTAA64.EFI"
