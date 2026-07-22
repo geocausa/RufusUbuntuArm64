@@ -34,6 +34,31 @@ func TestOpenUEFIEntryAcceptsRegularFile(t *testing.T) {
 	}
 }
 
+func TestOpenUEFIEntryAcceptsDirectory(t *testing.T) {
+	root := t.TempDir()
+	childPath := filepath.Join(root, "EFI")
+	if err := os.Mkdir(childPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	parent, err := os.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer parent.Close()
+	info, err := os.Lstat(childPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := openUEFIEntry(parent, filepath.Base(childPath), info, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer child.Close()
+	if opened, err := child.Stat(); err != nil || !opened.IsDir() {
+		t.Fatalf("opened UEFI entry is not a directory: info=%v err=%v", opened, err)
+	}
+}
+
 func TestValidateUEFIMediaRejectsFIFOReplacementWithoutBlocking(t *testing.T) {
 	root := t.TempDir()
 	relative := "EFI/BOOT/BOOTAA64.EFI"
