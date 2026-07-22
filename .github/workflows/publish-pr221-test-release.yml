@@ -1,0 +1,67 @@
+name: Publish PR221 test release
+
+on:
+  push:
+    branches:
+      - ops/publish-pr221-test-release
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: publish-pr221-test-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Download green ARM64 package artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: '29906091765'
+          ARTIFACT_NAME: rufusarm64-0.13.0+pr221.1b23d699-ubuntu-arm64
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh run download "${RUN_ID}" --repo "${GITHUB_REPOSITORY}" --name "${ARTIFACT_NAME}" --dir dist
+          find dist -maxdepth 1 -type f -printf '%f\n' | sort
+
+      - name: Verify package checksum
+        run: |
+          set -euo pipefail
+          cd dist
+          sidecar="$(find . -maxdepth 1 -type f -name '*.deb.sha256' -print -quit)"
+          test -n "${sidecar}"
+          sha256sum -c "${sidecar}"
+
+      - name: Publish GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v0.13.0-pr221-test
+          TARGET_SHA: 74a909abeb59b2c9e3d7fa508a6c940b2027f26a
+        run: |
+          set -euo pipefail
+          mapfile -t assets < <(find dist -maxdepth 1 -type f \( -name '*.deb' -o -name '*.deb.sha256' \) -print | sort)
+          test "${#assets[@]}" -eq 2
+          notes=$(cat <<'EOF'
+          ARM64 test checkpoint for hands-on testing before the final 0.13.0 release.
+
+          Package source: green PR #221 artifact from commit 1b23d6992a4a7bf1fc447834cb451fa0ffce344d.
+          Merged Stage 2 target: 74a909abeb59b2c9e3d7fa508a6c940b2027f26a.
+
+          This is a prerelease test build, not the final public 0.13.0 release. Verify the included SHA-256 sidecar before installation.
+          EOF
+          )
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" "${assets[@]}" --repo "${GITHUB_REPOSITORY}" --clobber
+          else
+            gh release create "${TAG}" "${assets[@]}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target "${TARGET_SHA}" \
+              --title 'RufusArm64 0.13.0 PR221 test build' \
+              --notes "${notes}" \
+              --prerelease
+          fi
