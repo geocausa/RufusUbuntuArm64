@@ -1,0 +1,235 @@
+name: Prepare PR225 hardware follow-up fixes
+
+on:
+  push:
+    branches:
+      - ops/refresh-prerelease-pr225
+    paths:
+      - .github/workflows/fix-pr225-followups.yml
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: fix/pr225-hardware-followups
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: stage2/0.13.0
+          fetch-depth: 0
+
+      - name: Apply hardware-test follow-up fixes
+        run: |
+          set -euo pipefail
+          git checkout -B "${BRANCH}" origin/stage2/0.13.0
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              file = Path(path)
+              text = file.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one replacement, found {count}")
+              file.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_once(
+              "cmd/rufus-freedos-format/main.go",
+              '"os/signal"\n\t"strconv"',
+              '"os/signal"\n\t"path/filepath"\n\t"strconv"',
+          )
+          replace_once(
+              "cmd/rufus-freedos-format/main.go",
+              'var version = "development"\n',
+              'var version = "development"\n\nvar sysClassBlockRoot = "/sys/class/block"\n',
+          )
+          replace_once(
+              "cmd/rufus-freedos-format/main.go",
+              '''func logicalSectorSize(path string) (uint64, error) {
+\tctx, cancel := context.WithTimeout(context.Background(), 15_000_000_000)
+\tdefer cancel()
+\tcommand := exec.CommandContext(ctx, "blockdev", "--getss", path)
+\toutput, err := command.Output()
+\tif err != nil {
+\t\tif ctx.Err() != nil {
+\t\t\treturn 0, ctx.Err()
+\t\t}
+\t\treturn 0, fmt.Errorf("read logical sector size: %w", err)
+\t}
+\tvalue, err := strconv.ParseUint(strings.TrimSpace(string(output)), 10, 64)
+\tif err != nil {
+\t\treturn 0, fmt.Errorf("parse logical sector size: %w", err)
+\t}
+\tif value != 512 {
+\t\treturn 0, fmt.Errorf("FreeDOS media requires 512-byte logical sectors, not %d", value)
+\t}
+\treturn value, nil
+}
+''',
+              '''func logicalSectorSize(path string) (uint64, error) {
+\tname := filepath.Base(filepath.Clean(path))
+\tif name == "" || name == "." || name == string(filepath.Separator) {
+\t\treturn 0, fmt.Errorf("read logical sector size: invalid device path %q", path)
+\t}
+\tsectorPath := filepath.Join(sysClassBlockRoot, name, "queue", "logical_block_size")
+\tdata, err := os.ReadFile(sectorPath)
+\tif err != nil {
+\t\treturn 0, fmt.Errorf("read logical sector size for %s from %s: %w", path, sectorPath, err)
+\t}
+\tvalue, err := strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
+\tif err != nil {
+\t\treturn 0, fmt.Errorf("parse logical sector size for %s from %s: %w", path, sectorPath, err)
+\t}
+\tif value != 512 {
+\t\treturn 0, fmt.Errorf("FreeDOS media requires 512-byte logical sectors, not %d for %s", value, path)
+\t}
+\treturn value, nil
+}
+''',
+          )
+
+          replace_once(
+              "cmd/rufus-freedos-format/main_test.go",
+              'import (\n\t"strings"',
+              'import (\n\t"os"\n\t"path/filepath"\n\t"strings"',
+          )
+          test_path = Path("cmd/rufus-freedos-format/main_test.go")
+          test_path.write_text(test_path.read_text(encoding="utf-8") + r'''
+
+func TestLogicalSectorSizeUsesReadableSysfs(t *testing.T) {
+\troot := t.TempDir()
+\tprevious := sysClassBlockRoot
+\tsysClassBlockRoot = root
+\tt.Cleanup(func() { sysClassBlockRoot = previous })
+
+\tqueue := filepath.Join(root, "sdb", "queue")
+\tif err := os.MkdirAll(queue, 0o755); err != nil {
+\t\tt.Fatal(err)
+\t}
+\tif err := os.WriteFile(filepath.Join(queue, "logical_block_size"), []byte("512\n"), 0o644); err != nil {
+\t\tt.Fatal(err)
+\t}
+\tvalue, err := logicalSectorSize("/dev/sdb")
+\tif err != nil {
+\t\tt.Fatal(err)
+\t}
+\tif value != 512 {
+\t\tt.Fatalf("logical sector size=%d, want 512", value)
+\t}
+}
+
+func TestLogicalSectorSizeRejectsFourKiBSectors(t *testing.T) {
+\troot := t.TempDir()
+\tprevious := sysClassBlockRoot
+\tsysClassBlockRoot = root
+\tt.Cleanup(func() { sysClassBlockRoot = previous })
+
+\tqueue := filepath.Join(root, "sdb", "queue")
+\tif err := os.MkdirAll(queue, 0o755); err != nil {
+\t\tt.Fatal(err)
+\t}
+\tif err := os.WriteFile(filepath.Join(queue, "logical_block_size"), []byte("4096\n"), 0o644); err != nil {
+\t\tt.Fatal(err)
+\t}
+\tif _, err := logicalSectorSize("/dev/sdb"); err == nil || !strings.Contains(err.Error(), "requires 512-byte") {
+\t\tt.Fatalf("4 KiB sector error=%v", err)
+\t}
+}
+
+func TestLogicalSectorSizeRejectsInvalidSysfsValue(t *testing.T) {
+\troot := t.TempDir()
+\tprevious := sysClassBlockRoot
+\tsysClassBlockRoot = root
+\tt.Cleanup(func() { sysClassBlockRoot = previous })
+
+\tqueue := filepath.Join(root, "sdb", "queue")
+\tif err := os.MkdirAll(queue, 0o755); err != nil {
+\t\tt.Fatal(err)
+\t}
+\tif err := os.WriteFile(filepath.Join(queue, "logical_block_size"), []byte("invalid\n"), 0o644); err != nil {
+\t\tt.Fatal(err)
+\t}
+\tif _, err := logicalSectorSize("/dev/sdb"); err == nil || !strings.Contains(err.Error(), "parse logical sector size") {
+\t\tt.Fatalf("invalid sector value error=%v", err)
+\t}
+}
+''', encoding="utf-8")
+
+          replace_once(
+              "internal/windowsmedia/wimmetadata.go",
+              '''type wimImageXML struct {
+\tName    string        `xml:"NAME"`
+\tWindows wimWindowsXML `xml:"WINDOWS"`
+}
+''',
+              '''type wimImageXML struct {
+\tName        string        `xml:"NAME"`
+\tDisplayName string        `xml:"DISPLAYNAME"`
+\tWindows     wimWindowsXML `xml:"WINDOWS"`
+}
+''',
+          )
+          replace_once(
+              "internal/windowsmedia/wimmetadata.go",
+              'ProductName:      firstNonEmpty(image.Windows.ProductName, image.Name),',
+              'ProductName:      firstNonEmpty(image.DisplayName, image.Name, image.Windows.ProductName),',
+          )
+          replace_once(
+              "internal/windowsmedia/wimmetadata.go",
+              'name := firstNonEmpty(image.Name, image.Windows.ProductName)',
+              'name := firstNonEmpty(image.DisplayName, image.Name, image.Windows.ProductName)',
+          )
+
+          wim_test = Path("internal/windowsmedia/wimmetadata_test.go")
+          wim_test.write_text(wim_test.read_text(encoding="utf-8") + r'''
+
+func TestParseWIMMetadataUsesDisplayNameForWindows11Identity(t *testing.T) {
+\txml := `<WIM><IMAGE INDEX="1"><NAME>Professional</NAME><DISPLAYNAME>Windows 11 Pro</DISPLAYNAME><WINDOWS><ARCH>12</ARCH><PRODUCTNAME>Microsoft Windows Operating System</PRODUCTNAME><INSTALLATIONTYPE>Client</INSTALLATIONTYPE><VERSION><MAJOR>10</MAJOR><MINOR>0</MINOR><BUILD>26100</BUILD></VERSION></WINDOWS></IMAGE></WIM>`
+\tmetadata, err := parseWIMMetadata(strings.NewReader(xml))
+\tif err != nil {
+\t\tt.Fatal(err)
+\t}
+\tif metadata.ProductName != "Windows 11 Pro" {
+\t\tt.Fatalf("product name=%q, want display name", metadata.ProductName)
+\t}
+\tif got := metadataClass(metadata); got != "11|client|arm64|" {
+\t\tt.Fatalf("metadata class=%q, want recognized Windows 11 ARM64 client", got)
+\t}
+\tif len(metadata.EditionNames) != 1 || metadata.EditionNames[0] != "Windows 11 Pro" {
+\t\tt.Fatalf("edition names=%v", metadata.EditionNames)
+\t}
+}
+''', encoding="utf-8")
+          PY
+
+          gofmt -w \
+            cmd/rufus-freedos-format/main.go \
+            cmd/rufus-freedos-format/main_test.go \
+            internal/windowsmedia/wimmetadata.go \
+            internal/windowsmedia/wimmetadata_test.go
+
+      - name: Run focused regressions
+        run: go test ./cmd/rufus-freedos-format ./internal/windowsmedia ./internal/windowsconfig
+
+      - name: Commit and open pull request
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cmd/rufus-freedos-format internal/windowsmedia
+          git commit -m "Fix remaining PR225 hardware-test regressions"
+          git push --force-with-lease origin HEAD:"${BRANCH}"
+          if ! gh pr view "${BRANCH}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh pr create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --base stage2/0.13.0 \
+              --head "${BRANCH}" \
+              --title "Fix FreeDOS planning and Windows 11 WIM identity" \
+              --body $'Closes #227.\nCloses #228.\n\nFollow-up fixes from real ARM64 GUI testing of v0.13.0-pr225-test.\n\n- moves the FreeDOS read-only plan from privileged blockdev access to readable kernel sysfs while retaining the exact 512-byte-sector requirement;\n- parses bounded WIM DISPLAYNAME metadata and prefers it over generic product fields for Windows generation/family classification;\n- adds focused regressions for unprivileged FreeDOS geometry and official-style Windows 11 ARM64 metadata;\n- leaves destructive identity revalidation, UTF-16 normalization, edition agreement, and fail-closed policies unchanged.'
+          fi
