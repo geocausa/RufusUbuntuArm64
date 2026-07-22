@@ -3,9 +3,12 @@
 package windowsmedia
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf16"
 )
 
 func TestParseWIMMetadata(t *testing.T) {
@@ -26,6 +29,66 @@ func TestParseWIMMetadata(t *testing.T) {
 	if got := strings.Join(metadata.EditionNames, "|"); got != "Windows 11 Pro|Windows 11 Home" {
 		t.Fatalf("edition names=%q", got)
 	}
+}
+
+func TestParseWIMMetadataAcceptsUTF16(t *testing.T) {
+	tests := []struct {
+		name        string
+		declaration string
+		order       binary.ByteOrder
+		bom         uint16
+	}{
+		{name: "little endian", declaration: "UTF-16LE", order: binary.LittleEndian, bom: 0xfeff},
+		{name: "big endian", declaration: "UTF-16BE", order: binary.BigEndian, bom: 0xfeff},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			xml := `<?xml version="1.0" encoding="` + test.declaration + `"?><WIM><IMAGE INDEX="1"><NAME>Windows 11 Pro</NAME><WINDOWS><ARCH>12</ARCH><PRODUCTNAME>Microsoft Windows 11 Pro</PRODUCTNAME><INSTALLATIONTYPE>Client</INSTALLATIONTYPE><VERSION><MAJOR>10</MAJOR><MINOR>0</MINOR><BUILD>26100</BUILD></VERSION></WINDOWS></IMAGE></WIM>`
+			metadata, err := parseWIMMetadata(bytes.NewReader(encodeUTF16(test.order, test.bom, xml)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if metadata.ProductName != "Microsoft Windows 11 Pro" || metadata.Architecture != "arm64" || metadata.ImageCount != 1 {
+				t.Fatalf("metadata=%#v", metadata)
+			}
+		})
+	}
+}
+
+func TestParseWIMMetadataAcceptsUTF8BOM(t *testing.T) {
+	xml := []byte(`<WIM><IMAGE INDEX="1"><NAME>Windows 11 Pro</NAME><WINDOWS><ARCH>12</ARCH><PRODUCTNAME>Windows 11 Pro</PRODUCTNAME><INSTALLATIONTYPE>Client</INSTALLATIONTYPE></WINDOWS></IMAGE></WIM>`)
+	data := append([]byte{0xef, 0xbb, 0xbf}, xml...)
+	metadata, err := parseWIMMetadata(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.ImageCount != 1 || metadata.Architecture != "arm64" {
+		t.Fatalf("metadata=%#v", metadata)
+	}
+}
+
+func TestParseWIMMetadataRejectsMalformedUTF16(t *testing.T) {
+	tests := [][]byte{
+		{0xff, 0xfe, '<'},
+		{0xff, 0xfe, 0x00, 0xd8},
+		{0xff, 0xfe, 0x00, 0xdc},
+		{0xff, 0xfe, 0x00, 0xd8, '<', 0x00},
+	}
+	for index, data := range tests {
+		if _, err := parseWIMMetadata(bytes.NewReader(data)); err == nil || !strings.Contains(err.Error(), "UTF-16") {
+			t.Fatalf("case %d error=%v, want UTF-16 rejection", index, err)
+		}
+	}
+}
+
+func encodeUTF16(order binary.ByteOrder, bom uint16, value string) []byte {
+	units := utf16.Encode([]rune(value))
+	data := make([]byte, 2+len(units)*2)
+	order.PutUint16(data[:2], bom)
+	for index, unit := range units {
+		order.PutUint16(data[2+index*2:2+index*2+2], unit)
+	}
+	return data
 }
 
 func TestParseWIMMetadataDeduplicatesEditionNamesWithoutHidingImageCount(t *testing.T) {
