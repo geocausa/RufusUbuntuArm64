@@ -3,6 +3,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -61,5 +63,45 @@ func TestFixedDiskRequiresBoundIdentity(t *testing.T) {
 	value := arguments{devicePath: "/dev/sda", allowFixed: true}
 	if err := validateArguments(value, false); err == nil {
 		t.Fatal("fixed disk was accepted without expected identity")
+	}
+}
+
+func TestLogicalSectorSizeUsesReadableSysfs(t *testing.T) {
+	root := t.TempDir()
+	previous := sysClassBlockRoot
+	sysClassBlockRoot = root
+	t.Cleanup(func() { sysClassBlockRoot = previous })
+
+	queue := filepath.Join(root, "sdb", "queue")
+	if err := os.MkdirAll(queue, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(queue, "logical_block_size"), []byte("4096\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	value, err := logicalSectorSize("/dev/sdb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != 4096 {
+		t.Fatalf("logical sector size=%d, want 4096", value)
+	}
+}
+
+func TestLogicalSectorSizeRejectsInvalidSysfsValue(t *testing.T) {
+	root := t.TempDir()
+	previous := sysClassBlockRoot
+	sysClassBlockRoot = root
+	t.Cleanup(func() { sysClassBlockRoot = previous })
+
+	queue := filepath.Join(root, "sdb", "queue")
+	if err := os.MkdirAll(queue, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(queue, "logical_block_size"), []byte("1000\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := logicalSectorSize("/dev/sdb"); err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("invalid sector size error=%v", err)
 	}
 }
