@@ -91,7 +91,7 @@ func encodeUTF16(order binary.ByteOrder, bom uint16, value string) []byte {
 	return data
 }
 
-func TestParseWIMMMetadataDeduplicatesEditionNamesWithoutHidingImageCount(t *testing.T) {
+func TestParseWIMMetadataDeduplicatesEditionNamesWithoutHidingImageCount(t *testing.T) {
 	xml := `<WIM>
   <IMAGE INDEX="1"><NAME>Windows 11 Pro</NAME><WINDOWS><ARCH>9</ARCH><PRODUCTNAME>Windows 11 Pro</PRODUCTNAME><INSTALLATIONTYPE>Client</INSTALLATIONTYPE></WINDOWS></IMAGE>
   <IMAGE INDEX="2"><NAME>windows 11 pro</NAME><WINDOWS><ARCH>9</ARCH><PRODUCTNAME>Windows 11 Pro</PRODUCTNAME><INSTALLATIONTYPE>Client</INSTALLATIONTYPE></WINDOWS></IMAGE>
@@ -105,7 +105,7 @@ func TestParseWIMMMetadataDeduplicatesEditionNamesWithoutHidingImageCount(t *tes
 	}
 }
 
-func TestParseWIMMMetadataRejectsConflictingEditions(t *testing.T) {
+func TestParseWIMMetadataRejectsConflictingEditions(t *testing.T) {
 	xml := `<WIM>
   <IMAGE INDEX="1"><WINDOWS><ARCH>9</ARCH><PRODUCTNAME>Windows 11 Pro</PRODUCTNAME><INSTALLATIONTYPE>Client</INSTALLATIONTYPE><VERSION><MAJOR>10</MAJOR><MINOR>0</MINOR></VERSION></WINDOWS></IMAGE>
   <IMAGE INDEX="2"><WINDOWS><ARCH>9</ARCH><PRODUCTNAME>Windows Server 2025</PRODUCTNAME><INSTALLATIONTYPE>Server</INSTALLATIONTYPE><VERSION><MAJOR>10</MAJOR><MINOR>0</MINOR></VERSION></WINDOWS></IMAGE>
@@ -115,7 +115,7 @@ func TestParseWIMMMetadataRejectsConflictingEditions(t *testing.T) {
 	}
 }
 
-func TestParseWIMMMetadataRejectsUnboundedEditionSets(t *testing.T) {
+func TestParseWIMMetadataRejectsUnboundedEditionSets(t *testing.T) {
 	var xml strings.Builder
 	xml.WriteString("<WIM>")
 	for index := 0; index < maxWIMImages+1; index++ {
@@ -135,7 +135,7 @@ func TestParseWIMMetadataRejectsOversizedEditionName(t *testing.T) {
 	}
 }
 
-func TestParseWIMMMetadataFailsClosed(t *testing.T) {
+func TestParseWIMMetadataFailsClosed(t *testing.T) {
 	tests := []struct {
 		name string
 		xml  string
@@ -146,7 +146,7 @@ func TestParseWIMMMetadataFailsClosed(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			metadata, err := parseWIMMMetadata(strings.NewReader(test.xml))
+			metadata, err := parseWIMMetadata(strings.NewReader(test.xml))
 			if err == nil && metadataClass(metadata) == "|||" {
 				t.Fatalf("unidentified metadata was accepted: %#v", metadata)
 			}
@@ -162,7 +162,7 @@ func TestNormalizeWIMArchitecture(t *testing.T) {
 	}
 }
 
-func TestParseWIMMMetadataUsesDisplayNameForWindows11Identity(t *testing.T) {
+func TestParseWIMMetadataUsesDisplayNameForWindows11Identity(t *testing.T) {
 	xml := `<WIM><IMAGE INDEX="1"><NAME>Professional</NAME><DISPLAYNAME>Windows 11 Pro</DISPLAYNAME><WINDOWS><ARCH>12</ARCH><PRODUCTNAME>Microsoft Windows Operating System</PRODUCTNAME><INSTALLATIONTYPE>Client</INSTALLATIONTYPE><VERSION><MAJOR>10</MAJOR><MINOR>0</MINOR><BUILD>26100</BUILD></VERSION></WINDOWS></IMAGE></WIM>`
 	metadata, err := parseWIMMetadata(strings.NewReader(xml))
 	if err != nil {
