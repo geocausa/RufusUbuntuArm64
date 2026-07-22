@@ -1,0 +1,885 @@
+name: Apply FreeDOS full-device progress
+
+on:
+  push:
+    branches:
+      - fix/freedos-progress
+    paths:
+      - .github/workflows/apply-freedos-progress.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Add phase and byte progress
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              file = Path(path)
+              text = file.read_text(encoding="utf-8")
+              if text.count(old) != 1:
+                  raise SystemExit(f"{path}: replacement anchor count is {text.count(old)}, expected 1")
+              file.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_once(
+              "internal/freedos/executor.go",
+              '''// ExecutionOptions carries deterministic time and progress hooks. Progress
+          // failures are treated exactly like cancellation or I/O failures after the
+          // bytes already accepted by the target.
+          type ExecutionOptions struct {
+          \tNow      func() time.Time
+          \tProgress func(uint64) error
+          }
+          ''',
+              '''// ExecutionProgress reports one bounded execution phase. Processed and Total
+          // describe the current byte-bearing phase; phases without byte accounting use
+          // zero for both values.
+          type ExecutionProgress struct {
+          \tPhase     ExecutionPhase `json:"phase"`
+          \tProcessed uint64         `json:"processed"`
+          \tTotal     uint64         `json:"total"`
+          }
+
+          // ExecutionOptions carries deterministic time and progress hooks. Progress
+          // failures are treated exactly like cancellation or I/O failures after the
+          // bytes already accepted by the target.
+          type ExecutionOptions struct {
+          \tNow           func() time.Time
+          \tProgress      func(uint64) error
+          \tPhaseProgress func(ExecutionProgress) error
+          }
+
+          func emitExecutionProgress(options ExecutionOptions, phase ExecutionPhase, processed, total uint64) error {
+          \tif options.PhaseProgress == nil {
+          \t\treturn nil
+          \t}
+          \treturn options.PhaseProgress(ExecutionProgress{Phase: phase, Processed: processed, Total: total})
+          }
+          ''',
+          )
+
+          replace_once(
+              "internal/freedos/executor.go",
+              '''\treport.Phase = ExecutionPhasePrepare
+          \tif err := ctx.Err(); err != nil {
+          ''',
+              '''\treport.Phase = ExecutionPhasePrepare
+          \tif err := emitExecutionProgress(options, report.Phase, 0, 0); err != nil {
+          \t\treturn finishExecutionReport(report, now, err)
+          \t}
+          \tif err := ctx.Err(); err != nil {
+          ''',
+          )
+
+          replace_once(
+              "internal/freedos/executor.go",
+              '''\treport.Phase = ExecutionPhaseWrite
+          \treport.MediaChanged = true
+          \twriter := backend.TargetWriter()
+          \tif writer == nil {
+          \t\treturn closeExecutionBackend(report, now, backend, errors.New("FreeDOS backend returned no target writer"))
+          \t}
+          \twriteResult, err := StreamMediaImage(ctx, writer, plan.Media, options.Progress)
+          ''',
+              '''\treport.Phase = ExecutionPhaseWrite
+          \tif err := emitExecutionProgress(options, report.Phase, 0, plan.DeviceSizeBytes); err != nil {
+          \t\treturn closeExecutionBackend(report, now, backend, err)
+          \t}
+          \treport.MediaChanged = true
+          \twriter := backend.TargetWriter()
+          \tif writer == nil {
+          \t\treturn closeExecutionBackend(report, now, backend, errors.New("FreeDOS backend returned no target writer"))
+          \t}
+          \twriteProgress := func(completed uint64) error {
+          \t\tif options.Progress != nil {
+          \t\t\tif err := options.Progress(completed); err != nil {
+          \t\t\t\treturn err
+          \t\t\t}
+          \t\t}
+          \t\treturn emitExecutionProgress(options, ExecutionPhaseWrite, completed, plan.DeviceSizeBytes)
+          \t}
+          \twriteResult, err := StreamMediaImage(ctx, writer, plan.Media, writeProgress)
+          ''',
+          )
+
+          replace_once(
+              "internal/freedos/executor.go",
+              '''\treport.Phase = ExecutionPhaseFlush
+          \tif err := ctx.Err(); err != nil {
+          ''',
+              '''\treport.Phase = ExecutionPhaseFlush
+          \tif err := emitExecutionProgress(options, report.Phase, 0, 0); err != nil {
+          \t\treturn closeExecutionBackend(report, now, backend, err)
+          \t}
+          \tif err := ctx.Err(); err != nil {
+          ''',
+          )
+
+          replace_once(
+              "internal/freedos/executor.go",
+              '''\treport.Phase = ExecutionPhaseReadback
+          \treader := backend.TargetReaderAt()
+          \tif reader == nil {
+          \t\treturn closeExecutionBackend(report, now, backend, errors.New("FreeDOS backend returned no target readback"))
+          \t}
+          \treadback, err := VerifyMediaReadback(ctx, reader, plan.Media)
+          ''',
+              '''\treport.Phase = ExecutionPhaseReadback
+          \tif err := emitExecutionProgress(options, report.Phase, 0, plan.DeviceSizeBytes); err != nil {
+          \t\treturn closeExecutionBackend(report, now, backend, err)
+          \t}
+          \treader := backend.TargetReaderAt()
+          \tif reader == nil {
+          \t\treturn closeExecutionBackend(report, now, backend, errors.New("FreeDOS backend returned no target readback"))
+          \t}
+          \treadback, err := VerifyMediaReadbackProgress(ctx, reader, plan.Media, func(completed uint64) error {
+          \t\treturn emitExecutionProgress(options, ExecutionPhaseReadback, completed, plan.DeviceSizeBytes)
+          \t})
+          ''',
+          )
+
+          replace_once(
+              "internal/freedos/executor.go",
+              '''\treport.Phase = ExecutionPhaseFinish
+          \tif err := ctx.Err(); err != nil {
+          ''',
+              '''\treport.Phase = ExecutionPhaseFinish
+          \tif err := emitExecutionProgress(options, report.Phase, 0, 0); err != nil {
+          \t\treturn closeExecutionBackend(report, now, backend, err)
+          \t}
+          \tif err := ctx.Err(); err != nil {
+          ''',
+          )
+
+          replace_once(
+              "internal/freedos/stream.go",
+              '''// VerifyMediaReadback compares every byte of a seekable readback with the sparse
+          // deterministic source and returns the expected whole-image digest.
+          func VerifyMediaReadback(ctx context.Context, reader io.ReaderAt, plan MediaPlan) (MediaStreamResult, error) {
+          \tif reader == nil {
+          \t\treturn MediaStreamResult{}, errors.New("FreeDOS media readback is required")
+          \t}
+          \tif ctx == nil {
+          \t\tctx = context.Background()
+          \t}
+          \tsource, err := NewMediaImageSource(plan)
+          \tif err != nil {
+          \t\treturn MediaStreamResult{}, err
+          \t}
+          \texpected := make([]byte, mediaStreamBufferSize)
+          \tactual := make([]byte, mediaStreamBufferSize)
+          \thash := sha256.New()
+          \tvar verified uint64
+          \tfor verified < source.Size() {
+          \t\tif err := ctx.Err(); err != nil {
+          \t\t\treturn MediaStreamResult{BytesWritten: verified}, err
+          \t\t}
+          \t\tchunk := uint64(len(expected))
+          \t\tif remaining := source.Size() - verified; chunk > remaining {
+          \t\t\tchunk = remaining
+          \t\t}
+          \t\twant := expected[:int(chunk)]
+          \t\tgot := actual[:int(chunk)]
+          \t\tif _, err := source.ReadAt(want, int64(verified)); err != nil {
+          \t\t\treturn MediaStreamResult{BytesWritten: verified}, err
+          \t\t}
+          \t\tcount, readErr := reader.ReadAt(got, int64(verified))
+          \t\tif count != len(got) {
+          \t\t\tif readErr == nil {
+          \t\t\t\treadErr = io.ErrUnexpectedEOF
+          \t\t\t}
+          \t\t\treturn MediaStreamResult{BytesWritten: verified + uint64(count)}, fmt.Errorf("read FreeDOS media at byte %d: %w", verified, readErr)
+          \t\t}
+          \t\tif readErr != nil && !errors.Is(readErr, io.EOF) {
+          \t\t\treturn MediaStreamResult{BytesWritten: verified + uint64(count)}, fmt.Errorf("read FreeDOS media at byte %d: %w", verified, readErr)
+          \t\t}
+          \t\tif !bytes.Equal(want, got) {
+          \t\t\tfor index := range want {
+          \t\t\t\tif want[index] != got[index] {
+          \t\t\t\t\treturn MediaStreamResult{BytesWritten: verified + uint64(index)}, fmt.Errorf("FreeDOS media readback differs at byte %d", verified+uint64(index))
+          \t\t\t\t}
+          \t\t\t}
+          \t\t}
+          \t\t_, _ = hash.Write(want)
+          \t\tverified += chunk
+          \t}
+          \treturn MediaStreamResult{BytesWritten: verified, SHA256: fmt.Sprintf("%x", hash.Sum(nil))}, nil
+          }
+          ''',
+              '''// VerifyMediaReadback compares every byte of a seekable readback with the sparse
+          // deterministic source and returns the expected whole-image digest.
+          func VerifyMediaReadback(ctx context.Context, reader io.ReaderAt, plan MediaPlan) (MediaStreamResult, error) {
+          \treturn VerifyMediaReadbackProgress(ctx, reader, plan, nil)
+          }
+
+          // VerifyMediaReadbackProgress preserves the complete-byte comparison contract
+          // while reporting only successfully compared byte counts.
+          func VerifyMediaReadbackProgress(ctx context.Context, reader io.ReaderAt, plan MediaPlan, progress func(uint64) error) (MediaStreamResult, error) {
+          \tif reader == nil {
+          \t\treturn MediaStreamResult{}, errors.New("FreeDOS media readback is required")
+          \t}
+          \tif ctx == nil {
+          \t\tctx = context.Background()
+          \t}
+          \tsource, err := NewMediaImageSource(plan)
+          \tif err != nil {
+          \t\treturn MediaStreamResult{}, err
+          \t}
+          \texpected := make([]byte, mediaStreamBufferSize)
+          \tactual := make([]byte, mediaStreamBufferSize)
+          \thash := sha256.New()
+          \tvar verified uint64
+          \tfor verified < source.Size() {
+          \t\tif err := ctx.Err(); err != nil {
+          \t\t\treturn MediaStreamResult{BytesWritten: verified}, err
+          \t\t}
+          \t\tchunk := uint64(len(expected))
+          \t\tif remaining := source.Size() - verified; chunk > remaining {
+          \t\t\tchunk = remaining
+          \t\t}
+          \t\twant := expected[:int(chunk)]
+          \t\tgot := actual[:int(chunk)]
+          \t\tif _, err := source.ReadAt(want, int64(verified)); err != nil {
+          \t\t\treturn MediaStreamResult{BytesWritten: verified}, err
+          \t\t}
+          \t\tcount, readErr := reader.ReadAt(got, int64(verified))
+          \t\tif count != len(got) {
+          \t\t\tif readErr == nil {
+          \t\t\t\treadErr = io.ErrUnexpectedEOF
+          \t\t\t}
+          \t\t\treturn MediaStreamResult{BytesWritten: verified + uint64(count)}, fmt.Errorf("read FreeDOS media at byte %d: %w", verified, readErr)
+          \t\t}
+          \t\tif readErr != nil && !errors.Is(readErr, io.EOF) {
+          \t\t\treturn MediaStreamResult{BytesWritten: verified + uint64(count)}, fmt.Errorf("read FreeDOS media at byte %d: %w", verified, readErr)
+          \t\t}
+          \t\tif !bytes.Equal(want, got) {
+          \t\t\tfor index := range want {
+          \t\t\t\tif want[index] != got[index] {
+          \t\t\t\t\treturn MediaStreamResult{BytesWritten: verified + uint64(index)}, fmt.Errorf("FreeDOS media readback differs at byte %d", verified+uint64(index))
+          \t\t\t\t}
+          \t\t\t}
+          \t\t}
+          \t\t_, _ = hash.Write(want)
+          \t\tverified += chunk
+          \t\tif progress != nil {
+          \t\t\tif err := progress(verified); err != nil {
+          \t\t\t\treturn MediaStreamResult{BytesWritten: verified}, err
+          \t\t\t}
+          \t\t}
+          \t}
+          \treturn MediaStreamResult{BytesWritten: verified, SHA256: fmt.Sprintf("%x", hash.Sum(nil))}, nil
+          }
+          ''',
+          )
+
+          replace_once(
+              "cmd/rufus-freedos-format/main.go",
+              '''\t"fmt"
+          \t"os"
+          \t"os/exec"
+          ''',
+              '''\t"fmt"
+          \t"io"
+          \t"os"
+          \t"os/exec"
+          ''',
+          )
+          replace_once(
+              "cmd/rufus-freedos-format/main.go",
+              '''\t"strings"
+          \t"syscall"
+          ''',
+              '''\t"strings"
+          \t"syscall"
+          \t"time"
+          ''',
+          )
+          replace_once(
+              "cmd/rufus-freedos-format/main.go",
+              '''var sysClassBlockRoot = "/sys/class/block"
+          ''',
+              '''var sysClassBlockRoot = "/sys/class/block"
+
+          const freeDOSProgressPrefix = "RUFUSARM64_PROGRESS "
+
+          type freeDOSProgressRecord struct {
+          \tSchema         int                    `json:"schema"`
+          \tType           string                 `json:"type"`
+          \tPhase          freedos.ExecutionPhase `json:"phase"`
+          \tDone           uint64                 `json:"done"`
+          \tTotal          uint64                 `json:"total"`
+          \tOverallDone    uint64                 `json:"overall_done"`
+          \tOverallTotal   uint64                 `json:"overall_total"`
+          \tElapsedMS      uint64                 `json:"elapsed_ms"`
+          \tBytesPerSecond uint64                 `json:"bytes_per_second"`
+          \tETASeconds     *uint64                `json:"eta_seconds"`
+          }
+
+          type freeDOSProgressEmitter struct {
+          \twriter      io.Writer
+          \tdeviceSize  uint64
+          \tstarted     time.Time
+          \tlastPhase   freedos.ExecutionPhase
+          \tlastPercent int
+          }
+
+          func newFreeDOSProgressEmitter(writer io.Writer, deviceSize uint64) *freeDOSProgressEmitter {
+          \treturn &freeDOSProgressEmitter{writer: writer, deviceSize: deviceSize, started: time.Now(), lastPercent: -1}
+          }
+
+          func (emitter *freeDOSProgressEmitter) Emit(progress freedos.ExecutionProgress) error {
+          \tif emitter == nil || emitter.writer == nil || emitter.deviceSize == 0 {
+          \t\treturn errors.New("FreeDOS progress emitter is not configured")
+          \t}
+          \tif emitter.deviceSize > ^uint64(0)/2 {
+          \t\treturn errors.New("FreeDOS progress byte accounting overflow")
+          \t}
+          \toverallTotal := emitter.deviceSize * 2
+          \tvar overallDone uint64
+          \tswitch progress.Phase {
+          \tcase freedos.ExecutionPhasePrepare:
+          \t\toverallDone = 0
+          \tcase freedos.ExecutionPhaseWrite:
+          \t\toverallDone = progress.Processed
+          \tcase freedos.ExecutionPhaseFlush:
+          \t\toverallDone = emitter.deviceSize
+          \tcase freedos.ExecutionPhaseReadback:
+          \t\toverallDone = emitter.deviceSize + progress.Processed
+          \tcase freedos.ExecutionPhaseFinish, freedos.ExecutionPhaseComplete:
+          \t\toverallDone = overallTotal
+          \tdefault:
+          \t\treturn fmt.Errorf("unsupported FreeDOS progress phase %q", progress.Phase)
+          \t}
+          \tif overallDone > overallTotal || progress.Processed > progress.Total && progress.Total != 0 {
+          \t\treturn errors.New("FreeDOS progress exceeds its reviewed byte totals")
+          \t}
+          \tpercent := int(overallDone * 100 / overallTotal)
+          \tif progress.Phase == emitter.lastPhase && percent == emitter.lastPercent {
+          \t\treturn nil
+          \t}
+          \temitter.lastPhase = progress.Phase
+          \temitter.lastPercent = percent
+          \telapsed := time.Since(emitter.started)
+          \tif elapsed < 0 {
+          \t\telapsed = 0
+          \t}
+          \trate := uint64(0)
+          \tif overallDone > 0 && elapsed > 0 {
+          \t\trate = uint64(float64(overallDone) / elapsed.Seconds())
+          \t}
+          \tvar eta *uint64
+          \tif rate > 0 && overallDone < overallTotal {
+          \t\tremaining := (overallTotal - overallDone) / rate
+          \t\teta = &remaining
+          \t}
+          \trecord := freeDOSProgressRecord{
+          \t\tSchema:         1,
+          \t\tType:           "progress",
+          \t\tPhase:          progress.Phase,
+          \t\tDone:           progress.Processed,
+          \t\tTotal:          progress.Total,
+          \t\tOverallDone:    overallDone,
+          \t\tOverallTotal:   overallTotal,
+          \t\tElapsedMS:      uint64(elapsed / time.Millisecond),
+          \t\tBytesPerSecond: rate,
+          \t\tETASeconds:     eta,
+          \t}
+          \tdata, err := json.Marshal(record)
+          \tif err != nil {
+          \t\treturn err
+          \t}
+          \t_, err = fmt.Fprintf(emitter.writer, "%s%s\\n", freeDOSProgressPrefix, data)
+          \treturn err
+          }
+          ''',
+          )
+          replace_once(
+              "cmd/rufus-freedos-format/main.go",
+              '''\treport, runErr := freedos.ExecuteLinuxDevice(ctx, plan, freedos.LinuxDeviceOptions{
+          ''',
+              '''\texecution := freedos.ExecutionOptions{}
+          \tif opts.asJSON {
+          \t\texecution.PhaseProgress = newFreeDOSProgressEmitter(os.Stderr, selected.Size).Emit
+          \t}
+          \treport, runErr := freedos.ExecuteLinuxDevice(ctx, plan, freedos.LinuxDeviceOptions{
+          ''',
+          )
+          replace_once(
+              "cmd/rufus-freedos-format/main.go",
+              '''\t}, freedos.ExecutionOptions{})
+          ''',
+              '''\t}, execution)
+          ''',
+          )
+
+          replace_once(
+              "gui/rufusarm64_freedos.py",
+              '''from datetime import datetime
+          import os
+          import re
+          ''',
+              '''from datetime import datetime
+          import json
+          import os
+          import re
+          ''',
+          )
+          replace_once(
+              "gui/rufusarm64_freedos.py",
+              '''PHASES = {"plan", "prepare", "write", "flush", "readback", "finish", "complete"}
+          ''',
+              '''PHASES = {"plan", "prepare", "write", "flush", "readback", "finish", "complete"}
+          PROGRESS_PREFIX = "RUFUSARM64_PROGRESS "
+          PROGRESS_PHASE_LABELS = {
+              "prepare": "Preparing the target",
+              "write": "Writing the full device",
+              "flush": "Flushing device buffers",
+              "readback": "Reading back the full device",
+              "finish": "Finalizing and revalidating",
+              "complete": "Complete",
+          }
+          ''',
+          )
+          replace_once(
+              "gui/rufusarm64_freedos.py",
+              '''def plan_summary(payload):
+          ''',
+              '''def normalize_progress(payload):
+              """Validate one bounded helper progress record."""
+              value = _mapping(payload, "FreeDOS progress record is invalid.")
+              if _integer(value.get("schema"), "progress schema") != 1 or value.get("type") != "progress":
+                  raise ValueError("FreeDOS progress record uses an unsupported schema or type.")
+              phase = _text(value.get("phase"), "FreeDOS progress record is missing its phase.")
+              if phase not in PROGRESS_PHASE_LABELS:
+                  raise ValueError("FreeDOS progress record contains an invalid phase.")
+              done = _nonnegative_integer(value.get("done"), "progress byte count")
+              total = _nonnegative_integer(value.get("total"), "progress phase total")
+              overall_done = _nonnegative_integer(value.get("overall_done"), "overall completed byte count")
+              overall_total = _positive_integer(value.get("overall_total"), "overall byte total")
+              elapsed_ms = _nonnegative_integer(value.get("elapsed_ms"), "progress elapsed time")
+              rate = _nonnegative_integer(value.get("bytes_per_second"), "progress transfer rate")
+              eta = value.get("eta_seconds")
+              if eta is not None:
+                  eta = _nonnegative_integer(eta, "progress ETA")
+              if done > total or overall_done > overall_total:
+                  raise ValueError("FreeDOS progress exceeds its reviewed byte totals.")
+              if phase in {"write", "readback"} and total <= 0:
+                  raise ValueError("FreeDOS byte-bearing progress phase has no total.")
+              if phase not in {"write", "readback"} and (done != 0 or total != 0):
+                  raise ValueError("FreeDOS non-byte progress phase claimed byte accounting.")
+              normalized = dict(value)
+              normalized.update(
+                  {
+                      "schema": 1,
+                      "type": "progress",
+                      "phase": phase,
+                      "done": done,
+                      "total": total,
+                      "overall_done": overall_done,
+                      "overall_total": overall_total,
+                      "elapsed_ms": elapsed_ms,
+                      "bytes_per_second": rate,
+                      "eta_seconds": eta,
+                  }
+              )
+              return normalized
+
+
+          def decode_progress_line(line):
+              """Decode only explicitly prefixed helper progress; diagnostics remain diagnostics."""
+              text = str(line or "").strip()
+              if not text.startswith(PROGRESS_PREFIX):
+                  return None
+              try:
+                  payload = json.loads(text[len(PROGRESS_PREFIX) :])
+              except json.JSONDecodeError as exc:
+                  raise ValueError("FreeDOS helper returned malformed progress JSON.") from exc
+              return normalize_progress(payload)
+
+
+          def progress_summary(payload):
+              """Render current phase, overall percentage, rate, elapsed time, and ETA."""
+              value = normalize_progress(payload)
+              percent = value["overall_done"] * 100.0 / value["overall_total"]
+              rate = _human_bytes(value["bytes_per_second"]) + "/s" if value["bytes_per_second"] else "measuring speed"
+              elapsed = _human_duration(value["elapsed_ms"] // 1000)
+              eta = _human_duration(value["eta_seconds"]) + " remaining" if value["eta_seconds"] is not None else "estimating time"
+              return (
+                  f"{PROGRESS_PHASE_LABELS[value['phase']]}: {percent:.1f}% — "
+                  f"{_human_bytes(value['overall_done'])} of {_human_bytes(value['overall_total'])}; "
+                  f"{rate}; {elapsed} elapsed; {eta}"
+              )
+
+
+          def plan_summary(payload):
+          ''',
+          )
+          replace_once(
+              "gui/rufusarm64_freedos.py",
+              '''        f"Partition: starts at {_human_bytes(plan['partition_start_bytes'])}; "
+                  f"size {_human_bytes(plan['partition_size_bytes'])}.\\n"
+                  f"Platform: x86 only; BIOS or UEFI Legacy/CSM only. Not ARM64 or UEFI-only.\\n{warnings}"
+          ''',
+              '''        f"Partition: starts at {_human_bytes(plan['partition_start_bytes'])}; "
+                  f"size {_human_bytes(plan['partition_size_bytes'])}.\\n"
+                  f"Verification I/O: writes the full {_human_bytes(plan['device_size_bytes'])} device and reads it back in full "
+                  f"({_human_bytes(plan['device_size_bytes'] * 2)} total device I/O).\\n"
+                  f"Platform: x86 only; BIOS or UEFI Legacy/CSM only. Not ARM64 or UEFI-only.\\n{warnings}"
+          ''',
+          )
+          logic_path = Path("gui/rufusarm64_freedos.py")
+          logic = logic_path.read_text(encoding="utf-8")
+          logic += '''\n\ndef _human_duration(seconds):
+              seconds = max(0, int(seconds))
+              hours, remainder = divmod(seconds, 3600)
+              minutes, seconds = divmod(remainder, 60)
+              if hours:
+                  return f"{hours}h {minutes}m"
+              if minutes:
+                  return f"{minutes}m {seconds}s"
+              return f"{seconds}s"
+          '''
+          logic_path.write_text(logic, encoding="utf-8")
+
+          replace_once(
+              "gui/rufusarm64_freedos_dialog.py",
+              '''    build_run_command,
+              confirmation_phrase,
+              normalize_plan,
+              normalize_report,
+              plan_summary,
+              report_summary,
+          )
+          ''',
+              '''    build_run_command,
+              confirmation_phrase,
+              decode_progress_line,
+              normalize_plan,
+              normalize_report,
+              plan_summary,
+              progress_summary,
+              report_summary,
+          )
+          ''',
+          )
+          replace_once(
+              "gui/rufusarm64_freedos_dialog.py",
+              '''        self.plan_generation = 0
+                  self.run_generation = 0
+          ''',
+              '''        self.plan_generation = 0
+                  self.run_generation = 0
+                  self.last_progress_done = 0
+                  self.has_determinate_progress = False
+          ''',
+          )
+          replace_once(
+              "gui/rufusarm64_freedos_dialog.py",
+              '''    def pulse_progress(self):
+                  if not self.running:
+                      return False
+                  self.progress.pulse()
+                  return True
+          ''',
+              '''    def pulse_progress(self):
+                  if not self.running or self.has_determinate_progress:
+                      return False
+                  self.progress.pulse()
+                  return True
+          ''',
+          )
+          replace_once(
+              "gui/rufusarm64_freedos_dialog.py",
+              '''        self.run_generation += 1
+                  generation = self.run_generation
+                  self.progress.set_fraction(0.0)
+          ''',
+              '''        self.run_generation += 1
+                  generation = self.run_generation
+                  self.last_progress_done = 0
+                  self.has_determinate_progress = False
+                  self.progress.set_fraction(0.0)
+          ''',
+          )
+          replace_once(
+              "gui/rufusarm64_freedos_dialog.py",
+              '''            process = subprocess.Popen(
+                      command,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.PIPE,
+                      text=True,
+                      start_new_session=True,
+                  )
+                  self.process = process
+                  stdout, stderr = process.communicate()
+                  returncode = process.returncode
+                  self.process = None
+                  for line in stderr.splitlines():
+                      text = line.strip()
+                      if text and len(diagnostics) < 64 and diagnostics_size + len(text) <= 32768:
+                          diagnostics.append(text)
+                          diagnostics_size += len(text)
+          ''',
+              '''            process = subprocess.Popen(
+                      command,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.PIPE,
+                      text=True,
+                      bufsize=1,
+                      start_new_session=True,
+                  )
+                  self.process = process
+                  expected_total = int(reviewed["plan"]["device_size_bytes"]) * 2
+                  last_done = 0
+                  for line in process.stderr:
+                      progress = decode_progress_line(line)
+                      if progress is not None:
+                          if progress["overall_total"] != expected_total:
+                              raise ValueError("FreeDOS helper progress does not match the reviewed full-device I/O total.")
+                          if progress["overall_done"] < last_done:
+                              raise ValueError("FreeDOS helper progress moved backwards.")
+                          last_done = progress["overall_done"]
+                          GLib.idle_add(self._progress_ready, generation, progress)
+                          continue
+                      text = line.strip()
+                      if text and len(diagnostics) < 64 and diagnostics_size + len(text) <= 32768:
+                          diagnostics.append(text)
+                          diagnostics_size += len(text)
+                  stdout = process.stdout.read()
+                  returncode = process.wait()
+                  self.process = None
+          ''',
+          )
+          replace_once(
+              "gui/rufusarm64_freedos_dialog.py",
+              '''    def _run_ready(self, generation, payload, diagnostics, returncode):
+          ''',
+              '''    def _progress_ready(self, generation, progress):
+                  if self.closed or generation != self.run_generation or not self.running:
+                      return False
+                  done = progress["overall_done"]
+                  if done < self.last_progress_done:
+                      return False
+                  self.last_progress_done = done
+                  self.has_determinate_progress = True
+                  self.progress.set_fraction(min(1.0, done / progress["overall_total"]))
+                  summary = progress_summary(progress)
+                  self.progress.set_text(summary)
+                  self.status.set_text(summary)
+                  return False
+
+              def _run_ready(self, generation, payload, diagnostics, returncode):
+          ''',
+          )
+
+          replace_once(
+              "internal/freedos/stream_test.go",
+              '''\tverified, err := VerifyMediaReadback(context.Background(), bytes.NewReader(output.Bytes()), plan)
+          \tif err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          ''',
+              '''\tlastReadbackProgress := uint64(0)
+          \tverified, err := VerifyMediaReadbackProgress(context.Background(), bytes.NewReader(output.Bytes()), plan, func(completed uint64) error {
+          \t\tif completed <= lastReadbackProgress || completed > plan.DiskSizeBytes {
+          \t\t\treturn fmt.Errorf("invalid readback progress %d after %d", completed, lastReadbackProgress)
+          \t\t}
+          \t\tlastReadbackProgress = completed
+          \t\treturn nil
+          \t})
+          \tif err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tif lastReadbackProgress != plan.DiskSizeBytes {
+          \t\tt.Fatalf("final readback progress=%d, want %d", lastReadbackProgress, plan.DiskSizeBytes)
+          \t}
+          ''',
+          )
+
+          replace_once(
+              "internal/freedos/executor_test.go",
+              '''func TestExecuteDevicePlanRejectsBeforeDestructiveWithoutChangedMedia(t *testing.T) {
+          ''',
+              '''func TestExecuteDevicePlanReportsWriteAndReadbackProgress(t *testing.T) {
+          \tplan := testFreeDOSDevicePlan(t)
+          \tbackend := &memoryExecutionBackend{}
+          \tvar records []ExecutionProgress
+          \tif _, err := ExecuteDevicePlan(context.Background(), plan, backend, ExecutionOptions{
+          \t\tPhaseProgress: func(progress ExecutionProgress) error {
+          \t\t\trecords = append(records, progress)
+          \t\t\treturn nil
+          \t\t},
+          \t}); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tseen := make(map[ExecutionPhase]bool)
+          \tlast := make(map[ExecutionPhase]uint64)
+          \tfor _, progress := range records {
+          \t\tseen[progress.Phase] = true
+          \t\tif progress.Processed < last[progress.Phase] || progress.Processed > progress.Total && progress.Total != 0 {
+          \t\t\tt.Fatalf("invalid phase progress: %+v after %d", progress, last[progress.Phase])
+          \t\t}
+          \t\tlast[progress.Phase] = progress.Processed
+          \t}
+          \tfor _, phase := range []ExecutionPhase{ExecutionPhasePrepare, ExecutionPhaseWrite, ExecutionPhaseFlush, ExecutionPhaseReadback, ExecutionPhaseFinish} {
+          \t\tif !seen[phase] {
+          \t\t\tt.Fatalf("missing progress phase %q in %+v", phase, records)
+          \t\t}
+          \t}
+          \tif last[ExecutionPhaseWrite] != plan.DeviceSizeBytes || last[ExecutionPhaseReadback] != plan.DeviceSizeBytes {
+          \t\tt.Fatalf("incomplete full-device progress: write=%d readback=%d want=%d", last[ExecutionPhaseWrite], last[ExecutionPhaseReadback], plan.DeviceSizeBytes)
+          \t}
+          }
+
+          func TestExecuteDevicePlanRejectsBeforeDestructiveWithoutChangedMedia(t *testing.T) {
+          ''',
+          )
+
+          replace_once(
+              "gui/test_freedos_dialog.py",
+              '''    def test_package_and_polkit_contracts_are_explicit(self):
+          ''',
+              '''    def test_full_device_progress_is_streamed_into_the_dialog(self):
+                  self.assertIn("decode_progress_line", self.dialog_class_source)
+                  self.assertIn("for line in process.stderr", self.dialog_class_source)
+                  self.assertIn("self._progress_ready", self.dialog_class_source)
+                  self.assertIn("progress_summary(progress)", self.dialog_class_source)
+                  self.assertNotIn("process.communicate()", self.dialog_class_source)
+                  self.assertIn("total device I/O", self.logic_source)
+
+              def test_package_and_polkit_contracts_are_explicit(self):
+          ''',
+          )
+          PY
+
+          cat > cmd/rufus-freedos-format/progress_test.go <<'EOF'
+          //go:build linux
+
+          package main
+
+          import (
+          	"bufio"
+          	"bytes"
+          	"encoding/json"
+          	"strings"
+          	"testing"
+
+          	"github.com/geocausa/RufusArm64/internal/freedos"
+          )
+
+          func TestFreeDOSProgressEmitterAccountsForWriteAndReadback(t *testing.T) {
+          	var output bytes.Buffer
+          	emitter := newFreeDOSProgressEmitter(&output, 100)
+          	for _, progress := range []freedos.ExecutionProgress{
+          		{Phase: freedos.ExecutionPhasePrepare},
+          		{Phase: freedos.ExecutionPhaseWrite, Processed: 50, Total: 100},
+          		{Phase: freedos.ExecutionPhaseFlush},
+          		{Phase: freedos.ExecutionPhaseReadback, Processed: 50, Total: 100},
+          		{Phase: freedos.ExecutionPhaseFinish},
+          	} {
+          		if err := emitter.Emit(progress); err != nil {
+          			t.Fatal(err)
+          		}
+          	}
+          	var records []freeDOSProgressRecord
+          	scanner := bufio.NewScanner(&output)
+          	for scanner.Scan() {
+          		line := scanner.Text()
+          		if !strings.HasPrefix(line, freeDOSProgressPrefix) {
+          			t.Fatalf("progress line lacks prefix: %q", line)
+          		}
+          		var record freeDOSProgressRecord
+          		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, freeDOSProgressPrefix)), &record); err != nil {
+          			t.Fatal(err)
+          		}
+          		records = append(records, record)
+          	}
+          	if err := scanner.Err(); err != nil {
+          		t.Fatal(err)
+          	}
+          	if len(records) != 5 {
+          		t.Fatalf("records=%d, want 5: %+v", len(records), records)
+          	}
+          	if records[1].OverallDone != 50 || records[3].OverallDone != 150 || records[4].OverallDone != 200 {
+          		t.Fatalf("unexpected full-device accounting: %+v", records)
+          	}
+          	for _, record := range records {
+          		if record.Schema != 1 || record.Type != "progress" || record.OverallTotal != 200 {
+          			t.Fatalf("invalid progress record: %+v", record)
+          		}
+          	}
+          }
+          EOF
+
+          cat > gui/test_freedos_progress.py <<'EOF'
+          import json
+          import pathlib
+          import sys
+          import unittest
+
+          sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+          from rufusarm64_freedos import PROGRESS_PREFIX, decode_progress_line, progress_summary
+
+
+          class FreeDOSProgressTests(unittest.TestCase):
+              def record(self, **updates):
+                  value = {
+                      "schema": 1,
+                      "type": "progress",
+                      "phase": "write",
+                      "done": 50,
+                      "total": 100,
+                      "overall_done": 50,
+                      "overall_total": 200,
+                      "elapsed_ms": 1000,
+                      "bytes_per_second": 50,
+                      "eta_seconds": 3,
+                  }
+                  value.update(updates)
+                  return value
+
+              def test_decodes_prefixed_progress_and_renders_phase(self):
+                  progress = decode_progress_line(PROGRESS_PREFIX + json.dumps(self.record()))
+                  self.assertEqual(progress["overall_done"], 50)
+                  summary = progress_summary(progress)
+                  self.assertIn("Writing the full device", summary)
+                  self.assertIn("25.0%", summary)
+
+              def test_ignores_diagnostics_and_rejects_malformed_progress(self):
+                  self.assertIsNone(decode_progress_line("ordinary diagnostic"))
+                  with self.assertRaisesRegex(ValueError, "malformed progress JSON"):
+                      decode_progress_line(PROGRESS_PREFIX + "{")
+                  with self.assertRaisesRegex(ValueError, "exceeds"):
+                      decode_progress_line(PROGRESS_PREFIX + json.dumps(self.record(overall_done=201)))
+
+
+          if __name__ == "__main__":
+              unittest.main()
+          EOF
+
+          gofmt -w internal/freedos/executor.go internal/freedos/executor_test.go internal/freedos/stream.go internal/freedos/stream_test.go cmd/rufus-freedos-format/main.go cmd/rufus-freedos-format/progress_test.go
+          python3 -m py_compile gui/rufusarm64_freedos.py gui/rufusarm64_freedos_dialog.py gui/test_freedos_dialog.py gui/test_freedos_progress.py
+          go test ./internal/freedos ./cmd/rufus-freedos-format
+          python3 -m unittest gui.test_freedos_dialog gui.test_freedos_progress
+
+      - name: Commit progress implementation
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/apply-freedos-progress.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add internal/freedos/executor.go internal/freedos/executor_test.go internal/freedos/stream.go internal/freedos/stream_test.go cmd/rufus-freedos-format/main.go cmd/rufus-freedos-format/progress_test.go gui/rufusarm64_freedos.py gui/rufusarm64_freedos_dialog.py gui/test_freedos_dialog.py gui/test_freedos_progress.py
+          git commit -m "Show FreeDOS full-device progress"
+          git push origin HEAD:fix/freedos-progress
