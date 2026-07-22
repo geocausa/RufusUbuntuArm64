@@ -255,7 +255,7 @@ func openUEFIEntry(parent *os.File, name string, expectedInfo os.FileInfo, direc
 	if err != nil {
 		return nil, err
 	}
-	flags := syscall.O_RDONLY | syscall.O_NOFOLLOW | syscall.O_CLOEXEC
+	flags := syscall.O_RDONLY | syscall.O_NOFOLLOW | syscall.O_CLOEXEC | syscall.O_NONBLOCK
 	if directory {
 		flags |= syscall.O_DIRECTORY
 	}
