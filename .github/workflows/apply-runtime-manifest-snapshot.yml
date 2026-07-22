@@ -1,0 +1,160 @@
+name: Apply runtime manifest snapshot binding
+
+on:
+  push:
+    branches:
+      - audit/runtime-manifest-snapshot
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: audit/runtime-manifest-snapshot
+          fetch-depth: 0
+      - name: Bind the runtime manifest snapshot
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('internal/runtimeintegrity/tree_linux.go')
+          text = path.read_text()
+
+          replacements = [
+              (
+                  '''type treeEntry struct {
+          \trelative string
+          \tidentity fileIdentity
+          }
+          ''',
+                  '''type treeEntry struct {
+          \trelative string
+          \tidentity fileIdentity
+          }
+          
+          type treeSnapshot struct {
+          \tmanifestIdentity fileIdentity
+          }
+          ''',
+              ),
+              (
+                  'enumerateTree(ctx, root, opts, hook, false)',
+                  'enumerateTree(ctx, root, opts, hook, false, nil)',
+              ),
+              (
+                  '''func verify(ctx context.Context, root string, opts Options, hook treeHook) (VerificationResult, error) {
+          \tresolved, rootFile, rootIdentity, entries, total, err := enumerateTree(ctx, root, opts, hook, true)
+          ''',
+                  '''func verify(ctx context.Context, root string, opts Options, hook treeHook) (VerificationResult, error) {
+          \tvar snapshot treeSnapshot
+          \tresolved, rootFile, rootIdentity, entries, total, err := enumerateTree(ctx, root, opts, hook, true, &snapshot)
+          ''',
+              ),
+              (
+                  '''\tdefer rootFile.Close()
+          \tmanifestData, err := readManifest(rootFile)
+          ''',
+                  '''\tdefer rootFile.Close()
+          \tif hook != nil {
+          \t\thook("manifest-before-open", ManifestName)
+          \t}
+          \tmanifestData, err := readManifest(rootFile, snapshot.manifestIdentity)
+          ''',
+              ),
+              (
+                  'func enumerateTree(ctx context.Context, root string, opts Options, hook treeHook, requireManifest bool) (string, *os.File, fileIdentity, []treeEntry, uint64, error) {',
+                  'func enumerateTree(ctx context.Context, root string, opts Options, hook treeHook, requireManifest bool, snapshot *treeSnapshot) (string, *os.File, fileIdentity, []treeEntry, uint64, error) {',
+              ),
+              (
+                  'enumerateDirectory(ctx, rootFile, "", maxFiles, hook, &entries, &total, &manifestCount)',
+                  'enumerateDirectory(ctx, rootFile, "", maxFiles, hook, &entries, &total, &manifestCount, snapshot)',
+              ),
+              (
+                  'func enumerateDirectory(ctx context.Context, directory *os.File, prefix string, maxFiles int, hook treeHook, entries *[]treeEntry, total *uint64, manifestCount *int) error {',
+                  'func enumerateDirectory(ctx context.Context, directory *os.File, prefix string, maxFiles int, hook treeHook, entries *[]treeEntry, total *uint64, manifestCount *int, snapshot *treeSnapshot) error {',
+              ),
+              (
+                  'enumerateDirectory(ctx, child, relative, maxFiles, hook, entries, total, manifestCount)',
+                  'enumerateDirectory(ctx, child, relative, maxFiles, hook, entries, total, manifestCount, snapshot)',
+              ),
+              (
+                  '''\t\tif prefix == "" && strings.EqualFold(name, ManifestName) {
+          \t\t\t*manifestCount++
+          \t\t\tif name != ManifestName {
+          \t\t\t\treturn fmt.Errorf("root manifest name %q must use exact lowercase spelling %q", name, ManifestName)
+          \t\t\t}
+          \t\t\tcontinue
+          \t\t}
+          ''',
+                  '''\t\tif prefix == "" && strings.EqualFold(name, ManifestName) {
+          \t\t\t*manifestCount++
+          \t\t\tif name != ManifestName {
+          \t\t\t\treturn fmt.Errorf("root manifest name %q must use exact lowercase spelling %q", name, ManifestName)
+          \t\t\t}
+          \t\t\tif snapshot != nil {
+          \t\t\t\tidentity, identityErr := identityFromInfo(info)
+          \t\t\t\tif identityErr != nil {
+          \t\t\t\t\treturn identityErr
+          \t\t\t\t}
+          \t\t\t\tsnapshot.manifestIdentity = identity
+          \t\t\t}
+          \t\t\tcontinue
+          \t\t}
+          ''',
+              ),
+              (
+                  'func readManifest(root *os.File) ([]byte, error) {\n\tfd, err := syscall.Openat(int(root.Fd()), ManifestName, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)',
+                  'func readManifest(root *os.File, expected fileIdentity) ([]byte, error) {\n\tfd, err := syscall.Openat(int(root.Fd()), ManifestName, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0)',
+              ),
+              (
+                  '''\tbefore, err := identityFromOpenFile(file)
+          \tif err != nil {
+          \t\treturn nil, err
+          \t}
+          \tif before.mode&syscall.S_IFMT != syscall.S_IFREG || before.size <= 0 || before.size > MaximumManifestSize {
+          ''',
+                  '''\tbefore, err := identityFromOpenFile(file)
+          \tif err != nil {
+          \t\treturn nil, err
+          \t}
+          \tif !sameStableObject(expected, before) {
+          \t\treturn nil, fmt.Errorf("%s changed between enumeration and read", ManifestName)
+          \t}
+          \tif before.mode&syscall.S_IFMT != syscall.S_IFREG || before.size <= 0 || before.size > MaximumManifestSize {
+          ''',
+              ),
+              (
+                  '''\tif !sameStableObject(before, after) || int64(len(data)) != before.size {
+          \t\treturn nil, fmt.Errorf("%s changed while it was being read", ManifestName)
+          \t}
+          ''',
+                  '''\tif !sameStableObject(expected, after) || !sameStableObject(before, after) || int64(len(data)) != before.size {
+          \t\treturn nil, fmt.Errorf("%s changed while it was being read", ManifestName)
+          \t}
+          ''',
+              ),
+          ]
+
+          for old, new in replacements:
+              old = '\n'.join(line[10:] if line.startswith('          ') else line for line in old.splitlines())
+              new = '\n'.join(line[10:] if line.startswith('          ') else line for line in new.splitlines())
+              if text.count(old) != 1:
+                  raise SystemExit(f'expected one match, found {text.count(old)} for:\n{old}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+          gofmt -w internal/runtimeintegrity/tree_linux.go internal/runtimeintegrity/manifest_snapshot_linux_test.go
+          go test ./internal/runtimeintegrity
+          git rm .github/workflows/apply-runtime-manifest-snapshot.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add internal/runtimeintegrity
+          git commit -m "Bind runtime manifest to enumerated snapshot"
+          git push origin HEAD:audit/runtime-manifest-snapshot
