@@ -683,7 +683,7 @@ func generateFromOpenRoot(ctx context.Context, root *os.File, rootIdentity fileI
 	var entries []treeEntry
 	var total uint64
 	manifestCount := 0
-	if err := enumerateDirectory(ctx, scan, "", maxFiles, nil, &entries, &total, &manifestCount); err != nil {
+	if err := enumerateDirectory(ctx, scan, "", maxFiles, nil, &entries, &total, &manifestCount, nil); err != nil {
 		return Manifest{}, err
 	}
 	if manifestCount != 0 {
@@ -720,14 +720,15 @@ func verifyFromOpenRoot(ctx context.Context, root *os.File, rootIdentity fileIde
 	}
 	var entries []treeEntry
 	var total uint64
+	var snapshot treeSnapshot
 	manifestCount := 0
-	if err := enumerateDirectory(ctx, scan, "", maxFiles, nil, &entries, &total, &manifestCount); err != nil {
+	if err := enumerateDirectory(ctx, scan, "", maxFiles, nil, &entries, &total, &manifestCount, &snapshot); err != nil {
 		return VerificationResult{}, err
 	}
 	if manifestCount != 1 {
 		return VerificationResult{}, errors.New("installed media must contain exactly one root md5sum.txt")
 	}
-	manifestData, err := readManifest(scan)
+	manifestData, err := readManifest(scan, snapshot.manifestIdentity)
 	if err != nil {
 		return VerificationResult{}, err
 	}

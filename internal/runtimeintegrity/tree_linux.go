@@ -69,6 +69,10 @@ type treeEntry struct {
 	identity fileIdentity
 }
 
+type treeSnapshot struct {
+	manifestIdentity fileIdentity
+}
+
 type hashedEntry struct {
 	Entry
 	identity fileIdentity
@@ -79,7 +83,7 @@ func Generate(ctx context.Context, root string, opts Options) (Manifest, error) 
 }
 
 func generate(ctx context.Context, root string, opts Options, hook treeHook) (Manifest, error) {
-	resolved, rootFile, rootIdentity, entries, total, err := enumerateTree(ctx, root, opts, hook, false)
+	resolved, rootFile, rootIdentity, entries, total, err := enumerateTree(ctx, root, opts, hook, false, nil)
 	if err != nil {
 		return Manifest{}, err
 	}
@@ -107,12 +111,16 @@ func Verify(ctx context.Context, root string, opts Options) (VerificationResult,
 }
 
 func verify(ctx context.Context, root string, opts Options, hook treeHook) (VerificationResult, error) {
-	resolved, rootFile, rootIdentity, entries, total, err := enumerateTree(ctx, root, opts, hook, true)
+	var snapshot treeSnapshot
+	resolved, rootFile, rootIdentity, entries, total, err := enumerateTree(ctx, root, opts, hook, true, &snapshot)
 	if err != nil {
 		return VerificationResult{}, err
 	}
 	defer rootFile.Close()
-	manifestData, err := readManifest(rootFile)
+	if hook != nil {
+		hook("manifest-before-open", ManifestName)
+	}
+	manifestData, err := readManifest(rootFile, snapshot.manifestIdentity)
 	if err != nil {
 		return VerificationResult{}, err
 	}
@@ -171,7 +179,7 @@ func verify(ctx context.Context, root string, opts Options, hook treeHook) (Veri
 	return result, nil
 }
 
-func enumerateTree(ctx context.Context, root string, opts Options, hook treeHook, requireManifest bool) (string, *os.File, fileIdentity, []treeEntry, uint64, error) {
+func enumerateTree(ctx context.Context, root string, opts Options, hook treeHook, requireManifest bool, snapshot *treeSnapshot) (string, *os.File, fileIdentity, []treeEntry, uint64, error) {
 	if ctx == nil {
 		return "", nil, fileIdentity{}, nil, 0, errors.New("runtime integrity context is nil")
 	}
@@ -228,7 +236,7 @@ func enumerateTree(ctx context.Context, root string, opts Options, hook treeHook
 	var entries []treeEntry
 	var total uint64
 	manifestCount := 0
-	if err := enumerateDirectory(ctx, rootFile, "", maxFiles, hook, &entries, &total, &manifestCount); err != nil {
+	if err := enumerateDirectory(ctx, rootFile, "", maxFiles, hook, &entries, &total, &manifestCount, snapshot); err != nil {
 		rootFile.Close()
 		return "", nil, fileIdentity{}, nil, 0, err
 	}
@@ -247,7 +255,7 @@ func enumerateTree(ctx context.Context, root string, opts Options, hook treeHook
 	return resolved, rootFile, actual, entries, total, nil
 }
 
-func enumerateDirectory(ctx context.Context, directory *os.File, prefix string, maxFiles int, hook treeHook, entries *[]treeEntry, total *uint64, manifestCount *int) error {
+func enumerateDirectory(ctx context.Context, directory *os.File, prefix string, maxFiles int, hook treeHook, entries *[]treeEntry, total *uint64, manifestCount *int, snapshot *treeSnapshot) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -283,7 +291,7 @@ func enumerateDirectory(ctx context.Context, directory *os.File, prefix string, 
 			if err != nil {
 				return fmt.Errorf("open directory %s: %w", relative, err)
 			}
-			err = enumerateDirectory(ctx, child, relative, maxFiles, hook, entries, total, manifestCount)
+			err = enumerateDirectory(ctx, child, relative, maxFiles, hook, entries, total, manifestCount, snapshot)
 			closeErr := child.Close()
 			if err != nil {
 				return err
@@ -300,6 +308,13 @@ func enumerateDirectory(ctx context.Context, directory *os.File, prefix string, 
 			*manifestCount++
 			if name != ManifestName {
 				return fmt.Errorf("root manifest name %q must use exact lowercase spelling %q", name, ManifestName)
+			}
+			if snapshot != nil {
+				identity, identityErr := identityFromInfo(info)
+				if identityErr != nil {
+					return identityErr
+				}
+				snapshot.manifestIdentity = identity
 			}
 			continue
 		}
@@ -448,8 +463,8 @@ func openEntry(parent *os.File, name string, expectedInfo os.FileInfo, directory
 	return file, nil
 }
 
-func readManifest(root *os.File) ([]byte, error) {
-	fd, err := syscall.Openat(int(root.Fd()), ManifestName, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+func readManifest(root *os.File, expected fileIdentity) ([]byte, error) {
+	fd, err := syscall.Openat(int(root.Fd()), ManifestName, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", ManifestName, err)
 	}
@@ -463,6 +478,9 @@ func readManifest(root *os.File) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if !sameStableObject(expected, before) {
+		return nil, fmt.Errorf("%s changed between enumeration and read", ManifestName)
+	}
 	if before.mode&syscall.S_IFMT != syscall.S_IFREG || before.size <= 0 || before.size > MaximumManifestSize {
 		return nil, fmt.Errorf("%s must be a non-empty regular file no larger than %d bytes", ManifestName, MaximumManifestSize)
 	}
@@ -474,7 +492,7 @@ func readManifest(root *os.File) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !sameStableObject(before, after) || int64(len(data)) != before.size {
+	if !sameStableObject(expected, after) || !sameStableObject(before, after) || int64(len(data)) != before.size {
 		return nil, fmt.Errorf("%s changed while it was being read", ManifestName)
 	}
 	return data, nil
