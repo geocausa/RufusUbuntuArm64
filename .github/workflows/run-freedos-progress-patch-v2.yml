@@ -1,0 +1,77 @@
+name: Run FreeDOS progress patch with extracted repair
+
+on:
+  push:
+    branches:
+      - fix/freedos-progress
+    paths:
+      - .github/workflows/run-freedos-progress-patch-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - name: Extract, repair, and run patch script
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/apply-freedos-progress-v2.yml').read_text(encoding='utf-8')
+          begin_marker = '      - name: Add phase and byte progress\n        run: |\n'
+          end_marker = '\n      - name: Commit progress implementation\n'
+          begin = workflow.find(begin_marker)
+          end = workflow.find(end_marker, begin)
+          if begin < 0 or end < 0:
+              raise SystemExit(f'could not locate patch shell block: begin={begin} end={end}')
+          yaml_block = workflow[begin + len(begin_marker):end]
+          lines = []
+          for line in yaml_block.splitlines():
+              if line.startswith('          '):
+                  lines.append(line[10:])
+              elif not line:
+                  lines.append('')
+              else:
+                  raise SystemExit(f'unexpected original YAML indentation: {line!r}')
+          script = '\n'.join(lines) + '\n'
+
+          start = script.find('"""                text=True,')
+          if start < 0:
+              raise SystemExit('could not locate first Popen literal in extracted script')
+          next_file = script.find('"gui/rufusarm64_freedos_dialog.py"', start)
+          next_replace = script.rfind('replace_once(', start, next_file)
+          if next_file < 0 or next_replace < 0:
+              raise SystemExit(f'could not locate extracted replacement boundary: file={next_file} replace={next_replace}')
+          replacement = '''"                text=True,\\n                start_new_session=True,\\n",
+    "                text=True,\\n                bufsize=1,\\n                start_new_session=True,\\n",
+)
+'''
+          script = script[:start] + replacement + script[next_replace:]
+          Path('/tmp/apply-freedos-progress.sh').write_text(script, encoding='utf-8')
+          PY
+          bash -x /tmp/apply-freedos-progress.sh
+      - name: Commit implementation
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            internal/freedos/executor.go \
+            internal/freedos/executor_test.go \
+            internal/freedos/stream.go \
+            internal/freedos/stream_test.go \
+            cmd/rufus-freedos-format/main.go \
+            cmd/rufus-freedos-format/progress_test.go \
+            gui/rufusarm64_freedos.py \
+            gui/rufusarm64_freedos_dialog.py \
+            gui/test_freedos_dialog.py \
+            gui/test_freedos_progress.py
+          git commit -m "Show FreeDOS full-device progress"
+          git push origin HEAD:fix/freedos-progress
