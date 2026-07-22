@@ -41,14 +41,21 @@ class NonBootableFormatDialog(Gtk.Dialog):
         self.closed = False
         self.plan_generation = 0
         self.run_generation = 0
-        self.set_default_size(780, 650)
+        self.set_default_size(760, 560)
+        self.set_resizable(True)
         self.add_button("Close", Gtk.ResponseType.CLOSE)
         self.close_button = self.get_widget_for_response(Gtk.ResponseType.CLOSE)
         self.connect("delete-event", self.on_delete_event)
 
+        content_scroll = Gtk.ScrolledWindow()
+        content_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        content_scroll.set_hexpand(True)
+        content_scroll.set_vexpand(True)
+        self.get_content_area().pack_start(content_scroll, True, True, 0)
+
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         box.set_border_width(18)
-        self.get_content_area().pack_start(box, True, True, 0)
+        content_scroll.add(box)
 
         title = Gtk.Label()
         title.set_markup("<span size='large' weight='bold'>Non bootable — data-only media</span>")
@@ -149,11 +156,13 @@ class NonBootableFormatDialog(Gtk.Dialog):
 
         result_scroll = Gtk.ScrolledWindow()
         result_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        result_scroll.set_vexpand(True)
+        result_scroll.set_min_content_height(160)
+        result_scroll.set_max_content_height(240)
+        result_scroll.set_propagate_natural_height(True)
         self.result = Gtk.TextView(editable=False, cursor_visible=False, monospace=True, wrap_mode=Gtk.WrapMode.WORD_CHAR)
         self.result.get_buffer().set_text("No formatting report is available yet.")
         result_scroll.add(self.result)
-        box.pack_start(result_scroll, True, True, 0)
+        box.pack_start(result_scroll, False, False, 0)
 
         self.show_all()
         self.refresh_plan()
