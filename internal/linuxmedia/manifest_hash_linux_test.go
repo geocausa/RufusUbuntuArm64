@@ -31,16 +31,18 @@ func TestHashStableFileWithOpenAcceptsRegularFile(t *testing.T) {
 }
 
 func TestHashStableFileWithOpenRejectsReplacement(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "payload")
+	directory := t.TempDir()
+	path := filepath.Join(directory, "payload")
+	replacement := filepath.Join(directory, "replacement")
 	if err := os.WriteFile(path, []byte("first"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(replacement, []byte("other"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	_, err := hashStableFileWithOpen(context.Background(), path, 5, func(name string) (*os.File, error) {
-		if err := os.Remove(name); err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(name, []byte("other"), 0o600); err != nil {
+		if err := os.Rename(replacement, name); err != nil {
 			return nil, err
 		}
 		return openLinuxMediaNoFollow(name)
