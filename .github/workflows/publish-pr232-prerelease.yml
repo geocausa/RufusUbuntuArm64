@@ -1,0 +1,91 @@
+name: Publish PR232 prerelease
+
+on:
+  push:
+    branches:
+      - ops/publish-pr232-prerelease
+    paths:
+      - .github/workflows/publish-pr232-prerelease.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: geocausa/RufusUbuntuArm64
+      ARTIFACT_ID: "8533807104"
+      TAG: v0.13.0-pr232-test
+      TARGET: 5dabfc95c2878d5c3b01dfe634dc52300be9054f
+      DEB: rufusarm64_0.13.0+pr232.1099c432_arm64.deb
+      SHA256: 752f8d6ca630ac00fa30d08863b7fe420caa01d60df2e668632ed4fbf555f3f4
+    steps:
+      - name: Download exact green CI artifact
+        run: |
+          set -euo pipefail
+          gh api "/repos/${REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > artifact.zip
+          mkdir artifact
+          unzip -q artifact.zip -d artifact
+          test -f "artifact/${DEB}"
+          test -f "artifact/${DEB}.sha256"
+
+      - name: Verify package identity
+        run: |
+          set -euo pipefail
+          cd artifact
+          printf '%s  %s\n' "${SHA256}" "${DEB}" | sha256sum -c -
+          sha256sum -c "${DEB}.sha256"
+          test "$(dpkg-deb -f "${DEB}" Package)" = rufusarm64
+          test "$(dpkg-deb -f "${DEB}" Version)" = 0.13.0+pr232.1099c432
+          test "$(dpkg-deb -f "${DEB}" Architecture)" = arm64
+
+      - name: Publish refreshed hardware-test prerelease
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<'EOF'
+          ## RufusArm64 0.13.0 — ARM64 hardware-test prerelease
+
+          This checkpoint supersedes `v0.13.0-pr229-test`.
+
+          Confirmed on real ARM64 hardware during this test cycle:
+
+          - Windows ARM64 installation-media creation works.
+          - Ubuntu Concept ISO creation with persistence boots successfully.
+          - Non-bootable FAT32 formatting completes and verifies successfully.
+
+          This build also fixes the non-bootable result dialog so its Close action remains visible on smaller GNOME work areas.
+
+          FreeDOS physical creation remains under investigation because one USB card-reader run continued for about 20 minutes without adequate stage progress.
+
+          Built by green CI from PR #232 head `1099c4325385c0e74fe711bffe48a23a70649867`; the source is merged into `stage2/0.13.0` at `5dabfc95c2878d5c3b01dfe634dc52300be9054f`.
+
+          **This remains a test prerelease, not the final public 0.13.0 release.**
+
+          SHA-256:
+
+          ```text
+          752f8d6ca630ac00fa30d08863b7fe420caa01d60df2e668632ed4fbf555f3f4  rufusarm64_0.13.0+pr232.1099c432_arm64.deb
+          ```
+          EOF
+
+          if gh release view "${TAG}" --repo "${REPOSITORY}" >/dev/null 2>&1; then
+            gh release delete "${TAG}" --repo "${REPOSITORY}" --cleanup-tag --yes
+          fi
+
+          gh release create "${TAG}" \
+            --repo "${REPOSITORY}" \
+            --target "${TARGET}" \
+            --title "RufusArm64 0.13.0 PR232 ARM64 hardware-test" \
+            --notes-file release-notes.md \
+            --prerelease \
+            "artifact/${DEB}" \
+            "artifact/${DEB}.sha256"
+
+          gh release edit v0.13.0-pr229-test \
+            --repo "${REPOSITORY}" \
+            --title "RufusArm64 0.13.0 PR229 test — superseded" \
+            --notes "Superseded by v0.13.0-pr232-test. Use the newer hardware-test prerelease." || true
