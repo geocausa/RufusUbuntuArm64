@@ -19,6 +19,7 @@ This checklist is the human publication gate for the 0.13.0 release candidate. I
 - [ ] No shortcut bypasses the final erase confirmation.
 - [ ] Compatibility, progress details, and diagnostics are readable and selectable.
 - [ ] Copy and Save diagnostic actions produce a useful report without secrets or stale operation state.
+- [ ] On a 1280×800 work area, **Restore / format…**, **Check USB**, **Save drive image…**, and **FreeDOS…** keep confirmation, progress, action, and Close controls visible while long plan and report text remains scrollable.
 
 ## Ordinary Linux image
 
