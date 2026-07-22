@@ -397,7 +397,9 @@ func openRelativeRegular(root *os.File, relative string, expected fileIdentity) 
 	for index, part := range parts {
 		last := index == len(parts)-1
 		flags := syscall.O_RDONLY | syscall.O_NOFOLLOW | syscall.O_CLOEXEC
-		if !last {
+		if last {
+			flags |= syscall.O_NONBLOCK
+		} else {
 			flags |= syscall.O_DIRECTORY
 		}
 		childFD, openErr := syscall.Openat(int(current.Fd()), part, flags, 0)
