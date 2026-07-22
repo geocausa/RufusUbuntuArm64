@@ -18,18 +18,21 @@ func TestValidateUEFIMediaRejectsFIFOReplacementWithoutBlocking(t *testing.T) {
 	path := writeSyntheticEFI(t, root, relative, syntheticUEFIPE(imageFileMachineARM64, imageSubsystemEFIApp))
 	done := make(chan error, 1)
 	go func() {
+		var setupErr error
 		_, err := validateUEFIMedia(context.Background(), root, UEFIValidationOptions{Architecture: "arm64"}, func(stage, candidate string) {
-			if stage != "entry-before-open" || candidate != relative {
+			if stage != "entry-before-open" || candidate != relative || setupErr != nil {
 				return
 			}
-			if err := os.Remove(path); err != nil {
-				done <- err
+			if removeErr := os.Remove(path); removeErr != nil {
+				setupErr = removeErr
 				return
 			}
-			if err := syscall.Mkfifo(path, 0o600); err != nil {
-				done <- err
-			}
+			setupErr = syscall.Mkfifo(path, 0o600)
 		})
+		if setupErr != nil {
+			done <- setupErr
+			return
+		}
 		done <- err
 	}()
 	select {
