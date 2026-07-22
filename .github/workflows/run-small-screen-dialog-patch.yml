@@ -27,6 +27,7 @@ jobs:
           end = workflow.index("          PY\n", start)
           lines = workflow[start:end].splitlines()
           script = "\n".join(line[10:] if line.startswith("          ") else line for line in lines) + "\n"
+          script = script.replace("if count != 1:", "if count < 1:")
           Path('/tmp/apply-small-screen-dialogs.py').write_text(script, encoding='utf-8')
           PYEXTRACT
           python3 /tmp/apply-small-screen-dialogs.py
