@@ -5,6 +5,7 @@ package windowsmedia
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -122,8 +123,24 @@ func parseWIMMetadata(reader io.Reader) (windowsconfig.MediaMetadata, error) {
 	if len(data) > maxWIMMetadataBytes {
 		return windowsconfig.MediaMetadata{}, errors.New("WIM metadata exceeds the safe size limit")
 	}
+	normalized, wasUTF16, err := normalizeWIMMetadataXML(data)
+	if err != nil {
+		return windowsconfig.MediaMetadata{}, err
+	}
 	var document wimInfoXML
-	if err := xml.Unmarshal(data, &document); err != nil {
+	decoder := xml.NewDecoder(bytes.NewReader(normalized))
+	if wasUTF16 {
+		decoder.CharsetReader = func(label string, input io.Reader) (io.Reader, error) {
+			label = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(label), "_", "-"))
+			switch label {
+			case "utf-16", "utf-16le", "utf-16-le", "utf-16be", "utf-16-be":
+				return input, nil
+			default:
+				return nil, fmt.Errorf("unsupported WIM metadata XML encoding %q", label)
+			}
+		}
+	}
+	if err := decoder.Decode(&document); err != nil {
 		return windowsconfig.MediaMetadata{}, fmt.Errorf("parse WIM metadata XML: %w", err)
 	}
 	if len(document.Images) == 0 {
@@ -162,6 +179,58 @@ func parseWIMMetadata(reader io.Reader) (windowsconfig.MediaMetadata, error) {
 	}
 	result.ImageCount = len(document.Images)
 	return result, nil
+}
+
+func normalizeWIMMetadataXML(data []byte) ([]byte, bool, error) {
+	if bytes.HasPrefix(data, []byte{0xef, 0xbb, 0xbf}) {
+		return data[3:], false, nil
+	}
+
+	var order binary.ByteOrder
+	offset := 0
+	switch {
+	case bytes.HasPrefix(data, []byte{0xff, 0xfe}):
+		order = binary.LittleEndian
+		offset = 2
+	case bytes.HasPrefix(data, []byte{0xfe, 0xff}):
+		order = binary.BigEndian
+		offset = 2
+	case len(data) >= 4 && data[0] == '<' && data[1] == 0:
+		order = binary.LittleEndian
+	case len(data) >= 4 && data[0] == 0 && data[1] == '<':
+		order = binary.BigEndian
+	default:
+		return data, false, nil
+	}
+
+	if (len(data)-offset)%2 != 0 {
+		return nil, false, errors.New("WIM metadata UTF-16 byte count is not even")
+	}
+	var decoded bytes.Buffer
+	for index := offset; index < len(data); index += 2 {
+		unit := order.Uint16(data[index : index+2])
+		if index == offset && unit == 0xfeff {
+			continue
+		}
+		switch {
+		case unit >= 0xd800 && unit <= 0xdbff:
+			if index+3 >= len(data) {
+				return nil, false, errors.New("WIM metadata UTF-16 ends with an incomplete surrogate pair")
+			}
+			low := order.Uint16(data[index+2 : index+4])
+			if low < 0xdc00 || low > 0xdfff {
+				return nil, false, errors.New("WIM metadata UTF-16 contains a malformed surrogate pair")
+			}
+			value := 0x10000 + (rune(unit)-0xd800)<<10 + (rune(low) - 0xdc00)
+			decoded.WriteRune(value)
+			index += 2
+		case unit >= 0xdc00 && unit <= 0xdfff:
+			return nil, false, errors.New("WIM metadata UTF-16 contains an unpaired low surrogate")
+		default:
+			decoded.WriteRune(rune(unit))
+		}
+	}
+	return decoded.Bytes(), true, nil
 }
 
 func metadataClass(metadata windowsconfig.MediaMetadata) string {
