@@ -42,6 +42,27 @@ func TestVerifyAcceptsStableManifestSnapshot(t *testing.T) {
 	}
 }
 
+func TestVerifyFromOpenRootAcceptsStableManifestSnapshot(t *testing.T) {
+	root := t.TempDir()
+	writeRuntimeManifest(t, root)
+	rootFile, err := os.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rootFile.Close()
+	identity, err := identityFromOpenFile(rootFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := verifyFromOpenRoot(context.Background(), rootFile, identity, DefaultMaximumFiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Valid || len(result.Files) != 1 || result.Files[0].Status != "ok" {
+		t.Fatalf("transaction manifest verification = %#v", result)
+	}
+}
+
 func TestVerifyRejectsManifestChangedAfterEnumeration(t *testing.T) {
 	root := t.TempDir()
 	manifestPath := writeRuntimeManifest(t, root)
