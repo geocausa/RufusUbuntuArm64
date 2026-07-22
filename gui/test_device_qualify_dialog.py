@@ -43,6 +43,11 @@ class DeviceQualificationDialogStructureTests(unittest.TestCase):
         self.assertIn("self.set_default_size(700, 560)", self.qualification_source)
         self.assertIn("self.set_resizable(True)", self.qualification_source)
         self.assertIn("detail_scroll = Gtk.ScrolledWindow()", self.qualification_source)
+        self.assertIn(
+            "detail_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)",
+            self.qualification_source,
+        )
+        self.assertIn("detail_scroll.set_min_content_height(120)", self.qualification_source)
         self.assertIn("detail_box.pack_start(warning, False, False, 0)", self.qualification_source)
         self.assertIn("box.pack_start(confirm_row, False, False, 0)", self.qualification_source)
         self.assertIn("box.pack_start(actions, False, False, 0)", self.qualification_source)
