@@ -1,0 +1,91 @@
+name: Publish PR229 ARM64 prerelease
+
+on:
+  push:
+    branches:
+      - ops/refresh-prerelease-pr225
+    paths:
+      - .github/workflows/publish-pr229-prerelease.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: geocausa/RufusUbuntuArm64
+      ARTIFACT_ID: "8530121538"
+      TAG: v0.13.0-pr229-test
+      TARGET: b0331814453ef6ca06dc2a286d66f9788ee1c25c
+    steps:
+      - name: Download exact green PR229 package
+        run: |
+          set -euo pipefail
+          gh api "/repos/${REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > artifact.zip
+          mkdir artifact
+          unzip -q artifact.zip -d artifact
+          mapfile -t debs < <(find artifact -maxdepth 1 -type f -name '*.deb' -print)
+          test "${#debs[@]}" -eq 1
+          deb="${debs[0]}"
+          test -f "${deb}.sha256"
+          echo "DEB=${deb}" >> "$GITHUB_ENV"
+          echo "DEB_NAME=$(basename "${deb}")" >> "$GITHUB_ENV"
+
+      - name: Verify package and checksum
+        run: |
+          set -euo pipefail
+          cd artifact
+          sha256sum -c "${DEB_NAME}.sha256"
+          test "$(dpkg-deb -f "${DEB_NAME}" Package)" = rufusarm64
+          test "$(dpkg-deb -f "${DEB_NAME}" Architecture)" = arm64
+          version="$(dpkg-deb -f "${DEB_NAME}" Version)"
+          test "${version}" = "0.13.0+pr229.0305873b"
+          sha="$(sha256sum "${DEB_NAME}" | awk '{print $1}')"
+          echo "PACKAGE_VERSION=${version}" >> "$GITHUB_ENV"
+          echo "PACKAGE_SHA256=${sha}" >> "$GITHUB_ENV"
+
+      - name: Publish refreshed prerelease
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<EOF
+          ## RufusArm64 0.13.0 — PR229 ARM64 test prerelease
+
+          This test checkpoint supersedes \`v0.13.0-pr225-test\`.
+
+          It contains the two follow-up fixes found during hands-on ARM64 GUI testing:
+
+          - FreeDOS read-only planning now reads logical-sector geometry from readable kernel sysfs instead of requiring privileged \`blockdev\` access.
+          - Windows setup capability analysis now uses bounded WIM \`DISPLAYNAME\` metadata so official Windows 11 ARM64 media is identified correctly.
+
+          Built by the fully green PR #229 head \`0305873bf67f4146a3c3709e09766d7e12fa4110\` and merged into \`stage2/0.13.0\` at \`${TARGET}\`.
+
+          **This remains a test prerelease, not the final public 0.13.0 release.**
+
+          SHA-256:
+
+          \`\`\`text
+          ${PACKAGE_SHA256}  ${DEB_NAME}
+          \`\`\`
+          EOF
+
+          if gh release view "${TAG}" --repo "${REPOSITORY}" >/dev/null 2>&1; then
+            gh release delete "${TAG}" --repo "${REPOSITORY}" --cleanup-tag --yes
+          fi
+
+          gh release create "${TAG}" \
+            --repo "${REPOSITORY}" \
+            --target "${TARGET}" \
+            --title "RufusArm64 0.13.0 PR229 ARM64 test" \
+            --notes-file release-notes.md \
+            --prerelease \
+            "${DEB}" \
+            "${DEB}.sha256"
+
+          gh release edit v0.13.0-pr225-test \
+            --repo "${REPOSITORY}" \
+            --title "RufusArm64 0.13.0 PR225 test — superseded" \
+            --notes "Superseded by v0.13.0-pr229-test. Use the newer prerelease for ARM64 testing." || true
