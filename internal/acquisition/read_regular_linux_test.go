@@ -54,21 +54,13 @@ func TestReadRegularLimitedWithOpenRejectsFIFOReplacementWithoutBlocking(t *test
 	}
 }
 
-func TestOpenChannelMetadataNoFollowRejectsDirectFIFO(t *testing.T) {
+func TestReadRegularLimitedRejectsDirectFIFOWithoutBlocking(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "metadata.fifo")
 	if err := syscall.Mkfifo(path, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	file, err := openChannelMetadataNoFollow(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().IsRegular() {
-		t.Fatal("FIFO opened as a regular file")
+	_, err := readRegularLimited(path, 64)
+	if err == nil || !strings.Contains(err.Error(), "not a real regular file") {
+		t.Fatalf("direct FIFO error = %v", err)
 	}
 }
