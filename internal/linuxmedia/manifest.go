@@ -330,30 +330,64 @@ func resolveMediaSymlink(root, path string) (string, os.FileInfo, bool, error) {
 	return resolved, info, false, nil
 }
 
+type linuxMediaOpenFunc func(string) (*os.File, error)
+
+func openLinuxMediaNoFollow(path string) (*os.File, error) {
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	file := os.NewFile(uintptr(fd), path)
+	if file == nil {
+		_ = syscall.Close(fd)
+		return nil, errors.New("create Linux media source file handle")
+	}
+	return file, nil
+}
+
 func hashStableFile(ctx context.Context, path string, expectedSize uint64) ([sha256.Size]byte, error) {
+	return hashStableFileWithOpen(ctx, path, expectedSize, openLinuxMediaNoFollow)
+}
+
+func hashStableFileWithOpen(ctx context.Context, path string, expectedSize uint64, open linuxMediaOpenFunc) ([sha256.Size]byte, error) {
 	var result [sha256.Size]byte
-	before, err := os.Stat(path)
+	before, err := os.Lstat(path)
 	if err != nil {
 		return result, err
 	}
-	if !before.Mode().IsRegular() || uint64(before.Size()) != expectedSize {
+	if before.Mode()&os.ModeSymlink != 0 || !before.Mode().IsRegular() || before.Size() < 0 || uint64(before.Size()) != expectedSize {
 		return result, errors.New("source file identity changed before hashing")
 	}
-	file, err := os.Open(path)
+	file, err := open(path)
 	if err != nil {
 		return result, err
+	}
+	defer func() {
+		if file != nil {
+			_ = file.Close()
+		}
+	}()
+	opened, err := file.Stat()
+	if err != nil {
+		return result, err
+	}
+	if !opened.Mode().IsRegular() || opened.Size() < 0 || uint64(opened.Size()) != expectedSize || !os.SameFile(before, opened) {
+		return result, errors.New("source file identity changed while it was being opened")
 	}
 	hash := sha256.New()
 	buffer := make([]byte, copyBufferSize)
+	var total uint64
 	for {
 		if err := ctx.Err(); err != nil {
-			file.Close()
 			return result, err
 		}
 		n, readErr := file.Read(buffer)
 		if n > 0 {
+			total += uint64(n)
+			if total > expectedSize {
+				return result, errors.New("source file grew while it was hashed")
+			}
 			if _, err := hash.Write(buffer[:n]); err != nil {
-				file.Close()
 				return result, err
 			}
 		}
@@ -361,20 +395,21 @@ func hashStableFile(ctx context.Context, path string, expectedSize uint64) ([sha
 			break
 		}
 		if readErr != nil {
-			file.Close()
 			return result, readErr
 		}
 	}
-	if err := file.Close(); err != nil {
-		return result, err
-	}
-	after, err := os.Stat(path)
+	after, err := file.Stat()
 	if err != nil {
 		return result, err
 	}
-	if !sameIdentity(before, after) {
+	if total != expectedSize || !sameIdentity(opened, after) {
 		return result, errors.New("source file changed while it was hashed")
 	}
+	if err := file.Close(); err != nil {
+		file = nil
+		return result, err
+	}
+	file = nil
 	copy(result[:], hash.Sum(nil))
 	return result, nil
 }
