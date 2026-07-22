@@ -1,0 +1,50 @@
+name: Repair FreeDOS progress workflow by markers
+
+on:
+  push:
+    branches:
+      - fix/freedos-progress
+    paths:
+      - .github/workflows/repair-freedos-progress-v2b.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - name: Repair Popen replacement block
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/apply-freedos-progress-v2.yml')
+          text = path.read_text(encoding='utf-8')
+          start_marker = '              """                text=True,'
+          end_marker = '''          )
+          replace_once(
+              "gui/rufusarm64_freedos_dialog.py",
+              """            self.process = process'''
+          start = text.find(start_marker)
+          end = text.find(end_marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit(f'could not locate Popen block: start={start} end={end}')
+          replacement = '''              "                text=True,\\n                start_new_session=True,\\n",
+              "                text=True,\\n                bufsize=1,\\n                start_new_session=True,\\n",
+          '''
+          path.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
+          PY
+      - name: Commit repair
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/repair-freedos-progress-v2.yml .github/workflows/repair-freedos-progress-v2b.yml diagnostics/freedos-progress-v2.log diagnostics/freedos-repair-tail.log
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/apply-freedos-progress-v2.yml
+          git commit -m "Repair FreeDOS progress workflow Popen block"
+          git push origin HEAD:fix/freedos-progress
