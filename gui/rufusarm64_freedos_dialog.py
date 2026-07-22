@@ -45,7 +45,8 @@ class FreeDOSFormatDialog(Gtk.Dialog):
         self.run_generation = 0
         self.last_progress_done = 0
         self.has_determinate_progress = False
-        self.set_default_size(820, 690)
+        self.set_default_size(780, 560)
+        self.set_resizable(True)
         self.add_button("Close", Gtk.ResponseType.CLOSE)
         self.close_button = self.get_widget_for_response(Gtk.ResponseType.CLOSE)
         self.connect("delete-event", self.on_delete_event)
@@ -54,10 +55,19 @@ class FreeDOSFormatDialog(Gtk.Dialog):
         box.set_border_width(18)
         self.get_content_area().pack_start(box, True, True, 0)
 
+        detail_scroll = Gtk.ScrolledWindow()
+        detail_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        detail_scroll.set_hexpand(True)
+        detail_scroll.set_vexpand(True)
+        detail_scroll.set_min_content_height(120)
+        detail_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        detail_scroll.add(detail_box)
+        box.pack_start(detail_scroll, True, True, 0)
+
         title = Gtk.Label()
         title.set_markup("<span size='large' weight='bold'>FreeDOS 1.4 — x86 BIOS/Legacy media</span>")
         title.set_xalign(0)
-        box.pack_start(title, False, False, 0)
+        detail_box.pack_start(title, False, False, 0)
 
         intro = Gtk.Label(
             label=(
@@ -67,10 +77,10 @@ class FreeDOSFormatDialog(Gtk.Dialog):
         )
         intro.set_xalign(0)
         intro.set_line_wrap(True)
-        box.pack_start(intro, False, False, 0)
+        detail_box.pack_start(intro, False, False, 0)
 
         controls = Gtk.Grid(column_spacing=12, row_spacing=10)
-        box.pack_start(controls, False, False, 0)
+        detail_box.pack_start(controls, False, False, 0)
         controls.attach(self._label("Volume label"), 0, 0, 1, 1)
         self.volume_label = Gtk.Entry()
         self.volume_label.set_max_length(11)
@@ -84,7 +94,7 @@ class FreeDOSFormatDialog(Gtk.Dialog):
         self.plan_label.set_xalign(0)
         self.plan_label.set_line_wrap(True)
         self.plan_label.set_selectable(True)
-        box.pack_start(self.plan_label, False, False, 0)
+        detail_box.pack_start(self.plan_label, False, False, 0)
 
         warning = Gtk.InfoBar()
         warning.set_message_type(Gtk.MessageType.WARNING)
@@ -98,7 +108,7 @@ class FreeDOSFormatDialog(Gtk.Dialog):
         warning_label.set_xalign(0)
         warning_label.set_line_wrap(True)
         warning.get_content_area().add(warning_label)
-        box.pack_start(warning, False, False, 0)
+        detail_box.pack_start(warning, False, False, 0)
 
         self.confirm_label = Gtk.Label(
             label="The exact WRITE FREEDOS phrase appears after the read-only plan is validated."
@@ -137,7 +147,9 @@ class FreeDOSFormatDialog(Gtk.Dialog):
 
         result_scroll = Gtk.ScrolledWindow()
         result_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        result_scroll.set_vexpand(True)
+        result_scroll.set_min_content_height(140)
+        result_scroll.set_max_content_height(220)
+        result_scroll.set_propagate_natural_height(True)
         self.result = Gtk.TextView(
             editable=False,
             cursor_visible=False,
@@ -146,7 +158,7 @@ class FreeDOSFormatDialog(Gtk.Dialog):
         )
         self.result.get_buffer().set_text("No FreeDOS report is available yet.")
         result_scroll.add(self.result)
-        box.pack_start(result_scroll, True, True, 0)
+        box.pack_start(result_scroll, False, False, 0)
 
         self.show_all()
         self.refresh_plan()

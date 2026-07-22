@@ -51,6 +51,17 @@ class FreeDOSDialogStructureTests(unittest.TestCase):
             self.dialog_class_source.index("build_run_command"),
         )
 
+    def test_small_screen_layout_keeps_confirmation_actions_and_report_visible(self):
+        self.assertIn("self.set_default_size(780, 560)", self.dialog_class_source)
+        self.assertIn("self.set_resizable(True)", self.dialog_class_source)
+        self.assertIn("detail_scroll = Gtk.ScrolledWindow()", self.dialog_class_source)
+        self.assertIn("detail_box.pack_start(warning, False, False, 0)", self.dialog_class_source)
+        self.assertIn("box.pack_start(self.confirm_label, False, False, 0)", self.dialog_class_source)
+        self.assertIn("box.pack_start(self.confirmation, False, False, 0)", self.dialog_class_source)
+        self.assertIn("box.pack_start(actions, False, False, 0)", self.dialog_class_source)
+        self.assertIn("result_scroll.set_max_content_height(220)", self.dialog_class_source)
+        self.assertIn("box.pack_start(result_scroll, False, False, 0)", self.dialog_class_source)
+
     def test_graphical_execution_stays_inside_guarded_contract(self):
         self.assertIn("--expected-identity", self.logic_source)
         self.assertIn("--cancel-file", self.logic_source)

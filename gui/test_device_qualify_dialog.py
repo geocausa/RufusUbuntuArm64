@@ -39,6 +39,21 @@ class DeviceQualificationDialogStructureTests(unittest.TestCase):
         self.assertIn("report_summary", self.qualification_source)
         self.assertIn("json.dumps(payload, indent=2, sort_keys=True)", self.qualification_source)
 
+    def test_small_screen_layout_keeps_confirmation_actions_and_report_visible(self):
+        self.assertIn("self.set_default_size(700, 560)", self.qualification_source)
+        self.assertIn("self.set_resizable(True)", self.qualification_source)
+        self.assertIn("detail_scroll = Gtk.ScrolledWindow()", self.qualification_source)
+        self.assertIn("detail_box.pack_start(warning, False, False, 0)", self.qualification_source)
+        self.assertIn("box.pack_start(confirm_row, False, False, 0)", self.qualification_source)
+        self.assertIn("box.pack_start(actions, False, False, 0)", self.qualification_source)
+        self.assertIn("result_scroll.set_min_content_height(140)", self.qualification_source)
+        self.assertIn("result_scroll.set_max_content_height(220)", self.qualification_source)
+        self.assertIn("box.pack_start(result_scroll, False, False, 0)", self.qualification_source)
+        self.assertLess(
+            self.qualification_source.index('self.add_button("Close", Gtk.ResponseType.CLOSE)'),
+            self.qualification_source.index("detail_scroll = Gtk.ScrolledWindow()"),
+        )
+
     def test_cancellation_does_not_kill_arbitrary_processes(self):
         self.assertIn("process = self.process", self.qualification_source)
         self.assertIn("process.poll() is not None", self.qualification_source)

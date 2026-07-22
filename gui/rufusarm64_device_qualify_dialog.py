@@ -41,7 +41,8 @@ class DeviceQualificationDialog(Gtk.Dialog):
         self.running = False
         self.process = None
         self.plan = None
-        self.set_default_size(700, 520)
+        self.set_default_size(700, 560)
+        self.set_resizable(True)
         self.add_button("Close", Gtk.ResponseType.CLOSE)
         self.close_button = self.get_widget_for_response(Gtk.ResponseType.CLOSE)
         self.connect("delete-event", self.on_delete_event)
@@ -49,6 +50,15 @@ class DeviceQualificationDialog(Gtk.Dialog):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         box.set_border_width(18)
         self.get_content_area().pack_start(box, True, True, 0)
+
+        detail_scroll = Gtk.ScrolledWindow()
+        detail_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        detail_scroll.set_hexpand(True)
+        detail_scroll.set_vexpand(True)
+        detail_scroll.set_min_content_height(120)
+        detail_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        detail_scroll.add(detail_box)
+        box.pack_start(detail_scroll, True, True, 0)
 
         intro = Gtk.Label(
             label=(
@@ -58,7 +68,7 @@ class DeviceQualificationDialog(Gtk.Dialog):
         )
         intro.set_xalign(0)
         intro.set_line_wrap(True)
-        box.pack_start(intro, False, False, 0)
+        detail_box.pack_start(intro, False, False, 0)
 
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         row.pack_start(Gtk.Label(label="Test profile"), False, False, 0)
@@ -68,13 +78,13 @@ class DeviceQualificationDialog(Gtk.Dialog):
         self.profile.set_active_id("quick")
         self.profile.connect("changed", self.plan_changed)
         row.pack_start(self.profile, True, True, 0)
-        box.pack_start(row, False, False, 0)
+        detail_box.pack_start(row, False, False, 0)
 
         self.plan_label = Gtk.Label(label="Calculating a read-only plan…")
         self.plan_label.set_xalign(0)
         self.plan_label.set_line_wrap(True)
         self.plan_label.set_selectable(True)
-        box.pack_start(self.plan_label, False, False, 0)
+        detail_box.pack_start(self.plan_label, False, False, 0)
 
         warning = Gtk.InfoBar()
         warning.set_message_type(Gtk.MessageType.WARNING)
@@ -86,7 +96,7 @@ class DeviceQualificationDialog(Gtk.Dialog):
         warning_label.set_xalign(0)
         warning_label.set_line_wrap(True)
         warning.get_content_area().add(warning_label)
-        box.pack_start(warning, False, False, 0)
+        detail_box.pack_start(warning, False, False, 0)
 
         confirm_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         confirm_row.pack_start(Gtk.Label(label=f"Type ERASE {device} to enable the test"), False, False, 0)
@@ -115,11 +125,13 @@ class DeviceQualificationDialog(Gtk.Dialog):
 
         result_scroll = Gtk.ScrolledWindow()
         result_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        result_scroll.set_vexpand(True)
+        result_scroll.set_min_content_height(140)
+        result_scroll.set_max_content_height(220)
+        result_scroll.set_propagate_natural_height(True)
         self.result = Gtk.TextView(editable=False, cursor_visible=False, monospace=True, wrap_mode=Gtk.WrapMode.WORD_CHAR)
         self.result.get_buffer().set_text("No qualification report is available yet.")
         result_scroll.add(self.result)
-        box.pack_start(result_scroll, True, True, 0)
+        box.pack_start(result_scroll, False, False, 0)
 
         self.show_all()
         self.refresh_plan()
@@ -265,7 +277,8 @@ class DriveImageBackupDialog(Gtk.Dialog):
         self.plan_generation = 0
         self.run_generation = 0
         self.last_progress_done = 0
-        self.set_default_size(780, 620)
+        self.set_default_size(760, 560)
+        self.set_resizable(True)
         self.add_button("Close", Gtk.ResponseType.CLOSE)
         self.close_button = self.get_widget_for_response(Gtk.ResponseType.CLOSE)
         self.connect("delete-event", self.on_delete_event)
@@ -273,6 +286,15 @@ class DriveImageBackupDialog(Gtk.Dialog):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         box.set_border_width(18)
         self.get_content_area().pack_start(box, True, True, 0)
+
+        detail_scroll = Gtk.ScrolledWindow()
+        detail_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        detail_scroll.set_hexpand(True)
+        detail_scroll.set_vexpand(True)
+        detail_scroll.set_min_content_height(120)
+        detail_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        detail_scroll.add(detail_box)
+        box.pack_start(detail_scroll, True, True, 0)
 
         intro = Gtk.Label(
             label=(
@@ -282,7 +304,7 @@ class DriveImageBackupDialog(Gtk.Dialog):
         )
         intro.set_xalign(0)
         intro.set_line_wrap(True)
-        box.pack_start(intro, False, False, 0)
+        detail_box.pack_start(intro, False, False, 0)
 
         destination_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         destination_row.pack_start(Gtk.Label(label="New image file"), False, False, 0)
@@ -293,13 +315,13 @@ class DriveImageBackupDialog(Gtk.Dialog):
         self.choose_button = Gtk.Button(label="Choose…")
         self.choose_button.connect("clicked", self.choose_destination)
         destination_row.pack_start(self.choose_button, False, False, 0)
-        box.pack_start(destination_row, False, False, 0)
+        detail_box.pack_start(destination_row, False, False, 0)
 
         self.plan_label = Gtk.Label(label="Choose a new destination path to calculate the read-only plan.")
         self.plan_label.set_xalign(0)
         self.plan_label.set_line_wrap(True)
         self.plan_label.set_selectable(True)
-        box.pack_start(self.plan_label, False, False, 0)
+        detail_box.pack_start(self.plan_label, False, False, 0)
 
         note = Gtk.InfoBar()
         note.set_message_type(Gtk.MessageType.INFO)
@@ -312,7 +334,7 @@ class DriveImageBackupDialog(Gtk.Dialog):
         note_label.set_xalign(0)
         note_label.set_line_wrap(True)
         note.get_content_area().add(note_label)
-        box.pack_start(note, False, False, 0)
+        detail_box.pack_start(note, False, False, 0)
 
         self.confirm_label = Gtk.Label(label="The exact confirmation phrase appears after planning.")
         self.confirm_label.set_xalign(0)
@@ -346,11 +368,13 @@ class DriveImageBackupDialog(Gtk.Dialog):
 
         result_scroll = Gtk.ScrolledWindow()
         result_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        result_scroll.set_vexpand(True)
+        result_scroll.set_min_content_height(140)
+        result_scroll.set_max_content_height(220)
+        result_scroll.set_propagate_natural_height(True)
         self.result = Gtk.TextView(editable=False, cursor_visible=False, monospace=True, wrap_mode=Gtk.WrapMode.WORD_CHAR)
         self.result.get_buffer().set_text("No backup report is available yet.")
         result_scroll.add(self.result)
-        box.pack_start(result_scroll, True, True, 0)
+        box.pack_start(result_scroll, False, False, 0)
         self.show_all()
 
     def choose_destination(self, *_):

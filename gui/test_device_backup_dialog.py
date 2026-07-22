@@ -42,6 +42,17 @@ class DeviceBackupDialogStructureTests(unittest.TestCase):
         self.assertIn("Type exactly:", self.backup_class_source)
         self.assertIn("backup_build_run_command", self.backup_class_source)
 
+    def test_small_screen_layout_keeps_confirmation_actions_and_report_visible(self):
+        self.assertIn("self.set_default_size(760, 560)", self.backup_class_source)
+        self.assertIn("self.set_resizable(True)", self.backup_class_source)
+        self.assertIn("detail_scroll = Gtk.ScrolledWindow()", self.backup_class_source)
+        self.assertIn("detail_box.pack_start(note, False, False, 0)", self.backup_class_source)
+        self.assertIn("box.pack_start(self.confirm_label, False, False, 0)", self.backup_class_source)
+        self.assertIn("box.pack_start(self.confirmation, False, False, 0)", self.backup_class_source)
+        self.assertIn("box.pack_start(actions, False, False, 0)", self.backup_class_source)
+        self.assertIn("result_scroll.set_max_content_height(220)", self.backup_class_source)
+        self.assertIn("box.pack_start(result_scroll, False, False, 0)", self.backup_class_source)
+
     def test_progress_final_report_and_destination_are_revalidated(self):
         self.assertIn("start_new_session=True", self.backup_class_source)
         self.assertIn("backup_decode_progress_line", self.backup_class_source)
