@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -22,6 +23,8 @@ import (
 )
 
 var version = "development"
+
+var sysClassBlockRoot = "/sys/class/block"
 
 type arguments struct {
 	devicePath       string
@@ -226,22 +229,21 @@ func validateArguments(opts arguments, throughPkexec bool) error {
 }
 
 func logicalSectorSize(path string) (uint64, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15_000_000_000)
-	defer cancel()
-	command := exec.CommandContext(ctx, "blockdev", "--getss", path)
-	output, err := command.Output()
-	if err != nil {
-		if ctx.Err() != nil {
-			return 0, ctx.Err()
-		}
-		return 0, fmt.Errorf("read logical sector size: %w", err)
+	name := filepath.Base(filepath.Clean(path))
+	if name == "" || name == "." || name == string(filepath.Separator) {
+		return 0, fmt.Errorf("read logical sector size: invalid device path %q", path)
 	}
-	value, err := strconv.ParseUint(strings.TrimSpace(string(output)), 10, 64)
+	sectorPath := filepath.Join(sysClassBlockRoot, name, "queue", "logical_block_size")
+	data, err := os.ReadFile(sectorPath)
 	if err != nil {
-		return 0, fmt.Errorf("parse logical sector size: %w", err)
+		return 0, fmt.Errorf("read logical sector size for %s from %s: %w", path, sectorPath, err)
+	}
+	value, err := strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse logical sector size for %s from %s: %w", path, sectorPath, err)
 	}
 	if value != 512 {
-		return 0, fmt.Errorf("FreeDOS media requires 512-byte logical sectors, not %d", value)
+		return 0, fmt.Errorf("FreeDOS media requires 512-byte logical sectors, not %d for %s", value, path)
 	}
 	return value, nil
 }
@@ -275,43 +277,4 @@ func confirmDestructive(phrase string) error {
 }
 
 func printPlan(planned plannedFormat) {
-	fmt.Printf("Device: %s (%d bytes)\n", planned.Device.Path, planned.Device.Size)
-	fmt.Printf("Identity: %s\n", planned.Identity)
-	fmt.Printf("Media: %s, one active FAT32 partition, label %q\n", planned.Plan.Distribution, planned.Plan.Label)
-	fmt.Printf("Partition: start %d bytes, size %d bytes\n", planned.Plan.PartitionStartBytes, planned.Plan.PartitionSizeBytes)
-	fmt.Printf("Target platform: %s; firmware: %s\n", planned.Plan.TargetCPU, planned.Plan.Firmware)
-	for _, warning := range planned.Plan.Warnings {
-		fmt.Printf("WARNING: %s\n", warning)
-	}
-	fmt.Printf("Confirmation: %s\n", planned.Confirmation)
-}
-
-func printReport(report freedos.ExecutionReport) {
-	fmt.Printf("Status: %s; phase: %s\n", report.Status, report.Phase)
-	fmt.Printf("Media changed: %t; verified: %t; reusable: %t\n", report.MediaChanged, report.Verified, report.Reusable)
-	fmt.Printf("Bytes written: %d\n", report.BytesWritten)
-	if report.SHA256 != "" {
-		fmt.Printf("Whole-media SHA-256: %s\n", report.SHA256)
-	}
-	if report.FailureReason != "" {
-		fmt.Printf("Failure: %s\n", report.FailureReason)
-	}
-}
-
-func setTrustedSystemPath() {
-	_ = os.Setenv("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
-}
-
-func usage() {
-	fmt.Printf(`RufusArm64 FreeDOS formatter %s
-
-Usage:
-  rufusarm64-freedos-format --device /dev/DEVICE --dry-run [--json]
-  sudo rufusarm64-freedos-format --device /dev/DEVICE [--label FREEDOS]
-
-This dedicated command erases one removable whole drive and constructs verified
-FreeDOS 1.4 media for x86 BIOS or UEFI Legacy/CSM systems. It does not support
-fixed disks, ARM64 boot, UEFI-only boot, or a claim that physical hardware will
-boot. Use rufusarm64-cli list --json to obtain the exact path and identity token.
-`, version)
-}
+	fmt.Printf("Device: %s (%d byte
