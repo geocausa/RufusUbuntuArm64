@@ -27,8 +27,9 @@ type wimInfoXML struct {
 }
 
 type wimImageXML struct {
-	Name    string        `xml:"NAME"`
-	Windows wimWindowsXML `xml:"WINDOWS"`
+	Name        string        `xml:"NAME"`
+	DisplayName string        `xml:"DISPLAYNAME"`
+	Windows     wimWindowsXML `xml:"WINDOWS"`
 }
 
 type wimWindowsXML struct {
@@ -154,7 +155,7 @@ func parseWIMMetadata(reader io.Reader) (windowsconfig.MediaMetadata, error) {
 	seenNames := make(map[string]struct{})
 	for index, image := range document.Images {
 		current := windowsconfig.MediaMetadata{
-			ProductName:      firstNonEmpty(image.Windows.ProductName, image.Name),
+			ProductName:      firstNonEmpty(image.DisplayName, image.Windows.ProductName, image.Name),
 			Version:          joinVersion(image.Windows.Version),
 			Architecture:     normalizeWIMArchitecture(image.Windows.Architecture),
 			InstallationType: strings.TrimSpace(image.Windows.InstallationType),
@@ -165,7 +166,7 @@ func parseWIMMetadata(reader io.Reader) (windowsconfig.MediaMetadata, error) {
 			return windowsconfig.MediaMetadata{}, errors.New("WIM editions contain conflicting Windows generation, family, or architecture metadata")
 		}
 
-		name := firstNonEmpty(image.Name, image.Windows.ProductName)
+		name := firstNonEmpty(image.DisplayName, image.Name, image.Windows.ProductName)
 		if len(name) > maxWIMEditionName {
 			return windowsconfig.MediaMetadata{}, fmt.Errorf("WIM edition name exceeds the %d-byte safe limit", maxWIMEditionName)
 		}

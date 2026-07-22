@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -22,6 +23,8 @@ import (
 )
 
 var version = "development"
+
+var sysClassBlockRoot = "/sys/class/block"
 
 type arguments struct {
 	devicePath       string
@@ -226,22 +229,21 @@ func validateArguments(opts arguments, throughPkexec bool) error {
 }
 
 func logicalSectorSize(path string) (uint64, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15_000_000_000)
-	defer cancel()
-	command := exec.CommandContext(ctx, "blockdev", "--getss", path)
-	output, err := command.Output()
-	if err != nil {
-		if ctx.Err() != nil {
-			return 0, ctx.Err()
-		}
-		return 0, fmt.Errorf("read logical sector size: %w", err)
+	name := filepath.Base(filepath.Clean(path))
+	if name == "" || name == "." || name == string(filepath.Separator) {
+		return 0, fmt.Errorf("read logical sector size: invalid device path %q", path)
 	}
-	value, err := strconv.ParseUint(strings.TrimSpace(string(output)), 10, 64)
+	sectorPath := filepath.Join(sysClassBlockRoot, name, "queue", "logical_block_size")
+	data, err := os.ReadFile(sectorPath)
 	if err != nil {
-		return 0, fmt.Errorf("parse logical sector size: %w", err)
+		return 0, fmt.Errorf("read logical sector size for %s from %s: %w", path, sectorPath, err)
+	}
+	value, err := strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse logical sector size for %s from %s: %w", path, sectorPath, err)
 	}
 	if value != 512 {
-		return 0, fmt.Errorf("FreeDOS media requires 512-byte logical sectors, not %d", value)
+		return 0, fmt.Errorf("FreeDOS media requires 512-byte logical sectors, not %d for %s", value, path)
 	}
 	return value, nil
 }

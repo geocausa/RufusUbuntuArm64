@@ -161,3 +161,20 @@ func TestNormalizeWIMArchitecture(t *testing.T) {
 		}
 	}
 }
+
+func TestParseWIMMetadataUsesDisplayNameForWindows11Identity(t *testing.T) {
+	xml := `<WIM><IMAGE INDEX="1"><NAME>Professional</NAME><DISPLAYNAME>Windows 11 Pro</DISPLAYNAME><WINDOWS><ARCH>12</ARCH><PRODUCTNAME>Microsoft Windows Operating System</PRODUCTNAME><INSTALLATIONTYPE>Client</INSTALLATIONTYPE><VERSION><MAJOR>10</MAJOR><MINOR>0</MINOR><BUILD>26100</BUILD></VERSION></WINDOWS></IMAGE></WIM>`
+	metadata, err := parseWIMMetadata(strings.NewReader(xml))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.ProductName != "Windows 11 Pro" {
+		t.Fatalf("product name=%q, want display name", metadata.ProductName)
+	}
+	if got := metadataClass(metadata); got != "11|client|arm64|" {
+		t.Fatalf("metadata class=%q, want recognized Windows 11 ARM64 client", got)
+	}
+	if len(metadata.EditionNames) != 1 || metadata.EditionNames[0] != "Windows 11 Pro" {
+		t.Fatalf("edition names=%v", metadata.EditionNames)
+	}
+}
