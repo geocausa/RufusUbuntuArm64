@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	channelAdminATFDCWD       = ^uintptr(99)
+	channelAdminATFDCWD         = ^uintptr(99)
 	channelAdminRenameNoReplace = uintptr(1)
 )
 

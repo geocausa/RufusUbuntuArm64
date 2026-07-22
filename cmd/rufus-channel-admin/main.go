@@ -588,7 +588,7 @@ func writePublicationDirectory(path string, files map[string][]byte) error {
 	if err := directoryFile.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(temporary, absolute); err != nil {
+	if err := renameNoReplace(temporary, absolute); err != nil {
 		return err
 	}
 	cleanup = false
@@ -755,8 +755,14 @@ func writeAtomicOutput(path string, data []byte, force bool) error {
 			return err
 		}
 	}
-	if err := os.Rename(temporaryPath, absolute); err != nil {
-		return err
+	var publishErr error
+	if force {
+		publishErr = os.Rename(temporaryPath, absolute)
+	} else {
+		publishErr = renameNoReplace(temporaryPath, absolute)
+	}
+	if publishErr != nil {
+		return publishErr
 	}
 	cleanup = false
 	directoryFile, err := os.Open(directory)
