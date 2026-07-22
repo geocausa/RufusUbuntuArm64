@@ -30,6 +30,18 @@ func writeRuntimeManifest(t *testing.T, root string) string {
 	return path
 }
 
+func TestVerifyAcceptsStableManifestSnapshot(t *testing.T) {
+	root := t.TempDir()
+	writeRuntimeManifest(t, root)
+	result, err := Verify(context.Background(), root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Valid || len(result.Files) != 1 || result.Files[0].Status != "ok" {
+		t.Fatalf("stable manifest verification = %#v", result)
+	}
+}
+
 func TestVerifyRejectsManifestChangedAfterEnumeration(t *testing.T) {
 	root := t.TempDir()
 	manifestPath := writeRuntimeManifest(t, root)
