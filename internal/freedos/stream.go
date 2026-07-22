@@ -246,6 +246,12 @@ func StreamMediaImage(ctx context.Context, writer io.Writer, plan MediaPlan, pro
 // VerifyMediaReadback compares every byte of a seekable readback with the sparse
 // deterministic source and returns the expected whole-image digest.
 func VerifyMediaReadback(ctx context.Context, reader io.ReaderAt, plan MediaPlan) (MediaStreamResult, error) {
+	return VerifyMediaReadbackProgress(ctx, reader, plan, nil)
+}
+
+// VerifyMediaReadbackProgress preserves the complete-byte comparison contract
+// while reporting only successfully compared byte counts.
+func VerifyMediaReadbackProgress(ctx context.Context, reader io.ReaderAt, plan MediaPlan, progress func(uint64) error) (MediaStreamResult, error) {
 	if reader == nil {
 		return MediaStreamResult{}, errors.New("FreeDOS media readback is required")
 	}
@@ -292,6 +298,11 @@ func VerifyMediaReadback(ctx context.Context, reader io.ReaderAt, plan MediaPlan
 		}
 		_, _ = hash.Write(want)
 		verified += chunk
+		if progress != nil {
+			if err := progress(verified); err != nil {
+				return MediaStreamResult{BytesWritten: verified}, err
+			}
+		}
 	}
 	return MediaStreamResult{BytesWritten: verified, SHA256: fmt.Sprintf("%x", hash.Sum(nil))}, nil
 }

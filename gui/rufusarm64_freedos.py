@@ -1,6 +1,7 @@
 """Pure contracts for the guarded graphical FreeDOS formatting workflow."""
 
 from datetime import datetime
+import json
 import os
 import re
 
@@ -13,6 +14,15 @@ FREEDOS_WARNINGS = [
 ]
 STATUSES = {"succeeded", "failed", "cancelled"}
 PHASES = {"plan", "prepare", "write", "flush", "readback", "finish", "complete"}
+PROGRESS_PREFIX = "RUFUSARM64_PROGRESS "
+PROGRESS_PHASE_LABELS = {
+    "prepare": "Preparing the target",
+    "write": "Writing the full device",
+    "flush": "Flushing device buffers",
+    "readback": "Reading back the full device",
+    "finish": "Finalizing and revalidating",
+    "complete": "Complete",
+}
 SECTOR_SIZE = 512
 PARTITION_START_SECTOR = 2048
 TAIL_RESERVE_SECTORS = 2048
@@ -172,6 +182,73 @@ def normalize_report(payload, reviewed_plan=None):
     return normalized
 
 
+def normalize_progress(payload):
+    """Validate one bounded helper progress record."""
+    value = _mapping(payload, "FreeDOS progress record is invalid.")
+    if _integer(value.get("schema"), "progress schema") != 1 or value.get("type") != "progress":
+        raise ValueError("FreeDOS progress record uses an unsupported schema or type.")
+    phase = _text(value.get("phase"), "FreeDOS progress record is missing its phase.")
+    if phase not in PROGRESS_PHASE_LABELS:
+        raise ValueError("FreeDOS progress record contains an invalid phase.")
+    done = _nonnegative_integer(value.get("done"), "progress byte count")
+    total = _nonnegative_integer(value.get("total"), "progress phase total")
+    overall_done = _nonnegative_integer(value.get("overall_done"), "overall completed byte count")
+    overall_total = _positive_integer(value.get("overall_total"), "overall byte total")
+    elapsed_ms = _nonnegative_integer(value.get("elapsed_ms"), "progress elapsed time")
+    rate = _nonnegative_integer(value.get("bytes_per_second"), "progress transfer rate")
+    eta = value.get("eta_seconds")
+    if eta is not None:
+        eta = _nonnegative_integer(eta, "progress ETA")
+    if done > total or overall_done > overall_total:
+        raise ValueError("FreeDOS progress exceeds its reviewed byte totals.")
+    if phase in {"write", "readback"} and total <= 0:
+        raise ValueError("FreeDOS byte-bearing progress phase has no total.")
+    if phase not in {"write", "readback"} and (done != 0 or total != 0):
+        raise ValueError("FreeDOS non-byte progress phase claimed byte accounting.")
+    normalized = dict(value)
+    normalized.update(
+        {
+            "schema": 1,
+            "type": "progress",
+            "phase": phase,
+            "done": done,
+            "total": total,
+            "overall_done": overall_done,
+            "overall_total": overall_total,
+            "elapsed_ms": elapsed_ms,
+            "bytes_per_second": rate,
+            "eta_seconds": eta,
+        }
+    )
+    return normalized
+
+
+def decode_progress_line(line):
+    """Decode only explicitly prefixed helper progress; diagnostics remain diagnostics."""
+    text = str(line or "").strip()
+    if not text.startswith(PROGRESS_PREFIX):
+        return None
+    try:
+        payload = json.loads(text[len(PROGRESS_PREFIX) :])
+    except json.JSONDecodeError as exc:
+        raise ValueError("FreeDOS helper returned malformed progress JSON.") from exc
+    return normalize_progress(payload)
+
+
+def progress_summary(payload):
+    """Render current phase, overall percentage, rate, elapsed time, and ETA."""
+    value = normalize_progress(payload)
+    percent = value["overall_done"] * 100.0 / value["overall_total"]
+    rate = _human_bytes(value["bytes_per_second"]) + "/s" if value["bytes_per_second"] else "measuring speed"
+    elapsed = _human_duration(value["elapsed_ms"] // 1000)
+    eta = _human_duration(value["eta_seconds"]) + " remaining" if value["eta_seconds"] is not None else "estimating time"
+    return (
+        f"{PROGRESS_PHASE_LABELS[value['phase']]}: {percent:.1f}% — "
+        f"{_human_bytes(value['overall_done'])} of {_human_bytes(value['overall_total'])}; "
+        f"{rate}; {elapsed} elapsed; {eta}"
+    )
+
+
 def plan_summary(payload):
     """Render the exact pre-authentication platform and layout boundary."""
     value = normalize_plan(payload)
@@ -191,6 +268,8 @@ def plan_summary(payload):
         f"Media: {plan['distribution']}, one active FAT32-LBA partition, label \"{plan['label']}\".\n"
         f"Partition: starts at {_human_bytes(plan['partition_start_bytes'])}; "
         f"size {_human_bytes(plan['partition_size_bytes'])}.\n"
+        f"Verification I/O: writes the full {_human_bytes(plan['device_size_bytes'])} device and reads it back in full "
+        f"({_human_bytes(plan['device_size_bytes'] * 2)} total device I/O).\n"
         f"Platform: x86 only; BIOS or UEFI Legacy/CSM only. Not ARM64 or UEFI-only.\n{warnings}"
     )
 
@@ -412,6 +491,17 @@ def _boolean(value, label):
     if not isinstance(value, bool):
         raise ValueError(f"FreeDOS {label} must be a boolean.")
     return value
+
+
+def _human_duration(seconds):
+    seconds = max(0, int(seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
 
 
 def _human_bytes(value):

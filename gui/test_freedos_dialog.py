@@ -77,6 +77,14 @@ class FreeDOSDialogStructureTests(unittest.TestCase):
         self.assertIn("physical boot remains unproven", self.logic_source)
         self.assertIn("not reusable", self.logic_source)
 
+    def test_full_device_progress_is_streamed_into_the_dialog(self):
+        self.assertIn("decode_progress_line", self.dialog_class_source)
+        self.assertIn("for line in process.stderr", self.dialog_class_source)
+        self.assertIn("self._progress_ready", self.dialog_class_source)
+        self.assertIn("progress_summary(progress)", self.dialog_class_source)
+        self.assertNotIn("process.communicate()", self.dialog_class_source)
+        self.assertIn("total device I/O", self.logic_source)
+
     def test_package_and_polkit_contracts_are_explicit(self):
         self.assertIn("gui/rufusarm64_freedos.py", self.package_source)
         self.assertIn("gui/rufusarm64_freedos_dialog.py", self.package_source)
