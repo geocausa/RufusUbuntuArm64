@@ -16,7 +16,7 @@ type recordFileWriter func(string, []byte, os.FileMode) error
 // failure path removes only the first file published by this call and syncs the
 // metadata directory before returning.
 func writeRecordPair(recordPath string, data []byte, digest string) error {
-	return writeRecordPairWith(recordPath, data, digest, writeAtomicNoFollow)
+	return writeRecordPairDescriptor(recordPath, data, digest)
 }
 
 func writeRecordPairWith(recordPath string, data []byte, digest string, writeFile recordFileWriter) error {
