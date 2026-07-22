@@ -30,8 +30,18 @@ type Identity struct {
 	ChangedNS  int64
 }
 
+type regularOpenFunc func(string) (*os.File, error)
+
+func openRegularNoFollow(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+}
+
 // Inspect resolves symlinks, opens the selected file, and records its identity.
 func Inspect(path string) (string, Identity, error) {
+	return inspectWithOpen(path, openRegularNoFollow)
+}
+
+func inspectWithOpen(path string, open regularOpenFunc) (string, Identity, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return "", Identity{}, fmt.Errorf("make image path absolute: %w", err)
@@ -40,7 +50,7 @@ func Inspect(path string) (string, Identity, error) {
 	if err != nil {
 		return "", Identity{}, fmt.Errorf("resolve image path: %w", err)
 	}
-	file, err := os.Open(resolved)
+	file, err := open(resolved)
 	if err != nil {
 		return "", Identity{}, fmt.Errorf("open image: %w", err)
 	}
@@ -55,7 +65,11 @@ func Inspect(path string) (string, Identity, error) {
 // OpenRegular opens path and refuses it if it is no longer the exact regular
 // file represented by expected.
 func OpenRegular(path string, expected Identity) (*os.File, error) {
-	file, err := os.Open(path)
+	return openRegularWithOpen(path, expected, openRegularNoFollow)
+}
+
+func openRegularWithOpen(path string, expected Identity, open regularOpenFunc) (*os.File, error) {
+	file, err := open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open image: %w", err)
 	}
