@@ -26,127 +26,61 @@ jobs:
           path = Path('internal/runtimeintegrity/tree_linux.go')
           text = path.read_text()
 
-          replacements = [
-              (
-                  '''type treeEntry struct {
-          \trelative string
-          \tidentity fileIdentity
-          }
-          ''',
-                  '''type treeEntry struct {
-          \trelative string
-          \tidentity fileIdentity
-          }
-          
-          type treeSnapshot struct {
-          \tmanifestIdentity fileIdentity
-          }
-          ''',
-              ),
-              (
-                  'enumerateTree(ctx, root, opts, hook, false)',
-                  'enumerateTree(ctx, root, opts, hook, false, nil)',
-              ),
-              (
-                  '''func verify(ctx context.Context, root string, opts Options, hook treeHook) (VerificationResult, error) {
-          \tresolved, rootFile, rootIdentity, entries, total, err := enumerateTree(ctx, root, opts, hook, true)
-          ''',
-                  '''func verify(ctx context.Context, root string, opts Options, hook treeHook) (VerificationResult, error) {
-          \tvar snapshot treeSnapshot
-          \tresolved, rootFile, rootIdentity, entries, total, err := enumerateTree(ctx, root, opts, hook, true, &snapshot)
-          ''',
-              ),
-              (
-                  '''\tdefer rootFile.Close()
-          \tmanifestData, err := readManifest(rootFile)
-          ''',
-                  '''\tdefer rootFile.Close()
-          \tif hook != nil {
-          \t\thook("manifest-before-open", ManifestName)
-          \t}
-          \tmanifestData, err := readManifest(rootFile, snapshot.manifestIdentity)
-          ''',
-              ),
-              (
-                  'func enumerateTree(ctx context.Context, root string, opts Options, hook treeHook, requireManifest bool) (string, *os.File, fileIdentity, []treeEntry, uint64, error) {',
-                  'func enumerateTree(ctx context.Context, root string, opts Options, hook treeHook, requireManifest bool, snapshot *treeSnapshot) (string, *os.File, fileIdentity, []treeEntry, uint64, error) {',
-              ),
-              (
-                  'enumerateDirectory(ctx, rootFile, "", maxFiles, hook, &entries, &total, &manifestCount)',
-                  'enumerateDirectory(ctx, rootFile, "", maxFiles, hook, &entries, &total, &manifestCount, snapshot)',
-              ),
-              (
-                  'func enumerateDirectory(ctx context.Context, directory *os.File, prefix string, maxFiles int, hook treeHook, entries *[]treeEntry, total *uint64, manifestCount *int) error {',
-                  'func enumerateDirectory(ctx context.Context, directory *os.File, prefix string, maxFiles int, hook treeHook, entries *[]treeEntry, total *uint64, manifestCount *int, snapshot *treeSnapshot) error {',
-              ),
-              (
-                  'enumerateDirectory(ctx, child, relative, maxFiles, hook, entries, total, manifestCount)',
-                  'enumerateDirectory(ctx, child, relative, maxFiles, hook, entries, total, manifestCount, snapshot)',
-              ),
-              (
-                  '''\t\tif prefix == "" && strings.EqualFold(name, ManifestName) {
-          \t\t\t*manifestCount++
-          \t\t\tif name != ManifestName {
-          \t\t\t\treturn fmt.Errorf("root manifest name %q must use exact lowercase spelling %q", name, ManifestName)
-          \t\t\t}
-          \t\t\tcontinue
-          \t\t}
-          ''',
-                  '''\t\tif prefix == "" && strings.EqualFold(name, ManifestName) {
-          \t\t\t*manifestCount++
-          \t\t\tif name != ManifestName {
-          \t\t\t\treturn fmt.Errorf("root manifest name %q must use exact lowercase spelling %q", name, ManifestName)
-          \t\t\t}
-          \t\t\tif snapshot != nil {
-          \t\t\t\tidentity, identityErr := identityFromInfo(info)
-          \t\t\t\tif identityErr != nil {
-          \t\t\t\t\treturn identityErr
-          \t\t\t\t}
-          \t\t\t\tsnapshot.manifestIdentity = identity
-          \t\t\t}
-          \t\t\tcontinue
-          \t\t}
-          ''',
-              ),
-              (
-                  'func readManifest(root *os.File) ([]byte, error) {\n\tfd, err := syscall.Openat(int(root.Fd()), ManifestName, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)',
-                  'func readManifest(root *os.File, expected fileIdentity) ([]byte, error) {\n\tfd, err := syscall.Openat(int(root.Fd()), ManifestName, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0)',
-              ),
-              (
-                  '''\tbefore, err := identityFromOpenFile(file)
-          \tif err != nil {
-          \t\treturn nil, err
-          \t}
-          \tif before.mode&syscall.S_IFMT != syscall.S_IFREG || before.size <= 0 || before.size > MaximumManifestSize {
-          ''',
-                  '''\tbefore, err := identityFromOpenFile(file)
-          \tif err != nil {
-          \t\treturn nil, err
-          \t}
-          \tif !sameStableObject(expected, before) {
-          \t\treturn nil, fmt.Errorf("%s changed between enumeration and read", ManifestName)
-          \t}
-          \tif before.mode&syscall.S_IFMT != syscall.S_IFREG || before.size <= 0 || before.size > MaximumManifestSize {
-          ''',
-              ),
-              (
-                  '''\tif !sameStableObject(before, after) || int64(len(data)) != before.size {
-          \t\treturn nil, fmt.Errorf("%s changed while it was being read", ManifestName)
-          \t}
-          ''',
-                  '''\tif !sameStableObject(expected, after) || !sameStableObject(before, after) || int64(len(data)) != before.size {
-          \t\treturn nil, fmt.Errorf("%s changed while it was being read", ManifestName)
-          \t}
-          ''',
-              ),
-          ]
-
-          for old, new in replacements:
-              old = '\n'.join(line[10:] if line.startswith('          ') else line for line in old.splitlines())
-              new = '\n'.join(line[10:] if line.startswith('          ') else line for line in new.splitlines())
-              if text.count(old) != 1:
-                  raise SystemExit(f'expected one match, found {text.count(old)} for:\n{old}')
+          def replace_once(old: str, new: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one match, found {count}: {old!r}')
               text = text.replace(old, new, 1)
+
+          replace_once(
+              'type hashedEntry struct {\n\tEntry\n\tidentity fileIdentity\n}\n',
+              'type treeSnapshot struct {\n\tmanifestIdentity fileIdentity\n}\n\ntype hashedEntry struct {\n\tEntry\n\tidentity fileIdentity\n}\n',
+          )
+          replace_once(
+              'enumerateTree(ctx, root, opts, hook, false)',
+              'enumerateTree(ctx, root, opts, hook, false, nil)',
+          )
+          replace_once(
+              'func verify(ctx context.Context, root string, opts Options, hook treeHook) (VerificationResult, error) {\n\tresolved, rootFile, rootIdentity, entries, total, err := enumerateTree(ctx, root, opts, hook, true)',
+              'func verify(ctx context.Context, root string, opts Options, hook treeHook) (VerificationResult, error) {\n\tvar snapshot treeSnapshot\n\tresolved, rootFile, rootIdentity, entries, total, err := enumerateTree(ctx, root, opts, hook, true, &snapshot)',
+          )
+          replace_once(
+              '\tdefer rootFile.Close()\n\tmanifestData, err := readManifest(rootFile)\n',
+              '\tdefer rootFile.Close()\n\tif hook != nil {\n\t\thook("manifest-before-open", ManifestName)\n\t}\n\tmanifestData, err := readManifest(rootFile, snapshot.manifestIdentity)\n',
+          )
+          replace_once(
+              'func enumerateTree(ctx context.Context, root string, opts Options, hook treeHook, requireManifest bool) (string, *os.File, fileIdentity, []treeEntry, uint64, error) {',
+              'func enumerateTree(ctx context.Context, root string, opts Options, hook treeHook, requireManifest bool, snapshot *treeSnapshot) (string, *os.File, fileIdentity, []treeEntry, uint64, error) {',
+          )
+          replace_once(
+              'enumerateDirectory(ctx, rootFile, "", maxFiles, hook, &entries, &total, &manifestCount)',
+              'enumerateDirectory(ctx, rootFile, "", maxFiles, hook, &entries, &total, &manifestCount, snapshot)',
+          )
+          replace_once(
+              'func enumerateDirectory(ctx context.Context, directory *os.File, prefix string, maxFiles int, hook treeHook, entries *[]treeEntry, total *uint64, manifestCount *int) error {',
+              'func enumerateDirectory(ctx context.Context, directory *os.File, prefix string, maxFiles int, hook treeHook, entries *[]treeEntry, total *uint64, manifestCount *int, snapshot *treeSnapshot) error {',
+          )
+          replace_once(
+              'enumerateDirectory(ctx, child, relative, maxFiles, hook, entries, total, manifestCount)',
+              'enumerateDirectory(ctx, child, relative, maxFiles, hook, entries, total, manifestCount, snapshot)',
+          )
+          replace_once(
+              '\t\tif prefix == "" && strings.EqualFold(name, ManifestName) {\n\t\t\t*manifestCount++\n\t\t\tif name != ManifestName {\n\t\t\t\treturn fmt.Errorf("root manifest name %q must use exact lowercase spelling %q", name, ManifestName)\n\t\t\t}\n\t\t\tcontinue\n\t\t}\n',
+              '\t\tif prefix == "" && strings.EqualFold(name, ManifestName) {\n\t\t\t*manifestCount++\n\t\t\tif name != ManifestName {\n\t\t\t\treturn fmt.Errorf("root manifest name %q must use exact lowercase spelling %q", name, ManifestName)\n\t\t\t}\n\t\t\tif snapshot != nil {\n\t\t\t\tidentity, identityErr := identityFromInfo(info)\n\t\t\t\tif identityErr != nil {\n\t\t\t\t\treturn identityErr\n\t\t\t\t}\n\t\t\t\tsnapshot.manifestIdentity = identity\n\t\t\t}\n\t\t\tcontinue\n\t\t}\n',
+          )
+          replace_once(
+              'func readManifest(root *os.File) ([]byte, error) {\n\tfd, err := syscall.Openat(int(root.Fd()), ManifestName, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)',
+              'func readManifest(root *os.File, expected fileIdentity) ([]byte, error) {\n\tfd, err := syscall.Openat(int(root.Fd()), ManifestName, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0)',
+          )
+          replace_once(
+              '\tbefore, err := identityFromOpenFile(file)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tif before.mode&syscall.S_IFMT != syscall.S_IFREG || before.size <= 0 || before.size > MaximumManifestSize {',
+              '\tbefore, err := identityFromOpenFile(file)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tif !sameStableObject(expected, before) {\n\t\treturn nil, fmt.Errorf("%s changed between enumeration and read", ManifestName)\n\t}\n\tif before.mode&syscall.S_IFMT != syscall.S_IFREG || before.size <= 0 || before.size > MaximumManifestSize {',
+          )
+          replace_once(
+              '\tif !sameStableObject(before, after) || int64(len(data)) != before.size {\n\t\treturn nil, fmt.Errorf("%s changed while it was being read", ManifestName)\n\t}',
+              '\tif !sameStableObject(expected, after) || !sameStableObject(before, after) || int64(len(data)) != before.size {\n\t\treturn nil, fmt.Errorf("%s changed while it was being read", ManifestName)\n\t}',
+          )
 
           path.write_text(text)
           PY
