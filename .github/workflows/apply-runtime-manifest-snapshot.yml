@@ -21,59 +21,31 @@ jobs:
         shell: bash
         run: |
           set +e
-          python3 - <<'PY' >/tmp/runtime-manifest-patch.log 2>&1
-          from pathlib import Path
-
-          path = Path('internal/runtimeintegrity/tree_linux.go')
-          text = path.read_text()
-
-          def replace_once(old: str, new: str) -> None:
-              global text
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'expected one match, found {count}: {old!r}')
-              text = text.replace(old, new, 1)
-
-          replace_once('type hashedEntry struct {\n\tEntry\n\tidentity fileIdentity\n}\n', 'type treeSnapshot struct {\n\tmanifestIdentity fileIdentity\n}\n\ntype hashedEntry struct {\n\tEntry\n\tidentity fileIdentity\n}\n')
-          replace_once('enumerateTree(ctx, root, opts, hook, false)', 'enumerateTree(ctx, root, opts, hook, false, nil)')
-          replace_once('func verify(ctx context.Context, root string, opts Options, hook treeHook) (VerificationResult, error) {\n\tresolved, rootFile, rootIdentity, entries, total, err := enumerateTree(ctx, root, opts, hook, true)', 'func verify(ctx context.Context, root string, opts Options, hook treeHook) (VerificationResult, error) {\n\tvar snapshot treeSnapshot\n\tresolved, rootFile, rootIdentity, entries, total, err := enumerateTree(ctx, root, opts, hook, true, &snapshot)')
-          replace_once('\tdefer rootFile.Close()\n\tmanifestData, err := readManifest(rootFile)\n', '\tdefer rootFile.Close()\n\tif hook != nil {\n\t\thook("manifest-before-open", ManifestName)\n\t}\n\tmanifestData, err := readManifest(rootFile, snapshot.manifestIdentity)\n')
-          replace_once('func enumerateTree(ctx context.Context, root string, opts Options, hook treeHook, requireManifest bool) (string, *os.File, fileIdentity, []treeEntry, uint64, error) {', 'func enumerateTree(ctx context.Context, root string, opts Options, hook treeHook, requireManifest bool, snapshot *treeSnapshot) (string, *os.File, fileIdentity, []treeEntry, uint64, error) {')
-          replace_once('enumerateDirectory(ctx, rootFile, "", maxFiles, hook, &entries, &total, &manifestCount)', 'enumerateDirectory(ctx, rootFile, "", maxFiles, hook, &entries, &total, &manifestCount, snapshot)')
-          replace_once('func enumerateDirectory(ctx context.Context, directory *os.File, prefix string, maxFiles int, hook treeHook, entries *[]treeEntry, total *uint64, manifestCount *int) error {', 'func enumerateDirectory(ctx context.Context, directory *os.File, prefix string, maxFiles int, hook treeHook, entries *[]treeEntry, total *uint64, manifestCount *int, snapshot *treeSnapshot) error {')
-          replace_once('enumerateDirectory(ctx, child, relative, maxFiles, hook, entries, total, manifestCount)', 'enumerateDirectory(ctx, child, relative, maxFiles, hook, entries, total, manifestCount, snapshot)')
-          replace_once('\t\tif prefix == "" && strings.EqualFold(name, ManifestName) {\n\t\t\t*manifestCount++\n\t\t\tif name != ManifestName {\n\t\t\t\treturn fmt.Errorf("root manifest name %q must use exact lowercase spelling %q", name, ManifestName)\n\t\t\t}\n\t\t\tcontinue\n\t\t}\n', '\t\tif prefix == "" && strings.EqualFold(name, ManifestName) {\n\t\t\t*manifestCount++\n\t\t\tif name != ManifestName {\n\t\t\t\treturn fmt.Errorf("root manifest name %q must use exact lowercase spelling %q", name, ManifestName)\n\t\t\t}\n\t\t\tif snapshot != nil {\n\t\t\t\tidentity, identityErr := identityFromInfo(info)\n\t\t\t\tif identityErr != nil {\n\t\t\t\t\treturn identityErr\n\t\t\t\t}\n\t\t\t\tsnapshot.manifestIdentity = identity\n\t\t\t}\n\t\t\tcontinue\n\t\t}\n')
-          replace_once('func readManifest(root *os.File) ([]byte, error) {\n\tfd, err := syscall.Openat(int(root.Fd()), ManifestName, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)', 'func readManifest(root *os.File, expected fileIdentity) ([]byte, error) {\n\tfd, err := syscall.Openat(int(root.Fd()), ManifestName, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0)')
-          replace_once('\tbefore, err := identityFromOpenFile(file)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tif before.mode&syscall.S_IFMT != syscall.S_IFREG || before.size <= 0 || before.size > MaximumManifestSize {', '\tbefore, err := identityFromOpenFile(file)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tif !sameStableObject(expected, before) {\n\t\treturn nil, fmt.Errorf("%s changed between enumeration and read", ManifestName)\n\t}\n\tif before.mode&syscall.S_IFMT != syscall.S_IFREG || before.size <= 0 || before.size > MaximumManifestSize {')
-          replace_once('\tif !sameStableObject(before, after) || int64(len(data)) != before.size {\n\t\treturn nil, fmt.Errorf("%s changed while it was being read", ManifestName)\n\t}', '\tif !sameStableObject(expected, after) || !sameStableObject(before, after) || int64(len(data)) != before.size {\n\t\treturn nil, fmt.Errorf("%s changed while it was being read", ManifestName)\n\t}')
-
-          path.write_text(text)
-          PY
+          python3 .github/scripts/apply_runtime_manifest_snapshot.py >/tmp/runtime-manifest-patch.log 2>&1
           patch_status=$?
+          if [ "$patch_status" -eq 0 ]; then
+            gofmt -w internal/runtimeintegrity/tree_linux.go internal/runtimeintegrity/transaction_linux.go internal/runtimeintegrity/manifest_snapshot_linux_test.go
+            go test ./internal/runtimeintegrity >/tmp/runtime-manifest-test.log 2>&1
+            patch_status=$?
+          fi
           if [ "$patch_status" -ne 0 ]; then
-            cp /tmp/runtime-manifest-patch.log runtime-manifest-patch-error.txt
+            if [ -s /tmp/runtime-manifest-test.log ]; then
+              cp /tmp/runtime-manifest-test.log runtime-manifest-patch-error.txt
+            else
+              cp /tmp/runtime-manifest-patch.log runtime-manifest-patch-error.txt
+            fi
             git config user.name github-actions[bot]
             git config user.email 41898282+github-actions[bot]@users.noreply.github.com
             git add runtime-manifest-patch-error.txt
-            git commit -m "Record runtime manifest patch failure"
+            git commit -m "Record runtime manifest patch failure" || true
             git push origin HEAD:audit/runtime-manifest-snapshot
             exit 0
           fi
 
-          gofmt -w internal/runtimeintegrity/tree_linux.go internal/runtimeintegrity/manifest_snapshot_linux_test.go
-          go test ./internal/runtimeintegrity >/tmp/runtime-manifest-test.log 2>&1
-          test_status=$?
-          if [ "$test_status" -ne 0 ]; then
-            cp /tmp/runtime-manifest-test.log runtime-manifest-patch-error.txt
-            git config user.name github-actions[bot]
-            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add runtime-manifest-patch-error.txt
-            git commit -m "Record runtime manifest test failure"
-            git push origin HEAD:audit/runtime-manifest-snapshot
-            exit 0
+          git rm .github/workflows/apply-runtime-manifest-snapshot.yml .github/scripts/apply_runtime_manifest_snapshot.py
+          if [ -e runtime-manifest-patch-error.txt ]; then
+            git rm runtime-manifest-patch-error.txt
           fi
-
-          git rm .github/workflows/apply-runtime-manifest-snapshot.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add internal/runtimeintegrity
