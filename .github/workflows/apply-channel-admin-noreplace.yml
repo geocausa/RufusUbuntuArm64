@@ -1,0 +1,69 @@
+name: Apply channel-admin no-replace wiring
+
+on:
+  push:
+    branches:
+      - audit/channel-admin-noreplace
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: audit/channel-admin-noreplace
+          fetch-depth: 0
+      - name: Wire atomic no-replace publication
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('cmd/rufus-channel-admin/main.go')
+          text = path.read_text()
+
+          directory_old = '''\tif err := os.Rename(temporary, absolute); err != nil {
+          \t\treturn err
+          \t}
+          '''
+          directory_new = '''\tif err := renameNoReplace(temporary, absolute); err != nil {
+          \t\treturn err
+          \t}
+          '''
+          if text.count(directory_old) != 1:
+              raise SystemExit(f'expected one publication-directory rename, found {text.count(directory_old)}')
+          text = text.replace(directory_old, directory_new, 1)
+
+          output_old = '''\tif err := os.Rename(temporaryPath, absolute); err != nil {
+          \t\treturn err
+          \t}
+          '''
+          output_new = '''\tvar publishErr error
+          \tif force {
+          \t\tpublishErr = os.Rename(temporaryPath, absolute)
+          \t} else {
+          \t\tpublishErr = renameNoReplace(temporaryPath, absolute)
+          \t}
+          \tif publishErr != nil {
+          \t\treturn publishErr
+          \t}
+          '''
+          if text.count(output_old) != 1:
+              raise SystemExit(f'expected one atomic-output rename, found {text.count(output_old)}')
+          path.write_text(text.replace(output_old, output_new, 1))
+          PY
+          gofmt -w \
+            cmd/rufus-channel-admin/main.go \
+            cmd/rufus-channel-admin/rename_noreplace_linux.go \
+            cmd/rufus-channel-admin/rename_noreplace_linux_test.go
+          go test ./cmd/rufus-channel-admin
+          git rm .github/workflows/apply-channel-admin-noreplace.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add cmd/rufus-channel-admin
+          git commit -m "Wire channel-admin no-replace publication"
+          git push origin HEAD:audit/channel-admin-noreplace
