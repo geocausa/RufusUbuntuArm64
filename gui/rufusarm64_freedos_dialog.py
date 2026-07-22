@@ -13,9 +13,11 @@ from rufusarm64_freedos import (
     build_dry_run_command,
     build_run_command,
     confirmation_phrase,
+    decode_progress_line,
     normalize_plan,
     normalize_report,
     plan_summary,
+    progress_summary,
     report_summary,
 )
 
@@ -41,6 +43,8 @@ class FreeDOSFormatDialog(Gtk.Dialog):
         self.closed = False
         self.plan_generation = 0
         self.run_generation = 0
+        self.last_progress_done = 0
+        self.has_determinate_progress = False
         self.set_default_size(820, 690)
         self.add_button("Close", Gtk.ResponseType.CLOSE)
         self.close_button = self.get_widget_for_response(Gtk.ResponseType.CLOSE)
@@ -255,7 +259,7 @@ class FreeDOSFormatDialog(Gtk.Dialog):
             self.confirmation_changed()
 
     def pulse_progress(self):
-        if not self.running:
+        if not self.running or self.has_determinate_progress:
             return False
         self.progress.pulse()
         return True
@@ -282,6 +286,8 @@ class FreeDOSFormatDialog(Gtk.Dialog):
             return
         self.run_generation += 1
         generation = self.run_generation
+        self.last_progress_done = 0
+        self.has_determinate_progress = False
         self.progress.set_fraction(0.0)
         self.progress.set_text("Waiting for administrator authentication…")
         self.result.get_buffer().set_text("FreeDOS creation in progress…")
@@ -319,17 +325,29 @@ class FreeDOSFormatDialog(Gtk.Dialog):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                bufsize=1,
                 start_new_session=True,
             )
             self.process = process
-            stdout, stderr = process.communicate()
-            returncode = process.returncode
-            self.process = None
-            for line in stderr.splitlines():
+            expected_total = int(reviewed["plan"]["device_size_bytes"]) * 2
+            last_done = 0
+            for line in process.stderr:
+                progress = decode_progress_line(line)
+                if progress is not None:
+                    if progress["overall_total"] != expected_total:
+                        raise ValueError("FreeDOS helper progress does not match the reviewed full-device I/O total.")
+                    if progress["overall_done"] < last_done:
+                        raise ValueError("FreeDOS helper progress moved backwards.")
+                    last_done = progress["overall_done"]
+                    GLib.idle_add(self._progress_ready, generation, progress)
+                    continue
                 text = line.strip()
                 if text and len(diagnostics) < 64 and diagnostics_size + len(text) <= 32768:
                     diagnostics.append(text)
                     diagnostics_size += len(text)
+            stdout = process.stdout.read()
+            returncode = process.wait()
+            self.process = None
             if stdout.strip():
                 payload = normalize_report(json.loads(stdout), reviewed)
             if payload is None:
@@ -370,6 +388,20 @@ class FreeDOSFormatDialog(Gtk.Dialog):
                 process.communicate(timeout=5)
             except subprocess.TimeoutExpired:
                 pass
+
+    def _progress_ready(self, generation, progress):
+        if self.closed or generation != self.run_generation or not self.running:
+            return False
+        done = progress["overall_done"]
+        if done < self.last_progress_done:
+            return False
+        self.last_progress_done = done
+        self.has_determinate_progress = True
+        self.progress.set_fraction(min(1.0, done / progress["overall_total"]))
+        summary = progress_summary(progress)
+        self.progress.set_text(f"{progress['phase'].capitalize()}: {done * 100.0 / progress['overall_total']:.1f}%")
+        self.status.set_text(summary)
+        return False
 
     def _run_ready(self, generation, payload, diagnostics, returncode):
         if self.closed or generation != self.run_generation:

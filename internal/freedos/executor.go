@@ -42,12 +42,29 @@ type ExecutionBackend interface {
 	Close() error
 }
 
+// ExecutionProgress reports one bounded execution phase. Processed and Total
+// describe the current byte-bearing phase; phases without byte accounting use
+// zero for both values.
+type ExecutionProgress struct {
+	Phase     ExecutionPhase `json:"phase"`
+	Processed uint64         `json:"processed"`
+	Total     uint64         `json:"total"`
+}
+
 // ExecutionOptions carries deterministic time and progress hooks. Progress
 // failures are treated exactly like cancellation or I/O failures after the
 // bytes already accepted by the target.
 type ExecutionOptions struct {
-	Now      func() time.Time
-	Progress func(uint64) error
+	Now           func() time.Time
+	Progress      func(uint64) error
+	PhaseProgress func(ExecutionProgress) error
+}
+
+func emitExecutionProgress(options ExecutionOptions, phase ExecutionPhase, processed, total uint64) error {
+	if options.PhaseProgress == nil {
+		return nil
+	}
+	return options.PhaseProgress(ExecutionProgress{Phase: phase, Processed: processed, Total: total})
 }
 
 // ExecutionReport is conservative: MediaChanged becomes true immediately
@@ -98,6 +115,9 @@ func ExecuteDevicePlan(ctx context.Context, plan DevicePlan, backend ExecutionBa
 	}
 
 	report.Phase = ExecutionPhasePrepare
+	if err := emitExecutionProgress(options, report.Phase, 0, 0); err != nil {
+		return finishExecutionReport(report, now, err)
+	}
 	if err := ctx.Err(); err != nil {
 		return finishExecutionReport(report, now, err)
 	}
@@ -112,12 +132,23 @@ func ExecuteDevicePlan(ctx context.Context, plan DevicePlan, backend ExecutionBa
 	}
 
 	report.Phase = ExecutionPhaseWrite
+	if err := emitExecutionProgress(options, report.Phase, 0, plan.DeviceSizeBytes); err != nil {
+		return closeExecutionBackend(report, now, backend, err)
+	}
 	report.MediaChanged = true
 	writer := backend.TargetWriter()
 	if writer == nil {
 		return closeExecutionBackend(report, now, backend, errors.New("FreeDOS backend returned no target writer"))
 	}
-	writeResult, err := StreamMediaImage(ctx, writer, plan.Media, options.Progress)
+	writeProgress := func(completed uint64) error {
+		if options.Progress != nil {
+			if err := options.Progress(completed); err != nil {
+				return err
+			}
+		}
+		return emitExecutionProgress(options, ExecutionPhaseWrite, completed, plan.DeviceSizeBytes)
+	}
+	writeResult, err := StreamMediaImage(ctx, writer, plan.Media, writeProgress)
 	report.BytesWritten = writeResult.BytesWritten
 	if err != nil {
 		return closeExecutionBackend(report, now, backend, fmt.Errorf("write FreeDOS media: %w", err))
@@ -128,6 +159,9 @@ func ExecuteDevicePlan(ctx context.Context, plan DevicePlan, backend ExecutionBa
 	report.SHA256 = writeResult.SHA256
 
 	report.Phase = ExecutionPhaseFlush
+	if err := emitExecutionProgress(options, report.Phase, 0, 0); err != nil {
+		return closeExecutionBackend(report, now, backend, err)
+	}
 	if err := ctx.Err(); err != nil {
 		return closeExecutionBackend(report, now, backend, err)
 	}
@@ -136,11 +170,16 @@ func ExecuteDevicePlan(ctx context.Context, plan DevicePlan, backend ExecutionBa
 	}
 
 	report.Phase = ExecutionPhaseReadback
+	if err := emitExecutionProgress(options, report.Phase, 0, plan.DeviceSizeBytes); err != nil {
+		return closeExecutionBackend(report, now, backend, err)
+	}
 	reader := backend.TargetReaderAt()
 	if reader == nil {
 		return closeExecutionBackend(report, now, backend, errors.New("FreeDOS backend returned no target readback"))
 	}
-	readback, err := VerifyMediaReadback(ctx, reader, plan.Media)
+	readback, err := VerifyMediaReadbackProgress(ctx, reader, plan.Media, func(completed uint64) error {
+		return emitExecutionProgress(options, ExecutionPhaseReadback, completed, plan.DeviceSizeBytes)
+	})
 	if err != nil {
 		return closeExecutionBackend(report, now, backend, fmt.Errorf("verify FreeDOS readback: %w", err))
 	}
@@ -150,6 +189,9 @@ func ExecuteDevicePlan(ctx context.Context, plan DevicePlan, backend ExecutionBa
 	report.Verified = true
 
 	report.Phase = ExecutionPhaseFinish
+	if err := emitExecutionProgress(options, report.Phase, 0, 0); err != nil {
+		return closeExecutionBackend(report, now, backend, err)
+	}
 	if err := ctx.Err(); err != nil {
 		return closeExecutionBackend(report, now, backend, err)
 	}
