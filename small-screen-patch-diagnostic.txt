@@ -1,0 +1,21 @@
+patch_status=1
+test_status=
+
+--- patch log ---
+gui/rufusarm64_freedos_dialog.py: expected one match, found 0
+---
+        result_scroll = Gtk.ScrolledWindow()
+        result_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        result_scroll.set_vexpand(True)
+        self.result = Gtk.TextView(
+  editable=False,
+  cursor_visible=False,
+  monospace=True,
+  wrap_mode=Gtk.WrapMode.WORD_CHAR,
+        )
+        self.result.get_buffer().set_text("No FreeDOS report is available yet.")
+        result_scroll.add(self.result)
+        box.pack_start(result_scroll, True, True, 0)
+
+
+--- test log ---
