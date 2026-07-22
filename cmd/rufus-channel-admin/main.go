@@ -664,7 +664,7 @@ func readOperatorFile(path string, limit int) ([]byte, error) {
 	if limit <= 0 || limit > maxOperatorFileBytes {
 		limit = maxOperatorFileBytes
 	}
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
