@@ -28,84 +28,84 @@ jobs:
           dialog_path = Path("gui/rufusarm64_nonbootable_dialog.py")
           source = dialog_path.read_text(encoding="utf-8")
 
-          old = '''        self.set_default_size(780, 650)
-          self.add_button("Close", Gtk.ResponseType.CLOSE)
-          self.close_button = self.get_widget_for_response(Gtk.ResponseType.CLOSE)
-          self.connect("delete-event", self.on_delete_event)
+          old = "        self.set_default_size(780, 650)\n"
+          new = "        self.set_default_size(760, 560)\n        self.set_resizable(True)\n"
+          if source.count(old) != 1:
+              raise SystemExit("non-bootable default-size anchor changed")
+          source = source.replace(old, new, 1)
 
-          box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-          box.set_border_width(18)
-          self.get_content_area().pack_start(box, True, True, 0)
-          '''
-          new = '''        self.set_default_size(760, 560)
-          self.set_resizable(True)
-          self.add_button("Close", Gtk.ResponseType.CLOSE)
-          self.close_button = self.get_widget_for_response(Gtk.ResponseType.CLOSE)
-          self.connect("delete-event", self.on_delete_event)
-
-          content_scroll = Gtk.ScrolledWindow()
-          content_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-          content_scroll.set_hexpand(True)
-          content_scroll.set_vexpand(True)
-          self.get_content_area().pack_start(content_scroll, True, True, 0)
-
-          box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-          box.set_border_width(18)
-          content_scroll.add(box)
-          '''
+          old = "\n".join([
+              "        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)",
+              "        box.set_border_width(18)",
+              "        self.get_content_area().pack_start(box, True, True, 0)",
+              "",
+          ])
+          new = "\n".join([
+              "        content_scroll = Gtk.ScrolledWindow()",
+              "        content_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)",
+              "        content_scroll.set_hexpand(True)",
+              "        content_scroll.set_vexpand(True)",
+              "        self.get_content_area().pack_start(content_scroll, True, True, 0)",
+              "",
+              "        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)",
+              "        box.set_border_width(18)",
+              "        content_scroll.add(box)",
+              "",
+          ])
           if source.count(old) != 1:
               raise SystemExit("non-bootable dialog outer layout anchor changed")
           source = source.replace(old, new, 1)
 
-          old = '''        result_scroll = Gtk.ScrolledWindow()
-          result_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-          result_scroll.set_vexpand(True)
-          self.result = Gtk.TextView(editable=False, cursor_visible=False, monospace=True, wrap_mode=Gtk.WrapMode.WORD_CHAR)
-          self.result.get_buffer().set_text("No formatting report is available yet.")
-          result_scroll.add(self.result)
-          box.pack_start(result_scroll, True, True, 0)
-          '''
-          new = '''        result_scroll = Gtk.ScrolledWindow()
-          result_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-          result_scroll.set_min_content_height(160)
-          result_scroll.set_max_content_height(240)
-          result_scroll.set_propagate_natural_height(True)
-          self.result = Gtk.TextView(editable=False, cursor_visible=False, monospace=True, wrap_mode=Gtk.WrapMode.WORD_CHAR)
-          self.result.get_buffer().set_text("No formatting report is available yet.")
-          result_scroll.add(self.result)
-          box.pack_start(result_scroll, False, False, 0)
-          '''
+          old = "\n".join([
+              "        result_scroll = Gtk.ScrolledWindow()",
+              "        result_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)",
+              "        result_scroll.set_vexpand(True)",
+              "        self.result = Gtk.TextView(editable=False, cursor_visible=False, monospace=True, wrap_mode=Gtk.WrapMode.WORD_CHAR)",
+              "        self.result.get_buffer().set_text(\"No formatting report is available yet.\")",
+              "        result_scroll.add(self.result)",
+              "        box.pack_start(result_scroll, True, True, 0)",
+              "",
+          ])
+          new = "\n".join([
+              "        result_scroll = Gtk.ScrolledWindow()",
+              "        result_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)",
+              "        result_scroll.set_min_content_height(160)",
+              "        result_scroll.set_max_content_height(240)",
+              "        result_scroll.set_propagate_natural_height(True)",
+              "        self.result = Gtk.TextView(editable=False, cursor_visible=False, monospace=True, wrap_mode=Gtk.WrapMode.WORD_CHAR)",
+              "        self.result.get_buffer().set_text(\"No formatting report is available yet.\")",
+              "        result_scroll.add(self.result)",
+              "        box.pack_start(result_scroll, False, False, 0)",
+              "",
+          ])
           if source.count(old) != 1:
               raise SystemExit("non-bootable report viewport anchor changed")
           dialog_path.write_text(source.replace(old, new, 1), encoding="utf-8")
 
           test_path = Path("gui/test_nonbootable_dialog.py")
           tests = test_path.read_text(encoding="utf-8")
-          anchor = '''    def test_package_and_polkit_contracts_are_explicit(self):
-          '''
-          addition = '''    def test_dialog_body_scrolls_without_hiding_close_action(self):
-              self.assertIn("self.set_default_size(760, 560)", self.dialog_class_source)
-              self.assertIn("self.set_resizable(True)", self.dialog_class_source)
-              self.assertIn("content_scroll = Gtk.ScrolledWindow()", self.dialog_class_source)
-              self.assertIn(
-                  "self.get_content_area().pack_start(content_scroll, True, True, 0)",
-                  self.dialog_class_source,
-              )
-              self.assertIn("content_scroll.add(box)", self.dialog_class_source)
-              self.assertIn("result_scroll.set_min_content_height(160)", self.dialog_class_source)
-              self.assertIn("result_scroll.set_max_content_height(240)", self.dialog_class_source)
-              self.assertIn("box.pack_start(result_scroll, False, False, 0)", self.dialog_class_source)
-              self.assertIn('self.add_button("Close", Gtk.ResponseType.CLOSE)', self.dialog_class_source)
-              self.assertLess(
-                  self.dialog_class_source.index('self.add_button("Close", Gtk.ResponseType.CLOSE)'),
-                  self.dialog_class_source.index("content_scroll = Gtk.ScrolledWindow()"),
-              )
-
-              
-          ''' + anchor
+          anchor = "    def test_package_and_polkit_contracts_are_explicit(self):\n"
+          method = "\n".join([
+              "    def test_dialog_body_scrolls_without_hiding_close_action(self):",
+              "        self.assertIn(\"self.set_default_size(760, 560)\", self.dialog_class_source)",
+              "        self.assertIn(\"self.set_resizable(True)\", self.dialog_class_source)",
+              "        self.assertIn(\"content_scroll = Gtk.ScrolledWindow()\", self.dialog_class_source)",
+              "        self.assertIn(\"self.get_content_area().pack_start(content_scroll, True, True, 0)\", self.dialog_class_source)",
+              "        self.assertIn(\"content_scroll.add(box)\", self.dialog_class_source)",
+              "        self.assertIn(\"result_scroll.set_min_content_height(160)\", self.dialog_class_source)",
+              "        self.assertIn(\"result_scroll.set_max_content_height(240)\", self.dialog_class_source)",
+              "        self.assertIn(\"box.pack_start(result_scroll, False, False, 0)\", self.dialog_class_source)",
+              "        self.assertIn('self.add_button(\"Close\", Gtk.ResponseType.CLOSE)', self.dialog_class_source)",
+              "        self.assertLess(",
+              "            self.dialog_class_source.index('self.add_button(\"Close\", Gtk.ResponseType.CLOSE)'),",
+              "            self.dialog_class_source.index(\"content_scroll = Gtk.ScrolledWindow()\"),",
+              "        )",
+              "",
+              "",
+          ])
           if tests.count(anchor) != 1:
               raise SystemExit("non-bootable test insertion anchor changed")
-          test_path.write_text(tests.replace(anchor, addition, 1), encoding="utf-8")
+          test_path.write_text(tests.replace(anchor, method + anchor, 1), encoding="utf-8")
           PY
 
           python3 -m py_compile gui/rufusarm64_nonbootable_dialog.py gui/test_nonbootable_dialog.py
