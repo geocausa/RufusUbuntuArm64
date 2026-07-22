@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func syntheticSBATLevelPayload() []byte {
@@ -136,5 +138,45 @@ func TestFirmwareSBATLevelRejectsSubstitutionBeforeOpen(t *testing.T) {
 	}
 	if _, err := loadFirmwareSBATLevel(root, hook); err == nil || !strings.Contains(err.Error(), "changed before it was opened") {
 		t.Fatalf("substitution error = %v", err)
+	}
+}
+
+func TestFirmwareSBATLevelRejectsFIFOReplacementWithoutBlocking(t *testing.T) {
+	root := t.TempDir()
+	path := writeSyntheticEFIVariable(t, root, "SbatLevelRT", efiVariableBootServiceAccess|efiVariableRuntimeAccess, syntheticSBATLevelPayload())
+	done := make(chan error, 1)
+	go func() {
+		var setupErr error
+		_, err := loadFirmwareSBATLevel(root, func(stage, candidate string) {
+			if stage != "before-open" || candidate != path || setupErr != nil {
+				return
+			}
+			if removeErr := os.Remove(candidate); removeErr != nil {
+				setupErr = removeErr
+				return
+			}
+			setupErr = syscall.Mkfifo(candidate, 0o600)
+		})
+		if setupErr != nil {
+			done <- setupErr
+			return
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil || (!strings.Contains(err.Error(), "changed before it was opened") && !strings.Contains(err.Error(), "non-empty payload")) {
+			t.Fatalf("FIFO firmware SBAT error = %v", err)
+		}
+	case <-time.After(time.Second):
+		writer, err := os.OpenFile(path, os.O_WRONLY|syscall.O_NONBLOCK, 0)
+		if err == nil {
+			_ = writer.Close()
+		}
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+		}
+		t.Fatal("opening a FIFO firmware SBAT variable blocked")
 	}
 }
