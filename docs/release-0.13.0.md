@@ -10,6 +10,7 @@ RufusArm64 0.13.0 is the Stage 2 practical-parity release candidate for Ubuntu A
 - Linux raw/ISO inspection distinguishes hybrid media from optical-only ISOs, validates El Torito BIOS/UEFI entries, and reports ISOLINUX, SYSLINUX, and GRUB fingerprints when present in referenced boot images.
 - Verified image acquisition is exposed in the composed GTK application with cancellation, storage preflight, signed size/SHA-256 installation, and SHA-bound resumable private partials.
 - Keyboard mnemonics, safe visible shortcuts, assistive-technology metadata, and selectable compatibility/status text improve non-mouse use.
+- Report-heavy GTK dialogs keep confirmation, progress, action, and Close controls visible on 800p displays while long details and reports remain scrollable.
 - Windows setup analysis reports bounded edition names/count plus WIM, ESD, or validated split-SWM payload type and part count before optional customizations are enabled.
 
 The existing ordinary raw, compressed, virtual-disk, Windows, persistence, UEFI, backup, qualification, cancellation, identity, and verification paths remain in place.
@@ -41,7 +42,8 @@ Then complete the human checklist with at least:
 - cancellation/failure-state inspection;
 - backup and restore-path sanity;
 - acquisition behavior using a separately trusted signed local catalogue while the production channel is disabled;
-- diagnostic export and keyboard navigation.
+- diagnostic export and keyboard navigation;
+- 1280×800 visibility of confirmation, progress, action, and Close controls in report-heavy dialogs.
 
 Do not convert software-only results into a universal hardware or Secure Boot claim.
 
