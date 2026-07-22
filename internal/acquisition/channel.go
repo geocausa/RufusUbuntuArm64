@@ -615,38 +615,8 @@ func channelHTTPClient(allowedHosts []string, options ChannelOptions) *http.Clie
 }
 
 func readRegularLimited(path string, limit int) ([]byte, error) {
-	before, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 {
-		return nil, errors.New("input is not a real regular file")
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if !os.SameFile(before, info) {
-		return nil, errors.New("input changed while it was being opened")
-	}
-	if !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > int64(limit) {
-		return nil, fmt.Errorf("input is not a regular file within the %d-byte limit", limit)
-	}
-	data, err := io.ReadAll(io.LimitReader(file, int64(limit)+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(data) > limit {
-		return nil, fmt.Errorf("input exceeds the %d-byte limit", limit)
-	}
-	return data, nil
+	return readRegularLimitedWithOpen(path, limit, openChannelMetadataNoFollow)
 }
-
 func writeAtomicPrivate(path string, data []byte) error {
 	directory := filepath.Dir(path)
 	if err := ensurePrivateDirectory(directory); err != nil {
