@@ -68,9 +68,19 @@ func TestStreamMediaImageAndVerifyReadback(t *testing.T) {
 	if result.SHA256 != wantDigest {
 		t.Fatalf("stream digest = %s; want %s", result.SHA256, wantDigest)
 	}
-	verified, err := VerifyMediaReadback(context.Background(), bytes.NewReader(output.Bytes()), plan)
+	lastReadbackProgress := uint64(0)
+	verified, err := VerifyMediaReadbackProgress(context.Background(), bytes.NewReader(output.Bytes()), plan, func(completed uint64) error {
+		if completed <= lastReadbackProgress || completed > plan.DiskSizeBytes {
+			return fmt.Errorf("invalid readback progress %d after %d", completed, lastReadbackProgress)
+		}
+		lastReadbackProgress = completed
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if lastReadbackProgress != plan.DiskSizeBytes {
+		t.Fatalf("final readback progress=%d, want %d", lastReadbackProgress, plan.DiskSizeBytes)
 	}
 	if verified != result {
 		t.Fatalf("readback result = %+v; stream result = %+v", verified, result)

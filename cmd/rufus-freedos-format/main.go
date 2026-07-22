@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -16,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/geocausa/RufusArm64/internal/device"
 	"github.com/geocausa/RufusArm64/internal/freedos"
@@ -25,6 +27,98 @@ import (
 var version = "development"
 
 var sysClassBlockRoot = "/sys/class/block"
+
+const freeDOSProgressPrefix = "RUFUSARM64_PROGRESS "
+
+type freeDOSProgressRecord struct {
+	Schema         int                    `json:"schema"`
+	Type           string                 `json:"type"`
+	Phase          freedos.ExecutionPhase `json:"phase"`
+	Done           uint64                 `json:"done"`
+	Total          uint64                 `json:"total"`
+	OverallDone    uint64                 `json:"overall_done"`
+	OverallTotal   uint64                 `json:"overall_total"`
+	ElapsedMS      uint64                 `json:"elapsed_ms"`
+	BytesPerSecond uint64                 `json:"bytes_per_second"`
+	ETASeconds     *uint64                `json:"eta_seconds"`
+}
+
+type freeDOSProgressEmitter struct {
+	writer      io.Writer
+	deviceSize  uint64
+	started     time.Time
+	lastPhase   freedos.ExecutionPhase
+	lastPercent int
+}
+
+func newFreeDOSProgressEmitter(writer io.Writer, deviceSize uint64) *freeDOSProgressEmitter {
+	return &freeDOSProgressEmitter{writer: writer, deviceSize: deviceSize, started: time.Now(), lastPercent: -1}
+}
+
+func (emitter *freeDOSProgressEmitter) Emit(progress freedos.ExecutionProgress) error {
+	if emitter == nil || emitter.writer == nil || emitter.deviceSize == 0 {
+		return errors.New("FreeDOS progress emitter is not configured")
+	}
+	if emitter.deviceSize > ^uint64(0)/2 {
+		return errors.New("FreeDOS progress byte accounting overflow")
+	}
+	overallTotal := emitter.deviceSize * 2
+	var overallDone uint64
+	switch progress.Phase {
+	case freedos.ExecutionPhasePrepare:
+		overallDone = 0
+	case freedos.ExecutionPhaseWrite:
+		overallDone = progress.Processed
+	case freedos.ExecutionPhaseFlush:
+		overallDone = emitter.deviceSize
+	case freedos.ExecutionPhaseReadback:
+		overallDone = emitter.deviceSize + progress.Processed
+	case freedos.ExecutionPhaseFinish, freedos.ExecutionPhaseComplete:
+		overallDone = overallTotal
+	default:
+		return fmt.Errorf("unsupported FreeDOS progress phase %q", progress.Phase)
+	}
+	if overallDone > overallTotal || (progress.Total != 0 && progress.Processed > progress.Total) {
+		return errors.New("FreeDOS progress exceeds its reviewed byte totals")
+	}
+	percent := int(overallDone * 100 / overallTotal)
+	if progress.Phase == emitter.lastPhase && percent == emitter.lastPercent {
+		return nil
+	}
+	emitter.lastPhase = progress.Phase
+	emitter.lastPercent = percent
+	elapsed := time.Since(emitter.started)
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	rate := uint64(0)
+	if overallDone > 0 && elapsed > 0 {
+		rate = uint64(float64(overallDone) / elapsed.Seconds())
+	}
+	var eta *uint64
+	if rate > 0 && overallDone < overallTotal {
+		remaining := (overallTotal - overallDone) / rate
+		eta = &remaining
+	}
+	record := freeDOSProgressRecord{
+		Schema:         1,
+		Type:           "progress",
+		Phase:          progress.Phase,
+		Done:           progress.Processed,
+		Total:          progress.Total,
+		OverallDone:    overallDone,
+		OverallTotal:   overallTotal,
+		ElapsedMS:      uint64(elapsed / time.Millisecond),
+		BytesPerSecond: rate,
+		ETASeconds:     eta,
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(emitter.writer, "%s%s\n", freeDOSProgressPrefix, data)
+	return err
+}
 
 type arguments struct {
 	devicePath       string
@@ -171,6 +265,10 @@ func run(argv []string) error {
 	}
 	defer cleanupCancellation()
 
+	execution := freedos.ExecutionOptions{}
+	if opts.asJSON {
+		execution.PhaseProgress = newFreeDOSProgressEmitter(os.Stderr, selected.Size).Emit
+	}
 	report, runErr := freedos.ExecuteLinuxDevice(ctx, plan, freedos.LinuxDeviceOptions{
 		ExpectedDeviceID: kernelDeviceID,
 		ExpectedSize:     selected.Size,
@@ -192,7 +290,7 @@ func run(argv []string) error {
 			}
 			return safety.VerifyOpenDevice(open, kernelDeviceID, selected.Size)
 		},
-	}, freedos.ExecutionOptions{})
+	}, execution)
 	if opts.asJSON && report.Schema != 0 {
 		if err := json.NewEncoder(os.Stdout).Encode(report); err != nil {
 			return errors.Join(runErr, err)

@@ -46,6 +46,37 @@ func TestExecuteDevicePlanSuccess(t *testing.T) {
 	}
 }
 
+func TestExecuteDevicePlanReportsWriteAndReadbackProgress(t *testing.T) {
+	plan := testFreeDOSDevicePlan(t)
+	backend := &memoryExecutionBackend{}
+	var records []ExecutionProgress
+	if _, err := ExecuteDevicePlan(context.Background(), plan, backend, ExecutionOptions{
+		PhaseProgress: func(progress ExecutionProgress) error {
+			records = append(records, progress)
+			return nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	seen := make(map[ExecutionPhase]bool)
+	last := make(map[ExecutionPhase]uint64)
+	for _, progress := range records {
+		seen[progress.Phase] = true
+		if progress.Processed < last[progress.Phase] || (progress.Total != 0 && progress.Processed > progress.Total) {
+			t.Fatalf("invalid phase progress: %+v after %d", progress, last[progress.Phase])
+		}
+		last[progress.Phase] = progress.Processed
+	}
+	for _, phase := range []ExecutionPhase{ExecutionPhasePrepare, ExecutionPhaseWrite, ExecutionPhaseFlush, ExecutionPhaseReadback, ExecutionPhaseFinish} {
+		if !seen[phase] {
+			t.Fatalf("missing progress phase %q in %+v", phase, records)
+		}
+	}
+	if last[ExecutionPhaseWrite] != plan.DeviceSizeBytes || last[ExecutionPhaseReadback] != plan.DeviceSizeBytes {
+		t.Fatalf("incomplete full-device progress: write=%d readback=%d want=%d", last[ExecutionPhaseWrite], last[ExecutionPhaseReadback], plan.DeviceSizeBytes)
+	}
+}
+
 func TestExecuteDevicePlanRejectsBeforeDestructiveWithoutChangedMedia(t *testing.T) {
 	plan := testFreeDOSDevicePlan(t)
 	backend := &memoryExecutionBackend{beforeErr: errors.New("identity changed")}
