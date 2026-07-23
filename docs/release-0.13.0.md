@@ -19,6 +19,8 @@ The existing raw, compressed, virtual-disk, Windows, persistence, UEFI, backup, 
 
 ## Real-hardware release evidence
 
+Physical hardware testing remains a required basis for the bounded claims made by this release. The completed 0.13.0 record is retained in `docs/hardware-checklist-0.13.0.md`; results outside that record remain unclaimed.
+
 The 0.13.0 hardware record includes:
 
 - Ubuntu ARM64 media creation and boot on the intended ARM64 host;
