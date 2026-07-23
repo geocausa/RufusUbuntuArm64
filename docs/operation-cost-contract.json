@@ -1,1 +1,428 @@
-{"schema":1,"reviewed_upstream":{"repository":"pbatard/rufus","commit":"6d8fbf98305ff37eb531c45cbd6ff44563c53917","paths":["src/format.c","src/drive.c","src/wue.c"]},"scaling_bases":["fixed_bytes","source_size","container_size","expanded_size","copied_payload","filesystem_metadata","required_extents","partition_capacity","target_capacity","download_size"],"operations":[{"id":"freedos_create","surface":"Create FreeDOS media","classification":"ordinary_creation","status":"conformant","tracking_issue":239,"upstream_operation":"Quick-format FAT media, install DOS boot records, and copy the embedded FreeDOS payload.","intentional_linux_divergence":"RufusArm64 verifies every required boot/filesystem/payload extent after writing; exhaustive free-space testing remains a separate Check USB operation.","phases":[{"name":"write_required_extents","direction":"target_write","scaling":"required_extents","multiplier":1,"enabled_by_default":true},{"name":"verify_required_extents","direction":"target_read","scaling":"required_extents","multiplier":1,"enabled_by_default":true}]},{"id":"windows_install","surface":"Create Windows installation media","classification":"ordinary_creation","status":"audit","tracking_issue":243,"upstream_operation":"Quick-format FAT32/NTFS, install required boot support, split WIM when needed, and copy setup files.","intentional_linux_divergence":"RufusArm64 currently uses three complete ISO SHA-256 passes to detect source mutation; this is stronger but materially more expensive than upstream and is under audit.","phases":[{"name":"complete_iso_hashes","direction":"source_read","scaling":"source_size","multiplier":3,"enabled_by_default":true},{"name":"copy_setup_files","direction":"source_read","scaling":"copied_payload","multiplier":1,"enabled_by_default":true},{"name":"write_filesystem_and_setup_files","direction":"target_write","scaling":"copied_payload","multiplier":1,"enabled_by_default":true},{"name":"verify_copied_files","direction":"target_read","scaling":"copied_payload","multiplier":1,"enabled_by_default":false}]},{"id":"linux_persistent_create","surface":"Create persistent Linux media","classification":"ordinary_creation","status":"audit","tracking_issue":242,"upstream_operation":"Create a writable boot filesystem and persistence partition, copy the supported live-media tree, and patch boot configuration.","intentional_linux_divergence":"The Linux-native path currently performs three complete source-image hashes in addition to manifest-bound copy and destination verification.","phases":[{"name":"complete_source_hashes","direction":"source_read","scaling":"source_size","multiplier":3,"enabled_by_default":true},{"name":"copy_media_tree","direction":"source_read","scaling":"copied_payload","multiplier":1,"enabled_by_default":true},{"name":"write_boot_and_persistence_data","direction":"target_write","scaling":"copied_payload","multiplier":1,"enabled_by_default":true},{"name":"verify_media_tree","direction":"target_read","scaling":"copied_payload","multiplier":1,"enabled_by_default":true}]},{"id":"raw_image_write","surface":"Write raw or ISOHybrid image","classification":"imaging","status":"audit","tracking_issue":242,"upstream_operation":"Write the selected disk image byte-for-byte and optionally compare the written bytes.","intentional_linux_divergence":"RufusArm64 hashes the complete source before writing and again while writing so same-size source mutation fails closed.","phases":[{"name":"bind_source_hash","direction":"source_read","scaling":"source_size","multiplier":1,"enabled_by_default":true},{"name":"write_and_hash_source","direction":"source_read","scaling":"source_size","multiplier":1,"enabled_by_default":true},{"name":"write_image","direction":"target_write","scaling":"source_size","multiplier":1,"enabled_by_default":true},{"name":"verification_source_read","direction":"source_read","scaling":"source_size","multiplier":1,"enabled_by_default":false},{"name":"verification_target_read","direction":"target_read","scaling":"source_size","multiplier":1,"enabled_by_default":false}]},{"id":"compressed_image_prepare","surface":"Prepare compressed disk image","classification":"imaging","status":"audit","tracking_issue":242,"upstream_operation":"Decompress the selected image and write the resulting raw byte stream.","intentional_linux_divergence":"RufusArm64 currently materializes a complete private raw file and hashes the original container before and after preparation.","phases":[{"name":"container_hashes","direction":"source_read","scaling":"container_size","multiplier":2,"enabled_by_default":true},{"name":"decompress_container","direction":"source_read","scaling":"container_size","multiplier":1,"enabled_by_default":true},{"name":"materialize_raw","direction":"temporary_write","scaling":"expanded_size","multiplier":1,"enabled_by_default":true},{"name":"raw_writer_reads","direction":"temporary_read","scaling":"expanded_size","multiplier":2,"enabled_by_default":true},{"name":"write_image","direction":"target_write","scaling":"expanded_size","multiplier":1,"enabled_by_default":true}]},{"id":"virtual_disk_prepare","surface":"Prepare VHD/VHDX/QCOW2/VMDK image","classification":"imaging","status":"audit","tracking_issue":242,"upstream_operation":"Convert or restore the virtual-disk payload into its raw disk representation.","intentional_linux_divergence":"RufusArm64 uses qemu-img to materialize the complete virtual size in a private raw file before the guarded writer runs.","phases":[{"name":"container_hashes","direction":"source_read","scaling":"container_size","multiplier":2,"enabled_by_default":true},{"name":"convert_virtual_disk","direction":"source_read","scaling":"container_size","multiplier":1,"enabled_by_default":true},{"name":"materialize_raw","direction":"temporary_write","scaling":"expanded_size","multiplier":1,"enabled_by_default":true},{"name":"raw_writer_reads","direction":"temporary_read","scaling":"expanded_size","multiplier":2,"enabled_by_default":true},{"name":"write_image","direction":"target_write","scaling":"expanded_size","multiplier":1,"enabled_by_default":true}]},{"id":"nonbootable_quick_format","surface":"Restore / format","classification":"ordinary_creation","status":"conformant","tracking_issue":242,"upstream_operation":"Create a new partition table and quick-format the selected filesystem.","intentional_linux_divergence":"Linux filesystem tools are used behind the same identity-bound destructive-operation boundary.","phases":[{"name":"partition_and_filesystem_metadata","direction":"target_write","scaling":"filesystem_metadata","multiplier":1,"enabled_by_default":true}]},{"id":"windows_full_format","surface":"Windows full format option","classification":"explicit_maintenance","status":"conformant","tracking_issue":242,"upstream_operation":"Perform a non-quick format only when the user explicitly disables quick format.","intentional_linux_divergence":"RufusArm64 implements the full-format pass as an explicit zero write before filesystem creation.","phases":[{"name":"zero_partition","direction":"target_write","scaling":"partition_capacity","multiplier":1,"enabled_by_default":true}]},{"id":"windows_bad_block_check","surface":"Windows bad-block check option","classification":"explicit_qualification","status":"conformant","tracking_issue":242,"upstream_operation":"Run an explicitly selected destructive media-check pass.","intentional_linux_divergence":"The Linux path uses one zero pattern and O_DIRECT readback where supported.","phases":[{"name":"zero_partition","direction":"target_write","scaling":"partition_capacity","multiplier":1,"enabled_by_default":true},{"name":"readback_partition","direction":"target_read","scaling":"partition_capacity","multiplier":1,"enabled_by_default":true}]},{"id":"check_usb_quick","surface":"Check USB — quick profile","classification":"explicit_qualification","status":"conformant","tracking_issue":242,"upstream_operation":"Sample distributed regions to detect common false-capacity, aliasing, and write/read failures.","intentional_linux_divergence":"The sampled address-derived pattern and evidence report are Linux-native.","phases":[{"name":"write_sample_regions","direction":"target_write","scaling":"fixed_bytes","multiplier":1,"enabled_by_default":true},{"name":"read_sample_regions","direction":"target_read","scaling":"fixed_bytes","multiplier":1,"enabled_by_default":true}]},{"id":"check_usb_full","surface":"Check USB — full profile","classification":"explicit_qualification","status":"conformant","tracking_issue":242,"upstream_operation":"Explicitly verify the complete reported device capacity.","intentional_linux_divergence":"The address-derived pattern and evidence report are Linux-native.","phases":[{"name":"write_complete_device","direction":"target_write","scaling":"target_capacity","multiplier":1,"enabled_by_default":true},{"name":"read_complete_device","direction":"target_read","scaling":"target_capacity","multiplier":1,"enabled_by_default":true}]},{"id":"save_drive_image","surface":"Save drive image","classification":"imaging","status":"conformant","tracking_issue":242,"upstream_operation":"Read every selected device sector into an image file.","intentional_linux_divergence":"RufusArm64 binds the source device identity and publishes the completed image atomically.","phases":[{"name":"read_complete_device","direction":"target_read","scaling":"target_capacity","multiplier":1,"enabled_by_default":true},{"name":"write_output_image","direction":"output_write","scaling":"target_capacity","multiplier":1,"enabled_by_default":true}]},{"id":"verified_download","surface":"Verified image acquisition","classification":"acquisition","status":"conformant","tracking_issue":242,"upstream_operation":"Download the selected image with progress, cancellation, resume, and integrity verification.","intentional_linux_divergence":"RufusArm64 requires threshold-signed catalogue metadata and SHA-256-bound resumable partials.","phases":[{"name":"network_transfer","direction":"network_read","scaling":"download_size","multiplier":1,"enabled_by_default":true},{"name":"write_download","direction":"output_write","scaling":"download_size","multiplier":1,"enabled_by_default":true}]}]}
+{
+  "schema": 1,
+  "reviewed_upstream": {
+    "repository": "pbatard/rufus",
+    "commit": "6d8fbf98305ff37eb531c45cbd6ff44563c53917",
+    "paths": [
+      "src/format.c",
+      "src/drive.c",
+      "src/wue.c"
+    ]
+  },
+  "scaling_bases": [
+    "fixed_bytes",
+    "source_size",
+    "container_size",
+    "expanded_size",
+    "copied_payload",
+    "filesystem_metadata",
+    "required_extents",
+    "partition_capacity",
+    "target_capacity",
+    "download_size"
+  ],
+  "operations": [
+    {
+      "id": "freedos_create",
+      "surface": "Create FreeDOS media",
+      "classification": "ordinary_creation",
+      "status": "conformant",
+      "tracking_issue": 239,
+      "upstream_operation": "Quick-format FAT media, install DOS boot records, and copy the embedded FreeDOS payload.",
+      "intentional_linux_divergence": "RufusArm64 verifies every required boot/filesystem/payload extent after writing; exhaustive free-space testing remains a separate Check USB operation.",
+      "phases": [
+        {
+          "name": "write_required_extents",
+          "direction": "target_write",
+          "scaling": "required_extents",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "verify_required_extents",
+          "direction": "target_read",
+          "scaling": "required_extents",
+          "multiplier": 1,
+          "enabled_by_default": true
+        }
+      ]
+    },
+    {
+      "id": "windows_install",
+      "surface": "Create Windows installation media",
+      "classification": "ordinary_creation",
+      "status": "audit",
+      "tracking_issue": 243,
+      "upstream_operation": "Quick-format FAT32/NTFS, install required boot support, split WIM when needed, and copy setup files.",
+      "intentional_linux_divergence": "RufusArm64 currently uses three complete ISO SHA-256 passes to detect source mutation; this is stronger but materially more expensive than upstream and is under audit.",
+      "phases": [
+        {
+          "name": "complete_iso_hashes",
+          "direction": "source_read",
+          "scaling": "source_size",
+          "multiplier": 3,
+          "enabled_by_default": true
+        },
+        {
+          "name": "copy_setup_files",
+          "direction": "source_read",
+          "scaling": "copied_payload",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "write_filesystem_and_setup_files",
+          "direction": "target_write",
+          "scaling": "copied_payload",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "verify_copied_files",
+          "direction": "target_read",
+          "scaling": "copied_payload",
+          "multiplier": 1,
+          "enabled_by_default": false
+        }
+      ]
+    },
+    {
+      "id": "linux_persistent_create",
+      "surface": "Create persistent Linux media",
+      "classification": "ordinary_creation",
+      "status": "audit",
+      "tracking_issue": 242,
+      "upstream_operation": "Create a writable boot filesystem and persistence partition, copy the supported live-media tree, and patch boot configuration.",
+      "intentional_linux_divergence": "The Linux-native path currently performs three complete source-image hashes in addition to manifest-bound copy and destination verification.",
+      "phases": [
+        {
+          "name": "complete_source_hashes",
+          "direction": "source_read",
+          "scaling": "source_size",
+          "multiplier": 3,
+          "enabled_by_default": true
+        },
+        {
+          "name": "copy_media_tree",
+          "direction": "source_read",
+          "scaling": "copied_payload",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "write_boot_and_persistence_data",
+          "direction": "target_write",
+          "scaling": "copied_payload",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "verify_media_tree",
+          "direction": "target_read",
+          "scaling": "copied_payload",
+          "multiplier": 1,
+          "enabled_by_default": true
+        }
+      ]
+    },
+    {
+      "id": "raw_image_write",
+      "surface": "Write raw or ISOHybrid image",
+      "classification": "imaging",
+      "status": "audit",
+      "tracking_issue": 242,
+      "upstream_operation": "Write the selected disk image byte-for-byte and optionally compare the written bytes.",
+      "intentional_linux_divergence": "RufusArm64 hashes the complete source before writing and again while writing so same-size source mutation fails closed.",
+      "phases": [
+        {
+          "name": "bind_source_hash",
+          "direction": "source_read",
+          "scaling": "source_size",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "write_and_hash_source",
+          "direction": "source_read",
+          "scaling": "source_size",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "write_image",
+          "direction": "target_write",
+          "scaling": "source_size",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "verification_source_read",
+          "direction": "source_read",
+          "scaling": "source_size",
+          "multiplier": 1,
+          "enabled_by_default": false
+        },
+        {
+          "name": "verification_target_read",
+          "direction": "target_read",
+          "scaling": "source_size",
+          "multiplier": 1,
+          "enabled_by_default": false
+        }
+      ]
+    },
+    {
+      "id": "compressed_image_prepare",
+      "surface": "Prepare compressed disk image",
+      "classification": "imaging",
+      "status": "audit",
+      "tracking_issue": 242,
+      "upstream_operation": "Decompress the selected image and write the resulting raw byte stream.",
+      "intentional_linux_divergence": "RufusArm64 currently materializes a complete private raw file and hashes the original container before and after preparation.",
+      "phases": [
+        {
+          "name": "container_hashes",
+          "direction": "source_read",
+          "scaling": "container_size",
+          "multiplier": 2,
+          "enabled_by_default": true
+        },
+        {
+          "name": "decompress_container",
+          "direction": "source_read",
+          "scaling": "container_size",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "materialize_raw",
+          "direction": "temporary_write",
+          "scaling": "expanded_size",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "raw_writer_reads",
+          "direction": "temporary_read",
+          "scaling": "expanded_size",
+          "multiplier": 2,
+          "enabled_by_default": true
+        },
+        {
+          "name": "write_image",
+          "direction": "target_write",
+          "scaling": "expanded_size",
+          "multiplier": 1,
+          "enabled_by_default": true
+        }
+      ]
+    },
+    {
+      "id": "virtual_disk_prepare",
+      "surface": "Prepare VHD/VHDX/QCOW2/VMDK image",
+      "classification": "imaging",
+      "status": "audit",
+      "tracking_issue": 242,
+      "upstream_operation": "Convert or restore the virtual-disk payload into its raw disk representation.",
+      "intentional_linux_divergence": "RufusArm64 uses qemu-img to materialize the complete virtual size in a private raw file before the guarded writer runs.",
+      "phases": [
+        {
+          "name": "container_hashes",
+          "direction": "source_read",
+          "scaling": "container_size",
+          "multiplier": 2,
+          "enabled_by_default": true
+        },
+        {
+          "name": "convert_virtual_disk",
+          "direction": "source_read",
+          "scaling": "container_size",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "materialize_raw",
+          "direction": "temporary_write",
+          "scaling": "expanded_size",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "raw_writer_reads",
+          "direction": "temporary_read",
+          "scaling": "expanded_size",
+          "multiplier": 2,
+          "enabled_by_default": true
+        },
+        {
+          "name": "write_image",
+          "direction": "target_write",
+          "scaling": "expanded_size",
+          "multiplier": 1,
+          "enabled_by_default": true
+        }
+      ]
+    },
+    {
+      "id": "nonbootable_quick_format",
+      "surface": "Restore / format",
+      "classification": "ordinary_creation",
+      "status": "conformant",
+      "tracking_issue": 242,
+      "upstream_operation": "Create a new partition table and quick-format the selected filesystem.",
+      "intentional_linux_divergence": "Linux filesystem tools are used behind the same identity-bound destructive-operation boundary.",
+      "phases": [
+        {
+          "name": "partition_and_filesystem_metadata",
+          "direction": "target_write",
+          "scaling": "filesystem_metadata",
+          "multiplier": 1,
+          "enabled_by_default": true
+        }
+      ]
+    },
+    {
+      "id": "windows_full_format",
+      "surface": "Windows full format option",
+      "classification": "explicit_maintenance",
+      "status": "conformant",
+      "tracking_issue": 242,
+      "upstream_operation": "Perform a non-quick format only when the user explicitly disables quick format.",
+      "intentional_linux_divergence": "RufusArm64 implements the full-format pass as an explicit zero write before filesystem creation.",
+      "phases": [
+        {
+          "name": "zero_partition",
+          "direction": "target_write",
+          "scaling": "partition_capacity",
+          "multiplier": 1,
+          "enabled_by_default": true
+        }
+      ]
+    },
+    {
+      "id": "windows_bad_block_check",
+      "surface": "Windows bad-block check option",
+      "classification": "explicit_qualification",
+      "status": "conformant",
+      "tracking_issue": 242,
+      "upstream_operation": "Run an explicitly selected destructive media-check pass.",
+      "intentional_linux_divergence": "The Linux path uses one zero pattern and O_DIRECT readback where supported.",
+      "phases": [
+        {
+          "name": "zero_partition",
+          "direction": "target_write",
+          "scaling": "partition_capacity",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "readback_partition",
+          "direction": "target_read",
+          "scaling": "partition_capacity",
+          "multiplier": 1,
+          "enabled_by_default": true
+        }
+      ]
+    },
+    {
+      "id": "check_usb_quick",
+      "surface": "Check USB — quick profile",
+      "classification": "explicit_qualification",
+      "status": "conformant",
+      "tracking_issue": 242,
+      "upstream_operation": "Sample distributed regions to detect common false-capacity, aliasing, and write/read failures.",
+      "intentional_linux_divergence": "The sampled address-derived pattern and evidence report are Linux-native.",
+      "phases": [
+        {
+          "name": "write_sample_regions",
+          "direction": "target_write",
+          "scaling": "fixed_bytes",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "read_sample_regions",
+          "direction": "target_read",
+          "scaling": "fixed_bytes",
+          "multiplier": 1,
+          "enabled_by_default": true
+        }
+      ]
+    },
+    {
+      "id": "check_usb_full",
+      "surface": "Check USB — full profile",
+      "classification": "explicit_qualification",
+      "status": "conformant",
+      "tracking_issue": 242,
+      "upstream_operation": "Explicitly verify the complete reported device capacity.",
+      "intentional_linux_divergence": "The address-derived pattern and evidence report are Linux-native.",
+      "phases": [
+        {
+          "name": "write_complete_device",
+          "direction": "target_write",
+          "scaling": "target_capacity",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "read_complete_device",
+          "direction": "target_read",
+          "scaling": "target_capacity",
+          "multiplier": 1,
+          "enabled_by_default": true
+        }
+      ]
+    },
+    {
+      "id": "save_drive_image",
+      "surface": "Save drive image",
+      "classification": "imaging",
+      "status": "conformant",
+      "tracking_issue": 242,
+      "upstream_operation": "Read every selected device sector into an image file.",
+      "intentional_linux_divergence": "RufusArm64 binds the source device identity and publishes the completed image atomically.",
+      "phases": [
+        {
+          "name": "read_complete_device",
+          "direction": "target_read",
+          "scaling": "target_capacity",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "write_output_image",
+          "direction": "output_write",
+          "scaling": "target_capacity",
+          "multiplier": 1,
+          "enabled_by_default": true
+        }
+      ]
+    },
+    {
+      "id": "verified_download",
+      "surface": "Verified image acquisition",
+      "classification": "acquisition",
+      "status": "conformant",
+      "tracking_issue": 242,
+      "upstream_operation": "Download the selected image with progress, cancellation, resume, and integrity verification.",
+      "intentional_linux_divergence": "RufusArm64 requires threshold-signed catalogue metadata and SHA-256-bound resumable partials.",
+      "phases": [
+        {
+          "name": "network_transfer",
+          "direction": "network_read",
+          "scaling": "download_size",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "write_download",
+          "direction": "output_write",
+          "scaling": "download_size",
+          "multiplier": 1,
+          "enabled_by_default": true
+        }
+      ]
+    }
+  ]
+}
