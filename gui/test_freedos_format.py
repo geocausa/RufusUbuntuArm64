@@ -3,11 +3,13 @@ import unittest
 
 from rufusarm64_freedos import (
     FREEDOS_WARNINGS,
+    VERIFICATION_SCOPE,
     build_dry_run_command,
     build_run_command,
     confirmation_phrase,
     normalize_plan,
     normalize_report,
+    plan_summary,
     report_summary,
 )
 
@@ -18,6 +20,8 @@ START_SECTOR = 2048
 TAIL_SECTORS = 2048
 PARTITION_SECTORS = DEVICE_SIZE // SECTOR_SIZE - START_SECTOR - TAIL_SECTORS
 PARTITION_SIZE = PARTITION_SECTORS * SECTOR_SIZE
+MUTATION_BYTES = 10 * 1024 * 1024
+UNTOUCHED_BYTES = DEVICE_SIZE - MUTATION_BYTES
 
 
 def sample_plan():
@@ -33,7 +37,7 @@ def sample_plan():
         "label": "FREEDOS",
     }
     plan = {
-        "schema": 1,
+        "schema": 2,
         "mode": "freedos",
         "bootable": True,
         "destructive": True,
@@ -50,6 +54,9 @@ def sample_plan():
         "partition_type": "0c",
         "filesystem": "FAT32",
         "label": "FREEDOS",
+        "mutation_bytes": MUTATION_BYTES,
+        "verification_bytes": MUTATION_BYTES,
+        "untouched_bytes": UNTOUCHED_BYTES,
         "media": media,
         "warnings": list(FREEDOS_WARNINGS),
     }
@@ -95,10 +102,15 @@ class FreeDOSFormatContractTests(unittest.TestCase):
         self.assertNotIn("--allow-fixed", run)
         self.assertNotIn("--no-unmount", run)
 
-    def test_plan_requires_exact_platform_geometry_warning_and_confirmation_contract(self):
+    def test_plan_requires_exact_platform_geometry_extent_warning_and_confirmation_contract(self):
         payload = sample_plan()
         normalized = normalize_plan(payload)
         self.assertEqual(confirmation_phrase(normalized), payload["confirmation"])
+        summary = plan_summary(normalized)
+        self.assertIn("Fast creation I/O", summary)
+        self.assertIn("unallocated data remains untouched", summary)
+        self.assertIn("Check USB", summary)
+        self.assertNotIn("writes the full", summary)
 
         mutations = (
             lambda value: value["plan"].__setitem__("target_cpu", "arm64"),
@@ -107,6 +119,9 @@ class FreeDOSFormatContractTests(unittest.TestCase):
             lambda value: value["plan"].__setitem__("partition_type", "ef"),
             lambda value: value["plan"]["media"].__setitem__("partition_start_sector", 4096),
             lambda value: value["plan"]["media"].__setitem__("sectors_per_cluster", 16),
+            lambda value: value["plan"].__setitem__("mutation_bytes", MUTATION_BYTES + 1),
+            lambda value: value["plan"].__setitem__("verification_bytes", MUTATION_BYTES + 1),
+            lambda value: value["plan"].__setitem__("untouched_bytes", UNTOUCHED_BYTES - 1),
             lambda value: value["plan"].__setitem__("warnings", FREEDOS_WARNINGS[:-1]),
             lambda value: value["plan"].__setitem__("label", "freedos"),
             lambda value: value.__setitem__("identity", "other-device"),
@@ -118,16 +133,18 @@ class FreeDOSFormatContractTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 normalize_plan(altered)
 
-    def test_success_report_requires_complete_readback_and_exact_reviewed_plan(self):
+    def test_success_report_requires_required_extent_readback_and_exact_reviewed_plan(self):
         reviewed = sample_plan()
         report = {
-            "schema": 1,
+            "schema": 2,
             "status": "succeeded",
             "phase": "complete",
             "plan": copy.deepcopy(reviewed["plan"]),
             "started_at": "2026-07-20T00:00:00Z",
             "completed_at": "2026-07-20T00:01:00Z",
-            "bytes_written": DEVICE_SIZE,
+            "bytes_written": MUTATION_BYTES,
+            "bytes_verified": MUTATION_BYTES,
+            "verification_scope": VERIFICATION_SCOPE,
             "sha256": "a" * 64,
             "media_changed": True,
             "verified": True,
@@ -138,9 +155,13 @@ class FreeDOSFormatContractTests(unittest.TestCase):
         summary = report_summary(normalized)
         self.assertIn("x86 BIOS", summary)
         self.assertIn("not boot ARM64", summary)
+        self.assertIn("Required boot/filesystem extents", summary)
+        self.assertIn("Unallocated data was not used as a device test", summary)
 
         for mutation in (
-            lambda value: value.__setitem__("bytes_written", DEVICE_SIZE - 1),
+            lambda value: value.__setitem__("bytes_written", MUTATION_BYTES - 1),
+            lambda value: value.__setitem__("bytes_verified", MUTATION_BYTES - 1),
+            lambda value: value.__setitem__("verification_scope", "whole-device"),
             lambda value: value.__setitem__("sha256", "A" * 64),
             lambda value: value.__setitem__("verified", False),
             lambda value: value.__setitem__("reusable", False),
@@ -154,13 +175,15 @@ class FreeDOSFormatContractTests(unittest.TestCase):
     def test_cancelled_and_failed_reports_distinguish_untouched_and_changed_media(self):
         reviewed = sample_plan()
         untouched = {
-            "schema": 1,
+            "schema": 2,
             "status": "cancelled",
             "phase": "prepare",
             "plan": copy.deepcopy(reviewed["plan"]),
             "started_at": "2026-07-20T00:00:00Z",
             "completed_at": "2026-07-20T00:00:01Z",
             "bytes_written": 0,
+            "bytes_verified": 0,
+            "verification_scope": VERIFICATION_SCOPE,
             "media_changed": False,
             "verified": False,
             "reusable": False,
