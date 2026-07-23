@@ -2,7 +2,7 @@ name: Apply Windows source-lease integration
 
 on:
   pull_request:
-    types: [opened]
+    types: [opened, reopened, ready_for_review]
     branches: [stage2/0.13.0]
 
 permissions:
