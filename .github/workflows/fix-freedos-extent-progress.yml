@@ -1,0 +1,96 @@
+name: Fix FreeDOS extent progress contract
+
+on:
+  pull_request:
+    branches:
+      - stage2/0.13.0
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-freedos-extent-progress-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  fix:
+    if: github.event.pull_request.head.ref == 'fix/freedos-extent-progress-contract'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out fix branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: fix/freedos-extent-progress-contract
+          fetch-depth: 0
+
+      - name: Apply reviewed progress-contract fix
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              file = Path(path)
+              text = file.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one replacement, found {count}: {old!r}")
+              file.write_text(text.replace(old, new), encoding="utf-8")
+
+          replace_once(
+              "gui/rufusarm64_freedos.py",
+              '''    return normalize_progress(payload)\n\n\ndef progress_summary(payload):\n''',
+              '''    return normalize_progress(payload)\n\n\ndef validate_progress_against_plan(payload, reviewed_plan):\n    """Bind one helper progress record to the exact reviewed extent totals."""\n    progress = normalize_progress(payload)\n    reviewed = normalize_plan(reviewed_plan)\n    plan = reviewed["plan"]\n    expected_total = plan["mutation_bytes"] + plan["verification_bytes"]\n    if progress["overall_total"] != expected_total:\n        raise ValueError(\n            "FreeDOS helper progress does not match the reviewed required-extent I/O total."\n        )\n    if progress["phase"] == "write" and progress["total"] != plan["mutation_bytes"]:\n        raise ValueError(\n            "FreeDOS helper write progress does not match the reviewed mutation total."\n        )\n    if progress["phase"] == "readback" and progress["total"] != plan["verification_bytes"]:\n        raise ValueError(\n            "FreeDOS helper readback progress does not match the reviewed verification total."\n        )\n    return progress\n\n\ndef progress_summary(payload):\n''',
+          )
+
+          replace_once(
+              "gui/rufusarm64_freedos_dialog.py",
+              '''    progress_summary,\n    report_summary,\n''',
+              '''    progress_summary,\n    report_summary,\n    validate_progress_against_plan,\n''',
+          )
+
+          replace_once(
+              "gui/rufusarm64_freedos_dialog.py",
+              '''            self.process = process\n            expected_total = int(reviewed["plan"]["device_size_bytes"]) * 2\n            last_done = 0\n''',
+              '''            self.process = process\n            last_done = 0\n''',
+          )
+
+          replace_once(
+              "gui/rufusarm64_freedos_dialog.py",
+              '''                progress = decode_progress_line(line)\n                if progress is not None:\n                    if progress["overall_total"] != expected_total:\n                        raise ValueError("FreeDOS helper progress does not match the reviewed full-device I/O total.")\n                    if progress["overall_done"] < last_done:\n''',
+              '''                progress = decode_progress_line(line)\n                if progress is not None:\n                    progress = validate_progress_against_plan(progress, reviewed)\n                    if progress["overall_done"] < last_done:\n''',
+          )
+
+          replace_once(
+              "gui/test_freedos_dialog.py",
+              '''        self.assertIn("decode_progress_line", self.dialog_class_source)\n        self.assertIn("for line in process.stderr", self.dialog_class_source)\n''',
+              '''        self.assertIn("decode_progress_line", self.dialog_class_source)\n        self.assertIn("validate_progress_against_plan", self.dialog_class_source)\n        self.assertNotIn('device_size_bytes"]) * 2', self.dialog_class_source)\n        self.assertIn("for line in process.stderr", self.dialog_class_source)\n''',
+          )
+
+          Path("gui/test_freedos_progress_contract.py").write_text('''import pathlib\nimport sys\nimport unittest\n\nROOT = pathlib.Path(__file__).resolve().parents[1]\nsys.path.insert(0, str(ROOT / "gui"))\n\nfrom rufusarm64_freedos import FREEDOS_WARNINGS, validate_progress_against_plan\n\n\nMIB = 1024 * 1024\nGIB = 1024 * MIB\nDEVICE_SIZE = 30 * GIB\nMUTATION_BYTES = 18 * MIB\nVERIFICATION_BYTES = 18 * MIB\nPARTITION_START = 1 * MIB\nTAIL_RESERVE = 1 * MIB\nPARTITION_SIZE = DEVICE_SIZE - PARTITION_START - TAIL_RESERVE\nEXPECTED_TOTAL = MUTATION_BYTES + VERIFICATION_BYTES\n\n\ndef reviewed_plan():\n    identity = "lexar-hardware-fixture"\n    plan = {\n        "schema": 2,\n        "mode": "freedos",\n        "bootable": True,\n        "destructive": True,\n        "target_cpu": "x86",\n        "firmware": "BIOS or UEFI Legacy/CSM",\n        "distribution": "FreeDOS 1.4",\n        "device_path": "/dev/sdz",\n        "expected_identity": identity,\n        "device_size_bytes": DEVICE_SIZE,\n        "logical_sector_size": 512,\n        "partition_number": 1,\n        "partition_start_bytes": PARTITION_START,\n        "partition_size_bytes": PARTITION_SIZE,\n        "partition_type": "0c",\n        "filesystem": "FAT32",\n        "label": "FREEDOS",\n        "mutation_bytes": MUTATION_BYTES,\n        "verification_bytes": VERIFICATION_BYTES,\n        "untouched_bytes": DEVICE_SIZE - MUTATION_BYTES,\n        "media": {\n            "schema": 1,\n            "disk_size_bytes": DEVICE_SIZE,\n            "logical_sector_size": 512,\n            "partition_start_sector": PARTITION_START // 512,\n            "partition_sector_count": PARTITION_SIZE // 512,\n            "sectors_per_cluster": 32,\n            "sectors_per_track": 63,\n            "heads": 255,\n            "label": "FREEDOS",\n        },\n        "warnings": list(FREEDOS_WARNINGS),\n    }\n    return {\n        "device": {"path": "/dev/sdz", "size": DEVICE_SIZE, "vendor": "Lexar", "model": "JumpDrive"},\n        "identity": identity,\n        "plan": plan,\n        "confirmation": "WRITE FREEDOS 1.4 TO /dev/sdz FOR X86 BIOS LEGACY",\n    }\n\n\ndef progress(phase, done, total, overall_done, overall_total=EXPECTED_TOTAL):\n    return {\n        "schema": 1,\n        "type": "progress",\n        "phase": phase,\n        "done": done,\n        "total": total,\n        "overall_done": overall_done,\n        "overall_total": overall_total,\n        "elapsed_ms": 1000,\n        "bytes_per_second": MIB,\n        "eta_seconds": 10,\n    }\n\n\nclass FreeDOSExtentProgressContractTests(unittest.TestCase):\n    def test_large_device_accepts_small_reviewed_extent_total(self):\n        value = validate_progress_against_plan(\n            progress("write", MIB, MUTATION_BYTES, MIB),\n            reviewed_plan(),\n        )\n        self.assertEqual(value["overall_total"], EXPECTED_TOTAL)\n        self.assertNotEqual(value["overall_total"], DEVICE_SIZE * 2)\n\n    def test_stale_full_device_total_is_rejected(self):\n        with self.assertRaisesRegex(ValueError, "required-extent I/O total"):\n            validate_progress_against_plan(\n                progress("write", MIB, MUTATION_BYTES, MIB, DEVICE_SIZE * 2),\n                reviewed_plan(),\n            )\n\n    def test_write_phase_is_bound_to_mutation_total(self):\n        with self.assertRaisesRegex(ValueError, "reviewed mutation total"):\n            validate_progress_against_plan(\n                progress("write", MIB, DEVICE_SIZE, MIB),\n                reviewed_plan(),\n            )\n\n    def test_readback_phase_is_bound_to_verification_total(self):\n        value = validate_progress_against_plan(\n            progress(\n                "readback",\n                2 * MIB,\n                VERIFICATION_BYTES,\n                MUTATION_BYTES + 2 * MIB,\n            ),\n            reviewed_plan(),\n        )\n        self.assertEqual(value["total"], VERIFICATION_BYTES)\n\n\nif __name__ == "__main__":\n    unittest.main()\n''', encoding="utf-8")
+
+          replace_once(
+              "CHANGELOG.md",
+              '''- Recognized proven BIOS-only Windows setup ISOs by binding root `bootmgr` to bounded `boot.wim` x86/x64 metadata, allowing Automatic to choose MBR/BIOS without weakening ARM64 UEFI checks.\n- Preserved every existing source/target identity, privilege, destructive confirmation, cancellation, verification, reproducibility, and native ARM64 gate. Physical hardware boot and persistence qualification remain separate release evidence.\n''',
+              '''- Recognized proven BIOS-only Windows setup ISOs by binding root `bootmgr` to bounded `boot.wim` x86/x64 metadata, allowing Automatic to choose MBR/BIOS without weakening ARM64 UEFI checks.\n- Fixed the FreeDOS GTK progress guard to validate the helper against the reviewed required-extent write/readback totals instead of the obsolete whole-device total.\n- Preserved every existing source/target identity, privilege, destructive confirmation, cancellation, verification, reproducibility, and native ARM64 gate. Physical hardware boot and persistence qualification remain separate release evidence.\n''',
+          )
+          PY
+
+      - name: Run focused and graphical regressions
+        run: |
+          set -euo pipefail
+          python3 -m unittest gui.test_freedos_progress_contract gui.test_freedos_dialog
+          python3 -m unittest discover -s gui -p 'test_*.py'
+          python3 -m compileall -q gui
+          git diff --check
+
+      - name: Publish source-only fix and remove executor
+        run: |
+          set -euo pipefail
+          rm .github/workflows/fix-freedos-extent-progress.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add CHANGELOG.md gui/rufusarm64_freedos.py gui/rufusarm64_freedos_dialog.py gui/test_freedos_dialog.py gui/test_freedos_progress_contract.py .github/workflows/fix-freedos-extent-progress.yml
+          git commit -m "fix: bind FreeDOS progress to reviewed extents"
+          git push origin HEAD:fix/freedos-extent-progress-contract
