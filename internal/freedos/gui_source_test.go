@@ -41,9 +41,19 @@ func TestGraphicalFreeDOSExposureContract(t *testing.T) {
 		}
 	}
 
-	for _, forbidden := range []string{"--allow-fixed", "--no-unmount"} {
+	for _, required := range []string{
+		"Fast creation I/O",
+		"required boot/FAT32 data",
+		"use Check USB for an",
+		MediaVerificationScope,
+	} {
+		if !strings.Contains(logic, required) {
+			t.Fatalf("graphical FreeDOS logic is missing fast creation contract %q", required)
+		}
+	}
+	for _, forbidden := range []string{"--allow-fixed", "--no-unmount", "Writing the full device", "Reading back the full device", "total device I/O"} {
 		if strings.Contains(logic, forbidden) {
-			t.Fatalf("graphical FreeDOS command exposes forbidden option %q", forbidden)
+			t.Fatalf("graphical FreeDOS logic contains forbidden or obsolete contract %q", forbidden)
 		}
 	}
 	for _, required := range []string{
@@ -73,6 +83,8 @@ func TestGraphicalFreeDOSExposureContract(t *testing.T) {
 		"BIOS or UEFI Legacy/CSM",
 		"not an ARM64 boot path",
 		"There is no fixed-disk override",
+		"Unallocated data clusters are intentionally not overwritten",
+		"Use **Check USB**",
 	} {
 		if !strings.Contains(guide, required) {
 			t.Fatalf("FreeDOS user guide is missing %q", required)

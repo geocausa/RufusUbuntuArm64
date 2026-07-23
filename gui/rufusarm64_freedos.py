@@ -17,9 +17,9 @@ PHASES = {"plan", "prepare", "write", "flush", "readback", "finish", "complete"}
 PROGRESS_PREFIX = "RUFUSARM64_PROGRESS "
 PROGRESS_PHASE_LABELS = {
     "prepare": "Preparing the target",
-    "write": "Writing the full device",
+    "write": "Writing required boot and filesystem regions",
     "flush": "Flushing device buffers",
-    "readback": "Reading back the full device",
+    "readback": "Verifying required boot and filesystem regions",
     "finish": "Finalizing and revalidating",
     "complete": "Complete",
 }
@@ -31,6 +31,7 @@ FILESYSTEM = "FAT32"
 DISTRIBUTION = "FreeDOS 1.4"
 TARGET_CPU = "x86"
 FIRMWARE = "BIOS or UEFI Legacy/CSM"
+VERIFICATION_SCOPE = "required-filesystem-extents"
 
 
 def build_dry_run_command(binary, device, identity, label):
@@ -111,7 +112,7 @@ def normalize_plan(payload):
 def normalize_report(payload, reviewed_plan=None):
     """Validate a final execution report against the exact reviewed plan."""
     value = _mapping(payload, "FreeDOS formatting returned an invalid report.")
-    if _integer(value.get("schema"), "report schema") != 1:
+    if _integer(value.get("schema"), "report schema") != 2:
         raise ValueError("FreeDOS report uses an unsupported schema.")
     status = _text(value.get("status"), "FreeDOS report is missing its status.")
     phase = _text(value.get("phase"), "FreeDOS report is missing its phase.")
@@ -130,20 +131,29 @@ def normalize_report(payload, reviewed_plan=None):
         raise ValueError("FreeDOS report completion time precedes its start time.")
 
     bytes_written = _nonnegative_integer(value.get("bytes_written"), "bytes written")
+    bytes_verified = _nonnegative_integer(value.get("bytes_verified"), "bytes verified")
+    verification_scope = _text(value.get("verification_scope"), "FreeDOS report is missing its verification scope.")
     media_changed = _boolean(value.get("media_changed"), "media-changed state")
     verified = _boolean(value.get("verified"), "verification state")
     reusable = _boolean(value.get("reusable"), "reusable state")
     sha256 = str(value.get("sha256") or "")
     failure_reason = str(value.get("failure_reason") or "").strip()
 
+    if verification_scope != VERIFICATION_SCOPE:
+        raise ValueError("FreeDOS report verification scope was altered.")
     if sha256 and not re.fullmatch(r"[0-9a-f]{64}", sha256):
         raise ValueError("FreeDOS report contains an invalid SHA-256 digest.")
-    if bytes_written > plan["device_size_bytes"]:
-        raise ValueError("FreeDOS report exceeds the reviewed device size.")
-    if not media_changed and bytes_written != 0:
-        raise ValueError("Unchanged FreeDOS media cannot report accepted bytes.")
-    if verified and (not media_changed or bytes_written != plan["device_size_bytes"] or not sha256):
-        raise ValueError("Verified FreeDOS state contradicts the write report.")
+    if bytes_written > plan["mutation_bytes"] or bytes_verified > plan["verification_bytes"]:
+        raise ValueError("FreeDOS report exceeds the reviewed required-extent totals.")
+    if not media_changed and (bytes_written != 0 or bytes_verified != 0):
+        raise ValueError("Unchanged FreeDOS media cannot report accepted or verified bytes.")
+    if verified and (
+        not media_changed
+        or bytes_written != plan["mutation_bytes"]
+        or bytes_verified != plan["verification_bytes"]
+        or not sha256
+    ):
+        raise ValueError("Verified FreeDOS state contradicts the required-extent report.")
 
     if status == "succeeded":
         if (
@@ -151,7 +161,8 @@ def normalize_report(payload, reviewed_plan=None):
             or not media_changed
             or not verified
             or not reusable
-            or bytes_written != plan["device_size_bytes"]
+            or bytes_written != plan["mutation_bytes"]
+            or bytes_verified != plan["verification_bytes"]
             or not sha256
             or failure_reason
         ):
@@ -165,13 +176,15 @@ def normalize_report(payload, reviewed_plan=None):
     normalized = dict(value)
     normalized.update(
         {
-            "schema": 1,
+            "schema": 2,
             "status": status,
             "phase": phase,
             "plan": plan,
             "started_at": value["started_at"],
             "completed_at": value["completed_at"],
             "bytes_written": bytes_written,
+            "bytes_verified": bytes_verified,
+            "verification_scope": VERIFICATION_SCOPE,
             "sha256": sha256,
             "media_changed": media_changed,
             "verified": verified,
@@ -263,13 +276,16 @@ def plan_summary(payload):
         if part
     ) or plan["device_path"]
     warnings = "\n".join(f"• {item}" for item in plan["warnings"])
+    total_io = plan["mutation_bytes"] + plan["verification_bytes"]
     return (
         f"Target: {name} ({plan['device_path']}), {_human_bytes(plan['device_size_bytes'])}.\n"
         f"Media: {plan['distribution']}, one active FAT32-LBA partition, label \"{plan['label']}\".\n"
         f"Partition: starts at {_human_bytes(plan['partition_start_bytes'])}; "
         f"size {_human_bytes(plan['partition_size_bytes'])}.\n"
-        f"Verification I/O: writes the full {_human_bytes(plan['device_size_bytes'])} device and reads it back in full "
-        f"({_human_bytes(plan['device_size_bytes'] * 2)} total device I/O).\n"
+        f"Fast creation I/O: writes {_human_bytes(plan['mutation_bytes'])} of required boot/FAT32 data and "
+        f"reads {_human_bytes(plan['verification_bytes'])} back ({_human_bytes(total_io)} total). "
+        f"{_human_bytes(plan['untouched_bytes'])} of unallocated data remains untouched; use Check USB for an "
+        f"exhaustive whole-device test.\n"
         f"Platform: x86 only; BIOS or UEFI Legacy/CSM only. Not ARM64 or UEFI-only.\n{warnings}"
     )
 
@@ -280,8 +296,9 @@ def report_summary(payload):
     if value["status"] == "succeeded":
         return (
             f"Verified {DISTRIBUTION} media is ready for x86 BIOS or UEFI Legacy/CSM systems. "
-            f"Complete readback SHA-256: {value['sha256']}. "
-            "It will not boot ARM64 or UEFI-only computers; physical boot remains unproven."
+            f"Required boot/filesystem extents were read back; extent-set SHA-256: {value['sha256']}. "
+            "Unallocated data was not used as a device test. It will not boot ARM64 or UEFI-only computers; "
+            "physical boot remains unproven."
         )
     if value["status"] == "cancelled" and not value["media_changed"]:
         return "FreeDOS creation was cancelled before erasure; the selected drive was not changed."
@@ -296,7 +313,7 @@ def report_summary(payload):
 
 def _normalize_plan_fields(payload):
     plan = _mapping(payload, "FreeDOS plan is missing its guarded plan.")
-    if _integer(plan.get("schema"), "plan schema") != 1 or plan.get("mode") != "freedos":
+    if _integer(plan.get("schema"), "plan schema") != 2 or plan.get("mode") != "freedos":
         raise ValueError("FreeDOS plan uses an unsupported schema or mode.")
     if plan.get("bootable") is not True or plan.get("destructive") is not True:
         raise ValueError("FreeDOS plan contains an invalid safety envelope.")
@@ -325,6 +342,14 @@ def _normalize_plan_fields(payload):
     if plan.get("partition_type") != PARTITION_TYPE or plan.get("filesystem") != FILESYSTEM:
         raise ValueError("FreeDOS partition or filesystem contract was altered.")
 
+    mutation_bytes = _positive_integer(plan.get("mutation_bytes"), "mutation byte total")
+    verification_bytes = _positive_integer(plan.get("verification_bytes"), "verification byte total")
+    untouched_bytes = _positive_integer(plan.get("untouched_bytes"), "untouched byte total")
+    if mutation_bytes != verification_bytes:
+        raise ValueError("FreeDOS write and verification extent totals differ.")
+    if mutation_bytes >= device_size or mutation_bytes + untouched_bytes != device_size:
+        raise ValueError("FreeDOS extent accounting does not preserve unallocated data space.")
+
     label = _normalize_label(plan.get("label"))
     media = _normalize_media(plan.get("media"), device_size, label)
     if media["partition_start_sector"] * SECTOR_SIZE != start:
@@ -337,7 +362,7 @@ def _normalize_plan_fields(payload):
         raise ValueError("FreeDOS plan safety warnings are incomplete or altered.")
 
     return {
-        "schema": 1,
+        "schema": 2,
         "mode": "freedos",
         "bootable": True,
         "destructive": True,
@@ -354,6 +379,9 @@ def _normalize_plan_fields(payload):
         "partition_type": PARTITION_TYPE,
         "filesystem": FILESYSTEM,
         "label": label,
+        "mutation_bytes": mutation_bytes,
+        "verification_bytes": verification_bytes,
+        "untouched_bytes": untouched_bytes,
         "media": media,
         "warnings": list(warnings),
     }

@@ -13,7 +13,7 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 - Bounded Windows multi-edition reporting for WIM, ESD, and validated split SWM payloads before optional Setup customizations.
 - A guarded graphical persistent Ubuntu casper and Debian live-boot workflow.
 - A guarded **Restore / format…** workflow for verified data-only GPT/MBR media using FAT32, exFAT, NTFS, or ext4.
-- Deterministic **FreeDOS…** media creation from checksum-pinned, source-retained FreeDOS 1.4 and FreeCOM payloads for x86 BIOS or UEFI Legacy/CSM systems.
+- Fast deterministic **FreeDOS…** media creation from checksum-pinned, source-retained FreeDOS 1.4 and FreeCOM payloads for x86 BIOS or UEFI Legacy/CSM systems, with required-extent write/readback rather than capacity-scaled whole-device cloning.
 - Explicit post-operation actions to create another USB or restore the exact completed target for ordinary storage.
 - Threshold-signed and local-signed image-catalog verification, storage preflight, cancellation, SHA-256 installation, and resumable private partials.
 - Descriptor-safe UEFI, DBX, and SBAT analysis plus optional ARM64 boot-time media-integrity validation for supported persistent media.
@@ -126,13 +126,15 @@ A successful report verifies the partition geometry and filesystem. It does not 
 
 ## Create FreeDOS media
 
-The **FreeDOS…** workflow creates deterministic FreeDOS 1.4 media from package-owned checksum-pinned payloads. It requires 512-byte logical sectors, an exact device identity/capacity, reviewed MBR/FAT32 geometry, the phrase:
+The **FreeDOS…** workflow creates deterministic FreeDOS 1.4 media from package-owned checksum-pinned payloads. It requires 512-byte logical sectors, an exact device identity/capacity, reviewed MBR/FAT32 geometry, and the phrase:
 
 ```text
 WRITE FREEDOS 1.4 TO /dev/DEVICE FOR X86 BIOS LEGACY
 ```
 
-and complete write, flush, readback, structural verification, and SHA-256 reporting.
+The plan displays the exact required write and readback totals before authentication. Creation retains a nearly full-size FAT32 partition but writes and verifies only the final MBR, bounded head/tail clearing, FAT32 boot/FSInfo and reserved regions, both complete FAT tables, root directory, payload clusters, and allocation slack. Unallocated data clusters are intentionally untouched, so runtime scales with required filesystem structures rather than USB capacity.
+
+A successful report confirms required-extent readback, the reviewed structure, and an extent-set SHA-256. It is not a whole-device health test; use **Check USB** for exhaustive write/readback qualification.
 
 The resulting media targets **x86-compatible processors using BIOS or UEFI Legacy/CSM**. It is not for ARM64, UEFI-only, or Secure Boot-only systems. Software verification does not prove physical boot compatibility.
 
@@ -161,12 +163,12 @@ Privileged helpers:
 - hide normal fixed disks from the default graphical list;
 - bind selected source and target to refreshed identities;
 - revalidate immediately before destructive phases;
-- retain locks and descriptors through write, flush, readback, and final checks;
+- retain locks and descriptors through write, flush, required readback, and final checks;
 - reject unsafe symbolic-link traversal and source mutation;
 - verify packaged boot assets, copied files, structures, and filesystems;
 - require fresh Polkit authorization and support protected cancellation.
 
-Software checks never establish universal physical boot, persistence, or Secure Boot compatibility. Complete the human checklist in `docs/hardware-checklist-0.13.0.md` before public release.
+Software checks never establish universal physical boot, persistence, whole-device health, or Secure Boot compatibility. Complete the human checklist in `docs/hardware-checklist-0.13.0.md` before public release.
 
 ## Build and test
 

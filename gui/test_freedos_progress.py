@@ -29,8 +29,9 @@ class FreeDOSProgressTests(unittest.TestCase):
         progress = decode_progress_line(PROGRESS_PREFIX + json.dumps(self.record()))
         self.assertEqual(progress["overall_done"], 50)
         summary = progress_summary(progress)
-        self.assertIn("Writing the full device", summary)
+        self.assertIn("Writing required boot and filesystem regions", summary)
         self.assertIn("25.0%", summary)
+        self.assertNotIn("full device", summary)
 
     def test_ignores_diagnostics_and_rejects_malformed_progress(self):
         self.assertIsNone(decode_progress_line("ordinary diagnostic"))

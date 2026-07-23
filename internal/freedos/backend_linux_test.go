@@ -49,7 +49,7 @@ func TestExecuteLinuxDeviceRejectsUnboundOptions(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("error = %v; want text %q", err, test.want)
 			}
-			if report.Schema != 0 || report.MediaChanged || report.BytesWritten != 0 || report.Reusable {
+			if report.Schema != 0 || report.MediaChanged || report.BytesWritten != 0 || report.BytesVerified != 0 || report.Reusable {
 				t.Fatalf("invalid backend options produced execution state: %+v", report)
 			}
 		})
@@ -75,6 +75,16 @@ func TestExecuteLinuxDeviceThroughRealLoop(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := backing.Truncate(int64(testMediaSize)); err != nil {
+		backing.Close()
+		t.Fatal(err)
+	}
+	const untouchedOffset = int64(20 * 1024 * 1024)
+	const untouchedValue = byte(0xa5)
+	if _, err := backing.WriteAt([]byte{untouchedValue}, untouchedOffset); err != nil {
+		backing.Close()
+		t.Fatal(err)
+	}
+	if err := backing.Sync(); err != nil {
 		backing.Close()
 		t.Fatal(err)
 	}
@@ -104,6 +114,9 @@ func TestExecuteLinuxDeviceThroughRealLoop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if plan.MutationBytes >= plan.DeviceSizeBytes || plan.UntouchedBytes == 0 {
+		t.Fatalf("loop plan does not preserve free data: %+v", plan)
+	}
 
 	revalidations := 0
 	report, err := ExecuteLinuxDevice(context.Background(), plan, LinuxDeviceOptions{
@@ -128,7 +141,8 @@ func TestExecuteLinuxDeviceThroughRealLoop(t *testing.T) {
 		t.Fatalf("execute FreeDOS loop backend: %v", err)
 	}
 	if report.Status != ExecutionStatusSucceeded || !report.MediaChanged || !report.Verified || !report.Reusable ||
-		report.BytesWritten != testMediaSize || report.SHA256 == "" {
+		report.BytesWritten != plan.MutationBytes || report.BytesVerified != plan.VerificationBytes ||
+		report.VerificationScope != MediaVerificationScope || report.SHA256 == "" {
 		t.Fatalf("unexpected successful loop report: %+v", report)
 	}
 	if revalidations != 3 {
@@ -151,6 +165,9 @@ func TestExecuteLinuxDeviceThroughRealLoop(t *testing.T) {
 	runFreeDOSLoopCommand(t, "fsck.vfat", "-n", "-v", partitionPath)
 
 	readback := readFreeDOSLoopBytes(t, loopPath, int(testMediaSize))
+	if readback[untouchedOffset] != untouchedValue {
+		t.Fatalf("unallocated data byte at %d changed from %#x to %#x", untouchedOffset, untouchedValue, readback[untouchedOffset])
+	}
 	if err := VerifyMediaImage(readback, plan.Media); err != nil {
 		t.Fatalf("verify detached and reattached loop media: %v", err)
 	}

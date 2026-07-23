@@ -12,14 +12,14 @@ import (
 	"github.com/geocausa/RufusArm64/internal/freedos"
 )
 
-func TestFreeDOSProgressEmitterAccountsForWriteAndReadback(t *testing.T) {
+func TestFreeDOSProgressEmitterAccountsForRequiredWriteAndReadback(t *testing.T) {
 	var output bytes.Buffer
-	emitter := newFreeDOSProgressEmitter(&output, 100)
+	emitter := newFreeDOSProgressEmitter(&output, 60, 40)
 	for _, progress := range []freedos.ExecutionProgress{
 		{Phase: freedos.ExecutionPhasePrepare},
-		{Phase: freedos.ExecutionPhaseWrite, Processed: 50, Total: 100},
+		{Phase: freedos.ExecutionPhaseWrite, Processed: 30, Total: 60},
 		{Phase: freedos.ExecutionPhaseFlush},
-		{Phase: freedos.ExecutionPhaseReadback, Processed: 50, Total: 100},
+		{Phase: freedos.ExecutionPhaseReadback, Processed: 20, Total: 40},
 		{Phase: freedos.ExecutionPhaseFinish},
 	} {
 		if err := emitter.Emit(progress); err != nil {
@@ -45,12 +45,23 @@ func TestFreeDOSProgressEmitterAccountsForWriteAndReadback(t *testing.T) {
 	if len(records) != 5 {
 		t.Fatalf("records=%d, want 5: %+v", len(records), records)
 	}
-	if records[1].OverallDone != 50 || records[3].OverallDone != 150 || records[4].OverallDone != 200 {
-		t.Fatalf("unexpected full-device accounting: %+v", records)
+	if records[1].OverallDone != 30 || records[3].OverallDone != 80 || records[4].OverallDone != 100 {
+		t.Fatalf("unexpected required-extent accounting: %+v", records)
 	}
 	for _, record := range records {
-		if record.Schema != 1 || record.Type != "progress" || record.OverallTotal != 200 {
+		if record.Schema != 1 || record.Type != "progress" || record.OverallTotal != 100 {
 			t.Fatalf("invalid progress record: %+v", record)
 		}
+	}
+}
+
+func TestFreeDOSProgressEmitterRejectsAlteredPhaseTotals(t *testing.T) {
+	var output bytes.Buffer
+	emitter := newFreeDOSProgressEmitter(&output, 60, 40)
+	if err := emitter.Emit(freedos.ExecutionProgress{Phase: freedos.ExecutionPhaseWrite, Processed: 1, Total: 61}); err == nil {
+		t.Fatal("write progress accepted an altered total")
+	}
+	if err := emitter.Emit(freedos.ExecutionProgress{Phase: freedos.ExecutionPhaseReadback, Processed: 1, Total: 41}); err == nil {
+		t.Fatal("readback progress accepted an altered total")
 	}
 }
