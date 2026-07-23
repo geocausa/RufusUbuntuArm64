@@ -1,0 +1,31 @@
+ok  	github.com/geocausa/RufusArm64/cmd/rufus-channel-admin	0.054s
+ok  	github.com/geocausa/RufusArm64/cmd/rufus-device-backup	0.004s
+ok  	github.com/geocausa/RufusArm64/cmd/rufus-device-qualify	0.003s
+ok  	github.com/geocausa/RufusArm64/cmd/rufus-freedos-format	0.005s
+ok  	github.com/geocausa/RufusArm64/cmd/rufus-linux	0.095s
+ok  	github.com/geocausa/RufusArm64/cmd/rufus-nonbootable-format	0.009s
+ok  	github.com/geocausa/RufusArm64/cmd/rufus-persistence-helper	0.004s
+ok  	github.com/geocausa/RufusArm64/internal/acquisition	0.831s
+ok  	github.com/geocausa/RufusArm64/internal/defaultparity	0.005s
+ok  	github.com/geocausa/RufusArm64/internal/device	0.014s
+ok  	github.com/geocausa/RufusArm64/internal/devicequal	0.009s
+ok  	github.com/geocausa/RufusArm64/internal/drivebackup	0.075s
+ok  	github.com/geocausa/RufusArm64/internal/freedos	0.488s
+ok  	github.com/geocausa/RufusArm64/internal/imaging	1.126s
+ok  	github.com/geocausa/RufusArm64/internal/linuxmedia	0.707s
+ok  	github.com/geocausa/RufusArm64/internal/nonbootable	0.014s
+ok  	github.com/geocausa/RufusArm64/internal/operationcost	0.018s
+ok  	github.com/geocausa/RufusArm64/internal/persistence	0.300s
+ok  	github.com/geocausa/RufusArm64/internal/qualification	0.075s
+ok  	github.com/geocausa/RufusArm64/internal/runtimeintegrity	0.234s
+ok  	github.com/geocausa/RufusArm64/internal/safety	0.163s
+ok  	github.com/geocausa/RufusArm64/internal/secureboot	0.099s
+ok  	github.com/geocausa/RufusArm64/internal/sourcefile	0.105s
+ok  	github.com/geocausa/RufusArm64/internal/windowsconfig	0.003s
+--- FAIL: TestResolveWindowsLayoutDefaultsFromImage (0.00s)
+    layout_defaults_test.go:23: {scheme:auto target:bios wantScheme:mbr wantTarget:bios} => /, the selected Windows ISO is not proven legacy-BIOS bootable; want mbr/bios
+FAIL
+FAIL	github.com/geocausa/RufusArm64/internal/windowsmedia	1.274s
+FAIL
+
+EXIT_STATUS=1
