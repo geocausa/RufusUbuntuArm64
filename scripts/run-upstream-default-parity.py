@@ -3,6 +3,11 @@ from pathlib import Path
 
 patch_path = Path("scripts/apply-upstream-default-parity.py")
 text = patch_path.read_text(encoding="utf-8")
+text = text.replace(
+    'raise SystemExit(f"{path}: expected one replacement, found {count}")',
+    'raise SystemExit(f"{path}: expected one replacement for {old.splitlines()[0]!r}, found {count}")',
+    1,
+)
 old = '''replace_once("gui/rufusarm64.py", '        self.persistence_enabled.set_active(False)\\n', '        self.persistence_enabled.set_active(DEFAULT_PERSISTENCE_ENABLED)\\n')'''
 new = '''persistence_path = Path("gui/rufusarm64.py")
 persistence_text = persistence_path.read_text(encoding="utf-8")
