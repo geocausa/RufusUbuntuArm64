@@ -45,10 +45,20 @@ func resolveWindowsLayout(plan mediaPlan, requestedScheme, requestedTarget strin
 	}
 	hasUEFI := plan.HasARM64 || plan.HasX64 || plan.HasX86
 	if target == "auto" {
-		if !hasUEFI {
-			return "", "", errors.New("automatic Windows layout cannot resolve BIOS-only media yet; select a supported UEFI-capable ISO")
+		switch {
+		case hasUEFI:
+			target = "uefi"
+		case plan.HasBIOS:
+			target = "bios"
+		default:
+			return "", "", errors.New("automatic Windows layout could not identify a supported UEFI or legacy-BIOS boot path")
 		}
-		target = "uefi"
+	}
+	if target == "uefi" && !hasUEFI {
+		return "", "", errors.New("the selected Windows ISO has no supported standard UEFI fallback loader")
+	}
+	if target == "bios" && !plan.HasBIOS {
+		return "", "", errors.New("the selected Windows ISO is not proven legacy-BIOS bootable")
 	}
 	if scheme == "auto" {
 		if target == "bios" {
