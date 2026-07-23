@@ -30,7 +30,20 @@ jobs:
           cache: false
 
       - name: Apply the reviewed default patch
-        run: python3 scripts/apply-upstream-default-parity.py
+        run: |
+          set +e
+          python3 scripts/apply-upstream-default-parity.py >.default-parity-apply.log 2>&1
+          status=$?
+          set -e
+          cat .default-parity-apply.log
+          if [ "$status" -ne 0 ]; then
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add .default-parity-apply.log
+            git commit -m 'Audit: record default parity patch mismatch'
+            git push origin HEAD:audit/upstream-default-parity
+            exit "$status"
+          fi
 
       - name: Format and run focused parity regressions
         run: |
@@ -45,6 +58,7 @@ jobs:
 
       - name: Remove executor and publish the source-only audit
         run: |
+          rm -f .default-parity-apply.log
           rm scripts/apply-upstream-default-parity.py
           rm .github/workflows/apply-upstream-default-parity.yml
           git config user.name github-actions[bot]
