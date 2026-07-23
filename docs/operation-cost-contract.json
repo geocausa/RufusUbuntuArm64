@@ -146,7 +146,7 @@
       "status": "conformant",
       "tracking_issue": 254,
       "upstream_operation": "Write the selected disk image byte-for-byte and optionally compare the written bytes.",
-      "intentional_linux_divergence": "RufusArm64 hashes the complete source before writing and again while writing so same-size source mutation fails closed; optional physical verification hashes only the target and compares it with the authenticated write digest.",
+      "intentional_linux_divergence": "RufusArm64 hashes the complete source before writing and again while writing so same-size source mutation fails closed; plain sources are held under a Linux read lease when available, and optional physical verification hashes only the target.",
       "phases": [
         {
           "name": "bind_source_hash",
