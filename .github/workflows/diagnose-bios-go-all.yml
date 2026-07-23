@@ -1,0 +1,43 @@
+name: Diagnose BIOS-only full Go suite
+
+on:
+  pull_request:
+    types: [opened, reopened]
+    branches: [stage2/0.13.0]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: diagnose-bios-go-all
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    if: github.event.pull_request.head.ref == 'windows/bios-only-auto-layout'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: windows/bios-only-auto-layout
+          fetch-depth: 0
+      - name: Set up Go 1.22
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Capture full Go result
+        run: |
+          set +e
+          go test ./... >.bios-go-all.log 2>&1
+          status=$?
+          set -e
+          printf '\nEXIT_STATUS=%s\n' "$status" >>.bios-go-all.log
+          cat .bios-go-all.log
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .bios-go-all.log
+          git commit -m 'Windows: record full Go suite result'
+          git push origin HEAD:windows/bios-only-auto-layout
+          exit "$status"
