@@ -1,0 +1,122 @@
+{
+  "schema": 1,
+  "reviewed_upstream": {
+    "repository": "pbatard/rufus",
+    "commit": "6d8fbf98305ff37eb531c45cbd6ff44563c53917",
+    "paths": [
+      "src/rufus.c",
+      "src/format.c",
+      "src/wue.c"
+    ]
+  },
+  "defaults": [
+    {
+      "id": "post_write_verification",
+      "upstream": "off",
+      "rufusarm64": "off",
+      "status": "conformant",
+      "high_risk": true,
+      "sources": ["src/rufus.c", "cmd/rufus-linux/main.go", "gui/rufusarm64.py"],
+      "note": "Optional target or copied-file verification remains user-selected."
+    },
+    {
+      "id": "quick_format",
+      "upstream": "on",
+      "rufusarm64": "on",
+      "status": "conformant",
+      "high_risk": true,
+      "sources": ["src/rufus.c", "src/format.c", "gui/rufusarm64.py"],
+      "note": "Ordinary creation does not zero unused partition capacity."
+    },
+    {
+      "id": "bad_block_check",
+      "upstream": "off",
+      "rufusarm64": "off",
+      "status": "conformant",
+      "high_risk": true,
+      "sources": ["src/rufus.c", "src/format.c", "gui/rufusarm64.py"],
+      "note": "Whole-partition qualification is explicit."
+    },
+    {
+      "id": "windows_partition_scheme",
+      "upstream": "image_derived",
+      "rufusarm64": "image_derived",
+      "status": "conformant",
+      "high_risk": true,
+      "sources": ["src/rufus.c", "internal/windowsmedia/options.go", "gui/rufusarm64.py"],
+      "note": "Supported UEFI-capable Windows media resolves Automatic to GPT; explicit MBR remains available."
+    },
+    {
+      "id": "windows_target_system",
+      "upstream": "image_derived",
+      "rufusarm64": "image_derived",
+      "status": "conformant",
+      "high_risk": true,
+      "sources": ["src/rufus.c", "internal/windowsmedia/options.go", "gui/rufusarm64.py"],
+      "note": "Supported UEFI-capable media resolves Automatic to UEFI; BIOS-only media is tracked by issue 260."
+    },
+    {
+      "id": "windows_filesystem",
+      "upstream": "fat32_preferred",
+      "rufusarm64": "fat32_preferred",
+      "status": "conformant",
+      "high_risk": true,
+      "sources": ["src/rufus.c", "internal/windowsmedia/options.go"],
+      "note": "NTFS is selected only when FAT32 cannot safely represent the ISO."
+    },
+    {
+      "id": "windows_cluster_size",
+      "upstream": "automatic",
+      "rufusarm64": "automatic",
+      "status": "conformant",
+      "high_risk": true,
+      "sources": ["src/rufus.c", "gui/rufusarm64_logic.py"],
+      "note": "The formatter chooses its normal filesystem and target default."
+    },
+    {
+      "id": "persistence",
+      "upstream": "off",
+      "rufusarm64": "off",
+      "status": "conformant",
+      "high_risk": true,
+      "sources": ["src/rufus.c", "gui/rufusarm64.py"],
+      "note": "Persistence requires an explicit compatibility analysis and opt-in."
+    },
+    {
+      "id": "persistence_size",
+      "upstream": "zero",
+      "rufusarm64": "zero",
+      "status": "conformant",
+      "high_risk": true,
+      "sources": ["src/rufus.c", "gui/rufusarm64.py"],
+      "note": "Zero means persistence is not enabled until selected."
+    },
+    {
+      "id": "windows_customizations",
+      "upstream": "off",
+      "rufusarm64": "off",
+      "status": "conformant",
+      "high_risk": true,
+      "sources": ["src/wue.c", "gui/rufusarm64.py"],
+      "note": "All unattended-setup changes are explicit."
+    },
+    {
+      "id": "raw_isohybrid_mode",
+      "upstream": "embedded_layout",
+      "rufusarm64": "embedded_layout",
+      "status": "conformant",
+      "high_risk": true,
+      "sources": ["src/format.c", "cmd/rufus-linux/main.go"],
+      "note": "Raw images preserve their embedded partition and filesystem layout."
+    },
+    {
+      "id": "volume_label",
+      "upstream": "image_derived",
+      "rufusarm64": "static_rufusarm64",
+      "status": "divergence",
+      "high_risk": false,
+      "sources": ["src/rufus.c", "gui/rufusarm64.py"],
+      "note": "A visible editable label differs without altering destructive scope or boot compatibility."
+    }
+  ]
+}
