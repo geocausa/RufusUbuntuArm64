@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const ExecutionReportSchema = 1
+const ExecutionReportSchema = 2
 
 type ExecutionStatus string
 
@@ -29,13 +29,13 @@ const (
 )
 
 // ExecutionBackend supplies the privileged, identity-bound mechanics while the
-// state machine retains ordering, cancellation, changed-media reporting, full
-// streaming output, and complete readback requirements. Implementations must
-// keep the target descriptor and exclusive lock alive until Close returns.
+// state machine retains ordering, cancellation, changed-media reporting,
+// offset-bound output, and required-extent readback. Implementations must keep
+// the target descriptor and exclusive lock alive until Close returns.
 type ExecutionBackend interface {
 	Prepare(context.Context, DevicePlan) error
 	BeforeDestructive(context.Context, DevicePlan) error
-	TargetWriter() io.Writer
+	TargetWriterAt() io.WriterAt
 	Flush(context.Context, DevicePlan) error
 	TargetReaderAt() io.ReaderAt
 	Finish(context.Context, DevicePlan) error
@@ -69,21 +69,23 @@ func emitExecutionProgress(options ExecutionOptions, phase ExecutionPhase, proce
 
 // ExecutionReport is conservative: MediaChanged becomes true immediately
 // before the first destructive backend call and remains true after every error.
-// Reusable is true only after complete synchronized byte-for-byte readback and
-// the backend's final identity check.
+// Reusable is true only after synchronized required-extent readback and the
+// backend's final identity check.
 type ExecutionReport struct {
-	Schema        int             `json:"schema"`
-	Status        ExecutionStatus `json:"status"`
-	Phase         ExecutionPhase  `json:"phase"`
-	Plan          DevicePlan      `json:"plan"`
-	StartedAt     time.Time       `json:"started_at"`
-	CompletedAt   time.Time       `json:"completed_at"`
-	BytesWritten  uint64          `json:"bytes_written"`
-	SHA256        string          `json:"sha256,omitempty"`
-	MediaChanged  bool            `json:"media_changed"`
-	Verified      bool            `json:"verified"`
-	Reusable      bool            `json:"reusable"`
-	FailureReason string          `json:"failure_reason,omitempty"`
+	Schema            int             `json:"schema"`
+	Status            ExecutionStatus `json:"status"`
+	Phase             ExecutionPhase  `json:"phase"`
+	Plan              DevicePlan      `json:"plan"`
+	StartedAt         time.Time       `json:"started_at"`
+	CompletedAt       time.Time       `json:"completed_at"`
+	BytesWritten      uint64          `json:"bytes_written"`
+	BytesVerified     uint64          `json:"bytes_verified"`
+	VerificationScope string          `json:"verification_scope"`
+	SHA256            string          `json:"sha256,omitempty"`
+	MediaChanged      bool            `json:"media_changed"`
+	Verified          bool            `json:"verified"`
+	Reusable          bool            `json:"reusable"`
+	FailureReason     string          `json:"failure_reason,omitempty"`
 }
 
 // ExecuteDevicePlan runs a previously reviewed plan through a backend. It does
@@ -98,11 +100,12 @@ func ExecuteDevicePlan(ctx context.Context, plan DevicePlan, backend ExecutionBa
 		now = time.Now
 	}
 	report := ExecutionReport{
-		Schema:    ExecutionReportSchema,
-		Status:    ExecutionStatusFailed,
-		Phase:     ExecutionPhasePlan,
-		Plan:      plan,
-		StartedAt: now().UTC(),
+		Schema:            ExecutionReportSchema,
+		Status:            ExecutionStatusFailed,
+		Phase:             ExecutionPhasePlan,
+		Plan:              plan,
+		StartedAt:         now().UTC(),
+		VerificationScope: MediaVerificationScope,
 	}
 	if err := ValidateDevicePlan(plan); err != nil {
 		return finishExecutionReport(report, now, err)
@@ -112,6 +115,9 @@ func ExecuteDevicePlan(ctx context.Context, plan DevicePlan, backend ExecutionBa
 	}
 	if _, err := NewMediaImageSource(plan.Media); err != nil {
 		return finishExecutionReport(report, now, fmt.Errorf("prepare deterministic FreeDOS source: %w", err))
+	}
+	if plan.MutationBytes == 0 || plan.VerificationBytes == 0 {
+		return finishExecutionReport(report, now, errors.New("FreeDOS required extent totals are empty"))
 	}
 
 	report.Phase = ExecutionPhasePrepare
@@ -132,13 +138,13 @@ func ExecuteDevicePlan(ctx context.Context, plan DevicePlan, backend ExecutionBa
 	}
 
 	report.Phase = ExecutionPhaseWrite
-	if err := emitExecutionProgress(options, report.Phase, 0, plan.DeviceSizeBytes); err != nil {
+	if err := emitExecutionProgress(options, report.Phase, 0, plan.MutationBytes); err != nil {
 		return closeExecutionBackend(report, now, backend, err)
 	}
 	report.MediaChanged = true
-	writer := backend.TargetWriter()
+	writer := backend.TargetWriterAt()
 	if writer == nil {
-		return closeExecutionBackend(report, now, backend, errors.New("FreeDOS backend returned no target writer"))
+		return closeExecutionBackend(report, now, backend, errors.New("FreeDOS backend returned no offset-bound target writer"))
 	}
 	writeProgress := func(completed uint64) error {
 		if options.Progress != nil {
@@ -146,15 +152,15 @@ func ExecuteDevicePlan(ctx context.Context, plan DevicePlan, backend ExecutionBa
 				return err
 			}
 		}
-		return emitExecutionProgress(options, ExecutionPhaseWrite, completed, plan.DeviceSizeBytes)
+		return emitExecutionProgress(options, ExecutionPhaseWrite, completed, plan.MutationBytes)
 	}
-	writeResult, err := StreamMediaImage(ctx, writer, plan.Media, writeProgress)
+	writeResult, err := WriteMediaExtents(ctx, writer, plan.Media, writeProgress)
 	report.BytesWritten = writeResult.BytesWritten
 	if err != nil {
-		return closeExecutionBackend(report, now, backend, fmt.Errorf("write FreeDOS media: %w", err))
+		return closeExecutionBackend(report, now, backend, fmt.Errorf("write required FreeDOS extents: %w", err))
 	}
-	if writeResult.BytesWritten != plan.DeviceSizeBytes || writeResult.SHA256 == "" {
-		return closeExecutionBackend(report, now, backend, errors.New("FreeDOS writer did not complete the reviewed device size"))
+	if writeResult.BytesWritten != plan.MutationBytes || writeResult.SHA256 == "" {
+		return closeExecutionBackend(report, now, backend, errors.New("FreeDOS writer did not complete the reviewed required extents"))
 	}
 	report.SHA256 = writeResult.SHA256
 
@@ -170,21 +176,22 @@ func ExecuteDevicePlan(ctx context.Context, plan DevicePlan, backend ExecutionBa
 	}
 
 	report.Phase = ExecutionPhaseReadback
-	if err := emitExecutionProgress(options, report.Phase, 0, plan.DeviceSizeBytes); err != nil {
+	if err := emitExecutionProgress(options, report.Phase, 0, plan.VerificationBytes); err != nil {
 		return closeExecutionBackend(report, now, backend, err)
 	}
 	reader := backend.TargetReaderAt()
 	if reader == nil {
 		return closeExecutionBackend(report, now, backend, errors.New("FreeDOS backend returned no target readback"))
 	}
-	readback, err := VerifyMediaReadbackProgress(ctx, reader, plan.Media, func(completed uint64) error {
-		return emitExecutionProgress(options, ExecutionPhaseReadback, completed, plan.DeviceSizeBytes)
+	readback, err := VerifyMediaExtents(ctx, reader, plan.Media, func(completed uint64) error {
+		return emitExecutionProgress(options, ExecutionPhaseReadback, completed, plan.VerificationBytes)
 	})
+	report.BytesVerified = readback.BytesWritten
 	if err != nil {
-		return closeExecutionBackend(report, now, backend, fmt.Errorf("verify FreeDOS readback: %w", err))
+		return closeExecutionBackend(report, now, backend, fmt.Errorf("verify required FreeDOS extents: %w", err))
 	}
-	if readback.BytesWritten != report.BytesWritten || readback.SHA256 != report.SHA256 {
-		return closeExecutionBackend(report, now, backend, errors.New("FreeDOS readback digest differs from the completed write"))
+	if readback.BytesWritten != plan.VerificationBytes || readback.SHA256 != report.SHA256 {
+		return closeExecutionBackend(report, now, backend, errors.New("FreeDOS required-extent readback digest differs from the completed write"))
 	}
 	report.Verified = true
 
