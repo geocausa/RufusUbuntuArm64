@@ -18,16 +18,20 @@ import (
 // CapabilityAnalysis is the read-only Windows media identity returned to CLI
 // and graphical clients before setup options are offered.
 type CapabilityAnalysis struct {
-	Metadata         windowsconfig.MediaMetadata     `json:"metadata"`
-	Capabilities     windowsconfig.CapabilityProfile `json:"capabilities"`
-	BootArchitecture string                          `json:"boot_architecture,omitempty"`
-	PayloadKind      string                          `json:"payload_kind"`
-	PayloadParts     int                             `json:"payload_parts"`
+	Metadata               windowsconfig.MediaMetadata     `json:"metadata"`
+	Capabilities           windowsconfig.CapabilityProfile `json:"capabilities"`
+	BootArchitecture       string                          `json:"boot_architecture,omitempty"`
+	UEFICapable            bool                            `json:"uefi_capable"`
+	BIOSCapable            bool                            `json:"bios_capable"`
+	DefaultPartitionScheme string                          `json:"default_partition_scheme"`
+	DefaultTargetSystem    string                          `json:"default_target_system"`
+	PayloadKind            string                          `json:"payload_kind"`
+	PayloadParts           int                             `json:"payload_parts"`
 }
 
 // AnalyzeCapabilities mounts an identity-bound Windows ISO read-only, inspects
-// its installation payload, and returns the shared setup-option profile. It
-// never opens or modifies a target device.
+// its installation payload and boot capabilities, and returns the shared
+// setup-option profile. It never opens or modifies a target device.
 func AnalyzeCapabilities(ctx context.Context, isoPath string, expectedSource sourcefile.Identity) (result CapabilityAnalysis, returnErr error) {
 	isoFile, err := sourcefile.OpenRegular(isoPath, expectedSource)
 	if err != nil {
@@ -71,6 +75,13 @@ func AnalyzeCapabilities(ctx context.Context, isoPath string, expectedSource sou
 	if err != nil {
 		return CapabilityAnalysis{}, err
 	}
+	if err := bindBootCapabilities(ctx, &plan); err != nil {
+		return CapabilityAnalysis{}, err
+	}
+	defaultScheme, defaultTarget, err := resolveWindowsLayout(plan, "auto", "auto")
+	if err != nil {
+		return CapabilityAnalysis{}, err
+	}
 	payloadKind, payloadParts, err := capabilityPayloadFacts(plan)
 	if err != nil {
 		return CapabilityAnalysis{}, err
@@ -84,11 +95,15 @@ func AnalyzeCapabilities(ctx context.Context, isoPath string, expectedSource sou
 		return CapabilityAnalysis{}, fmt.Errorf("inspect Windows setup capabilities: %w", err)
 	}
 	return CapabilityAnalysis{
-		Metadata:         metadata,
-		Capabilities:     windowsconfig.Capabilities(metadata),
-		BootArchitecture: plan.Architecture,
-		PayloadKind:      payloadKind,
-		PayloadParts:     payloadParts,
+		Metadata:               metadata,
+		Capabilities:           windowsconfig.Capabilities(metadata),
+		BootArchitecture:       plan.Architecture,
+		UEFICapable:            plan.HasARM64 || plan.HasX64 || plan.HasX86,
+		BIOSCapable:            plan.HasBIOS,
+		DefaultPartitionScheme: defaultScheme,
+		DefaultTargetSystem:    defaultTarget,
+		PayloadKind:            payloadKind,
+		PayloadParts:           payloadParts,
 	}, nil
 }
 
