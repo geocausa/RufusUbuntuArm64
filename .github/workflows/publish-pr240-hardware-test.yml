@@ -1,0 +1,171 @@
+name: Publish PR240 hardware-test prerelease
+
+on:
+  pull_request:
+    branches:
+      - stage2/0.13.0
+
+permissions:
+  actions: read
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  publish:
+    if: github.repository == 'geocausa/RufusUbuntuArm64' && github.head_ref == 'ops/publish-pr240-test'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TESTED_SHA: 682b92f3c8b92732fc06259615746178df38d074
+      MERGED_STAGE_SHA: efb4f5e4e46c4e3e59cb601ff7f622437848fabf
+      RUN_ID: '29982314138'
+      ARTIFACT_ID: '8553776699'
+      ARTIFACT_NAME: rufusarm64-0.13.0+pr240.682b92f3-ubuntu-arm64
+      ARTIFACT_DIGEST: sha256:51ae6bd5f30c76a8385eaed1594f68a4628c6ac5919353550ccb87dbb5b5ca4a
+      PACKAGE_VERSION: 0.13.0+pr240.682b92f3
+      TAG: v0.13.0-pr240-test
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ops/publish-pr240-test
+          fetch-depth: 0
+      - name: Verify exact tested run and artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq .status)" = completed
+          test "$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq .conclusion)" = success
+          test "$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" --jq .head_sha)" = "${TESTED_SHA}"
+          test "$(gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}" --jq .name)" = "${ARTIFACT_NAME}"
+          test "$(gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}" --jq .workflow_run.id)" = "${RUN_ID}"
+          test "$(gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}" --jq .expired)" = false
+          test "$(gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}" --jq .digest)" = "${ARTIFACT_DIGEST}"
+          test "$(git rev-parse "${TESTED_SHA}^{commit}")" = "${TESTED_SHA}"
+          test "$(git rev-parse "${MERGED_STAGE_SHA}^{commit}")" = "${MERGED_STAGE_SHA}"
+      - name: Download and verify exact package bytes
+        id: package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          gh run download "${RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name "${ARTIFACT_NAME}" \
+            --dir release-assets
+          deb="release-assets/rufusarm64_${PACKAGE_VERSION}_arm64.deb"
+          checksum="${deb}.sha256"
+          test -f "${deb}"
+          test -f "${checksum}"
+          test "$(find release-assets -maxdepth 1 -type f | wc -l)" -eq 2
+          (
+            cd release-assets
+            sha256sum -c "$(basename "${checksum}")"
+          )
+          test "$(dpkg-deb -f "${deb}" Package)" = rufusarm64
+          test "$(dpkg-deb -f "${deb}" Version)" = "${PACKAGE_VERSION}"
+          test "$(dpkg-deb -f "${deb}" Architecture)" = arm64
+          package_sha="$(sha256sum "${deb}" | awk '{print $1}')"
+          test "$(awk 'NF {print $1; exit}' "${checksum}")" = "${package_sha}"
+          echo "deb=${deb}" >> "${GITHUB_OUTPUT}"
+          echo "checksum=${checksum}" >> "${GITHUB_OUTPUT}"
+          echo "package_sha=${package_sha}" >> "${GITHUB_OUTPUT}"
+      - name: Create immutable test tag and prerelease
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEB: ${{ steps.package.outputs.deb }}
+          CHECKSUM: ${{ steps.package.outputs.checksum }}
+          PACKAGE_SHA: ${{ steps.package.outputs.package_sha }}
+        run: |
+          set -euo pipefail
+          existing_tag="$({
+            gh api "/repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/${TAG}" \
+              --jq ".[] | select(.ref == \"refs/tags/${TAG}\") | .object.sha"
+          } || true)"
+          if [[ -n "${existing_tag}" ]]; then
+            test "${existing_tag}" = "${TESTED_SHA}" || {
+              echo "Refusing to move ${TAG} from ${existing_tag} to ${TESTED_SHA}" >&2
+              exit 1
+            }
+          else
+            gh api --method POST "/repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${TAG}" \
+              -f sha="${TESTED_SHA}" >/dev/null
+          fi
+
+          cat > release-notes.md <<EOF
+          ## RufusArm64 0.13.0 PR240 fast-FreeDOS hardware-test build
+
+          This is a **hardware-test prerelease**, not the public 0.13.0 release.
+
+          - Package version: \`${PACKAGE_VERSION}\`
+          - Exact tested source commit: \`${TESTED_SHA}\`
+          - Corresponding merged Stage 2 checkpoint: \`${MERGED_STAGE_SHA}\`
+          - Exact CI run: \`${RUN_ID}\`
+          - Package SHA-256: \`${PACKAGE_SHA}\`
+          - GitHub artifact digest: \`${ARTIFACT_DIGEST}\`
+
+          The exact source head passed Go 1.22, native ARM64 execution, reproducible Debian packaging and audit, deterministic WIM and UEFI loader builds, FreeDOS real-loop qualification, and non-bootable formatter qualification.
+
+          This build replaces capacity-scaled whole-device FreeDOS cloning with bounded required-extent creation and readback. It keeps a nearly full-size FAT32 partition while leaving unallocated data clusters untouched. Use **Check USB** for exhaustive whole-device media qualification.
+
+          Use this build for the remaining real-machine checks:
+
+          1. On the 29.2 GiB Lexar-class target, confirm the plan shows required write and verification totals far below 58.4 GiB total I/O.
+          2. Record practical creation time and retain the final report, including verification scope and extent-set SHA-256.
+          3. Confirm the FAT32 partition remains nearly full capacity and ordinary FreeDOS files are present.
+          4. Physical boot observation requires an x86 BIOS/Legacy or UEFI-CSM computer; this is not an ARM64 boot path.
+          5. Use **Check USB** separately only when exhaustive whole-device testing is intended.
+
+          No Secure Boot compatibility, whole-device-health, or universal physical-boot claim is made. The production acquisition channel remains disabled.
+          EOF
+          sed -i 's/^          //' release-notes.md
+
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            test "$(gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" --json isPrerelease --jq .isPrerelease)" = true
+            release_url="$(gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" --json url --jq .url)"
+          else
+            release_url="$(gh release create "${TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --verify-tag \
+              --prerelease \
+              --title 'RufusArm64 0.13.0 PR240 fast-FreeDOS hardware-test build' \
+              --notes-file release-notes.md \
+              "${DEB}" "${CHECKSUM}")"
+          fi
+          echo "url=${release_url}" >> "${GITHUB_OUTPUT}"
+      - name: Record publication checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_URL: ${{ steps.release.outputs.url }}
+          PACKAGE_SHA: ${{ steps.package.outputs.package_sha }}
+        run: |
+          set -euo pipefail
+          cat > publication-comment.md <<EOF
+          ### PR240 fast-FreeDOS hardware-test prerelease published
+
+          - Release: ${RELEASE_URL}
+          - Tag: \`${TAG}\`
+          - Exact tested commit: \`${TESTED_SHA}\`
+          - Package: \`rufusarm64_${PACKAGE_VERSION}_arm64.deb\`
+          - Package SHA-256: \`${PACKAGE_SHA}\`
+          - CI run: \`${RUN_ID}\`
+
+          This remains a prerelease for physical timing, final-report, FAT32-capacity, and x86 BIOS/Legacy observations. It is not the public 0.13.0 release and it does not claim whole-device media qualification.
+          EOF
+          sed -i 's/^          //' publication-comment.md
+          gh issue comment 118 --repo "${GITHUB_REPOSITORY}" --body-file publication-comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --repo "${GITHUB_REPOSITORY}" --body-file publication-comment.md
+      - name: Remove one-shot publisher from the operational branch
+        run: |
+          set -euo pipefail
+          rm .github/workflows/publish-pr240-hardware-test.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/publish-pr240-hardware-test.yml
+          git commit -m "Ops: remove PR240 prerelease publisher"
+          git push origin HEAD:ops/publish-pr240-test
