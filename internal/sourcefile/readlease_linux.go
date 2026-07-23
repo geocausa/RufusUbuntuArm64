@@ -37,10 +37,10 @@ type ReadLease struct {
 	closeErr  error
 }
 
-// AcquireReadLease verifies the pinned source identity, then acquires a
-// process-owned Linux read lease. Unsupported filesystems and existing
-// writable access are reported with errors that callers may use to select the
-// existing conservative hash-based path.
+// AcquireReadLease revalidates the complete originally selected source
+// identity, including ctime, then acquires a process-owned Linux read lease.
+// Unsupported filesystems and existing writable access are reported with
+// errors that callers may use to select the conservative hash-based path.
 func AcquireReadLease(parent context.Context, file *os.File, expected Identity) (*ReadLease, error) {
 	if parent == nil {
 		return nil, errors.New("source read lease context is nil")
@@ -48,7 +48,7 @@ func AcquireReadLease(parent context.Context, file *os.File, expected Identity) 
 	if file == nil {
 		return nil, errors.New("source read lease file is nil")
 	}
-	if err := VerifyPinned(file, expected); err != nil {
+	if err := Verify(file, expected); err != nil {
 		return nil, err
 	}
 	flags, err := fcntlInt(file.Fd(), syscall.F_GETFL, 0)
