@@ -87,9 +87,12 @@ type mediaPlan struct {
 	ExistingSplitFiles []string
 	SplitBytes         uint64
 	Architecture       string
+	BootWIMPath        string
 	HasARM64           bool
 	HasX64             bool
 	HasX86             bool
+	HasBIOS            bool
+	BIOSArchitecture   string
 	HasBootmgr         bool
 	OtherBytes         uint64
 	CopyBytes          uint64
@@ -245,24 +248,22 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 	if err != nil {
 		return err
 	}
-	if opts.RequireARM64 && !plan.HasARM64 {
-		return errors.New("this ISO contains only x86/x86-64 Windows boot files and will not boot this ARM64 computer; choose an official Windows ARM64 ISO")
+	if err := bindBootCapabilities(ctx, &plan); err != nil {
+		return err
 	}
 	scheme, targetSystem, err := resolveWindowsLayout(plan, opts.PartitionScheme, opts.TargetSystem)
 	if err != nil {
 		return err
 	}
+	if opts.RequireARM64 && targetSystem == "uefi" && !plan.HasARM64 {
+		return errors.New("this ISO contains only x86/x86-64 Windows UEFI boot files and will not boot this ARM64 computer; choose an official Windows ARM64 ISO or deliberately select a proven legacy-BIOS layout")
+	}
 	if strings.EqualFold(strings.TrimSpace(opts.PartitionScheme), "auto") || strings.TrimSpace(opts.PartitionScheme) == "" ||
 		strings.EqualFold(strings.TrimSpace(opts.TargetSystem), "auto") || strings.TrimSpace(opts.TargetSystem) == "" {
 		send(emit, Event{Stage: "inspect", Message: fmt.Sprintf("Automatic Windows layout resolved to %s/%s from the selected image capabilities.", strings.ToUpper(scheme), strings.ToUpper(targetSystem))})
 	}
-	if targetSystem == "bios" {
-		if !plan.HasX64 && !plan.HasX86 {
-			return errors.New("legacy BIOS/CSM Windows media requires an x86 or x86-64 ISO; Windows ARM64 boots through UEFI only")
-		}
-		if !plan.HasBootmgr {
-			return errors.New("this Windows ISO has no root bootmgr file and cannot be made legacy-BIOS bootable")
-		}
+	if targetSystem == "bios" && !plan.HasBIOS {
+		return errors.New("legacy BIOS/CSM Windows media requires a root bootmgr file and x86 or x86-64 boot metadata; Windows ARM64 boots through UEFI only")
 	}
 	if strings.TrimSpace(opts.DBXPath) != "" {
 		dbxPath, err := filepath.Abs(opts.DBXPath)
@@ -725,7 +726,8 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 }
 
 func inspectMountedISO(root string) (mediaPlan, error) {
-	if _, ok := findRelativeCaseInsensitive(root, "sources/boot.wim"); !ok {
+	bootWIMPath, ok := findRelativeCaseInsensitive(root, "sources/boot.wim")
+	if !ok {
 		return mediaPlan{}, errors.New("this is not a supported Windows installation ISO: sources/boot.wim was not found")
 	}
 
@@ -733,7 +735,7 @@ func inspectMountedISO(root string) (mediaPlan, error) {
 	_, x64 := findRelativeCaseInsensitive(root, "efi/boot/bootx64.efi")
 	_, x86 := findRelativeCaseInsensitive(root, "efi/boot/bootia32.efi")
 	_, bootmgr := findRelativeCaseInsensitive(root, "bootmgr")
-	architecture := "UEFI"
+	architecture := ""
 	switch {
 	case arm64 && x64:
 		architecture = "ARM64/x86-64 UEFI"
@@ -743,8 +745,10 @@ func inspectMountedISO(root string) (mediaPlan, error) {
 		architecture = "x86-64 UEFI"
 	case x86:
 		architecture = "x86 UEFI"
+	case bootmgr:
+		architecture = "legacy BIOS (architecture pending WIM inspection)"
 	default:
-		return mediaPlan{}, errors.New("the ISO has no standard ARM64 or x86-64 UEFI boot file")
+		return mediaPlan{}, errors.New("the ISO has no standard UEFI fallback loader and no root bootmgr file")
 	}
 
 	installWIM, hasWIM := findRelativeCaseInsensitive(root, "sources/install.wim")
@@ -778,10 +782,18 @@ func inspectMountedISO(root string) (mediaPlan, error) {
 		InstallPath:        installPath,
 		ExistingSplitFiles: existingSplitFiles,
 		Architecture:       architecture,
+		BootWIMPath:        bootWIMPath,
 		HasARM64:           arm64,
 		HasX64:             x64,
 		HasX86:             x86,
 		HasBootmgr:         bootmgr,
+	}
+	if bootmgr && x64 {
+		plan.HasBIOS = true
+		plan.BIOSArchitecture = "amd64"
+	} else if bootmgr && x86 {
+		plan.HasBIOS = true
+		plan.BIOSArchitecture = "x86"
 	}
 	if answerPath, ok := findRelativeCaseInsensitive(root, "autounattend.xml"); ok {
 		plan.ExistingAnswerPath = answerPath
@@ -843,6 +855,50 @@ func inspectMountedISO(root string) (mediaPlan, error) {
 		return mediaPlan{}, err
 	}
 	return plan, nil
+}
+
+func bindBootCapabilities(ctx context.Context, plan *mediaPlan) error {
+	if plan == nil {
+		return errors.New("Windows media plan is nil")
+	}
+	if plan.HasARM64 || plan.HasX64 || plan.HasX86 {
+		return nil
+	}
+	if !plan.HasBootmgr {
+		return errors.New("the Windows ISO has neither a supported UEFI fallback loader nor root bootmgr")
+	}
+	if strings.TrimSpace(plan.BootWIMPath) == "" {
+		return errors.New("the Windows ISO has no identity-bound boot.wim path for legacy-BIOS architecture inspection")
+	}
+	metadata, err := InspectWIMMetadata(ctx, plan.BootWIMPath)
+	if err != nil {
+		return fmt.Errorf("inspect boot.wim before accepting legacy-BIOS media: %w", err)
+	}
+	return bindBIOSMetadata(plan, metadata)
+}
+
+func bindBIOSMetadata(plan *mediaPlan, metadata windowsconfig.MediaMetadata) error {
+	if plan == nil {
+		return errors.New("Windows media plan is nil")
+	}
+	if !plan.HasBootmgr {
+		return errors.New("legacy-BIOS capability requires a root bootmgr file")
+	}
+	switch normalizeWIMArchitecture(metadata.Architecture) {
+	case "amd64":
+		plan.HasBIOS = true
+		plan.BIOSArchitecture = "amd64"
+		plan.Architecture = "x86-64 legacy BIOS"
+	case "x86":
+		plan.HasBIOS = true
+		plan.BIOSArchitecture = "x86"
+		plan.Architecture = "x86 legacy BIOS"
+	case "arm64":
+		return errors.New("Windows ARM64 boot.wim cannot be used as legacy-BIOS media; ARM64 boots through UEFI only")
+	default:
+		return fmt.Errorf("boot.wim architecture %q is unsupported or ambiguous for legacy-BIOS media", metadata.Architecture)
+	}
+	return nil
 }
 
 // validateFATCompatibility performs the checks that matter only when the main

@@ -998,6 +998,8 @@ func runWindowsAnalyze(args []string) error {
 		return encoder.Encode(result)
 	}
 	fmt.Printf("Windows %s %s (%s)\n", result.Capabilities.Generation, result.Capabilities.Family, result.Capabilities.Architecture)
+	fmt.Printf("  Boot capability: %s\n", result.BootArchitecture)
+	fmt.Printf("  Automatic layout: %s / %s\n", strings.ToUpper(result.DefaultPartitionScheme), strings.ToUpper(result.DefaultTargetSystem))
 	if !result.Capabilities.Recognized {
 		fmt.Printf("Setup options unavailable: %s\n", result.Capabilities.Reason)
 	}

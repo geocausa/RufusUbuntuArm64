@@ -140,9 +140,15 @@ def normalize_windows_capability_analysis(payload):
     metadata = payload.get("metadata") or {}
     if not isinstance(capabilities, dict) or not isinstance(metadata, dict):
         raise ValueError("Windows capability analysis is missing metadata or capabilities.")
+    default_scheme = str(payload.get("default_partition_scheme") or "").strip().lower()
+    default_target = str(payload.get("default_target_system") or "").strip().lower()
+    if default_scheme not in {"gpt", "mbr"} or default_target not in {"uefi", "bios"}:
+        raise ValueError("Windows capability analysis is missing a resolved automatic layout.")
     normalized = dict(payload)
     normalized["metadata"] = metadata
     normalized["capabilities"] = capabilities
+    normalized["default_partition_scheme"] = default_scheme
+    normalized["default_target_system"] = default_target
     return normalized
 
 
@@ -151,6 +157,8 @@ def unavailable_windows_capability_analysis(reason):
     disabled = {"enabled": False, "reason": reason}
     return {
         "metadata": {},
+        "default_partition_scheme": "",
+        "default_target_system": "",
         "capabilities": {
             "recognized": False,
             "reason": reason,
@@ -292,7 +300,10 @@ class WindowsOptionsDialog(Gtk.Dialog):
             generation = capabilities.get("generation") or "unknown generation"
             family = capabilities.get("family") or "unknown family"
             architecture = capabilities.get("architecture") or "unknown architecture"
-            return f"Detected Windows {generation} {family} media ({architecture}). Unsupported options are disabled below."
+            scheme = str(self.capability_analysis.get("default_partition_scheme") or "").upper()
+            target = str(self.capability_analysis.get("default_target_system") or "").upper()
+            layout = f" Automatic layout: {scheme}/{target}." if scheme and target else ""
+            return f"Detected Windows {generation} {family} media ({architecture}).{layout} Unsupported options are disabled below."
         return "Setup customizations are unavailable: " + str(
             capabilities.get("reason") or "the Windows version and architecture could not be identified safely."
         )
@@ -2289,7 +2300,13 @@ class RufusWindow(Gtk.ApplicationWindow):
         if persistence_requested:
             layout_summary = f"GPT / UEFI / FAT32 boot + {human_bytes(self.persistence_plan['size'])} ext4 persistence"
         elif self.inspection.get("mode") == "windows":
-            layout_summary = f"{partition_scheme.upper()} / {self.target_system_combo.get_active_text()} / {filesystem.upper()} / {self.cluster_combo.get_active_text()} clusters"
+            display_scheme = partition_scheme
+            display_target = target_system
+            if partition_scheme == "auto":
+                display_scheme = str(self.windows_capability_analysis.get("default_partition_scheme") or "auto")
+            if target_system == "auto":
+                display_target = str(self.windows_capability_analysis.get("default_target_system") or "auto")
+            layout_summary = f"{display_scheme.upper()} / {display_target.upper()} / {filesystem.upper()} / {self.cluster_combo.get_active_text()} clusters"
         else:
             layout_summary = "From image / From image / From image"
         self.append_log(f"Layout: {layout_summary}")
