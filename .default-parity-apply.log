@@ -1,1 +1,0 @@
-gui/rufusarm64.py: expected one replacement for '            if self.partition_combo.get_active_id() in {"gpt", "mbr"}:', found 2

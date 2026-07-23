@@ -35,6 +35,16 @@ var version = "development"
 
 const defaultAcquisitionChannelConfig = "/usr/share/rufusarm64/acquisition/channel.json"
 
+const (
+	defaultWriteVerify            = false
+	defaultWindowsPartitionScheme = "auto"
+	defaultWindowsTargetSystem    = "auto"
+	defaultWindowsFilesystem      = "auto"
+	defaultWindowsClusterSize     = "auto"
+	defaultWindowsFullFormat      = false
+	defaultWindowsBadBlockCheck   = false
+)
+
 type jsonEvent struct {
 	Event   string  `json:"event"`
 	Stage   string  `json:"stage,omitempty"`
@@ -238,8 +248,8 @@ func runInspect(args []string) error {
 			modeErr = selectionErr
 			if selectionErr == nil && selected == "windows" {
 				result.Mode = "windows"
-				result.PartitionScheme = "GPT"
-				result.TargetSystem = "UEFI"
+				result.PartitionScheme = "Automatic (image-derived)"
+				result.TargetSystem = "Automatic (image-derived)"
 				result.FileSystem = "Automatic (FAT32 preferred)"
 				result.WindowsOptions = true
 				result.Description = probe.Description + "; Windows installation media will be fully expanded and validated before the USB is erased"
@@ -271,8 +281,8 @@ func runInspect(args []string) error {
 			result.Description = err.Error()
 		case mode == "windows":
 			result.Mode = "windows"
-			result.PartitionScheme = "GPT"
-			result.TargetSystem = "UEFI"
+			result.PartitionScheme = "Automatic (image-derived)"
+			result.TargetSystem = "Automatic (image-derived)"
 			result.FileSystem = "Automatic (FAT32 preferred)"
 			result.WindowsOptions = true
 			result.Description = "Standard Windows UEFI installation media"
@@ -317,7 +327,7 @@ func runWrite(args []string) error {
 	imagePath := fs.String("image", "", "image or ISO file")
 	devicePath := fs.String("device", "", "whole target disk")
 	mode := fs.String("mode", "auto", "auto, raw, windows, or linux-persistent")
-	verify := fs.Bool("verify", false, "verify data after writing")
+	verify := fs.Bool("verify", defaultWriteVerify, "verify data after writing")
 	yes := fs.Bool("yes", false, "skip interactive confirmation")
 	allowFixed := fs.Bool("allow-fixed", false, "allow a non-removable disk")
 	noUnmount := fs.Bool("no-unmount", false, "do not unmount mounted filesystems")
@@ -328,14 +338,14 @@ func runWrite(args []string) error {
 	cancelFile := fs.String("cancel-file", "", "per-user cancellation marker used by the graphical app")
 	allowForeignArchitecture := fs.Bool("allow-foreign-windows-architecture", false, "allow x86-64-only Windows media on an ARM64 host")
 	volumeLabel := fs.String("volume-label", "RUFUSARM64", "volume label for extracted Windows or experimental Linux boot media")
-	partitionScheme := fs.String("partition-scheme", "gpt", "Windows media partition scheme: gpt or mbr")
-	targetSystem := fs.String("target-system", "uefi", "Windows target system: uefi or bios")
-	filesystem := fs.String("filesystem", "auto", "Windows media filesystem: auto, fat32, or ntfs")
-	clusterSizeText := fs.String("cluster-size", "auto", "cluster size: auto, 4096, 8192, 16384, or 32768")
+	partitionScheme := fs.String("partition-scheme", defaultWindowsPartitionScheme, "Windows media partition scheme: auto, gpt, or mbr")
+	targetSystem := fs.String("target-system", defaultWindowsTargetSystem, "Windows target system: auto, uefi, or bios")
+	filesystem := fs.String("filesystem", defaultWindowsFilesystem, "Windows media filesystem: auto, fat32, or ntfs")
+	clusterSizeText := fs.String("cluster-size", defaultWindowsClusterSize, "cluster size: auto, 4096, 8192, 16384, or 32768")
 	driverFolder := fs.String("driver-folder", "", "optional folder of Windows .inf drivers to copy to the USB")
 	dbxFile := fs.String("dbx-file", "", "optional Secure Boot DBXUpdate.bin used to reject revoked EFI boot files")
-	fullFormat := fs.Bool("full-format", false, "zero the Windows partition before formatting")
-	badBlockCheck := fs.Bool("bad-block-check", false, "zero and read back the Windows partition before formatting")
+	fullFormat := fs.Bool("full-format", defaultWindowsFullFormat, "zero the Windows partition before formatting")
+	badBlockCheck := fs.Bool("bad-block-check", defaultWindowsBadBlockCheck, "zero and read back the Windows partition before formatting")
 	winBypassHardware := fs.Bool("win-bypass-hardware", false, "bypass Windows TPM, Secure Boot, and RAM checks")
 	winBypassOnline := fs.Bool("win-bypass-online-account", false, "remove Windows online-account requirement")
 	winLocalUser := fs.String("win-local-user", "", "create a local Windows administrator account")
@@ -460,20 +470,26 @@ func runWrite(args []string) error {
 		return fmt.Errorf("parse --persistence-size: %w", err)
 	}
 	scheme := strings.ToLower(strings.TrimSpace(*partitionScheme))
-	if scheme != "gpt" && scheme != "mbr" {
-		return errors.New("--partition-scheme must be gpt or mbr")
+	switch scheme {
+	case "", "auto":
+		scheme = "auto"
+	case "gpt", "mbr":
+	default:
+		return errors.New("--partition-scheme must be auto, gpt, or mbr")
 	}
 	targetSystemChoice := strings.ToLower(strings.TrimSpace(*targetSystem))
 	switch targetSystemChoice {
-	case "", "auto", "uefi":
+	case "", "auto":
+		targetSystemChoice = "auto"
+	case "uefi":
 		targetSystemChoice = "uefi"
 	case "bios", "legacy", "legacy-bios", "bios-csm":
 		targetSystemChoice = "bios"
 	default:
-		return errors.New("--target-system must be uefi or bios")
+		return errors.New("--target-system must be auto, uefi, or bios")
 	}
-	if targetSystemChoice == "bios" && scheme != "mbr" {
-		return errors.New("--target-system bios requires --partition-scheme mbr")
+	if targetSystemChoice == "bios" && scheme == "gpt" {
+		return errors.New("--target-system bios cannot be combined with --partition-scheme gpt")
 	}
 	filesystemChoice := strings.ToLower(strings.TrimSpace(*filesystem))
 	if filesystemChoice == "" {
@@ -491,7 +507,7 @@ func runWrite(args []string) error {
 		Locale:               *winLocale,
 		TimeZone:             *winTimeZone,
 	}
-	if selectedMode != "windows" && (winOptions.Enabled() || scheme != "gpt" || targetSystemChoice != "uefi" || filesystemChoice != "auto" || clusterSize != 0 || *driverFolder != "" || *dbxFile != "" || *fullFormat || *badBlockCheck) {
+	if selectedMode != "windows" && (winOptions.Enabled() || scheme != "auto" || targetSystemChoice != "auto" || filesystemChoice != "auto" || clusterSize != 0 || *driverFolder != "" || *dbxFile != "" || *fullFormat || *badBlockCheck) {
 		return errors.New("windows partition and setup options can only be used with a supported Windows installation ISO")
 	}
 	if selectedMode == "linux-persistent" {
@@ -504,8 +520,8 @@ func runWrite(args []string) error {
 		if *forceRaw || *allowForeignArchitecture {
 			return errors.New("raw-image and foreign-Windows architecture overrides are incompatible with Linux persistence")
 		}
-		if scheme != "gpt" || targetSystemChoice != "uefi" || filesystemChoice != "auto" || clusterSize != 0 {
-			return errors.New("experimental Linux persistence currently requires GPT, UEFI, and automatic filesystem settings")
+		if (scheme != "auto" && scheme != "gpt") || (targetSystemChoice != "auto" && targetSystemChoice != "uefi") || filesystemChoice != "auto" || clusterSize != 0 {
+			return errors.New("experimental Linux persistence currently requires automatic/GPT, automatic/UEFI, and automatic filesystem settings")
 		}
 	} else if *experimentalPersistence || persistenceSize != 0 {
 		return errors.New("--experimental-persistence and --persistence-size require --mode linux-persistent")

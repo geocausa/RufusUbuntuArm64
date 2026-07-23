@@ -34,7 +34,7 @@ var commitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 var idPattern = regexp.MustCompile(`^[a-z0-9]+(?:_[a-z0-9]+)*$`)
 
 var requiredDefaults = map[string][2]string{
-	"post_write_verification": {"off", "off"},
+	"post_write_verification":  {"off", "off"},
 	"quick_format":             {"on", "on"},
 	"bad_block_check":          {"off", "off"},
 	"windows_partition_scheme": {"image_derived", "image_derived"},
