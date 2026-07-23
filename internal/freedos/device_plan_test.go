@@ -27,6 +27,10 @@ func TestBuildDevicePlan(t *testing.T) {
 		plan.PartitionType != "0c" || plan.Filesystem != "FAT32" || plan.Label != "FREEDOS" {
 		t.Fatalf("unexpected media binding: %+v", plan)
 	}
+	if plan.MutationBytes == 0 || plan.MutationBytes != plan.VerificationBytes ||
+		plan.MutationBytes+plan.UntouchedBytes != plan.DeviceSizeBytes || plan.UntouchedBytes == 0 {
+		t.Fatalf("unexpected extent accounting: %+v", plan)
+	}
 	phrase, err := DeviceConfirmationPhrase(plan)
 	if err != nil {
 		t.Fatal(err)
@@ -113,6 +117,9 @@ func TestDevicePlanRejectsTampering(t *testing.T) {
 		{"partition", func(plan *DevicePlan) { plan.PartitionStartBytes += 512 }, "partition"},
 		{"filesystem", func(plan *DevicePlan) { plan.Filesystem = "exFAT" }, "partition"},
 		{"label", func(plan *DevicePlan) { plan.Label = "OTHER" }, "media"},
+		{"mutation bytes", func(plan *DevicePlan) { plan.MutationBytes++ }, "extent accounting"},
+		{"verification bytes", func(plan *DevicePlan) { plan.VerificationBytes++ }, "extent accounting"},
+		{"untouched bytes", func(plan *DevicePlan) { plan.UntouchedBytes-- }, "extent accounting"},
 		{"warnings", func(plan *DevicePlan) { plan.Warnings = plan.Warnings[:len(plan.Warnings)-1] }, "warnings"},
 	}
 	for _, test := range tests {
