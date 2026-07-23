@@ -245,11 +245,10 @@ func writeOpenImage(ctx context.Context, src *os.File, devicePath string, opts W
 		return writeResult, context.Cause(ctx)
 	}
 	if opts.ClearStaleSignatures {
-		targetChanged = true
 		if opts.TargetSize == 0 {
 			return writeResult, errors.New("target size is required when clearing stale signatures")
 		}
-		if err := clearTargetEdges(ctx, dst, opts.TargetSize); err != nil {
+		if err := clearTargetEdges(ctx, dst, opts.TargetSize, func() { targetChanged = true }); err != nil {
 			return writeResult, fmt.Errorf("clear stale target signatures: %w", err)
 		}
 	}
@@ -576,7 +575,7 @@ func SHA256File(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func clearTargetEdges(ctx context.Context, target *os.File, targetSize uint64) error {
+func clearTargetEdges(ctx context.Context, target *os.File, targetSize uint64, onMutation func()) error {
 	if target == nil {
 		return errors.New("target file is nil")
 	}
@@ -588,21 +587,21 @@ func clearTargetEdges(ctx context.Context, target *os.File, targetSize uint64) e
 	}
 	clearSize := staleSignatureClearSize
 	if targetSize <= 2*clearSize {
-		if err := writeZerosAt(ctx, target, 0, targetSize); err != nil {
+		if err := writeZerosAt(ctx, target, 0, targetSize, onMutation); err != nil {
 			return err
 		}
 		return target.Sync()
 	}
-	if err := writeZerosAt(ctx, target, 0, clearSize); err != nil {
+	if err := writeZerosAt(ctx, target, 0, clearSize, onMutation); err != nil {
 		return err
 	}
-	if err := writeZerosAt(ctx, target, targetSize-clearSize, clearSize); err != nil {
+	if err := writeZerosAt(ctx, target, targetSize-clearSize, clearSize, onMutation); err != nil {
 		return err
 	}
 	return target.Sync()
 }
 
-func writeZerosAt(ctx context.Context, target *os.File, offset, length uint64) error {
+func writeZerosAt(ctx context.Context, target *os.File, offset, length uint64, onMutation func()) error {
 	zeroes := make([]byte, 1024*1024)
 	for written := uint64(0); written < length; {
 		if err := ctx.Err(); err != nil {
@@ -613,6 +612,9 @@ func writeZerosAt(ctx context.Context, target *os.File, offset, length uint64) e
 			chunk = remaining
 		}
 		n, err := target.WriteAt(zeroes[:int(chunk)], int64(offset+written))
+		if n > 0 && onMutation != nil {
+			onMutation()
+		}
 		written += uint64(n)
 		if err != nil {
 			return err
