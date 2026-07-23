@@ -1,0 +1,64 @@
+name: Fix BIOS-only staticcheck messages
+
+on:
+  pull_request:
+    types: [reopened]
+    branches: [stage2/0.13.0]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-bios-staticcheck
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    if: github.event.pull_request.head.ref == 'windows/bios-only-auto-layout'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out compatibility branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: windows/bios-only-auto-layout
+          fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.26.5'
+          cache: false
+      - name: Correct and verify staticcheck messages
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('internal/windowsmedia/windowsmedia.go')
+          text = path.read_text(encoding='utf-8')
+          replacements = {
+              'errors.New("Windows media plan is nil")': 'errors.New("windows media plan is nil")',
+              'errors.New("Windows ARM64 boot.wim cannot be used as legacy-BIOS media; ARM64 boots through UEFI only")': 'errors.New("Windows ARM64 boot.wim cannot be used as legacy-BIOS media; ARM64 boots through UEFI only")',
+          }
+          if text.count('errors.New("Windows media plan is nil")') != 2:
+              raise SystemExit('expected two capitalized Windows media plan errors')
+          text = text.replace('errors.New("Windows media plan is nil")', 'errors.New("windows media plan is nil")')
+          if text.count('errors.New("Windows ARM64 boot.wim cannot be used as legacy-BIOS media; ARM64 boots through UEFI only")') != 1:
+              raise SystemExit('expected one capitalized Windows ARM64 error')
+          text = text.replace(
+              'errors.New("Windows ARM64 boot.wim cannot be used as legacy-BIOS media; ARM64 boots through UEFI only")',
+              'errors.New("windows ARM64 boot.wim cannot be used as legacy-BIOS media; ARM64 boots through UEFI only")',
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
+          gofmt -w internal/windowsmedia/windowsmedia.go
+          go test ./...
+          GOBIN="${RUNNER_TEMP}/audit-tools" go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          "${RUNNER_TEMP}/audit-tools/staticcheck" ./...
+          git diff --check
+      - name: Remove fixer and publish source-only commit
+        run: |
+          rm .github/workflows/fix-bios-staticcheck.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'Windows: satisfy staticcheck error style'
+          git push origin HEAD:windows/bios-only-auto-layout
