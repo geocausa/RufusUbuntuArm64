@@ -13,6 +13,7 @@
 - Reduced persistent Linux source verification from three complete image hashes to one authenticated pass under the same identity-bound Linux read lease, while retaining manifest-bound copy verification and the conservative three-pass fallback.
 - Changed optional raw-image verification to hash only the physical target and compare it with the SHA-256 authenticated during the completed write, removing a redundant third complete source read.
 - Reduced sequential compressed-image preparation to one lease-held container read that authenticates while decompressing, removed the post-preparation container rehash on held ZIP/virtual inputs, and passed package-owned expanded digests to the raw writer so private prepared images are read only once during target writing.
+- Held plain raw/ISOHybrid sources under the identity-bound Linux read lease through destructive writing, while retaining the complete pre-write and write-time digest comparison and the conservative fallback for unsupported or already-writable sources.
 - Preserved every existing source/target identity, privilege, destructive confirmation, cancellation, verification, reproducibility, and native ARM64 gate. Physical hardware boot and persistence qualification remain separate release evidence.
 
 ## 0.12.1 — 2026-07-20

@@ -697,6 +697,10 @@ func runWrite(args []string) error {
 		ExpectedSource:       sourceIdentity,
 		TargetSize:           dev.Size,
 		ClearStaleSignatures: true,
+		HoldSource:           prepared.Kind == imaging.InputPlain,
+		SourceHold: func(status imaging.SourceHoldStatus) {
+			out.event(jsonEvent{Event: "stage", Stage: "source_hold", Message: status.Message})
+		},
 		BeforeWrite: func(source *os.File) error {
 			return strictTargetCheck(source)
 		},
