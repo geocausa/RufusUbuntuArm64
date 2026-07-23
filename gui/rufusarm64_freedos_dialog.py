@@ -19,6 +19,7 @@ from rufusarm64_freedos import (
     plan_summary,
     progress_summary,
     report_summary,
+    validate_progress_against_plan,
 )
 
 
@@ -341,13 +342,11 @@ class FreeDOSFormatDialog(Gtk.Dialog):
                 start_new_session=True,
             )
             self.process = process
-            expected_total = int(reviewed["plan"]["device_size_bytes"]) * 2
             last_done = 0
             for line in process.stderr:
                 progress = decode_progress_line(line)
                 if progress is not None:
-                    if progress["overall_total"] != expected_total:
-                        raise ValueError("FreeDOS helper progress does not match the reviewed full-device I/O total.")
+                    progress = validate_progress_against_plan(progress, reviewed)
                     if progress["overall_done"] < last_done:
                         raise ValueError("FreeDOS helper progress moved backwards.")
                     last_done = progress["overall_done"]

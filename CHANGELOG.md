@@ -16,6 +16,7 @@
 - Held plain raw/ISOHybrid sources under the identity-bound Linux read lease through destructive writing, while retaining the complete pre-write and write-time digest comparison and the conservative fallback for unsupported or already-writable sources.
 - Aligned fresh-profile defaults with pinned upstream Rufus: post-write verification is opt-in, quick format remains on, bad-block testing and persistence remain off, and Windows partition/target choices now default to image-derived Automatic rather than preselecting GPT/UEFI.
 - Recognized proven BIOS-only Windows setup ISOs by binding root `bootmgr` to bounded `boot.wim` x86/x64 metadata, allowing Automatic to choose MBR/BIOS without weakening ARM64 UEFI checks.
+- Fixed the FreeDOS GTK progress guard to validate the helper against the reviewed required-extent write/readback totals instead of the obsolete whole-device total.
 - Preserved every existing source/target identity, privilege, destructive confirmation, cancellation, verification, reproducibility, and native ARM64 gate. Physical hardware boot and persistence qualification remain separate release evidence.
 
 ## 0.12.1 — 2026-07-20
