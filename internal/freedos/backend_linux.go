@@ -19,7 +19,7 @@ import (
 // LinuxDeviceOptions binds the production backend to one already reviewed
 // kernel block device. Revalidate must refresh host policy and identity from
 // live kernel state; it runs after locking, immediately before the first write,
-// and again after complete readback.
+// and again after required-extent readback.
 type LinuxDeviceOptions struct {
 	ExpectedDeviceID uint64
 	ExpectedSize     uint64
@@ -98,16 +98,10 @@ func (backend *linuxDeviceBackend) BeforeDestructive(_ context.Context, plan Dev
 	if err := backend.options.Revalidate(backend.target); err != nil {
 		return fmt.Errorf("final FreeDOS target revalidation: %w", err)
 	}
-	if err := backend.verifyTarget(plan); err != nil {
-		return err
-	}
-	if _, err := backend.target.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("seek FreeDOS target to byte zero: %w", err)
-	}
-	return nil
+	return backend.verifyTarget(plan)
 }
 
-func (backend *linuxDeviceBackend) TargetWriter() io.Writer {
+func (backend *linuxDeviceBackend) TargetWriterAt() io.WriterAt {
 	return backend.target
 }
 
