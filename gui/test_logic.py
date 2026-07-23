@@ -315,7 +315,9 @@ class LogicTests(unittest.TestCase):
 
 
     def test_drive_option_validation(self):
+        self.assertEqual(normalize_partition_scheme(None), "auto")
         self.assertEqual(normalize_partition_scheme("MBR"), "mbr")
+        self.assertEqual(normalize_target_system(None), "auto")
         self.assertEqual(normalize_target_system("legacy-bios"), "bios")
         self.assertEqual(normalize_filesystem("NTFS"), "ntfs")
         self.assertEqual(normalize_cluster_size("8KiB".replace("KiB", "192")), "8192")
@@ -334,6 +336,23 @@ class LogicTests(unittest.TestCase):
                 "pkexec", "/helper", "/image.iso", "/dev/sda", "abc", False, "/tmp/cancel",
                 partition_scheme="gpt", target_system="bios"
             )
+
+    def test_writer_defaults_are_image_derived_and_verification_is_opt_in(self):
+        command = build_writer_command(
+            "pkexec", "/helper", "/image.iso", "/dev/sda", "abc", False, "/tmp/cancel"
+        )
+        self.assertEqual(command[command.index("--partition-scheme") + 1], "auto")
+        self.assertEqual(command[command.index("--target-system") + 1], "auto")
+        self.assertEqual(command[command.index("--filesystem") + 1], "auto")
+        self.assertEqual(command[command.index("--cluster-size") + 1], "auto")
+        for flag in ("--verify", "--full-format", "--bad-block-check"):
+            self.assertNotIn(flag, command)
+        bios_auto = build_writer_command(
+            "pkexec", "/helper", "/image.iso", "/dev/sda", "abc", False, "/tmp/cancel",
+            partition_scheme="auto", target_system="bios",
+        )
+        self.assertEqual(bios_auto[bios_auto.index("--partition-scheme") + 1], "auto")
+        self.assertEqual(bios_auto[bios_auto.index("--target-system") + 1], "bios")
 
     def test_regional_normalization(self):
         self.assertEqual(normalize_windows_locale("en_GB.UTF-8"), "en-GB")

@@ -248,9 +248,13 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 	if opts.RequireARM64 && !plan.HasARM64 {
 		return errors.New("this ISO contains only x86/x86-64 Windows boot files and will not boot this ARM64 computer; choose an official Windows ARM64 ISO")
 	}
-	targetSystem, err := normalizeTargetSystem(opts.TargetSystem)
+	scheme, targetSystem, err := resolveWindowsLayout(plan, opts.PartitionScheme, opts.TargetSystem)
 	if err != nil {
 		return err
+	}
+	if strings.EqualFold(strings.TrimSpace(opts.PartitionScheme), "auto") || strings.TrimSpace(opts.PartitionScheme) == "" ||
+		strings.EqualFold(strings.TrimSpace(opts.TargetSystem), "auto") || strings.TrimSpace(opts.TargetSystem) == "" {
+		send(emit, Event{Stage: "inspect", Message: fmt.Sprintf("Automatic Windows layout resolved to %s/%s from the selected image capabilities.", strings.ToUpper(scheme), strings.ToUpper(targetSystem))})
 	}
 	if targetSystem == "bios" {
 		if !plan.HasX64 && !plan.HasX86 {
@@ -354,13 +358,6 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 	label, err := normalizeVolumeLabel(opts.VolumeLabel, filesystem)
 	if err != nil {
 		return err
-	}
-	scheme, err := normalizePartitionScheme(opts.PartitionScheme)
-	if err != nil {
-		return err
-	}
-	if targetSystem == "bios" && scheme != "mbr" {
-		return errors.New("legacy BIOS/CSM Windows media requires the MBR partition scheme")
 	}
 	if opts.TargetSize == 0 {
 		opts.TargetSize, err = blockDeviceSize(ctx, devicePath)

@@ -51,6 +51,15 @@ SUPPORTED_IMAGE_SUFFIXES = (
 )
 LOCALE_PATTERN = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 RFC3339_UTC_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+DEFAULT_VERIFY_AFTER_WRITE = False
+DEFAULT_WINDOWS_PARTITION_SCHEME = "auto"
+DEFAULT_WINDOWS_TARGET_SYSTEM = "auto"
+DEFAULT_WINDOWS_FILESYSTEM = "auto"
+DEFAULT_WINDOWS_CLUSTER_SIZE = "auto"
+DEFAULT_QUICK_FORMAT = True
+DEFAULT_BAD_BLOCK_CHECK = False
+DEFAULT_PERSISTENCE_ENABLED = False
 WINDOWS_TIME_ZONES = {
     "UTC": "UTC",
     "Etc/UTC": "UTC",
@@ -260,18 +269,18 @@ def normalize_filesystem(value):
     return value
 
 def normalize_partition_scheme(value):
-    value = (value or "gpt").strip().lower()
-    if value not in {"gpt", "mbr"}:
-        raise ValueError("Partition scheme must be GPT or MBR.")
+    value = (value or DEFAULT_WINDOWS_PARTITION_SCHEME).strip().lower()
+    if value not in {"auto", "gpt", "mbr"}:
+        raise ValueError("Partition scheme must be Automatic, GPT, or MBR.")
     return value
 
 
 def normalize_target_system(value):
-    value = (value or "uefi").strip().lower()
+    value = (value or DEFAULT_WINDOWS_TARGET_SYSTEM).strip().lower()
     aliases = {"legacy": "bios", "legacy-bios": "bios", "bios-csm": "bios"}
     value = aliases.get(value, value)
-    if value not in {"uefi", "bios"}:
-        raise ValueError("Target system must be UEFI or BIOS/CSM.")
+    if value not in {"auto", "uefi", "bios"}:
+        raise ValueError("Target system must be Automatic, UEFI, or BIOS/CSM.")
     return value
 
 
@@ -774,22 +783,22 @@ def build_writer_command(
     cancel_path,
     volume_label="RUFUSARM64",
     windows_options=None,
-    partition_scheme="gpt",
-    target_system="uefi",
-    filesystem="auto",
-    cluster_size="auto",
+    partition_scheme=DEFAULT_WINDOWS_PARTITION_SCHEME,
+    target_system=DEFAULT_WINDOWS_TARGET_SYSTEM,
+    filesystem=DEFAULT_WINDOWS_FILESYSTEM,
+    cluster_size=DEFAULT_WINDOWS_CLUSTER_SIZE,
     driver_folder="",
     dbx_file="",
-    quick_format=True,
-    bad_block_check=False,
+    quick_format=DEFAULT_QUICK_FORMAT,
+    bad_block_check=DEFAULT_BAD_BLOCK_CHECK,
 ):
     if not identity:
         raise ValueError("missing device identity")
     options = dict(windows_options or {})
     partition_scheme = normalize_partition_scheme(partition_scheme)
     target_system = normalize_target_system(target_system)
-    if target_system == "bios" and partition_scheme != "mbr":
-        raise ValueError("BIOS/CSM requires the MBR partition scheme.")
+    if target_system == "bios" and partition_scheme == "gpt":
+        raise ValueError("BIOS/CSM cannot be combined with the GPT partition scheme.")
     command = [
         pkexec,
         helper,

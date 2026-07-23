@@ -4,7 +4,7 @@ RufusArm64 is a native Linux implementation, not a line-for-line Windows port. T
 
 This document defines the review method that prevents a safe and well-tested implementation from doing materially more work than the corresponding Rufus operation.
 
-The machine-readable source of truth is [`operation-cost-contract.json`](operation-cost-contract.json). `internal/operationcost` validates it in the normal Go test suite.
+The machine-readable sources of truth are [`operation-cost-contract.json`](operation-cost-contract.json) for byte-scaled work and [`upstream-default-contract.json`](upstream-default-contract.json) for ordinary defaults. `internal/operationcost` and `internal/defaultparity` validate them in the normal Go test suite.
 
 ## Review questions
 
@@ -56,18 +56,36 @@ FreeDOS, Windows file-copy creation, persistent Linux file-copy creation, quick 
 
 ## Upstream reference pin
 
-The current parity record reviews `pbatard/rufus` at commit `6d8fbf98305ff37eb531c45cbd6ff44563c53917`, principally `src/format.c`, `src/drive.c`, and `src/wue.c`.
+The current parity record reviews `pbatard/rufus` at commit `6d8fbf98305ff37eb531c45cbd6ff44563c53917`, principally `src/rufus.c`, `src/format.c`, `src/drive.c`, and `src/wue.c`.
 
 The pin is evidence of what was reviewed, not a permanent claim that Rufus never changes. Refreshing it requires examining changed upstream defaults and updating the operation matrix deliberately.
 
+## Default-options matrix
+
+| Default | Upstream Rufus source | Upstream | RufusArm64 | State |
+|---|---|---|---|---|
+| Post-write target verification | `src/rufus.c` ordinary Start path; validation remains separately selected | Off | Off on fresh CLI and GTK profiles | Conformant after #258 |
+| Quick format | `src/rufus.c:EnableQuickFormat`; `src/format.c:FormatThread` | On | On | Conformant |
+| Bad-block testing | `src/rufus.c` advanced-format controls; `src/format.c:WriteDrive` | Off | Off | Conformant |
+| Windows partition scheme | `src/rufus.c:SetPartitionSchemeAndTargetSystem` | Derived from image/target | Automatic, image-derived; explicit GPT/MBR retained | Conformant for supported UEFI-capable media after #258 |
+| Windows target system | `src/rufus.c:SetPartitionSchemeAndTargetSystem` | Derived from image | Automatic, image-derived; explicit UEFI/BIOS retained | Conformant for supported UEFI-capable media after #258; BIOS-only support tracked by #260 |
+| Windows filesystem | `src/rufus.c:SetFileSystemAndClusterSize` | FAT32 preferred, NTFS when required | FAT32 preferred, NTFS when FAT32 is unsafe | Conformant |
+| Cluster size | `src/rufus.c:SetClusterSizes` | Filesystem/target default | Formatter automatic | Conformant |
+| Persistence | `src/rufus.c` persistence controls | Off, size zero | Off, size zero | Conformant |
+| Windows setup customizations | `src/wue.c` option dialog | Off until selected | Off until selected | Conformant |
+| Raw/ISOHybrid handling | `src/format.c:WriteDrive` | Preserve embedded layout | Preserve embedded layout | Conformant |
+| Volume label | `src/rufus.c:SetProposedLabel` | Proposed from image | Static `RUFUSARM64` unless edited | Intentional visible divergence; no destructive or compatibility impact |
+
+The checked-in `upstream-default-contract.json` turns the high-risk rows into regression assertions. A fresh profile may not silently enable verification, full formatting, bad-block testing, persistence, or a concrete Windows layout.
+
 ## Audit order
 
-The current priority is:
+The operation-cost audit completed these passes in order:
 
-1. Windows installation-media source consistency and its three complete ISO hashes.
+1. Windows installation-media source consistency.
 2. Persistent Linux source hashing versus manifest-bound copy verification.
-3. Compressed and virtual-image full staging.
+3. Compressed and virtual-image staging.
 4. Raw writer source-pass reduction.
-5. A complete upstream default-options comparison.
+5. The complete upstream default-options comparison recorded above.
 
 Optimisation must preserve target identity binding, cancellation, pre-erasure source binding, truthful changed-media reporting, synchronized finalisation, and exact verification claims.

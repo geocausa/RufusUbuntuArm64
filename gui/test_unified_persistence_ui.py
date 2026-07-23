@@ -6,6 +6,7 @@ class UnifiedPersistenceUISourceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source = pathlib.Path("gui/rufusarm64.py").read_text(encoding="utf-8")
+        cls.logic_source = pathlib.Path("gui/rufusarm64_logic.py").read_text(encoding="utf-8")
 
     def test_download_is_disabled_and_not_connected(self):
         self.assertIn('Gtk.Button(label="Download unavailable")', self.source)
@@ -33,7 +34,8 @@ class UnifiedPersistenceUISourceTests(unittest.TestCase):
 
     def test_unsupported_image_turns_persistence_off(self):
         self.assertIn("if persistence_on and not raw_ready:", self.source)
-        self.assertIn("self.persistence_enabled.set_active(False)", self.source)
+        self.assertIn("self.persistence_enabled.set_active(DEFAULT_PERSISTENCE_ENABLED)", self.source)
+        self.assertIn("DEFAULT_PERSISTENCE_ENABLED = False", self.logic_source)
 
     def test_persistence_helper_is_checked_before_launch(self):
         self.assertIn("persistence_requested and not os.access(PERSISTENCE_HELPER, os.X_OK)", self.source)
