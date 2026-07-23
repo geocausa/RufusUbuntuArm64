@@ -14,13 +14,13 @@ concurrency:
 
 jobs:
   apply:
-    if: github.event.pull_request.head.ref == 'audit/windows-source-lease-integration'
+    if: github.event.pull_request.head.ref == 'audit/windows-source-lease-integration-run'
     runs-on: ubuntu-24.04
     steps:
       - name: Check out the integration branch
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          ref: audit/windows-source-lease-integration
+          ref: audit/windows-source-lease-integration-run
           fetch-depth: 0
 
       - name: Set up declared Go version
@@ -47,4 +47,4 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
           git commit -m 'Audit: integrate kernel-held Windows ISO verification'
-          git push origin HEAD:audit/windows-source-lease-integration
+          git push origin HEAD:audit/windows-source-lease-integration-run
