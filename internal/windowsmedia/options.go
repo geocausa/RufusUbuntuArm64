@@ -10,24 +10,57 @@ import (
 
 func normalizePartitionScheme(value string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "auto", "gpt":
+	case "", "auto":
+		return "auto", nil
+	case "gpt":
 		return "gpt", nil
 	case "mbr":
 		return "mbr", nil
 	default:
-		return "", fmt.Errorf("partition scheme must be GPT or MBR, not %q", value)
+		return "", fmt.Errorf("partition scheme must be Automatic, GPT, or MBR, not %q", value)
 	}
 }
 
 func normalizeTargetSystem(value string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "auto", "uefi", "uefi-non-csm":
+	case "", "auto":
+		return "auto", nil
+	case "uefi", "uefi-non-csm":
 		return "uefi", nil
 	case "bios", "legacy", "legacy-bios", "bios-csm":
 		return "bios", nil
 	default:
-		return "", fmt.Errorf("target system must be UEFI or BIOS/CSM, not %q", value)
+		return "", fmt.Errorf("target system must be Automatic, UEFI, or BIOS/CSM, not %q", value)
 	}
+}
+
+func resolveWindowsLayout(plan mediaPlan, requestedScheme, requestedTarget string) (string, string, error) {
+	scheme, err := normalizePartitionScheme(requestedScheme)
+	if err != nil {
+		return "", "", err
+	}
+	target, err := normalizeTargetSystem(requestedTarget)
+	if err != nil {
+		return "", "", err
+	}
+	hasUEFI := plan.HasARM64 || plan.HasX64 || plan.HasX86
+	if target == "auto" {
+		if !hasUEFI {
+			return "", "", errors.New("automatic Windows layout cannot resolve BIOS-only media yet; select a supported UEFI-capable ISO")
+		}
+		target = "uefi"
+	}
+	if scheme == "auto" {
+		if target == "bios" {
+			scheme = "mbr"
+		} else {
+			scheme = "gpt"
+		}
+	}
+	if target == "bios" && scheme != "mbr" {
+		return "", "", errors.New("legacy BIOS/CSM Windows media requires the MBR partition scheme")
+	}
+	return scheme, target, nil
 }
 
 func normalizeFilesystem(value string) (string, error) {
