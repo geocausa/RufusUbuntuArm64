@@ -50,18 +50,32 @@ jobs:
 
       - name: Format and run focused compatibility tests
         run: |
-          gofmt -w internal/windowsmedia/windowsmedia.go internal/windowsmedia/options.go internal/windowsmedia/analysis.go internal/windowsmedia/bios_capability_test.go cmd/rufus-linux/main.go
-          go test ./internal/windowsmedia ./cmd/rufus-linux ./internal/defaultparity
-          python3 -m json.tool docs/upstream-default-contract.json >/dev/null
-          (
-            cd gui
-            python3 -m unittest -v test_windows_bios_capability.py test_default_parity.py test_source_structure.py
-          )
-          git diff --check
+          set +e
+          {
+            gofmt -w internal/windowsmedia/windowsmedia.go internal/windowsmedia/options.go internal/windowsmedia/analysis.go internal/windowsmedia/bios_capability_test.go cmd/rufus-linux/main.go
+            go test ./internal/windowsmedia ./cmd/rufus-linux ./internal/defaultparity
+            python3 -m json.tool docs/upstream-default-contract.json >/dev/null
+            (
+              cd gui
+              python3 -m unittest -v test_windows_bios_capability.py test_default_parity.py test_source_structure.py
+            )
+            git diff --check
+          } >.bios-only-test.log 2>&1
+          status=$?
+          set -e
+          cat .bios-only-test.log
+          if [ "$status" -ne 0 ]; then
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add .bios-only-test.log
+            git commit -m 'Windows: record BIOS-only focused test failure'
+            git push origin HEAD:windows/bios-only-auto-layout
+            exit "$status"
+          fi
 
       - name: Remove executor and publish source-only compatibility commit
         run: |
-          rm -f .bios-only-apply.log
+          rm -f .bios-only-apply.log .bios-only-test.log
           rm scripts/apply-bios-only-windows.py
           rm scripts/run-bios-only-windows.py
           rm scripts/apply-bios-only-docs.py
