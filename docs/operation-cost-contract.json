@@ -51,17 +51,24 @@
       "id": "windows_install",
       "surface": "Create Windows installation media",
       "classification": "ordinary_creation",
-      "status": "audit",
+      "status": "conformant",
       "tracking_issue": 243,
       "upstream_operation": "Quick-format FAT32/NTFS, install required boot support, split WIM when needed, and copy setup files.",
-      "intentional_linux_divergence": "RufusArm64 currently uses three complete ISO SHA-256 passes to detect source mutation; this is stronger but materially more expensive than upstream and is under audit.",
+      "intentional_linux_divergence": "RufusArm64 authenticates one complete ISO hash while a Linux read lease excludes source mutation; unsupported or contended sources retain two conditional fallback hashes and the original three-pass comparison.",
       "phases": [
         {
-          "name": "complete_iso_hashes",
+          "name": "authenticate_held_iso",
           "direction": "source_read",
           "scaling": "source_size",
-          "multiplier": 3,
+          "multiplier": 1,
           "enabled_by_default": true
+        },
+        {
+          "name": "conservative_fallback_hashes",
+          "direction": "source_read",
+          "scaling": "source_size",
+          "multiplier": 2,
+          "enabled_by_default": false
         },
         {
           "name": "copy_setup_files",
@@ -326,7 +333,7 @@
     },
     {
       "id": "check_usb_quick",
-      "surface": "Check USB — quick profile",
+      "surface": "Check USB \u2014 quick profile",
       "classification": "explicit_qualification",
       "status": "conformant",
       "tracking_issue": 242,
@@ -351,7 +358,7 @@
     },
     {
       "id": "check_usb_full",
-      "surface": "Check USB — full profile",
+      "surface": "Check USB \u2014 full profile",
       "classification": "explicit_qualification",
       "status": "conformant",
       "tracking_issue": 242,

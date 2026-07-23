@@ -116,6 +116,30 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		returnErr = finishWindowsMediaFile(returnErr, isoFile, false, "selected Windows ISO")
 	}()
 	stableISOPath := fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), isoFile.Fd())
+	targetChanged := false
+
+	sourceLease, leaseErr := sourcefile.AcquireReadLease(ctx, isoFile, opts.ExpectedSource)
+	switch {
+	case leaseErr == nil:
+		ctx = sourceLease.Context()
+		send(emit, Event{Stage: "source_hold", Message: "Holding the selected Windows ISO read-only with a Linux kernel lease; one complete SHA-256 pass will authenticate the held bytes."})
+		defer func() {
+			heldErr := sourceLease.Check()
+			if errors.Is(heldErr, sourcefile.ErrReadLeaseBroken) {
+				message := "the selected Windows ISO was opened for writing while media preparation was in progress; nothing was erased"
+				if targetChanged {
+					message = "the selected Windows ISO was opened for writing while USB creation was in progress; the USB is incomplete and must be recreated"
+				}
+				heldErr = fmt.Errorf("%s: %w", message, heldErr)
+			}
+			returnErr = errors.Join(returnErr, heldErr, sourceLease.Close())
+		}()
+	case errors.Is(leaseErr, sourcefile.ErrReadLeaseUnavailable), errors.Is(leaseErr, sourcefile.ErrReadLeaseConflict):
+		sourceLease = nil
+		send(emit, Event{Stage: "source_hold", Message: fmt.Sprintf("Kernel source hold unavailable (%v); using conservative three-pass SHA-256 source verification.", leaseErr)})
+	default:
+		return fmt.Errorf("hold selected Windows ISO stable: %w", leaseErr)
+	}
 
 	hashPinnedISO := func(stage, message string) ([sha256.Size]byte, error) {
 		lastEmit := time.Time{}
@@ -135,11 +159,14 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		return digest, nil
 	}
 
-	// Bind the exact ISO bytes before mounting or preparing WIM data. Later
-	// hashes must match this snapshot before destructive work and again after
-	// copying, preventing same-size edits with restored timestamps from creating
-	// mixed Windows media.
-	sourceDigest, err := hashPinnedISO("hash_source", "Hashing the selected Windows ISO…")
+	// Authenticate the exact ISO bytes once. A held Linux read lease excludes
+	// conflicting writers for the rest of the operation. Filesystems that cannot
+	// provide that hold retain the existing three-pass digest comparison.
+	initialHashMessage := "Hashing the selected Windows ISO once under the kernel source hold…"
+	if sourceLease == nil {
+		initialHashMessage = "Hashing the selected Windows ISO (conservative pass 1 of 3)…"
+	}
+	sourceDigest, err := hashPinnedISO("hash_source", initialHashMessage)
 	if err != nil {
 		return fmt.Errorf("hash selected Windows ISO: %w", err)
 	}
@@ -400,16 +427,27 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 			return fmt.Errorf("the USB drive is too small after preparing the Windows image: need at least %s, but the drive is %s", humanBytes(plan.RequiredBytes), humanBytes(opts.TargetSize))
 		}
 	}
-	preDestructiveDigest, err := hashPinnedISO("verify_source", "Rechecking the Windows ISO before erasing the USB…")
-	if err != nil {
-		return fmt.Errorf("recheck selected Windows ISO: %w", err)
-	}
-	if !bytes.Equal(sourceDigest[:], preDestructiveDigest[:]) {
-		return errors.New("the selected Windows ISO changed while it was being prepared; nothing was erased")
+	if sourceLease != nil {
+		if err := sourceLease.Check(); err != nil {
+			return fmt.Errorf("confirm held Windows ISO before erasing the USB: %w", err)
+		}
+	} else {
+		preDestructiveDigest, err := hashPinnedISO("verify_source", "Rechecking the Windows ISO before erasing the USB (conservative pass 2 of 3)…")
+		if err != nil {
+			return fmt.Errorf("recheck selected Windows ISO: %w", err)
+		}
+		if !bytes.Equal(sourceDigest[:], preDestructiveDigest[:]) {
+			return errors.New("the selected Windows ISO changed while it was being prepared; nothing was erased")
+		}
 	}
 	send(emit, Event{Stage: "inspect", Message: fmt.Sprintf("Windows %s installation media detected; %s/%s selected; approximately %s will be written.", plan.Architecture, strings.ToUpper(targetSystem), strings.ToUpper(filesystem), humanBytes(plan.CopyBytes))})
 
 	checkTarget := func() error {
+		if sourceLease != nil {
+			if err := sourceLease.Check(); err != nil {
+				return err
+			}
+		}
 		if err := sourcefile.VerifyPinned(isoFile, opts.ExpectedSource); err != nil {
 			return err
 		}
@@ -430,6 +468,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 			return fmt.Errorf("target safety check: %w", err)
 		}
 	}
+	targetChanged = true
 	send(emit, Event{Stage: "partition", Message: fmt.Sprintf("Creating a %s partition table…", strings.ToUpper(scheme))})
 	if err := runOnTarget("wipefs", "--all", "--force", "--", devicePath); err != nil {
 		return err
@@ -668,12 +707,18 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 			return fmt.Errorf("NTFS filesystem check failed: %w", err)
 		}
 	}
-	postCopyDigest, err := hashPinnedISO("verify_source", "Checking that the source ISO stayed unchanged…")
-	if err != nil {
-		return fmt.Errorf("recheck Windows ISO after copying: %w", err)
-	}
-	if !bytes.Equal(sourceDigest[:], postCopyDigest[:]) {
-		return errors.New("the selected Windows ISO changed while files were being copied; the USB is incomplete and must be recreated")
+	if sourceLease != nil {
+		if err := sourceLease.Check(); err != nil {
+			return fmt.Errorf("confirm held Windows ISO after copying: %w", err)
+		}
+	} else {
+		postCopyDigest, err := hashPinnedISO("verify_source", "Checking that the source ISO stayed unchanged (conservative pass 3 of 3)…")
+		if err != nil {
+			return fmt.Errorf("recheck Windows ISO after copying: %w", err)
+		}
+		if !bytes.Equal(sourceDigest[:], postCopyDigest[:]) {
+			return errors.New("the selected Windows ISO changed while files were being copied; the USB is incomplete and must be recreated")
+		}
 	}
 	if err := run(ctx, emit, "umount", "--", isoMount); err != nil {
 		return err

@@ -41,6 +41,15 @@ func TestValidateRequiresEveryPublicWorkflow(t *testing.T) {
 	}
 }
 
+func TestValidateRequiresOneDefaultWindowsISOHash(t *testing.T) {
+	contract := loadRepositoryContract(t)
+	operation := findOperationIndex(t, contract, "windows_install")
+	contract.Operations[operation].Phases[0].Multiplier = 3
+	if err := Validate(contract); err == nil || !strings.Contains(err.Error(), "authenticate_held_iso") {
+		t.Fatalf("Windows default source-hash boundary error = %v", err)
+	}
+}
+
 func TestDecodeRejectsUnknownFieldsAndTrailingJSON(t *testing.T) {
 	for name, value := range map[string]string{
 		"unknown":  `{"schema":1,"reviewed_upstream":{"repository":"pbatard/rufus","commit":"0000000000000000000000000000000000000000","paths":["src/format.c"]},"scaling_bases":[],"operations":[],"unexpected":true}`,

@@ -207,6 +207,12 @@ func Validate(contract Contract) error {
 	if err := requirePhase(operations["freedos_create"], "target_read", "required_extents", true); err != nil {
 		return err
 	}
+	if err := requireExactPhase(operations["windows_install"], "authenticate_held_iso", "source_read", "source_size", 1, true); err != nil {
+		return err
+	}
+	if err := requireExactPhase(operations["windows_install"], "conservative_fallback_hashes", "source_read", "source_size", 2, false); err != nil {
+		return err
+	}
 	if err := requirePhase(operations["windows_install"], "target_write", "copied_payload", true); err != nil {
 		return err
 	}
@@ -226,6 +232,15 @@ func Validate(contract Contract) error {
 		return err
 	}
 	return nil
+}
+
+func requireExactPhase(operation Operation, name, direction, scaling string, multiplier int, enabled bool) error {
+	for _, phase := range operation.Phases {
+		if phase.Name == name && phase.Direction == direction && phase.Scaling == scaling && phase.Multiplier == multiplier && phase.EnabledByDefault == enabled {
+			return nil
+		}
+	}
+	return fmt.Errorf("operation %s must contain phase %s as %s/%s multiplier=%d enabled_by_default=%t", operation.ID, name, direction, scaling, multiplier, enabled)
 }
 
 func requirePhase(operation Operation, direction, scaling string, enabled bool) error {
