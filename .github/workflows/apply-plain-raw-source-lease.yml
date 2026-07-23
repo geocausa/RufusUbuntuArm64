@@ -30,7 +30,7 @@ jobs:
           cache: false
 
       - name: Apply the reviewed patch
-        run: python3 scripts/apply-plain-raw-source-lease.py
+        run: python3 scripts/run-fixed-plain-raw-source-lease.py
 
       - name: Format and run focused regressions
         run: |
@@ -42,6 +42,7 @@ jobs:
       - name: Remove the one-shot executor and publish the reviewed source commit
         run: |
           rm scripts/apply-plain-raw-source-lease.py
+          rm scripts/run-fixed-plain-raw-source-lease.py
           rm .github/workflows/apply-plain-raw-source-lease.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
