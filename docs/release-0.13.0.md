@@ -5,7 +5,7 @@
 RufusArm64 0.13.0 is the Stage 2 practical-parity release candidate for Ubuntu ARM64.
 
 - **Restore / format…** creates verified ordinary data storage through a separate identity-bound formatter supporting GPT or MBR and FAT32, exFAT, NTFS, or ext4.
-- **FreeDOS…** creates a deterministic, checksum-pinned FreeDOS 1.4 layout with complete structural readback. It targets x86 BIOS or UEFI Legacy/CSM computers only.
+- **FreeDOS…** creates a deterministic, checksum-pinned FreeDOS 1.4 layout through bounded quick-format-style writes and required-extent readback. It retains a nearly full-size FAT32 partition and targets x86 BIOS or UEFI Legacy/CSM computers only.
 - Main-writer completion now offers explicit **Create another USB** and **Restore drive for storage…** actions without erasing anything automatically.
 - Linux raw/ISO inspection distinguishes hybrid media from optical-only ISOs, validates El Torito BIOS/UEFI entries, and reports ISOLINUX, SYSLINUX, and GRUB fingerprints when present in referenced boot images.
 - Verified image acquisition is exposed in the composed GTK application with cancellation, storage preflight, signed size/SHA-256 installation, and SHA-bound resumable private partials.
@@ -17,9 +17,9 @@ The existing ordinary raw, compressed, virtual-disk, Windows, persistence, UEFI,
 
 ## Safety and support boundaries
 
-Every write, restore/format, FreeDOS creation, qualification, or persistent-media operation can destroy all data on the selected target. Confirm the device path, model, capacity, and generated phrase before authentication.
+Every write, restore/format, FreeDOS creation, qualification, or persistent-media operation can destroy all accessible data on the selected target. Confirm the device path, model, capacity, and generated phrase before authentication.
 
-Software verification is not physical boot qualification. The deterministic FreeDOS workflow proves only the reviewed on-disk structure and full readback; it does not prove that a particular x86 BIOS/Legacy computer will boot it. Linux and Windows compatibility reporting describes inspected structures and does not guarantee firmware behavior.
+Software verification is not physical boot qualification. The deterministic FreeDOS workflow proves the reviewed final MBR/FAT32 boot and filesystem extents were written and read back; it deliberately does not overwrite or qualify unallocated data clusters. Use **Check USB** for exhaustive whole-device testing. Neither result proves that a particular x86 BIOS/Legacy computer will boot the media.
 
 FreeDOS media is not for ARM64 or UEFI-only computers. Windows ARM64 media remains UEFI-only. Windows To Go, FFU restoration, encrypted persistence, and arbitrary bootloader replacement remain unsupported.
 
@@ -39,13 +39,15 @@ Then complete the human checklist with at least:
 - Windows ARM64 media creation and firmware boot observation;
 - one persistent Ubuntu or Debian start/reboot/verify record when persistence is claimed;
 - data-only restore/format and ordinary file reuse;
+- one FreeDOS creation on a normal-capacity USB confirming that progress and runtime scale with the displayed required extent totals rather than twice the device capacity;
+- explicit confirmation that the FreeDOS report claims required-extent verification only and directs exhaustive testing to **Check USB**;
 - cancellation/failure-state inspection;
 - backup and restore-path sanity;
 - acquisition behavior using a separately trusted signed local catalogue while the production channel is disabled;
 - diagnostic export and keyboard navigation;
 - 1280×800 visibility of confirmation, progress, action, and Close controls in report-heavy dialogs.
 
-Do not convert software-only results into a universal hardware or Secure Boot claim.
+Do not convert software-only results into a universal hardware, whole-device-health, or Secure Boot claim.
 
 ## Install and rollback
 
