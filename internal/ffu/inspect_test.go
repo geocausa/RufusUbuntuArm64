@@ -86,22 +86,34 @@ func TestInspectRejectsMalformedFixtures(t *testing.T) {
 		},
 		{
 			name: "chunk mismatch",
-			edit: func(data []byte) []byte { binary.LittleEndian.PutUint32(data[imageOffset+20:imageOffset+24], 8); return data },
+			edit: func(data []byte) []byte {
+				binary.LittleEndian.PutUint32(data[imageOffset+20:imageOffset+24], 8)
+				return data
+			},
 			want: "chunk-size mismatch",
 		},
 		{
 			name: "unsupported store version",
-			edit: func(data []byte) []byte { binary.LittleEndian.PutUint16(data[storeOffset+8:storeOffset+10], 4); return data },
+			edit: func(data []byte) []byte {
+				binary.LittleEndian.PutUint16(data[storeOffset+8:storeOffset+10], 4)
+				return data
+			},
 			want: "unsupported Full Flash format version",
 		},
 		{
 			name: "invalid block size",
-			edit: func(data []byte) []byte { binary.LittleEndian.PutUint32(data[storeOffset+204:storeOffset+208], 1000); return data },
+			edit: func(data []byte) []byte {
+				binary.LittleEndian.PutUint32(data[storeOffset+204:storeOffset+208], 1000)
+				return data
+			},
 			want: "invalid FFU block size",
 		},
 		{
 			name: "short descriptor table",
-			edit: func(data []byte) []byte { binary.LittleEndian.PutUint32(data[storeOffset+212:storeOffset+216], 31); return data },
+			edit: func(data []byte) []byte {
+				binary.LittleEndian.PutUint32(data[storeOffset+212:storeOffset+216], 31)
+				return data
+			},
 			want: "write descriptor table is too short",
 		},
 		{

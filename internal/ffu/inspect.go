@@ -45,50 +45,50 @@ type ImageHeader struct {
 // StoreHeader describes the known Full Flash store header versions. Version 3
 // adds CompressionAlgorithm after the version-2 fields.
 type StoreHeader struct {
-	HeaderSize                  uint32  `json:"header_size"`
-	UpdateType                  uint32  `json:"update_type"`
-	MajorVersion                uint16  `json:"major_version"`
-	MinorVersion                uint16  `json:"minor_version"`
-	FullFlashMajorVersion       uint16  `json:"full_flash_major_version"`
-	FullFlashMinorVersion       uint16  `json:"full_flash_minor_version"`
-	PlatformID                  string  `json:"platform_id,omitempty"`
-	BlockSizeBytes              uint32  `json:"block_size_bytes"`
-	WriteDescriptorCount        uint32  `json:"write_descriptor_count"`
-	WriteDescriptorLength       uint32  `json:"write_descriptor_length"`
-	ValidateDescriptorCount     uint32  `json:"validate_descriptor_count"`
-	ValidateDescriptorLength    uint32  `json:"validate_descriptor_length"`
-	InitialTableIndex           uint32  `json:"initial_table_index"`
-	InitialTableCount           uint32  `json:"initial_table_count"`
-	FlashOnlyTableIndex         uint32  `json:"flash_only_table_index"`
-	FlashOnlyTableCount         uint32  `json:"flash_only_table_count"`
-	FinalTableIndex             uint32  `json:"final_table_index"`
-	FinalTableCount             uint32  `json:"final_table_count"`
-	CompressionAlgorithm        *uint32 `json:"compression_algorithm,omitempty"`
+	HeaderSize               uint32  `json:"header_size"`
+	UpdateType               uint32  `json:"update_type"`
+	MajorVersion             uint16  `json:"major_version"`
+	MinorVersion             uint16  `json:"minor_version"`
+	FullFlashMajorVersion    uint16  `json:"full_flash_major_version"`
+	FullFlashMinorVersion    uint16  `json:"full_flash_minor_version"`
+	PlatformID               string  `json:"platform_id,omitempty"`
+	BlockSizeBytes           uint32  `json:"block_size_bytes"`
+	WriteDescriptorCount     uint32  `json:"write_descriptor_count"`
+	WriteDescriptorLength    uint32  `json:"write_descriptor_length"`
+	ValidateDescriptorCount  uint32  `json:"validate_descriptor_count"`
+	ValidateDescriptorLength uint32  `json:"validate_descriptor_length"`
+	InitialTableIndex        uint32  `json:"initial_table_index"`
+	InitialTableCount        uint32  `json:"initial_table_count"`
+	FlashOnlyTableIndex      uint32  `json:"flash_only_table_index"`
+	FlashOnlyTableCount      uint32  `json:"flash_only_table_count"`
+	FinalTableIndex          uint32  `json:"final_table_index"`
+	FinalTableCount          uint32  `json:"final_table_count"`
+	CompressionAlgorithm     *uint32 `json:"compression_algorithm,omitempty"`
 }
 
 // Inspection is an immutable read-only description of the known FFU container
 // regions. RestorationSupported remains false until descriptor semantics,
 // catalog/hash verification, payload decoding, and the executor are qualified.
 type Inspection struct {
-	Schema                    int            `json:"schema"`
-	FileSize                  uint64         `json:"file_size"`
-	SecurityHeaderOffset      uint64         `json:"security_header_offset"`
-	CatalogOffset             uint64         `json:"catalog_offset"`
-	HashTableOffset           uint64         `json:"hash_table_offset"`
-	ImageHeaderOffset         uint64         `json:"image_header_offset"`
-	ManifestOffset            uint64         `json:"manifest_offset"`
-	StoreHeaderOffset         uint64         `json:"store_header_offset"`
-	ValidateDescriptorOffset  uint64         `json:"validate_descriptor_offset"`
-	WriteDescriptorOffset     uint64         `json:"write_descriptor_offset"`
-	PayloadOffset             uint64         `json:"payload_offset"`
-	LogicalPayloadBytes       uint64         `json:"logical_payload_bytes"`
-	PayloadFileBytes          uint64         `json:"payload_file_bytes"`
-	Security                  SecurityHeader `json:"security"`
-	Image                     ImageHeader    `json:"image"`
-	Store                     StoreHeader    `json:"store"`
-	IntegrityMetadataPresent  bool           `json:"integrity_metadata_present"`
-	RestorationSupported      bool           `json:"restoration_supported"`
-	Limitations               []string       `json:"limitations"`
+	Schema                   int            `json:"schema"`
+	FileSize                 uint64         `json:"file_size"`
+	SecurityHeaderOffset     uint64         `json:"security_header_offset"`
+	CatalogOffset            uint64         `json:"catalog_offset"`
+	HashTableOffset          uint64         `json:"hash_table_offset"`
+	ImageHeaderOffset        uint64         `json:"image_header_offset"`
+	ManifestOffset           uint64         `json:"manifest_offset"`
+	StoreHeaderOffset        uint64         `json:"store_header_offset"`
+	ValidateDescriptorOffset uint64         `json:"validate_descriptor_offset"`
+	WriteDescriptorOffset    uint64         `json:"write_descriptor_offset"`
+	PayloadOffset            uint64         `json:"payload_offset"`
+	LogicalPayloadBytes      uint64         `json:"logical_payload_bytes"`
+	PayloadFileBytes         uint64         `json:"payload_file_bytes"`
+	Security                 SecurityHeader `json:"security"`
+	Image                    ImageHeader    `json:"image"`
+	Store                    StoreHeader    `json:"store"`
+	IntegrityMetadataPresent bool           `json:"integrity_metadata_present"`
+	RestorationSupported     bool           `json:"restoration_supported"`
+	Limitations              []string       `json:"limitations"`
 }
 
 // Inspect validates the known FFU header regions without allocating from
