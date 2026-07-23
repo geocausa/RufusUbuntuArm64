@@ -151,8 +151,8 @@ func (lease *ReadLease) Close() error {
 		return nil
 	}
 	lease.closeOnce.Do(func() {
-		close(lease.stop)
 		signal.Stop(lease.signals)
+		close(lease.stop)
 		<-lease.done
 		if _, err := fcntlInt(lease.file.Fd(), syscall.F_SETLEASE, syscall.F_UNLCK); err != nil {
 			lease.closeErr = fmt.Errorf("release source read lease: %w", err)
@@ -170,15 +170,16 @@ func (lease *ReadLease) watch() {
 		case <-lease.stop:
 			return
 		case <-lease.signals:
+			// The notification itself means a conflicting writable open or
+			// truncate was requested. Fail closed immediately even if an
+			// adjacent F_GETLEASE query still observes the pre-break state.
 			state, err := fcntlInt(lease.file.Fd(), syscall.F_GETLEASE, 0)
 			if err != nil {
-				lease.markBroken(fmt.Errorf("%w: query after break notification: %v", ErrReadLeaseBroken, err))
-				return
+				lease.markBroken(fmt.Errorf("%w: break notification; state query failed: %v", ErrReadLeaseBroken, err))
+			} else {
+				lease.markBroken(fmt.Errorf("%w: break requested; observed state %d", ErrReadLeaseBroken, state))
 			}
-			if state != syscall.F_RDLCK {
-				lease.markBroken(fmt.Errorf("%w: break requested", ErrReadLeaseBroken))
-				return
-			}
+			return
 		}
 	}
 }
