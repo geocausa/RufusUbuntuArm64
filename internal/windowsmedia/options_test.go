@@ -8,7 +8,7 @@ import (
 )
 
 func TestNormalizePartitionScheme(t *testing.T) {
-	for input, want := range map[string]string{"": "gpt", "auto": "gpt", "GPT": "gpt", "mbr": "mbr"} {
+	for input, want := range map[string]string{"": "auto", "auto": "auto", "GPT": "gpt", "mbr": "mbr"} {
 		got, err := normalizePartitionScheme(input)
 		if err != nil || got != want {
 			t.Fatalf("%q => %q, %v", input, got, err)
@@ -16,6 +16,18 @@ func TestNormalizePartitionScheme(t *testing.T) {
 	}
 	if _, err := normalizePartitionScheme("bsd"); err == nil {
 		t.Fatal("invalid scheme accepted")
+	}
+}
+
+func TestNormalizeTargetSystem(t *testing.T) {
+	for input, want := range map[string]string{"": "auto", "auto": "auto", "UEFI": "uefi", "legacy-bios": "bios"} {
+		got, err := normalizeTargetSystem(input)
+		if err != nil || got != want {
+			t.Fatalf("%q => %q, %v", input, got, err)
+		}
+	}
+	if _, err := normalizeTargetSystem("openfirmware"); err == nil {
+		t.Fatal("invalid target system accepted")
 	}
 }
 
