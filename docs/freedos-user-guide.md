@@ -12,15 +12,17 @@ The resulting media is for **x86-compatible processors** using **BIOS or UEFI Le
 2. Open **RufusArm64** and select the exact target drive.
 3. Choose **FreeDOS…** beside the target controls.
 4. Enter an uppercase FAT32 label containing 1–11 ASCII letters, digits, `-`, or `_`.
-5. Review the unprivileged plan. It binds the refreshed device identity, exact capacity, 512-byte logical-sector requirement, MBR/FAT32 geometry, pinned FreeDOS distribution, and complete platform warnings before authentication.
+5. Review the unprivileged plan. It binds the refreshed device identity, exact capacity, 512-byte logical-sector requirement, MBR/FAT32 geometry, pinned FreeDOS distribution, complete platform warnings, and the exact byte totals that will be written and verified before authentication.
 6. Type the exact phrase shown by the formatter, for example:
 
    ```text
    WRITE FREEDOS 1.4 TO /dev/sdX FOR X86 BIOS LEGACY
    ```
 
-7. Select **Create FreeDOS media** and authenticate. Everything on the selected drive is erased.
-8. Keep the drive connected while RufusArm64 streams the complete deterministic image, flushes the block device, reads every byte back, verifies the FAT32 structure and payload, and performs the final live device-identity check.
+7. Select **Create FreeDOS media** and authenticate. Everything on the selected drive is erased logically: the old partition/filesystem layout is replaced and prior files are no longer accessible.
+8. Keep the drive connected while RufusArm64 writes the required MBR, FAT32 boot/FSInfo regions, both FAT tables, root directory, FreeDOS payload clusters, bounded head/tail clearing regions, flushes the block device, reads those required extents back byte-for-byte, and performs the final live device-identity check.
+
+The FAT32 partition still uses nearly the full drive. Unallocated data clusters are intentionally not overwritten during fast creation, just as with an ordinary quick format. Use the separate **Check USB** workflow when an exhaustive whole-device write/readback qualification is required.
 
 The final report distinguishes an untouched drive from a drive changed before a cancellation or failure. A changed incomplete drive is never reported reusable.
 
@@ -47,6 +49,8 @@ sudo rufusarm64-freedos-format \
 
 Use `rufusarm64-cli list --json` to obtain the current path and identity token. There is no fixed-disk override.
 
-## Qualification
+## Verification and qualification
 
-A successful report proves that the package produced and completely read back the reviewed disk image on the selected block device. It does not establish physical boot compatibility. Qualification of a particular PC still requires booting that exact drive on that exact machine with the intended firmware mode.
+A successful creation report proves that every required final boot/filesystem extent was written, synchronized, and read back on the selected block device, and that the resulting MBR/FAT32 structure and pinned payload satisfy the reviewed contract. It does not claim that untouched free clusters were tested.
+
+Use **Check USB** for destructive whole-device media qualification. Physical boot qualification still requires booting that exact drive on that exact x86 computer with the intended BIOS or UEFI Legacy/CSM firmware mode.
