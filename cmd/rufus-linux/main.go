@@ -692,7 +692,7 @@ func runWrite(args []string) error {
 	// exclusively and clears stale signatures through that same descriptor.
 	out.event(jsonEvent{Event: "stage", Stage: "write", Message: "Writing the image…"})
 	var last time.Time
-	written, err := imaging.WriteOpenImage(ctx, rawSource, resolved, imaging.WriteOptions{
+	writeResult, err := imaging.WriteOpenImageWithResult(ctx, rawSource, resolved, imaging.WriteOptions{
 		ExpectedDeviceID:     kernelDeviceID,
 		ExpectedSource:       sourceIdentity,
 		TargetSize:           dev.Size,
@@ -725,6 +725,7 @@ func runWrite(args []string) error {
 	if err != nil {
 		return err
 	}
+	written := writeResult.BytesWritten
 	out.event(jsonEvent{Event: "stage", Stage: "sync", Message: fmt.Sprintf("Wrote %s successfully.", humanBytes(written))})
 	if err := postWriteTargetCheck(rawSource); err != nil {
 		return err
@@ -736,7 +737,7 @@ func runWrite(args []string) error {
 	completionHash := ""
 	if *verify {
 		out.event(jsonEvent{Event: "stage", Stage: "verify", Message: "Verifying the USB from the physical device…"})
-		hash, err := imaging.VerifyOpenImageWithOptions(ctx, rawSource, resolved, imaging.VerifyOptions{ExpectedDeviceID: kernelDeviceID, ExpectedDeviceSize: dev.Size, ExpectedSource: sourceIdentity}, func(p imaging.Progress) {
+		hash, err := imaging.VerifyTargetDigestWithOptions(ctx, resolved, imaging.DigestVerifyOptions{ExpectedDeviceID: kernelDeviceID, ExpectedDeviceSize: dev.Size, ImageSize: writeResult.BytesWritten, ExpectedSHA256: writeResult.SHA256}, func(p imaging.Progress) {
 			if *jsonProgress {
 				out.event(jsonEvent{Event: "progress", Stage: "verify", Done: p.Done, Total: p.Total, Rate: p.BytesPerSec})
 			} else {

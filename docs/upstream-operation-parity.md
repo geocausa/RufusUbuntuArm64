@@ -42,7 +42,7 @@ FreeDOS, Windows file-copy creation, persistent Linux file-copy creation, quick 
 | FreeDOS creation | Required MBR/FAT32/payload extents | Required extents read back | Conformant after #240 |
 | Windows installation media | Copied setup payload plus one complete ISO hash under a kernel read lease; two extra hashes only on conservative fallback | Optional copied-file verification | Conformant software path after #243 |
 | Persistent Linux media | Copied media tree plus one complete source-image hash under a kernel read lease; two extra hashes only on conservative fallback | Manifest-bound destination verification | Conformant software path after #251 |
-| Raw/ISOHybrid writing | Source image size | Optional source/target comparison | Audit source-pass count in #242 |
+| Raw/ISOHybrid writing | One pre-write source hash plus the source read that writes the image | Optional physical target hash compared with the authenticated write digest; no third source read | Conformant plain-source path after #254; prepared-input hand-off remains in #253 |
 | Compressed image preparation | Container plus complete expanded raw staging | Raw writer contract | Audit in #242 |
 | Virtual-disk preparation | Container plus complete virtual-size raw staging | Raw writer contract | Audit in #242 |
 | Restore / format | Partition and filesystem metadata | Filesystem structural checks | Conformant |

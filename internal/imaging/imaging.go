@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -66,26 +67,40 @@ func WriteImage(ctx context.Context, imagePath, devicePath string, opts WriteOpt
 // descriptor open across the final safety checks, signature wipe, write, and
 // verification prevents path replacement from changing the selected image
 // after the user confirms the destructive operation.
-func WriteOpenImage(ctx context.Context, src *os.File, devicePath string, opts WriteOptions) (writtenResult uint64, resultErr error) {
+type WriteResult struct {
+	BytesWritten uint64
+	SHA256       string
+}
+
+func WriteOpenImage(ctx context.Context, src *os.File, devicePath string, opts WriteOptions) (uint64, error) {
+	result, err := writeOpenImage(ctx, src, devicePath, opts)
+	return result.BytesWritten, err
+}
+
+func WriteOpenImageWithResult(ctx context.Context, src *os.File, devicePath string, opts WriteOptions) (WriteResult, error) {
+	return writeOpenImage(ctx, src, devicePath, opts)
+}
+
+func writeOpenImage(ctx context.Context, src *os.File, devicePath string, opts WriteOptions) (writeResult WriteResult, resultErr error) {
 	if opts.BufferSize <= 0 {
 		opts.BufferSize = DefaultBufferSize
 	}
 	if err := sourcefile.VerifyPinned(src, opts.ExpectedSource); err != nil {
-		return 0, err
+		return writeResult, err
 	}
 	if _, err := src.Seek(0, io.SeekStart); err != nil {
-		return 0, fmt.Errorf("seek image to start: %w", err)
+		return writeResult, fmt.Errorf("seek image to start: %w", err)
 	}
 	info, err := src.Stat()
 	if err != nil {
-		return 0, fmt.Errorf("stat image: %w", err)
+		return writeResult, fmt.Errorf("stat image: %w", err)
 	}
 	if !info.Mode().IsRegular() || info.Size() <= 0 {
-		return 0, errors.New("image must be a non-empty regular file")
+		return writeResult, errors.New("image must be a non-empty regular file")
 	}
 	total := uint64(info.Size())
 	if opts.TargetSize > 0 && total > opts.TargetSize {
-		return 0, fmt.Errorf("image is %d bytes but target is only %d bytes", total, opts.TargetSize)
+		return writeResult, fmt.Errorf("image is %d bytes but target is only %d bytes", total, opts.TargetSize)
 	}
 
 	// Hash the already-open source before the target is opened for writing. The
@@ -96,46 +111,46 @@ func WriteOpenImage(ctx context.Context, src *os.File, devicePath string, opts W
 		emitProgress(opts.SnapshotProgress, snapshotTracker, done, total)
 	})
 	if err != nil {
-		return 0, fmt.Errorf("hash selected image before writing: %w", err)
+		return writeResult, fmt.Errorf("hash selected image before writing: %w", err)
 	}
 	if err := sourcefile.VerifyPinned(src, opts.ExpectedSource); err != nil {
-		return 0, err
+		return writeResult, err
 	}
 
 	// Buffered writes followed by fsync are much faster than O_SYNC on USB flash,
 	// while still giving a clear durability boundary before success is reported.
 	dst, err := os.OpenFile(devicePath, os.O_WRONLY|syscall.O_EXCL, 0)
 	if err != nil {
-		return 0, fmt.Errorf("open target device: %w", err)
+		return writeResult, fmt.Errorf("open target device: %w", err)
 	}
 	locked := false
 	defer func() {
 		resultErr = finishWriteTarget(resultErr, dst, locked)
 	}()
 	if err := safety.VerifyOpenDevice(dst, opts.ExpectedDeviceID, opts.TargetSize); err != nil {
-		return 0, err
+		return writeResult, err
 	}
 	if err := syscall.Flock(int(dst.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return 0, fmt.Errorf("acquire exclusive writer lock on target: %w", err)
+		return writeResult, fmt.Errorf("acquire exclusive writer lock on target: %w", err)
 	}
 	locked = true
 
 	if opts.BeforeWrite != nil {
 		if err := opts.BeforeWrite(src); err != nil {
-			return 0, fmt.Errorf("final target safety check: %w", err)
+			return writeResult, fmt.Errorf("final target safety check: %w", err)
 		}
 	}
 	// Re-check immediately before the first target write in case the source was
 	// modified in place while administrator authentication was displayed.
 	if err := sourcefile.VerifyPinned(src, opts.ExpectedSource); err != nil {
-		return 0, err
+		return writeResult, err
 	}
 	if opts.ClearStaleSignatures {
 		if opts.TargetSize == 0 {
-			return 0, errors.New("target size is required when clearing stale signatures")
+			return writeResult, errors.New("target size is required when clearing stale signatures")
 		}
 		if err := clearTargetEdges(ctx, dst, opts.TargetSize); err != nil {
-			return 0, fmt.Errorf("clear stale target signatures: %w", err)
+			return writeResult, fmt.Errorf("clear stale target signatures: %w", err)
 		}
 	}
 
@@ -171,9 +186,9 @@ func WriteOpenImage(ctx context.Context, src *os.File, devicePath string, opts W
 			syncErr := dst.Sync()
 			stopReporter()
 			if syncErr != nil {
-				return written, fmt.Errorf("operation cancelled; flushing partial write also failed: %w", syncErr)
+				return WriteResult{BytesWritten: written}, fmt.Errorf("operation cancelled; flushing partial write also failed: %w", syncErr)
 			}
-			return written, err
+			return WriteResult{BytesWritten: written}, err
 		}
 		n, readErr := reader.Read(buf)
 		if n > 0 {
@@ -185,9 +200,9 @@ func WriteOpenImage(ctx context.Context, src *os.File, devicePath string, opts W
 				syncErr := dst.Sync()
 				stopReporter()
 				if syncErr != nil {
-					return written, fmt.Errorf("write target at offset %d: %v; flushing partial write: %w", written-uint64(wn), writeErr, syncErr)
+					return WriteResult{BytesWritten: written}, fmt.Errorf("write target at offset %d: %v; flushing partial write: %w", written-uint64(wn), writeErr, syncErr)
 				}
-				return written, fmt.Errorf("write target at offset %d: %w", written-uint64(wn), writeErr)
+				return WriteResult{BytesWritten: written}, fmt.Errorf("write target at offset %d: %w", written-uint64(wn), writeErr)
 			}
 		}
 		if errors.Is(readErr, io.EOF) {
@@ -197,34 +212,126 @@ func WriteOpenImage(ctx context.Context, src *os.File, devicePath string, opts W
 			syncErr := dst.Sync()
 			stopReporter()
 			if syncErr != nil {
-				return written, fmt.Errorf("read image: %v; flushing partial write: %w", readErr, syncErr)
+				return WriteResult{BytesWritten: written}, fmt.Errorf("read image: %v; flushing partial write: %w", readErr, syncErr)
 			}
-			return written, fmt.Errorf("read image: %w", readErr)
+			return WriteResult{BytesWritten: written}, fmt.Errorf("read image: %w", readErr)
 		}
 	}
 
 	if err := dst.Sync(); err != nil {
 		stopReporter()
-		return written, fmt.Errorf("sync target: %w", err)
+		return WriteResult{BytesWritten: written}, fmt.Errorf("sync target: %w", err)
 	}
 	stopReporter()
 	// Detect in-place changes that occurred during the copy. The USB has already
 	// been changed at this point, but reporting failure is safer than claiming a
 	// coherent image was written from a moving source.
 	if err := sourcefile.VerifyPinned(src, opts.ExpectedSource); err != nil {
-		return written, err
+		return WriteResult{BytesWritten: written}, err
 	}
 	if !bytes.Equal(snapshotHash[:], writtenHash.Sum(nil)) {
-		return written, errors.New("the selected image changed while it was being written; the USB is incomplete and must be recreated")
+		return WriteResult{BytesWritten: written}, errors.New("the selected image changed while it was being written; the USB is incomplete and must be recreated")
 	}
 	emitProgress(opts.Progress, tracker, written, total)
-	return written, nil
+	return WriteResult{BytesWritten: written, SHA256: hex.EncodeToString(snapshotHash[:])}, nil
 }
 
 type VerifyOptions struct {
 	ExpectedDeviceID   uint64
 	ExpectedDeviceSize uint64
 	ExpectedSource     sourcefile.Identity
+}
+
+type DigestVerifyOptions struct {
+	ExpectedDeviceID   uint64
+	ExpectedDeviceSize uint64
+	ImageSize          uint64
+	ExpectedSHA256     string
+}
+
+// VerifyTargetDigestWithOptions reads only the physical target prefix and
+// compares it with the SHA-256 authenticated by the completed write. It avoids
+// rereading an unchanged source solely to recompute the same digest.
+func VerifyTargetDigestWithOptions(ctx context.Context, devicePath string, opts DigestVerifyOptions, progress ProgressFunc) (string, error) {
+	if opts.ImageSize == 0 {
+		return "", errors.New("verification image size is zero")
+	}
+	if opts.ExpectedDeviceSize > 0 && opts.ImageSize > opts.ExpectedDeviceSize {
+		return "", errors.New("verification image size exceeds the selected target")
+	}
+	expected, err := hex.DecodeString(strings.TrimSpace(opts.ExpectedSHA256))
+	if err != nil || len(expected) != sha256.Size {
+		return "", errors.New("verification requires a valid authenticated SHA-256 digest")
+	}
+
+	dst, sectorSize, direct, err := openForVerification(devicePath)
+	if err != nil {
+		return "", fmt.Errorf("open target for verification: %w", err)
+	}
+	defer func() { _ = dst.Close() }()
+	if err := safety.VerifyOpenDevice(dst, opts.ExpectedDeviceID, opts.ExpectedDeviceSize); err != nil {
+		return "", err
+	}
+
+	alignment := directIOAlignment
+	if sectorSize > alignment {
+		alignment = sectorSize
+	}
+	dstBuf := alignedBuffer(DefaultBufferSize, alignment)
+	deviceHash := sha256.New()
+	var done uint64
+	tracker := newRateTracker()
+	lastEmit := time.Time{}
+
+	for done < opts.ImageSize {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		remaining := opts.ImageSize - done
+		chunk := len(dstBuf)
+		if uint64(chunk) > remaining {
+			chunk = int(remaining)
+		}
+		deviceChunk := chunk
+		if direct {
+			deviceChunk = roundUp(chunk, sectorSize)
+		}
+		if _, readErr := io.ReadFull(dst, dstBuf[:deviceChunk]); readErr != nil {
+			if direct && directIOUnsupported(readErr) {
+				_ = dst.Close()
+				dst, err = os.Open(devicePath)
+				if err != nil {
+					return "", fmt.Errorf("reopen target after O_DIRECT refusal: %w", err)
+				}
+				if err := safety.VerifyOpenDevice(dst, opts.ExpectedDeviceID, opts.ExpectedDeviceSize); err != nil {
+					return "", err
+				}
+				if _, err := dst.Seek(int64(done), io.SeekStart); err != nil {
+					return "", fmt.Errorf("seek buffered verification target: %w", err)
+				}
+				direct = false
+				sectorSize = 1
+				deviceChunk = chunk
+				if _, readErr = io.ReadFull(dst, dstBuf[:deviceChunk]); readErr != nil {
+					return "", fmt.Errorf("read target during buffered verification: %w", readErr)
+				}
+			} else {
+				return "", fmt.Errorf("read target during verification: %w", readErr)
+			}
+		}
+		_, _ = deviceHash.Write(dstBuf[:chunk])
+		done += uint64(chunk)
+		if now := time.Now(); done == opts.ImageSize || now.Sub(lastEmit) >= 200*time.Millisecond {
+			lastEmit = now
+			emitProgress(progress, tracker, done, opts.ImageSize)
+		}
+	}
+
+	actual := deviceHash.Sum(nil)
+	if !bytes.Equal(expected, actual) {
+		return "", errors.New("verification SHA-256 mismatch; the USB does not match the authenticated image bytes")
+	}
+	return hex.EncodeToString(actual), nil
 }
 
 func VerifyImage(ctx context.Context, imagePath, devicePath string, progress ProgressFunc) (string, error) {
