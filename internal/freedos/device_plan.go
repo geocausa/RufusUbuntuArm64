@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	DevicePlanSchema = 1
+	DevicePlanSchema = 2
 	DeviceMode       = "freedos"
 )
 
@@ -44,6 +44,9 @@ type DevicePlan struct {
 	PartitionType       string    `json:"partition_type"`
 	Filesystem          string    `json:"filesystem"`
 	Label               string    `json:"label"`
+	MutationBytes       uint64    `json:"mutation_bytes"`
+	VerificationBytes   uint64    `json:"verification_bytes"`
+	UntouchedBytes      uint64    `json:"untouched_bytes"`
 	Media               MediaPlan `json:"media"`
 	Warnings            []string  `json:"warnings"`
 }
@@ -66,6 +69,13 @@ func BuildDevicePlan(request DeviceRequest) (DevicePlan, error) {
 	if err != nil {
 		return DevicePlan{}, err
 	}
+	mutationBytes, err := MediaExtentBytes(media)
+	if err != nil {
+		return DevicePlan{}, fmt.Errorf("calculate required FreeDOS extents: %w", err)
+	}
+	if mutationBytes >= request.DeviceSizeBytes {
+		return DevicePlan{}, errors.New("required FreeDOS extents do not preserve free data space")
+	}
 	partitionStart := uint64(media.PartitionStartSector) * uint64(media.LogicalSectorSize)
 	partitionSize := uint64(media.PartitionSectorCount) * uint64(media.LogicalSectorSize)
 	manifest := PinnedManifest()
@@ -87,6 +97,9 @@ func BuildDevicePlan(request DeviceRequest) (DevicePlan, error) {
 		PartitionType:       "0c",
 		Filesystem:          "FAT32",
 		Label:               media.Label,
+		MutationBytes:       mutationBytes,
+		VerificationBytes:   mutationBytes,
+		UntouchedBytes:      request.DeviceSizeBytes - mutationBytes,
 		Media:               media,
 		Warnings:            freeDOSDeviceWarnings(),
 	}
@@ -97,7 +110,7 @@ func BuildDevicePlan(request DeviceRequest) (DevicePlan, error) {
 }
 
 // ValidateDevicePlan rejects any altered identity, platform disclosure, media
-// geometry, filesystem contract, or safety warning.
+// geometry, filesystem contract, extent accounting, or safety warning.
 func ValidateDevicePlan(plan DevicePlan) error {
 	if plan.Schema != DevicePlanSchema || plan.Mode != DeviceMode || !plan.Bootable || !plan.Destructive {
 		return errors.New("invalid FreeDOS device-plan envelope")
@@ -124,6 +137,14 @@ func ValidateDevicePlan(plan DevicePlan) error {
 	}
 	if canonicalMedia != plan.Media {
 		return errors.New("FreeDOS device plan media contract was altered")
+	}
+	mutationBytes, err := MediaExtentBytes(canonicalMedia)
+	if err != nil {
+		return err
+	}
+	if plan.MutationBytes != mutationBytes || plan.VerificationBytes != mutationBytes ||
+		plan.UntouchedBytes != plan.DeviceSizeBytes-mutationBytes || mutationBytes == 0 || mutationBytes >= plan.DeviceSizeBytes {
+		return errors.New("FreeDOS device plan extent accounting was altered")
 	}
 	partitionStart := uint64(canonicalMedia.PartitionStartSector) * uint64(canonicalMedia.LogicalSectorSize)
 	partitionSize := uint64(canonicalMedia.PartitionSectorCount) * uint64(canonicalMedia.LogicalSectorSize)
