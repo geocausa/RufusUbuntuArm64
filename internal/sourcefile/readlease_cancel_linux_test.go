@@ -47,3 +47,33 @@ func TestReadLeaseParentCancellationRetainsLeaseUntilClose(t *testing.T) {
 	}
 	writer.Close()
 }
+
+func TestReadLeaseBreakNotificationFailsClosedBeforeStateChange(t *testing.T) {
+	path, identity := writeLeaseTestFile(t)
+	reader, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	lease, err := AcquireReadLease(context.Background(), reader, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Kill(os.Getpid(), syscall.SIGIO); err != nil {
+		lease.Close()
+		t.Fatal(err)
+	}
+	select {
+	case <-lease.Context().Done():
+	case <-time.After(2 * time.Second):
+		lease.Close()
+		t.Fatal("lease-break notification did not cancel operation")
+	}
+	if err := lease.Check(); !errors.Is(err, ErrReadLeaseBroken) {
+		lease.Close()
+		t.Fatalf("Check error = %v", err)
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
