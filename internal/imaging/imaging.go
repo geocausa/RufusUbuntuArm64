@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -52,6 +53,10 @@ type WriteOptions struct {
 	// exclusively locked, but before the first byte is changed. It is used for a
 	// final mount and identity checks without reopening a race window.
 	BeforeWrite func(source *os.File) error
+
+	trustedSnapshot         [sha256.Size]byte
+	trustedSnapshotSet      bool
+	trustedSnapshotIdentity sourcefile.Identity
 }
 
 func WriteImage(ctx context.Context, imagePath, devicePath string, opts WriteOptions) (uint64, error) {
@@ -63,21 +68,54 @@ func WriteImage(ctx context.Context, imagePath, devicePath string, opts WriteOpt
 	return WriteOpenImage(ctx, src, devicePath, opts)
 }
 
-// WriteOpenImage writes from an already-open source file. Keeping the source
-// descriptor open across the final safety checks, signature wipe, write, and
-// verification prevents path replacement from changing the selected image
-// after the user confirms the destructive operation.
+// WriteResult records the exact byte count and SHA-256 authenticated by a completed image write.
 type WriteResult struct {
 	BytesWritten uint64
 	SHA256       string
 }
 
+// WriteOpenImage writes from an already-open source file. Keeping the source
+// descriptor open across the final safety checks, signature wipe, write, and
+// verification prevents path replacement from changing the selected image
+// after the user confirms the destructive operation.
 func WriteOpenImage(ctx context.Context, src *os.File, devicePath string, opts WriteOptions) (uint64, error) {
 	result, err := writeOpenImage(ctx, src, devicePath, opts)
 	return result.BytesWritten, err
 }
 
 func WriteOpenImageWithResult(ctx context.Context, src *os.File, devicePath string, opts WriteOptions) (WriteResult, error) {
+	return writeOpenImage(ctx, src, devicePath, opts)
+}
+
+// WritePreparedOpenImageWithResult accepts the package-owned digest bound while
+// materializing a private prepared.raw file. Caller-created PreparedInput values
+// cannot set the unexported digest and therefore remain on the normal prehash path.
+func WritePreparedOpenImageWithResult(ctx context.Context, prepared *PreparedInput, src *os.File, devicePath string, opts WriteOptions) (WriteResult, error) {
+	if prepared == nil {
+		return WriteResult{}, errors.New("prepared image is nil")
+	}
+	if src == nil {
+		return WriteResult{}, errors.New("prepared image source is nil")
+	}
+	actual, err := sourcefile.IdentityOf(src)
+	if err != nil {
+		return WriteResult{}, err
+	}
+	if actual != prepared.Identity {
+		return WriteResult{}, errors.New("opened prepared image does not match its package-owned identity")
+	}
+	if opts.ExpectedSource != (sourcefile.Identity{}) && opts.ExpectedSource != prepared.Identity {
+		return WriteResult{}, errors.New("prepared image identity does not match the writer plan")
+	}
+	opts.ExpectedSource = prepared.Identity
+	if prepared.rawSHA256Bound {
+		if !prepared.Temporary || prepared.tempDir == "" || filepath.Clean(filepath.Dir(prepared.Path)) != filepath.Clean(prepared.tempDir) {
+			return WriteResult{}, errors.New("prepared image digest is not bound to a private package-owned materialization")
+		}
+		opts.trustedSnapshot = prepared.rawSHA256
+		opts.trustedSnapshotSet = true
+		opts.trustedSnapshotIdentity = prepared.Identity
+	}
 	return writeOpenImage(ctx, src, devicePath, opts)
 }
 
@@ -103,18 +141,27 @@ func writeOpenImage(ctx context.Context, src *os.File, devicePath string, opts W
 		return writeResult, fmt.Errorf("image is %d bytes but target is only %d bytes", total, opts.TargetSize)
 	}
 
-	// Hash the already-open source before the target is opened for writing. The
-	// write loop hashes the exact bytes it consumes and compares them with this
-	// snapshot, catching same-size in-place edits even when mtime is restored.
-	snapshotTracker := newRateTracker()
-	snapshotHash, err := sourcefile.SHA256Open(ctx, src, func(done, total uint64) {
-		emitProgress(opts.SnapshotProgress, snapshotTracker, done, total)
-	})
-	if err != nil {
-		return writeResult, fmt.Errorf("hash selected image before writing: %w", err)
-	}
-	if err := sourcefile.VerifyPinned(src, opts.ExpectedSource); err != nil {
-		return writeResult, err
+	// Ordinary sources are hashed before the target is opened. A package-owned
+	// prepared.raw may supply the digest computed while it was privately
+	// materialized, avoiding a redundant read without exposing a caller-controlled
+	// digest bypass.
+	var snapshotHash [sha256.Size]byte
+	if opts.trustedSnapshotSet {
+		if err := sourcefile.Verify(src, opts.trustedSnapshotIdentity); err != nil {
+			return writeResult, err
+		}
+		snapshotHash = opts.trustedSnapshot
+	} else {
+		snapshotTracker := newRateTracker()
+		snapshotHash, err = sourcefile.SHA256Open(ctx, src, func(done, total uint64) {
+			emitProgress(opts.SnapshotProgress, snapshotTracker, done, total)
+		})
+		if err != nil {
+			return writeResult, fmt.Errorf("hash selected image before writing: %w", err)
+		}
+		if err := sourcefile.VerifyPinned(src, opts.ExpectedSource); err != nil {
+			return writeResult, err
+		}
 	}
 
 	// Buffered writes followed by fsync are much faster than O_SYNC on USB flash,

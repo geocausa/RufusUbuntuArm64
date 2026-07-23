@@ -692,7 +692,7 @@ func runWrite(args []string) error {
 	// exclusively and clears stale signatures through that same descriptor.
 	out.event(jsonEvent{Event: "stage", Stage: "write", Message: "Writing the image…"})
 	var last time.Time
-	writeResult, err := imaging.WriteOpenImageWithResult(ctx, rawSource, resolved, imaging.WriteOptions{
+	writeResult, err := imaging.WritePreparedOpenImageWithResult(ctx, prepared, rawSource, resolved, imaging.WriteOptions{
 		ExpectedDeviceID:     kernelDeviceID,
 		ExpectedSource:       sourceIdentity,
 		TargetSize:           dev.Size,

@@ -74,6 +74,22 @@ func TestValidateForbidsRawVerificationSourcePass(t *testing.T) {
 	}
 }
 
+func TestValidateRequiresSinglePreparedRawWriterRead(t *testing.T) {
+	contract := loadRepositoryContract(t)
+	for _, id := range []string{"compressed_image_prepare", "zip_image_prepare", "virtual_disk_prepare"} {
+		operation := findOperationIndex(t, contract, id)
+		for phase := range contract.Operations[operation].Phases {
+			if contract.Operations[operation].Phases[phase].Name == "write_authenticated_prepared_raw" {
+				contract.Operations[operation].Phases[phase].Multiplier = 2
+			}
+		}
+		if err := Validate(contract); err == nil || !strings.Contains(err.Error(), "write_authenticated_prepared_raw") {
+			t.Fatalf("%s prepared raw read boundary error = %v", id, err)
+		}
+		contract = loadRepositoryContract(t)
+	}
+}
+
 func TestDecodeRejectsUnknownFieldsAndTrailingJSON(t *testing.T) {
 	for name, value := range map[string]string{
 		"unknown":  `{"schema":1,"reviewed_upstream":{"repository":"pbatard/rufus","commit":"0000000000000000000000000000000000000000","paths":["src/format.c"]},"scaling_bases":[],"operations":[],"unexpected":true}`,

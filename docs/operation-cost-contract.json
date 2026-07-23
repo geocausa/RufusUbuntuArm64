@@ -180,39 +180,92 @@
     },
     {
       "id": "compressed_image_prepare",
-      "surface": "Prepare compressed disk image",
+      "surface": "Prepare sequentially compressed disk image",
       "classification": "imaging",
-      "status": "audit",
-      "tracking_issue": 242,
+      "status": "conformant",
+      "tracking_issue": 253,
       "upstream_operation": "Decompress the selected image and write the resulting raw byte stream.",
-      "intentional_linux_divergence": "RufusArm64 currently materializes a complete private raw file and hashes the original container before and after preparation.",
+      "intentional_linux_divergence": "RufusArm64 privately materializes and hashes the expanded raw bytes before erasure; sequential containers are authenticated during the same read under a Linux source lease, with two conditional fallback hashes.",
       "phases": [
         {
-          "name": "container_hashes",
-          "direction": "source_read",
-          "scaling": "container_size",
-          "multiplier": 2,
-          "enabled_by_default": true
-        },
-        {
-          "name": "decompress_container",
+          "name": "decompress_and_authenticate_container",
           "direction": "source_read",
           "scaling": "container_size",
           "multiplier": 1,
           "enabled_by_default": true
         },
         {
-          "name": "materialize_raw",
+          "name": "conservative_fallback_hashes",
+          "direction": "source_read",
+          "scaling": "container_size",
+          "multiplier": 2,
+          "enabled_by_default": false
+        },
+        {
+          "name": "materialize_and_hash_raw",
           "direction": "temporary_write",
           "scaling": "expanded_size",
           "multiplier": 1,
           "enabled_by_default": true
         },
         {
-          "name": "raw_writer_reads",
+          "name": "write_authenticated_prepared_raw",
           "direction": "temporary_read",
           "scaling": "expanded_size",
-          "multiplier": 2,
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "write_image",
+          "direction": "target_write",
+          "scaling": "expanded_size",
+          "multiplier": 1,
+          "enabled_by_default": true
+        }
+      ]
+    },
+    {
+      "id": "zip_image_prepare",
+      "surface": "Prepare ZIP-contained disk image",
+      "classification": "imaging",
+      "status": "conformant",
+      "tracking_issue": 253,
+      "upstream_operation": "Extract the single regular disk-image entry and write the resulting raw byte stream.",
+      "intentional_linux_divergence": "ZIP random access retains one complete container authentication hash under the source lease; the extracted raw bytes are hashed while privately materialized.",
+      "phases": [
+        {
+          "name": "authenticate_zip_container",
+          "direction": "source_read",
+          "scaling": "container_size",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "extract_zip_entry",
+          "direction": "source_read",
+          "scaling": "container_size",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "conservative_fallback_rehash",
+          "direction": "source_read",
+          "scaling": "container_size",
+          "multiplier": 1,
+          "enabled_by_default": false
+        },
+        {
+          "name": "materialize_and_hash_raw",
+          "direction": "temporary_write",
+          "scaling": "expanded_size",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "write_authenticated_prepared_raw",
+          "direction": "temporary_read",
+          "scaling": "expanded_size",
+          "multiplier": 1,
           "enabled_by_default": true
         },
         {
@@ -228,24 +281,31 @@
       "id": "virtual_disk_prepare",
       "surface": "Prepare VHD/VHDX/QCOW2/VMDK image",
       "classification": "imaging",
-      "status": "audit",
-      "tracking_issue": 242,
+      "status": "conformant",
+      "tracking_issue": 253,
       "upstream_operation": "Convert or restore the virtual-disk payload into its raw disk representation.",
-      "intentional_linux_divergence": "RufusArm64 uses qemu-img to materialize the complete virtual size in a private raw file before the guarded writer runs.",
+      "intentional_linux_divergence": "RufusArm64 uses qemu-img to materialize the complete virtual size privately, authenticates the held container once, hashes the converted raw file once, then writes it once.",
       "phases": [
         {
-          "name": "container_hashes",
-          "direction": "source_read",
-          "scaling": "container_size",
-          "multiplier": 2,
-          "enabled_by_default": true
-        },
-        {
-          "name": "convert_virtual_disk",
+          "name": "authenticate_virtual_container",
           "direction": "source_read",
           "scaling": "container_size",
           "multiplier": 1,
           "enabled_by_default": true
+        },
+        {
+          "name": "inspect_and_convert_virtual_disk",
+          "direction": "source_read",
+          "scaling": "container_size",
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "conservative_fallback_rehash",
+          "direction": "source_read",
+          "scaling": "container_size",
+          "multiplier": 1,
+          "enabled_by_default": false
         },
         {
           "name": "materialize_raw",
@@ -255,10 +315,17 @@
           "enabled_by_default": true
         },
         {
-          "name": "raw_writer_reads",
+          "name": "bind_converted_raw",
           "direction": "temporary_read",
           "scaling": "expanded_size",
-          "multiplier": 2,
+          "multiplier": 1,
+          "enabled_by_default": true
+        },
+        {
+          "name": "write_authenticated_prepared_raw",
+          "direction": "temporary_read",
+          "scaling": "expanded_size",
+          "multiplier": 1,
           "enabled_by_default": true
         },
         {

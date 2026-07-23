@@ -77,6 +77,8 @@ type PreparedInput struct {
 	SourceSHA256     string
 	Temporary        bool
 	tempDir          string
+	rawSHA256        [sha256.Size]byte
+	rawSHA256Bound   bool
 }
 
 func (p *PreparedInput) Close() error {
@@ -296,12 +298,20 @@ func PrepareInput(ctx context.Context, path string, expected sourcefile.Identity
 	return PrepareInputWithOptions(ctx, path, expected, PrepareOptions{}, progress)
 }
 
-func PrepareInputWithOptions(ctx context.Context, path string, expected sourcefile.Identity, options PrepareOptions, progress PrepareProgressFunc) (*PreparedInput, error) {
+func PrepareInputWithOptions(ctx context.Context, path string, expected sourcefile.Identity, options PrepareOptions, progress PrepareProgressFunc) (prepared *PreparedInput, returnErr error) {
 	src, err := sourcefile.OpenRegular(path, expected)
 	if err != nil {
 		return nil, err
 	}
-	defer src.Close()
+	defer func() {
+		if closeErr := src.Close(); closeErr != nil {
+			if prepared != nil {
+				_ = prepared.Close()
+				prepared = nil
+			}
+			returnErr = errors.Join(returnErr, fmt.Errorf("close image container: %w", closeErr))
+		}
+	}()
 
 	probe, err := ProbeInput(path, src)
 	if err != nil {
@@ -317,15 +327,51 @@ func PrepareInputWithOptions(ctx context.Context, path string, expected sourcefi
 		return &PreparedInput{Path: path, Identity: expected, OriginalPath: path, OriginalIdentity: expected, Kind: InputPlain}, nil
 	}
 
-	emitPrepare(progress, PrepareProgress{Stage: "hash_container", Message: "Hashing the selected image container before preparation…", Total: uint64(expected.Size)})
-	firstHash, err := sourcefile.SHA256Open(ctx, src, func(done, total uint64) {
-		emitPrepare(progress, PrepareProgress{Stage: "hash_container", Message: "Hashing the selected image container before preparation…", Done: done, Total: total})
-	})
-	if err != nil {
-		return nil, fmt.Errorf("hash image container: %w", err)
+	sourceLease, leaseErr := sourcefile.AcquireReadLease(ctx, src, expected)
+	switch {
+	case leaseErr == nil:
+		ctx = sourceLease.Context()
+		emitPrepare(progress, PrepareProgress{Stage: "source_hold", Message: "Holding the selected image container read-only with a Linux kernel lease during preparation."})
+		defer func() {
+			heldErr := sourceLease.Check()
+			if errors.Is(heldErr, sourcefile.ErrReadLeaseBroken) {
+				heldErr = fmt.Errorf("the selected image container was opened for writing while it was being prepared; no USB data was changed: %w", heldErr)
+			}
+			closeErr := sourceLease.Close()
+			if heldErr != nil || closeErr != nil {
+				if prepared != nil {
+					_ = prepared.Close()
+					prepared = nil
+				}
+				returnErr = errors.Join(returnErr, heldErr, closeErr)
+			}
+		}()
+	case errors.Is(leaseErr, sourcefile.ErrReadLeaseUnavailable), errors.Is(leaseErr, sourcefile.ErrReadLeaseConflict):
+		sourceLease = nil
+		emitPrepare(progress, PrepareProgress{Stage: "source_hold", Message: fmt.Sprintf("Kernel source hold unavailable (%v); using conservative pre/post container hashing.", leaseErr)})
+	default:
+		return nil, fmt.Errorf("hold image container stable: %w", leaseErr)
 	}
-	if err := sourcefile.VerifyPinned(src, expected); err != nil {
-		return nil, err
+
+	sequential := isSequentialCompressedInput(probe.Kind)
+	var containerDigest [sha256.Size]byte
+	containerDigestBound := false
+	if sourceLease == nil || !sequential {
+		message := "Authenticating the selected image container once under the kernel source hold…"
+		if sourceLease == nil {
+			message = "Hashing the selected image container before preparation (conservative pass 1 of 2)…"
+		}
+		emitPrepare(progress, PrepareProgress{Stage: "hash_container", Message: message, Total: uint64(expected.Size)})
+		containerDigest, err = sourcefile.SHA256Open(ctx, src, func(done, total uint64) {
+			emitPrepare(progress, PrepareProgress{Stage: "hash_container", Message: message, Done: done, Total: total})
+		})
+		if err != nil {
+			return nil, fmt.Errorf("hash image container: %w", err)
+		}
+		containerDigestBound = true
+		if err := sourcefile.VerifyPinned(src, expected); err != nil {
+			return nil, err
+		}
 	}
 
 	tempDir, err := os.MkdirTemp("/var/tmp", ".rufusarm64-input-")
@@ -333,37 +379,52 @@ func PrepareInputWithOptions(ctx context.Context, path string, expected sourcefi
 		return nil, fmt.Errorf("create private image preparation directory: %w", err)
 	}
 	if err := os.Chmod(tempDir, 0o700); err != nil {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		return nil, fmt.Errorf("protect image preparation directory: %w", err)
 	}
 	rawPath := filepath.Join(tempDir, "prepared.raw")
-	cleanup := func(returnErr error) (*PreparedInput, error) {
+	cleanup := func(cause error) (*PreparedInput, error) {
 		_ = os.RemoveAll(tempDir)
-		return nil, returnErr
+		return nil, cause
 	}
 
 	if _, err := src.Seek(0, io.SeekStart); err != nil {
 		return cleanup(fmt.Errorf("seek image container: %w", err))
 	}
 	emitPrepare(progress, PrepareProgress{Stage: "prepare", Message: "Preparing the disk image before erasing the USB…"})
+	streamingHash := sha256.New()
+	preparationReader := io.Reader(src)
+	streamingAuthentication := sourceLease != nil && sequential
+	if streamingAuthentication {
+		preparationReader = io.TeeReader(src, streamingHash)
+	}
+
+	var rawDigest [sha256.Size]byte
+	rawDigestBound := false
 	switch probe.Kind {
 	case InputZIP:
-		err = prepareZIP(ctx, src, expected.Size, rawPath, options.MaxPreparedSize, progress)
+		rawDigest, err = prepareZIP(ctx, src, expected.Size, rawPath, options.MaxPreparedSize, progress)
+		rawDigestBound = err == nil
 	case InputGZIP:
-		err = prepareStream(ctx, src, rawPath, options.MaxPreparedSize, func(r io.Reader) (io.Reader, io.Closer, error) {
-			decoder, err := gzip.NewReader(r)
-			return decoder, decoder, err
+		rawDigest, err = prepareStream(ctx, preparationReader, rawPath, options.MaxPreparedSize, func(r io.Reader) (io.Reader, io.Closer, error) {
+			decoder, openErr := gzip.NewReader(r)
+			return decoder, decoder, openErr
 		}, progress)
+		rawDigestBound = err == nil
 	case InputBZIP2:
-		err = prepareStream(ctx, src, rawPath, options.MaxPreparedSize, func(r io.Reader) (io.Reader, io.Closer, error) {
+		rawDigest, err = prepareStream(ctx, preparationReader, rawPath, options.MaxPreparedSize, func(r io.Reader) (io.Reader, io.Closer, error) {
 			return bzip2.NewReader(r), nil, nil
 		}, progress)
+		rawDigestBound = err == nil
 	case InputXZ:
-		err = prepareExternalDecompress(ctx, src, rawPath, "xz", []string{"--decompress", "--stdout"}, options.MaxPreparedSize, progress)
+		rawDigest, err = prepareExternalDecompress(ctx, preparationReader, rawPath, "xz", []string{"--decompress", "--stdout"}, options.MaxPreparedSize, progress)
+		rawDigestBound = err == nil
 	case InputLZMA:
-		err = prepareExternalDecompress(ctx, src, rawPath, "xz", []string{"--format=lzma", "--decompress", "--stdout"}, options.MaxPreparedSize, progress)
+		rawDigest, err = prepareExternalDecompress(ctx, preparationReader, rawPath, "xz", []string{"--format=lzma", "--decompress", "--stdout"}, options.MaxPreparedSize, progress)
+		rawDigestBound = err == nil
 	case InputZSTD:
-		err = prepareExternalDecompress(ctx, src, rawPath, "zstd", []string{"--decompress", "--stdout", "--quiet"}, options.MaxPreparedSize, progress)
+		rawDigest, err = prepareExternalDecompress(ctx, preparationReader, rawPath, "zstd", []string{"--decompress", "--stdout", "--quiet"}, options.MaxPreparedSize, progress)
+		rawDigestBound = err == nil
 	case InputVHD, InputVHDX, InputQCOW2, InputVMDK:
 		err = prepareVirtualDisk(ctx, src, rawPath, probe.Kind, options.MaxPreparedSize, progress)
 	default:
@@ -373,15 +434,32 @@ func PrepareInputWithOptions(ctx context.Context, path string, expected sourcefi
 		return cleanup(err)
 	}
 
+	if streamingAuthentication {
+		if err := hashRemainingContainer(ctx, streamingHash, src); err != nil {
+			return cleanup(fmt.Errorf("finish authenticating image container: %w", err))
+		}
+		copy(containerDigest[:], streamingHash.Sum(nil))
+		containerDigestBound = true
+		emitPrepare(progress, PrepareProgress{Stage: "hash_container", Message: "Authenticated the complete image container while preparing it.", Done: uint64(expected.Size), Total: uint64(expected.Size)})
+	}
 	if err := sourcefile.VerifyPinned(src, expected); err != nil {
 		return cleanup(err)
 	}
-	secondHash, err := sourcefile.SHA256Open(ctx, src, nil)
-	if err != nil {
-		return cleanup(fmt.Errorf("rehash image container after preparation: %w", err))
+	if sourceLease != nil {
+		if err := sourceLease.Check(); err != nil {
+			return cleanup(err)
+		}
+	} else {
+		secondHash, hashErr := sourcefile.SHA256Open(ctx, src, nil)
+		if hashErr != nil {
+			return cleanup(fmt.Errorf("rehash image container after preparation: %w", hashErr))
+		}
+		if containerDigest != secondHash {
+			return cleanup(errors.New("the selected image container changed while it was being prepared; no USB data was changed"))
+		}
 	}
-	if firstHash != secondHash {
-		return cleanup(errors.New("the selected image container changed while it was being prepared; no USB data was changed"))
+	if !containerDigestBound {
+		return cleanup(errors.New("image container authentication digest is unavailable"))
 	}
 
 	raw, err := os.Open(rawPath)
@@ -389,6 +467,10 @@ func PrepareInputWithOptions(ctx context.Context, path string, expected sourcefi
 		return cleanup(fmt.Errorf("open prepared raw image: %w", err))
 	}
 	rawIdentity, identityErr := sourcefile.IdentityOf(raw)
+	if identityErr == nil && !rawDigestBound {
+		rawDigest, identityErr = sourcefile.SHA256Open(ctx, raw, nil)
+		rawDigestBound = identityErr == nil
+	}
 	closeErr := raw.Close()
 	if identityErr != nil {
 		return cleanup(identityErr)
@@ -399,6 +481,9 @@ func PrepareInputWithOptions(ctx context.Context, path string, expected sourcefi
 	if rawIdentity.Size <= 0 {
 		return cleanup(errors.New("prepared image is empty"))
 	}
+	if !rawDigestBound {
+		return cleanup(errors.New("prepared raw image authentication digest is unavailable"))
+	}
 	emitPrepare(progress, PrepareProgress{Stage: "prepare", Message: fmt.Sprintf("Prepared %s of raw disk data.", humanInputBytes(uint64(rawIdentity.Size))), Done: uint64(rawIdentity.Size), Total: uint64(rawIdentity.Size)})
 	return &PreparedInput{
 		Path:             rawPath,
@@ -406,18 +491,50 @@ func PrepareInputWithOptions(ctx context.Context, path string, expected sourcefi
 		OriginalPath:     path,
 		OriginalIdentity: expected,
 		Kind:             probe.Kind,
-		SourceSHA256:     hex.EncodeToString(firstHash[:]),
+		SourceSHA256:     hex.EncodeToString(containerDigest[:]),
 		Temporary:        true,
 		tempDir:          tempDir,
+		rawSHA256:        rawDigest,
+		rawSHA256Bound:   true,
 	}, nil
+}
+
+func isSequentialCompressedInput(kind InputKind) bool {
+	switch kind {
+	case InputGZIP, InputBZIP2, InputXZ, InputLZMA, InputZSTD:
+		return true
+	default:
+		return false
+	}
+}
+
+func hashRemainingContainer(ctx context.Context, digest io.Writer, reader io.Reader) error {
+	buffer := make([]byte, DefaultBufferSize)
+	for {
+		if err := ctx.Err(); err != nil {
+			return context.Cause(ctx)
+		}
+		n, readErr := reader.Read(buffer)
+		if n > 0 {
+			if _, err := digest.Write(buffer[:n]); err != nil {
+				return err
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			return nil
+		}
+		if readErr != nil {
+			return readErr
+		}
+	}
 }
 
 type readerFactory func(io.Reader) (io.Reader, io.Closer, error)
 
-func prepareStream(ctx context.Context, src *os.File, rawPath string, maxSize uint64, factory readerFactory, progress PrepareProgressFunc) error {
+func prepareStream(ctx context.Context, src io.Reader, rawPath string, maxSize uint64, factory readerFactory, progress PrepareProgressFunc) ([sha256.Size]byte, error) {
 	decoder, closer, err := factory(src)
 	if err != nil {
-		return fmt.Errorf("open compressed image: %w", err)
+		return [sha256.Size]byte{}, fmt.Errorf("open compressed image: %w", err)
 	}
 	if closer != nil {
 		defer closer.Close()
@@ -425,10 +542,10 @@ func prepareStream(ctx context.Context, src *os.File, rawPath string, maxSize ui
 	return copyPrepared(ctx, decoder, rawPath, 0, maxSize, progress)
 }
 
-func prepareZIP(ctx context.Context, src *os.File, sourceSize int64, rawPath string, maxSize uint64, progress PrepareProgressFunc) error {
+func prepareZIP(ctx context.Context, src *os.File, sourceSize int64, rawPath string, maxSize uint64, progress PrepareProgressFunc) ([sha256.Size]byte, error) {
 	archive, err := zip.NewReader(src, sourceSize)
 	if err != nil {
-		return fmt.Errorf("open ZIP image: %w", err)
+		return [sha256.Size]byte{}, fmt.Errorf("open ZIP image: %w", err)
 	}
 	var candidate *zip.File
 	for _, entry := range archive.File {
@@ -436,42 +553,44 @@ func prepareZIP(ctx context.Context, src *os.File, sourceSize int64, rawPath str
 			continue
 		}
 		if candidate != nil {
-			return errors.New("ZIP images must contain exactly one regular disk-image file")
+			return [sha256.Size]byte{}, errors.New("ZIP images must contain exactly one regular disk-image file")
 		}
 		if entry.Mode()&os.ModeSymlink != 0 {
-			return errors.New("ZIP image entry must not be a symbolic link")
+			return [sha256.Size]byte{}, errors.New("ZIP image entry must not be a symbolic link")
 		}
 		candidate = entry
 	}
 	if candidate == nil {
-		return errors.New("ZIP image contains no regular file")
+		return [sha256.Size]byte{}, errors.New("ZIP image contains no regular file")
 	}
 	if err := requireHostFileSize("expanded ZIP image", candidate.UncompressedSize64); err != nil {
-		return err
+		return [sha256.Size]byte{}, err
 	}
 	reader, err := candidate.Open()
 	if err != nil {
-		return fmt.Errorf("open ZIP image entry: %w", err)
+		return [sha256.Size]byte{}, fmt.Errorf("open ZIP image entry: %w", err)
 	}
 	defer reader.Close()
 	if maxSize > 0 && candidate.UncompressedSize64 > maxSize {
-		return fmt.Errorf("expanded ZIP image is %s, larger than the selected target (%s)", humanInputBytes(candidate.UncompressedSize64), humanInputBytes(maxSize))
+		return [sha256.Size]byte{}, fmt.Errorf("expanded ZIP image is %s, larger than the selected target (%s)", humanInputBytes(candidate.UncompressedSize64), humanInputBytes(maxSize))
 	}
 	return copyPrepared(ctx, reader, rawPath, candidate.UncompressedSize64, maxSize, progress)
 }
 
-func prepareExternalDecompress(ctx context.Context, src *os.File, rawPath, tool string, args []string, maxSize uint64, progress PrepareProgressFunc) error {
+func prepareExternalDecompress(ctx context.Context, src io.Reader, rawPath, tool string, args []string, maxSize uint64, progress PrepareProgressFunc) ([sha256.Size]byte, error) {
+	var digest [sha256.Size]byte
 	executable, err := exec.LookPath(tool)
 	if err != nil {
-		return fmt.Errorf("%s is required to decompress this image", tool)
+		return digest, fmt.Errorf("%s is required to decompress this image", tool)
 	}
 	out, err := os.OpenFile(rawPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
-		return fmt.Errorf("create prepared image: %w", err)
+		return digest, fmt.Errorf("create prepared image: %w", err)
 	}
+	rawHash := sha256.New()
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Stdin = src
-	limitedOutput := &sizeLimitWriter{Writer: out, Max: maxSize}
+	limitedOutput := &sizeLimitWriter{Writer: io.MultiWriter(out, rawHash), Max: maxSize}
 	cmd.Stdout = limitedOutput
 	var stderr strings.Builder
 	cmd.Stderr = &limitedWriter{W: &stderr, N: 64 * 1024}
@@ -481,18 +600,19 @@ func prepareExternalDecompress(ctx context.Context, src *os.File, rawPath, tool 
 	syncErr := out.Sync()
 	closeErr := out.Close()
 	if limitedOutput.Exceeded {
-		return fmt.Errorf("expanded image exceeds the selected target size of %s", humanInputBytes(maxSize))
+		return digest, fmt.Errorf("expanded image exceeds the selected target size of %s", humanInputBytes(maxSize))
 	}
 	if runErr != nil {
-		return fmt.Errorf("decompress image with %s: %v: %s", tool, runErr, strings.TrimSpace(stderr.String()))
+		return digest, fmt.Errorf("decompress image with %s: %v: %s", tool, runErr, strings.TrimSpace(stderr.String()))
 	}
 	if syncErr != nil {
-		return fmt.Errorf("sync prepared image: %w", syncErr)
+		return digest, fmt.Errorf("sync prepared image: %w", syncErr)
 	}
 	if closeErr != nil {
-		return fmt.Errorf("close prepared image: %w", closeErr)
+		return digest, fmt.Errorf("close prepared image: %w", closeErr)
 	}
-	return nil
+	copy(digest[:], rawHash.Sum(nil))
+	return digest, nil
 }
 
 type qemuInfo struct {
@@ -572,30 +692,37 @@ func prepareVirtualDisk(ctx context.Context, src *os.File, rawPath string, kind 
 	return nil
 }
 
-func copyPrepared(ctx context.Context, reader io.Reader, rawPath string, total, maxSize uint64, progress PrepareProgressFunc) error {
+func copyPrepared(ctx context.Context, reader io.Reader, rawPath string, total, maxSize uint64, progress PrepareProgressFunc) (digest [sha256.Size]byte, returnErr error) {
 	out, err := os.OpenFile(rawPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
-		return fmt.Errorf("create prepared image: %w", err)
+		return digest, fmt.Errorf("create prepared image: %w", err)
 	}
-	defer out.Close()
+	closed := false
+	defer func() {
+		if !closed {
+			returnErr = errors.Join(returnErr, out.Close())
+		}
+	}()
+	rawHash := sha256.New()
+	writer := io.MultiWriter(out, rawHash)
 	buffer := make([]byte, DefaultBufferSize)
 	var done uint64
 	last := time.Now().Add(-time.Second)
 	for {
 		if err := ctx.Err(); err != nil {
-			return err
+			return digest, context.Cause(ctx)
 		}
 		n, readErr := reader.Read(buffer)
 		if n > 0 {
-			nextDone, err := checkedImageAdd("expanded image size", done, uint64(n))
-			if err != nil {
-				return err
+			nextDone, addErr := checkedImageAdd("expanded image size", done, uint64(n))
+			if addErr != nil {
+				return digest, addErr
 			}
 			if maxSize > 0 && nextDone > maxSize {
-				return fmt.Errorf("expanded image exceeds the selected target size of %s", humanInputBytes(maxSize))
+				return digest, fmt.Errorf("expanded image exceeds the selected target size of %s", humanInputBytes(maxSize))
 			}
-			if _, err := writeFull(out, buffer[:n]); err != nil {
-				return fmt.Errorf("write prepared image: %w", err)
+			if _, err := writeFull(writer, buffer[:n]); err != nil {
+				return digest, fmt.Errorf("write prepared image: %w", err)
 			}
 			done = nextDone
 			if time.Since(last) >= 200*time.Millisecond || (total > 0 && done == total) {
@@ -607,14 +734,19 @@ func copyPrepared(ctx context.Context, reader io.Reader, rawPath string, total, 
 			break
 		}
 		if readErr != nil {
-			return fmt.Errorf("decompress image: %w", readErr)
+			return digest, fmt.Errorf("decompress image: %w", readErr)
 		}
 	}
 	if err := out.Sync(); err != nil {
-		return fmt.Errorf("sync prepared image: %w", err)
+		return digest, fmt.Errorf("sync prepared image: %w", err)
 	}
+	if err := out.Close(); err != nil {
+		return digest, fmt.Errorf("close prepared image: %w", err)
+	}
+	closed = true
+	copy(digest[:], rawHash.Sum(nil))
 	emitPrepare(progress, PrepareProgress{Stage: "prepare", Message: "Preparing the disk image before erasing the USB…", Done: done, Total: total})
-	return nil
+	return digest, nil
 }
 
 func monitorOutput(ctx context.Context, path string, total uint64, progress PrepareProgressFunc) func() {
