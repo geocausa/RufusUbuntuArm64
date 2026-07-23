@@ -2202,12 +2202,12 @@ class RufusWindow(Gtk.ApplicationWindow):
                 return
         if self.inspection.get("mode") == "windows":
             try:
-                partition_scheme = normalize_partition_scheme(self.partition_combo.get_active_id() or "gpt")
-                target_system = normalize_target_system(self.target_system_combo.get_active_id() or "uefi")
-                if target_system == "bios" and partition_scheme != "mbr":
-                    raise ValueError("BIOS/CSM requires the MBR partition scheme.")
-                filesystem = normalize_filesystem(self.filesystem_combo.get_active_id() or "auto")
-                cluster_size = normalize_cluster_size(self.cluster_combo.get_active_id() or "auto")
+                partition_scheme = normalize_partition_scheme(self.partition_combo.get_active_id() or DEFAULT_WINDOWS_PARTITION_SCHEME)
+                target_system = normalize_target_system(self.target_system_combo.get_active_id() or DEFAULT_WINDOWS_TARGET_SYSTEM)
+                if target_system == "bios" and partition_scheme == "gpt":
+                    raise ValueError("BIOS/CSM cannot be combined with the GPT partition scheme.")
+                filesystem = normalize_filesystem(self.filesystem_combo.get_active_id() or DEFAULT_WINDOWS_FILESYSTEM)
+                cluster_size = normalize_cluster_size(self.cluster_combo.get_active_id() or DEFAULT_WINDOWS_CLUSTER_SIZE)
                 label = normalize_volume_label(self.volume_label.get_text(), filesystem)
             except ValueError as exc:
                 self.message(str(exc), Gtk.MessageType.ERROR)
@@ -2217,15 +2217,18 @@ class RufusWindow(Gtk.ApplicationWindow):
             quick_format = self.quick_format.get_active()
             bad_block_check = self.bad_block_check.get_active()
         else:
-            partition_scheme = "gpt"
-            target_system = "uefi"
-            filesystem = "auto"
-            cluster_size = "auto"
+            # Windows-only controls must never leak saved choices into raw or
+            # persistent workflows. The privileged helper treats auto values as
+            # neutral and rejects explicit Windows options for non-Windows media.
+            partition_scheme = DEFAULT_WINDOWS_PARTITION_SCHEME
+            target_system = DEFAULT_WINDOWS_TARGET_SYSTEM
+            filesystem = DEFAULT_WINDOWS_FILESYSTEM
+            cluster_size = DEFAULT_WINDOWS_CLUSTER_SIZE
             driver_folder = ""
             dbx_file = ""
             label = "RUFUSARM64"
-            quick_format = True
-            bad_block_check = False
+            quick_format = DEFAULT_QUICK_FORMAT
+            bad_block_check = DEFAULT_BAD_BLOCK_CHECK
 
         device = self.devices[index]
         path = device.get("path")

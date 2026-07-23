@@ -32,6 +32,13 @@ class DefaultParityTests(unittest.TestCase):
         self.assertIn('settings.get("quick_format", DEFAULT_QUICK_FORMAT)', source)
         self.assertIn('settings.get("bad_block_check", DEFAULT_BAD_BLOCK_CHECK)', source)
         self.assertIn('set_active(DEFAULT_PERSISTENCE_ENABLED)', source)
+        self.assertIn('partition_scheme = DEFAULT_WINDOWS_PARTITION_SCHEME', source)
+        self.assertIn('target_system = DEFAULT_WINDOWS_TARGET_SYSTEM', source)
+        self.assertNotIn('''        else:
+            partition_scheme = "gpt"
+            target_system = "uefi"
+''', source)
+        self.assertIn('target_system == "bios" and partition_scheme == "gpt"', source)
 
 
 if __name__ == "__main__":
