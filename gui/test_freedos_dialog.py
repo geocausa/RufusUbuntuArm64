@@ -90,6 +90,8 @@ class FreeDOSDialogStructureTests(unittest.TestCase):
 
     def test_required_extent_progress_is_streamed_into_the_dialog(self):
         self.assertIn("decode_progress_line", self.dialog_class_source)
+        self.assertIn("validate_progress_against_plan", self.dialog_class_source)
+        self.assertNotIn('device_size_bytes"]) * 2', self.dialog_class_source)
         self.assertIn("for line in process.stderr", self.dialog_class_source)
         self.assertIn("self._progress_ready", self.dialog_class_source)
         self.assertIn("progress_summary(progress)", self.dialog_class_source)

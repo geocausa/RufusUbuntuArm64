@@ -248,6 +248,27 @@ def decode_progress_line(line):
     return normalize_progress(payload)
 
 
+def validate_progress_against_plan(payload, reviewed_plan):
+    """Bind one helper progress record to the exact reviewed extent totals."""
+    progress = normalize_progress(payload)
+    reviewed = normalize_plan(reviewed_plan)
+    plan = reviewed["plan"]
+    expected_total = plan["mutation_bytes"] + plan["verification_bytes"]
+    if progress["overall_total"] != expected_total:
+        raise ValueError(
+            "FreeDOS helper progress does not match the reviewed required-extent I/O total."
+        )
+    if progress["phase"] == "write" and progress["total"] != plan["mutation_bytes"]:
+        raise ValueError(
+            "FreeDOS helper write progress does not match the reviewed mutation total."
+        )
+    if progress["phase"] == "readback" and progress["total"] != plan["verification_bytes"]:
+        raise ValueError(
+            "FreeDOS helper readback progress does not match the reviewed verification total."
+        )
+    return progress
+
+
 def progress_summary(payload):
     """Render current phase, overall percentage, rate, elapsed time, and ETA."""
     value = normalize_progress(payload)
