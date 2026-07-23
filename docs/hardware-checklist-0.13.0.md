@@ -66,13 +66,17 @@ Complete this section only when claiming persistence for this hardware/image pai
 - [ ] The restored drive accepts ordinary file creation, readback, deletion, safe removal, and reconnection.
 - [ ] No bootability claim is shown for data-only media.
 
-## FreeDOS platform boundary
+## FreeDOS platform and fast-creation boundary
 
 Use a disposable removable drive and, separately, an x86-compatible BIOS or UEFI-Legacy/CSM test computer.
 
 - [ ] The GTK plan states FreeDOS 1.4, x86 only, BIOS/UEFI-Legacy only, and not ARM64/UEFI-only.
 - [ ] The exact `WRITE FREEDOS 1.4 TO /dev/DEVICE FOR X86 BIOS LEGACY` phrase is required.
-- [ ] Creation completes with full readback and SHA-256 reporting.
+- [ ] The plan shows required write bytes, required verification bytes, and untouched unallocated bytes before authentication.
+- [ ] On a normal-capacity target such as 16–32 GiB, total displayed FreeDOS I/O is bounded by the required boot/FAT32 extents and is far below twice the device capacity.
+- [ ] Creation completes with required-extent readback and extent-set SHA-256 reporting.
+- [ ] The result keeps a nearly full-size FAT32 partition even though unallocated data clusters are not overwritten.
+- [ ] The final report does not claim whole-device health and directs exhaustive testing to **Check USB**.
 - [ ] The drive is not tested as an ARM64 or UEFI-only boot path.
 - [ ] Any physical boot observation records the exact x86 computer and firmware mode; no universal claim is made.
 
@@ -101,6 +105,7 @@ The upstream production channel is expected to remain disabled for this candidat
 
 - [ ] Every failed item has a linked issue, retained diagnostic report, and explicit disposition.
 - [ ] No unresolved defect can select, erase, publish, or qualify the wrong source or target.
+- [ ] No release text claims whole-device FreeDOS qualification from required-extent creation.
 - [ ] No release text claims Secure Boot compatibility for the unsigned runtime-integrity loader.
 - [ ] No release text claims universal physical boot success.
 - [ ] Production acquisition remains disabled unless separate offline-key and mirror provisioning evidence is approved.
