@@ -859,7 +859,7 @@ func inspectMountedISO(root string) (mediaPlan, error) {
 
 func bindBootCapabilities(ctx context.Context, plan *mediaPlan) error {
 	if plan == nil {
-		return errors.New("Windows media plan is nil")
+		return errors.New("windows media plan is nil")
 	}
 	if plan.HasARM64 || plan.HasX64 || plan.HasX86 {
 		return nil
@@ -879,7 +879,7 @@ func bindBootCapabilities(ctx context.Context, plan *mediaPlan) error {
 
 func bindBIOSMetadata(plan *mediaPlan, metadata windowsconfig.MediaMetadata) error {
 	if plan == nil {
-		return errors.New("Windows media plan is nil")
+		return errors.New("windows media plan is nil")
 	}
 	if !plan.HasBootmgr {
 		return errors.New("legacy-BIOS capability requires a root bootmgr file")
@@ -894,7 +894,7 @@ func bindBIOSMetadata(plan *mediaPlan, metadata windowsconfig.MediaMetadata) err
 		plan.BIOSArchitecture = "x86"
 		plan.Architecture = "x86 legacy BIOS"
 	case "arm64":
-		return errors.New("Windows ARM64 boot.wim cannot be used as legacy-BIOS media; ARM64 boots through UEFI only")
+		return errors.New("windows ARM64 boot.wim cannot be used as legacy-BIOS media; ARM64 boots through UEFI only")
 	default:
 		return fmt.Errorf("boot.wim architecture %q is unsupported or ambiguous for legacy-BIOS media", metadata.Architecture)
 	}
