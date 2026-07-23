@@ -43,8 +43,9 @@ FreeDOS, Windows file-copy creation, persistent Linux file-copy creation, quick 
 | Windows installation media | Copied setup payload plus one complete ISO hash under a kernel read lease; two extra hashes only on conservative fallback | Optional copied-file verification | Conformant software path after #243 |
 | Persistent Linux media | Copied media tree plus one complete source-image hash under a kernel read lease; two extra hashes only on conservative fallback | Manifest-bound destination verification | Conformant software path after #251 |
 | Raw/ISOHybrid writing | One pre-write source hash plus the source read that writes the image | Optional physical target hash compared with the authenticated write digest; no third source read | Conformant plain-source path after #254; prepared-input hand-off remains in #253 |
-| Compressed image preparation | Container plus complete expanded raw staging | Raw writer contract | Audit in #242 |
-| Virtual-disk preparation | Container plus complete virtual-size raw staging | Raw writer contract | Audit in #242 |
+| Sequential compressed image preparation | One container read that also authenticates it, one private expanded write, one prepared-raw read for target writing | Authenticated expanded digest plus optional physical target verification | Conformant after #253 |
+| ZIP image preparation | One complete ZIP hash plus extraction, one private expanded write, one prepared-raw read for target writing | Authenticated expanded digest plus optional physical target verification | Conformant after #253 |
+| Virtual-disk preparation | One complete container hash plus qemu conversion, one converted-raw binding read, one prepared-raw read for target writing | Authenticated converted digest plus optional physical target verification | Conformant after #253 |
 | Restore / format | Partition and filesystem metadata | Filesystem structural checks | Conformant |
 | Windows full format | Partition capacity, explicitly selected | Flush before filesystem creation | Conformant explicit maintenance |
 | Windows bad-block check | Partition capacity, explicitly selected | Complete zero-pattern readback | Conformant explicit qualification |

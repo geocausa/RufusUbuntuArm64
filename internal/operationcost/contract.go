@@ -54,6 +54,7 @@ var requiredOperations = []string{
 	"linux_persistent_create",
 	"raw_image_write",
 	"compressed_image_prepare",
+	"zip_image_prepare",
 	"virtual_disk_prepare",
 	"nonbootable_quick_format",
 	"windows_full_format",
@@ -235,6 +236,27 @@ func Validate(contract Contract) error {
 		return err
 	}
 	if err := requirePhase(operations["raw_image_write"], "target_write", "source_size", true); err != nil {
+		return err
+	}
+	if err := requireExactPhase(operations["compressed_image_prepare"], "decompress_and_authenticate_container", "source_read", "container_size", 1, true); err != nil {
+		return err
+	}
+	if err := requireExactPhase(operations["compressed_image_prepare"], "write_authenticated_prepared_raw", "temporary_read", "expanded_size", 1, true); err != nil {
+		return err
+	}
+	if err := requireExactPhase(operations["zip_image_prepare"], "authenticate_zip_container", "source_read", "container_size", 1, true); err != nil {
+		return err
+	}
+	if err := requireExactPhase(operations["zip_image_prepare"], "write_authenticated_prepared_raw", "temporary_read", "expanded_size", 1, true); err != nil {
+		return err
+	}
+	if err := requireExactPhase(operations["virtual_disk_prepare"], "authenticate_virtual_container", "source_read", "container_size", 1, true); err != nil {
+		return err
+	}
+	if err := requireExactPhase(operations["virtual_disk_prepare"], "bind_converted_raw", "temporary_read", "expanded_size", 1, true); err != nil {
+		return err
+	}
+	if err := requireExactPhase(operations["virtual_disk_prepare"], "write_authenticated_prepared_raw", "temporary_read", "expanded_size", 1, true); err != nil {
 		return err
 	}
 	if err := requirePhase(operations["check_usb_full"], "target_write", "target_capacity", true); err != nil {
