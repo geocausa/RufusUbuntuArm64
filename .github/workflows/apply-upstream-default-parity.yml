@@ -32,7 +32,7 @@ jobs:
       - name: Apply the reviewed default patch
         run: |
           set +e
-          python3 scripts/apply-upstream-default-parity.py >.default-parity-apply.log 2>&1
+          python3 scripts/run-upstream-default-parity.py >.default-parity-apply.log 2>&1
           status=$?
           set -e
           cat .default-parity-apply.log
@@ -60,6 +60,7 @@ jobs:
         run: |
           rm -f .default-parity-apply.log
           rm scripts/apply-upstream-default-parity.py
+          rm scripts/run-upstream-default-parity.py
           rm .github/workflows/apply-upstream-default-parity.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
