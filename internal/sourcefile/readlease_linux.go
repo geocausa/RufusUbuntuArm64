@@ -151,12 +151,15 @@ func (lease *ReadLease) Close() error {
 		return nil
 	}
 	lease.closeOnce.Do(func() {
-		signal.Stop(lease.signals)
-		close(lease.stop)
-		<-lease.done
+		// Keep SIGIO registered until the kernel lease is gone. Otherwise a
+		// conflicting writer arriving during cleanup could target the process
+		// after its lease-break handler had already been removed.
 		if _, err := fcntlInt(lease.file.Fd(), syscall.F_SETLEASE, syscall.F_UNLCK); err != nil {
 			lease.closeErr = fmt.Errorf("release source read lease: %w", err)
 		}
+		signal.Stop(lease.signals)
+		close(lease.stop)
+		<-lease.done
 		lease.cancel(context.Canceled)
 		<-readLeaseSlot
 	})
