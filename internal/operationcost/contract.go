@@ -78,8 +78,8 @@ var allowedClassifications = map[string]struct{}{
 	"ordinary_creation":      {},
 	"explicit_maintenance":   {},
 	"explicit_qualification": {},
-	"imaging":                 {},
-	"acquisition":             {},
+	"imaging":                {},
+	"acquisition":            {},
 }
 
 var allowedStatuses = map[string]struct{}{
