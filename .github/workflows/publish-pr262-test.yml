@@ -1,0 +1,117 @@
+name: Publish PR262 hardware-test prerelease
+
+on:
+  pull_request:
+    types: [opened, reopened]
+    branches: [stage2/0.13.0]
+
+permissions:
+  contents: write
+
+env:
+  TAG: v0.13.0-pr262-test
+  TESTED_SHA: d72108d226defdd505f555d72cd6cf42a80d6991
+  MERGED_STAGE_SHA: 9257cc269a1e80d8ca37f6870fd37114e141e740
+  CI_RUN_ID: "30021555200"
+  ARTIFACT_ID: "8569982441"
+  ARTIFACT_NAME: rufusarm64-0.13.0+pr262.d72108d2-ubuntu-arm64
+  PACKAGE_NAME: rufusarm64_0.13.0+pr262.d72108d2_arm64.deb
+  PACKAGE_SHA256: b4fbb37532b36889b4467b51a539a328d7ce1195cc085d01ca990fa7cde6d489
+
+jobs:
+  publish:
+    if: >-
+      github.event.pull_request.head.ref == 'ops/publish-pr262-test' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify exact tested source and artifact provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/commits/${TESTED_SHA}" --jq .sha)" = "${TESTED_SHA}"
+          artifact_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}")"
+          test "$(jq -r .expired <<<"${artifact_json}")" = false
+          test "$(jq -r .name <<<"${artifact_json}")" = "${ARTIFACT_NAME}"
+          test "$(jq -r .workflow_run.head_sha <<<"${artifact_json}")" = "${TESTED_SHA}"
+          test "$(jq -r .workflow_run.id <<<"${artifact_json}")" = "${CI_RUN_ID}"
+
+      - name: Download and verify reproducible ARM64 package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh run download "${CI_RUN_ID}" --repo "${GITHUB_REPOSITORY}" --name "${ARTIFACT_NAME}" --dir dist
+          test -f "dist/${PACKAGE_NAME}"
+          test -f "dist/${PACKAGE_NAME}.sha256"
+          (
+            cd dist
+            sha256sum -c "${PACKAGE_NAME}.sha256"
+          )
+          test "$(sha256sum "dist/${PACKAGE_NAME}" | awk '{print $1}')" = "${PACKAGE_SHA256}"
+          test "$(dpkg-deb -f "dist/${PACKAGE_NAME}" Package)" = rufusarm64
+          test "$(dpkg-deb -f "dist/${PACKAGE_NAME}" Version)" = 0.13.0+pr262.d72108d2
+          test "$(dpkg-deb -f "dist/${PACKAGE_NAME}" Architecture)" = arm64
+
+      - name: Publish hardware-test prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "release ${TAG} already exists" >&2
+            exit 1
+          fi
+
+          cat >release-notes.md <<EOF
+          # RufusArm64 0.13.0 PR #262 hardware-test build
+
+          **This is a prerelease for physical hardware testing. It is not the final 0.13.0 release.**
+
+          - Exact tested source: `${TESTED_SHA}`
+          - Merged Stage 2 checkpoint: `${MERGED_STAGE_SHA}`
+          - CI run: `${CI_RUN_ID}`
+          - Package: `${PACKAGE_NAME}`
+          - SHA-256: `${PACKAGE_SHA256}`
+
+          ## Included since the previous PR #240 test build
+
+          - FreeDOS writes and verifies required filesystem extents instead of the entire USB capacity.
+          - Operation-cost and upstream-default contracts guard destructive scope and default behavior.
+          - Windows, persistent-Linux, raw-image, compressed and virtual-image paths reduce redundant complete source reads while retaining fail-closed source-mutation protection.
+          - Optional raw-image verification reads the physical target against the authenticated write digest without rereading the source.
+          - Fresh profiles use image-derived Automatic Windows layout and opt-in verification.
+          - Proven x86/x64 BIOS-only Windows installation ISOs resolve Automatic to MBR/BIOS; dual-capable media still prefer GPT/UEFI; ARM64 and ambiguous media fail safely.
+
+          ## Physical evidence still required
+
+          - Re-run the Lexar FreeDOS case and record planned I/O, elapsed time, final extent-scoped report, usable capacity and an actual x86 BIOS/Legacy or UEFI-CSM boot observation.
+          - Exercise representative Windows UEFI and proven BIOS-only installation media on real target hardware.
+          - Exercise supported persistent Linux creation and boot.
+          - Confirm the GTK interface at 1280×800 and complete the final Stage 2 hardware GO/NO-GO checklist.
+
+          Public `v0.13.0` remains blocked until those physical gates are recorded.
+          EOF
+
+          gh release create "${TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${TESTED_SHA}" \
+            --title "RufusArm64 0.13.0 PR #262 hardware-test build" \
+            --notes-file release-notes.md \
+            --prerelease \
+            "dist/${PACKAGE_NAME}" \
+            "dist/${PACKAGE_NAME}.sha256"
+
+      - name: Verify published release and assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="$(gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" --json isPrerelease,targetCommitish,url,assets)"
+          test "$(jq -r .isPrerelease <<<"${release_json}")" = true
+          test "$(jq -r .targetCommitish <<<"${release_json}")" = "${TESTED_SHA}"
+          jq -e --arg package "${PACKAGE_NAME}" '.assets | any(.name == $package)' <<<"${release_json}" >/dev/null
+          jq -e --arg checksum "${PACKAGE_NAME}.sha256" '.assets | any(.name == $checksum)' <<<"${release_json}" >/dev/null
+          echo "Published: $(jq -r .url <<<"${release_json}")"
