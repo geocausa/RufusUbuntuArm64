@@ -216,6 +216,12 @@ func Validate(contract Contract) error {
 	if err := requirePhase(operations["windows_install"], "target_write", "copied_payload", true); err != nil {
 		return err
 	}
+	if err := requireExactPhase(operations["linux_persistent_create"], "authenticate_held_source_image", "source_read", "source_size", 1, true); err != nil {
+		return err
+	}
+	if err := requireExactPhase(operations["linux_persistent_create"], "conservative_fallback_hashes", "source_read", "source_size", 2, false); err != nil {
+		return err
+	}
 	if err := requirePhase(operations["raw_image_write"], "target_write", "source_size", true); err != nil {
 		return err
 	}

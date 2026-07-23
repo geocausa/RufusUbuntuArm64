@@ -97,17 +97,24 @@
       "id": "linux_persistent_create",
       "surface": "Create persistent Linux media",
       "classification": "ordinary_creation",
-      "status": "audit",
-      "tracking_issue": 242,
+      "status": "conformant",
+      "tracking_issue": 251,
       "upstream_operation": "Create a writable boot filesystem and persistence partition, copy the supported live-media tree, and patch boot configuration.",
-      "intentional_linux_divergence": "The Linux-native path currently performs three complete source-image hashes in addition to manifest-bound copy and destination verification.",
+      "intentional_linux_divergence": "RufusArm64 authenticates one complete source-image hash while a Linux read lease excludes mutation; unsupported or contended sources retain two conditional fallback hashes and the original three-pass comparison.",
       "phases": [
         {
-          "name": "complete_source_hashes",
+          "name": "authenticate_held_source_image",
           "direction": "source_read",
           "scaling": "source_size",
-          "multiplier": 3,
+          "multiplier": 1,
           "enabled_by_default": true
+        },
+        {
+          "name": "conservative_fallback_hashes",
+          "direction": "source_read",
+          "scaling": "source_size",
+          "multiplier": 2,
+          "enabled_by_default": false
         },
         {
           "name": "copy_media_tree",

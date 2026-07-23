@@ -10,6 +10,7 @@
 - Added GTK keyboard mnemonics, safe visible accelerators, assistive-technology names/descriptions, and selectable compatibility and operation-detail text without binding shortcuts directly to erasure or cancellation.
 - Strengthened Windows setup analysis with bounded multi-edition metadata and WIM, ESD, or validated split-SWM payload reporting, while rejecting conflicting edition classes, payload families, part sequences, and inconsistent graphical reports.
 - Reduced ordinary Windows-media source verification from three complete ISO hashes to one authenticated pass when Linux can hold the selected ISO under a read lease; unsupported or already-writable sources retain the original conservative three-pass comparison.
+- Reduced persistent Linux source verification from three complete image hashes to one authenticated pass under the same identity-bound Linux read lease, while retaining manifest-bound copy verification and the conservative three-pass fallback.
 - Preserved every existing source/target identity, privilege, destructive confirmation, cancellation, verification, reproducibility, and native ARM64 gate. Physical hardware boot and persistence qualification remain separate release evidence.
 
 ## 0.12.1 — 2026-07-20

@@ -50,6 +50,15 @@ func TestValidateRequiresOneDefaultWindowsISOHash(t *testing.T) {
 	}
 }
 
+func TestValidateRequiresOneDefaultPersistentLinuxSourceHash(t *testing.T) {
+	contract := loadRepositoryContract(t)
+	operation := findOperationIndex(t, contract, "linux_persistent_create")
+	contract.Operations[operation].Phases[0].Multiplier = 3
+	if err := Validate(contract); err == nil || !strings.Contains(err.Error(), "authenticate_held_source_image") {
+		t.Fatalf("persistent Linux default source-hash boundary error = %v", err)
+	}
+}
+
 func TestDecodeRejectsUnknownFieldsAndTrailingJSON(t *testing.T) {
 	for name, value := range map[string]string{
 		"unknown":  `{"schema":1,"reviewed_upstream":{"repository":"pbatard/rufus","commit":"0000000000000000000000000000000000000000","paths":["src/format.c"]},"scaling_bases":[],"operations":[],"unexpected":true}`,
