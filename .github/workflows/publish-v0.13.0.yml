@@ -1,0 +1,88 @@
+name: Publish v0.13.0
+
+on:
+  pull_request:
+    types: [opened, reopened]
+    branches: [stage2/0.13.0]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  publish:
+    if: github.head_ref == 'ops/publish-v0.13.0'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      TAG: v0.13.0
+      VERSION: 0.13.0
+      TARGET_SHA: bf91e63007764716cf570a62e4c16ca4f31510aa
+    steps:
+      - name: Verify immutable release source
+        run: |
+          set -euo pipefail
+          actual="$(gh api "repos/${REPO}/git/ref/heads/stage2/0.13.0" --jq .object.sha)"
+          test "${actual}" = "${TARGET_SHA}"
+          version="$(gh api "repos/${REPO}/contents/VERSION?ref=${TARGET_SHA}" --jq .content | base64 -d | tr -d '\r\n')"
+          test "${version}" = "${VERSION}"
+          if gh api "repos/${REPO}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists; refusing to retarget it." >&2
+            exit 1
+          fi
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists; refusing duplicate publication." >&2
+            exit 1
+          fi
+
+      - name: Create immutable tag
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/${REPO}/git/refs" \
+            -f ref="refs/tags/${TAG}" \
+            -f sha="${TARGET_SHA}" >/dev/null
+          tagged="$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq .object.sha)"
+          test "${tagged}" = "${TARGET_SHA}"
+
+      - name: Dispatch hardened release workflow
+        run: |
+          set -euo pipefail
+          gh workflow run release.yml --repo "${REPO}" --ref "${TAG}" -f expected_version="${VERSION}"
+
+      - name: Wait for release workflow and require success
+        run: |
+          set -euo pipefail
+          run_id=""
+          for attempt in $(seq 1 60); do
+            run_id="$(gh run list --repo "${REPO}" --workflow release.yml --event workflow_dispatch --limit 20 \
+              --json databaseId,headSha,status,createdAt \
+              --jq '.[] | select(.headSha == env.TARGET_SHA) | .databaseId' | head -n1)"
+            if [[ -n "${run_id}" ]]; then
+              break
+            fi
+            sleep 10
+          done
+          test -n "${run_id}"
+          echo "Release workflow run: ${run_id}"
+          gh run watch "${run_id}" --repo "${REPO}" --exit-status
+
+      - name: Verify public release and assets
+        run: |
+          set -euo pipefail
+          json="$(gh release view "${TAG}" --repo "${REPO}" --json tagName,isDraft,isPrerelease,targetCommitish,assets)"
+          test "$(jq -r .tagName <<<"${json}")" = "${TAG}"
+          test "$(jq -r .isDraft <<<"${json}")" = "false"
+          test "$(jq -r .isPrerelease <<<"${json}")" = "false"
+          tagged="$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq .object.sha)"
+          test "${tagged}" = "${TARGET_SHA}"
+          for asset in \
+            "rufusarm64_${VERSION}_arm64.deb" \
+            "rufusarm64_${VERSION}_arm64.deb.sha256" \
+            "RufusArm64-${VERSION}-source.zip" \
+            "RufusArm64-${VERSION}-wimlib-1.14.5-source.tar.gz" \
+            "RufusArm64-${VERSION}-uefi-md5sum-v1.2-source.tar.gz" \
+            "RufusArm64-${VERSION}-uefi-md5sum-v1.2-source.tar.gz.sha256"; do
+            jq -e --arg asset "${asset}" '.assets[] | select(.name == $asset and .size > 0)' <<<"${json}" >/dev/null
+          done
