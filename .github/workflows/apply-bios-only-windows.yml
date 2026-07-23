@@ -1,0 +1,57 @@
+name: Apply BIOS-only Windows support
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+    branches: [stage2/0.13.0]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-bios-only-windows
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.ref == 'windows/bios-only-auto-layout'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the compatibility branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: windows/bios-only-auto-layout
+          fetch-depth: 0
+
+      - name: Set up declared Go version
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Apply reviewed product and parity patches
+        run: |
+          python3 scripts/apply-bios-only-windows.py
+          python3 scripts/apply-bios-only-docs.py
+
+      - name: Format and run focused compatibility tests
+        run: |
+          gofmt -w internal/windowsmedia/windowsmedia.go internal/windowsmedia/options.go internal/windowsmedia/analysis.go internal/windowsmedia/bios_capability_test.go cmd/rufus-linux/main.go
+          go test ./internal/windowsmedia ./cmd/rufus-linux ./internal/defaultparity
+          python3 -m json.tool docs/upstream-default-contract.json >/dev/null
+          (
+            cd gui
+            python3 -m unittest -v test_windows_bios_capability.py test_default_parity.py test_source_structure.py
+          )
+          git diff --check
+
+      - name: Remove executor and publish source-only compatibility commit
+        run: |
+          rm scripts/apply-bios-only-windows.py
+          rm scripts/apply-bios-only-docs.py
+          rm .github/workflows/apply-bios-only-windows.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'Windows: support proven BIOS-only installation media'
+          git push origin HEAD:windows/bios-only-auto-layout
