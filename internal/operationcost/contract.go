@@ -222,6 +222,18 @@ func Validate(contract Contract) error {
 	if err := requireExactPhase(operations["linux_persistent_create"], "conservative_fallback_hashes", "source_read", "source_size", 2, false); err != nil {
 		return err
 	}
+	if err := requireExactPhase(operations["raw_image_write"], "bind_source_hash", "source_read", "source_size", 1, true); err != nil {
+		return err
+	}
+	if err := requireExactPhase(operations["raw_image_write"], "write_and_hash_source", "source_read", "source_size", 1, true); err != nil {
+		return err
+	}
+	if err := rejectPhaseName(operations["raw_image_write"], "verification_source_read"); err != nil {
+		return err
+	}
+	if err := requireExactPhase(operations["raw_image_write"], "verification_target_read", "target_read", "source_size", 1, false); err != nil {
+		return err
+	}
 	if err := requirePhase(operations["raw_image_write"], "target_write", "source_size", true); err != nil {
 		return err
 	}
@@ -236,6 +248,15 @@ func Validate(contract Contract) error {
 	}
 	if err := requirePhase(operations["save_drive_image"], "output_write", "target_capacity", true); err != nil {
 		return err
+	}
+	return nil
+}
+
+func rejectPhaseName(operation Operation, name string) error {
+	for _, phase := range operation.Phases {
+		if phase.Name == name {
+			return fmt.Errorf("operation %s must not contain phase %s", operation.ID, name)
+		}
 	}
 	return nil
 }

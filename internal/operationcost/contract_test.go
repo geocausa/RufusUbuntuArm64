@@ -59,6 +59,21 @@ func TestValidateRequiresOneDefaultPersistentLinuxSourceHash(t *testing.T) {
 	}
 }
 
+func TestValidateForbidsRawVerificationSourcePass(t *testing.T) {
+	contract := loadRepositoryContract(t)
+	operation := findOperationIndex(t, contract, "raw_image_write")
+	contract.Operations[operation].Phases = append(contract.Operations[operation].Phases, Phase{
+		Name:             "verification_source_read",
+		Direction:        "source_read",
+		Scaling:          "source_size",
+		Multiplier:       1,
+		EnabledByDefault: false,
+	})
+	if err := Validate(contract); err == nil || !strings.Contains(err.Error(), "must not contain phase verification_source_read") {
+		t.Fatalf("raw optional source reread boundary error = %v", err)
+	}
+}
+
 func TestDecodeRejectsUnknownFieldsAndTrailingJSON(t *testing.T) {
 	for name, value := range map[string]string{
 		"unknown":  `{"schema":1,"reviewed_upstream":{"repository":"pbatard/rufus","commit":"0000000000000000000000000000000000000000","paths":["src/format.c"]},"scaling_bases":[],"operations":[],"unexpected":true}`,

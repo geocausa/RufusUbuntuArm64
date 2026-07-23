@@ -2,6 +2,8 @@ package imaging
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,6 +36,76 @@ func TestWriteAndVerifyRegularFiles(t *testing.T) {
 	}
 	if _, err := VerifyImage(context.Background(), src, dst, nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestWriteResultSupportsTargetOnlyDigestVerification(t *testing.T) {
+	dir := t.TempDir()
+	srcPath := filepath.Join(dir, "image.bin")
+	dstPath := filepath.Join(dir, "device.bin")
+	payload := make([]byte, 2*1024*1024+37)
+	for index := range payload {
+		payload[index] = byte((index*17 + 9) % 251)
+	}
+	if err := os.WriteFile(srcPath, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dstPath, make([]byte, len(payload)+4096), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.Open(srcPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := sourcefile.IdentityOf(source)
+	if err != nil {
+		source.Close()
+		t.Fatal(err)
+	}
+	result, err := WriteOpenImageWithResult(context.Background(), source, dstPath, WriteOptions{ExpectedSource: identity, TargetSize: uint64(len(payload) + 4096)})
+	if closeErr := source.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := sha256.Sum256(payload)
+	if result.BytesWritten != uint64(len(payload)) || result.SHA256 != hex.EncodeToString(expected[:]) {
+		t.Fatalf("write result = %#v", result)
+	}
+
+	// Verification is bound to the authenticated write digest, not to another
+	// read of the source path. Replacing the source after writing must not affect
+	// physical target verification.
+	if err := os.WriteFile(srcPath, []byte("source changed after the completed write"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	verified, err := VerifyTargetDigestWithOptions(context.Background(), dstPath, DigestVerifyOptions{
+		ExpectedDeviceSize: uint64(len(payload) + 4096),
+		ImageSize:          result.BytesWritten,
+		ExpectedSHA256:     result.SHA256,
+	}, nil)
+	if err != nil || verified != result.SHA256 {
+		t.Fatalf("target-only verification hash=%q err=%v", verified, err)
+	}
+
+	target, err := os.OpenFile(dstPath, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := target.WriteAt([]byte{payload[0] ^ 0xff}, 0); err != nil {
+		target.Close()
+		t.Fatal(err)
+	}
+	if err := target.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyTargetDigestWithOptions(context.Background(), dstPath, DigestVerifyOptions{
+		ExpectedDeviceSize: uint64(len(payload) + 4096),
+		ImageSize:          result.BytesWritten,
+		ExpectedSHA256:     result.SHA256,
+	}, nil); err == nil {
+		t.Fatal("target-only verification accepted a corrupted target")
 	}
 }
 
