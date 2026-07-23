@@ -1,4 +1,4 @@
-.TH RUFUSARM64 1 "20 July 2026" "RufusArm64 0.13.0" "User Commands"
+.TH RUFUSARM64 1 "23 July 2026" "RufusArm64 0.13.0" "User Commands"
 .SH NAME
 rufusarm64 \- graphical bootable USB creator and guarded data-media formatter for Ubuntu ARM64
 .SH SYNOPSIS
@@ -73,16 +73,24 @@ The separate
 action erases the selected removable drive and creates deterministic FreeDOS
 1.4 media from the package's checksum-pinned kernel and FreeCOM payload. It
 plans without elevation, binds the refreshed device identity and capacity,
-requires 512-byte logical sectors, displays the exact MBR/FAT32 geometry and
-platform warnings, and requires the generated
+requires 512-byte logical sectors, displays the exact MBR/FAT32 geometry,
+required write/readback byte totals, and platform warnings, and requires the
+generated
 .B WRITE FREEDOS 1.4 TO /dev/DEVICE FOR X86 BIOS LEGACY
 phrase before administrator authentication. The graphical path exposes no
 fixed-disk override or guarded-unmount bypass.
 .PP
+FreeDOS creation retains a nearly full-size FAT32 partition but writes and
+reads back only the required final MBR, FAT32 boot/FSInfo, FAT-table, root,
+payload, allocation-slack, and bounded head/tail clearing extents. Unallocated
+data clusters are not overwritten during this fast creation path. The separate
+.B Check USB
+workflow remains the exhaustive whole-device write/readback qualification.
+.PP
 FreeDOS media created by this action is limited to x86-compatible processors
-using BIOS or UEFI Legacy/CSM firmware. It does not boot ARM64 or UEFI-only
-systems. Complete structural readback and SHA-256 verification do not prove
-that a particular physical computer will boot the drive.
+using BIOS or UEFI Legacy/CSM firmware. Required-extent structural readback and
+SHA-256 verification do not prove that a particular physical computer will
+boot the drive or that untouched free clusters are healthy.
 .SH KEYBOARD AND ACCESSIBILITY
 The main image and USB-drive labels are keyboard mnemonics. Primary actions
 also expose underlined mnemonics without bypassing their normal validation or
@@ -114,9 +122,10 @@ force.
 .B --persistence
 Open the guarded persistent Ubuntu/Debian live-USB creator directly.
 .SH SAFETY
-Every selected target is erased. Verify the device model, capacity, and path
-shown in the final confirmation dialog. A successful write or byte comparison
-does not prove that particular firmware will boot the media.
+Every selected target is erased logically. Verify the device model, capacity,
+and path shown in the final confirmation dialog. A successful required-extent
+write/readback or structural check does not prove unused media or particular
+firmware. Use Check USB for exhaustive whole-device qualification.
 .SH SEE ALSO
 .BR rufusarm64-cli (1),
 .BR rufusarm64-nonbootable-format (1),
