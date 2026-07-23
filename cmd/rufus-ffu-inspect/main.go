@@ -63,17 +63,18 @@ func run(args []string) error {
 		return encoder.Encode(result)
 	}
 	fmt.Printf("FFU image: %s\n", result.Path)
-	fmt.Printf("Full Flash version: %d.%d\n", inspection.Store.FullFlashMajorVersion, inspection.Store.FullFlashMinorVersion)
+	fmt.Printf("Reported Full Flash version: %d.%d\n", inspection.Store.FullFlashMajorVersion, inspection.Store.FullFlashMinorVersion)
 	if inspection.Store.PlatformID != "" {
 		fmt.Printf("Platform ID: %s\n", inspection.Store.PlatformID)
 	}
 	fmt.Printf("Container size: %s\n", humanBytes(inspection.FileSize))
 	fmt.Printf("Security chunk: %s\n", humanBytes(inspection.Security.ChunkSizeBytes))
 	fmt.Printf("Store block: %s\n", humanBytes(uint64(inspection.Store.BlockSizeBytes)))
-	fmt.Printf("Write descriptors: %d (%s table)\n", inspection.Store.WriteDescriptorCount, humanBytes(uint64(inspection.Store.WriteDescriptorLength)))
-	fmt.Printf("Logical payload represented: %s\n", humanBytes(inspection.LogicalPayloadBytes))
-	fmt.Printf("Payload starts at byte: %d\n", inspection.PayloadOffset)
-	fmt.Println("Restoration: disabled — read-only structural inspection only")
+	fmt.Printf("Write descriptors: %d (%s declared table)\n", inspection.Store.WriteDescriptorCount, humanBytes(uint64(inspection.Store.WriteDescriptorLength)))
+	fmt.Printf("Validation descriptors: %d (%s declared table)\n", inspection.Store.ValidateDescriptorCount, humanBytes(uint64(inspection.Store.ValidateDescriptorLength)))
+	fmt.Printf("Common store prefix ends at byte: %d\n", inspection.StoreCommonEndOffset)
+	fmt.Println("Descriptor and payload offsets: unresolved")
+	fmt.Println("Restoration: disabled — read-only common-prefix inspection only")
 	for _, limitation := range inspection.Limitations {
 		fmt.Printf("- %s\n", limitation)
 	}
