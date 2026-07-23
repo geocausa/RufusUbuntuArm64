@@ -67,8 +67,8 @@ The pin is evidence of what was reviewed, not a permanent claim that Rufus never
 | Post-write target verification | `src/rufus.c` ordinary Start path; validation remains separately selected | Off | Off on fresh CLI and GTK profiles | Conformant after #258 |
 | Quick format | `src/rufus.c:EnableQuickFormat`; `src/format.c:FormatThread` | On | On | Conformant |
 | Bad-block testing | `src/rufus.c` advanced-format controls; `src/format.c:WriteDrive` | Off | Off | Conformant |
-| Windows partition scheme | `src/rufus.c:SetPartitionSchemeAndTargetSystem` | Derived from image/target | Automatic, image-derived; explicit GPT/MBR retained | Conformant for supported UEFI-capable media after #258 |
-| Windows target system | `src/rufus.c:SetPartitionSchemeAndTargetSystem` | Derived from image | Automatic, image-derived; explicit UEFI/BIOS retained | Conformant for supported UEFI-capable media after #258; BIOS-only support tracked by #260 |
+| Windows partition scheme | `src/rufus.c:SetPartitionSchemeAndTargetSystem` | Derived from image/target | Automatic resolves GPT for UEFI media and MBR for proven BIOS-only x86/x64 media; explicit GPT/MBR retained | Conformant after #260 |
+| Windows target system | `src/rufus.c:SetPartitionSchemeAndTargetSystem` | Derived from image | Automatic resolves UEFI from standard fallback loaders and BIOS only from root bootmgr plus bounded x86/x64 boot.wim metadata | Conformant after #260 |
 | Windows filesystem | `src/rufus.c:SetFileSystemAndClusterSize` | FAT32 preferred, NTFS when required | FAT32 preferred, NTFS when FAT32 is unsafe | Conformant |
 | Cluster size | `src/rufus.c:SetClusterSizes` | Filesystem/target default | Formatter automatic | Conformant |
 | Persistence | `src/rufus.c` persistence controls | Off, size zero | Off, size zero | Conformant |

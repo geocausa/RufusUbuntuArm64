@@ -15,6 +15,7 @@
 - Reduced sequential compressed-image preparation to one lease-held container read that authenticates while decompressing, removed the post-preparation container rehash on held ZIP/virtual inputs, and passed package-owned expanded digests to the raw writer so private prepared images are read only once during target writing.
 - Held plain raw/ISOHybrid sources under the identity-bound Linux read lease through destructive writing, while retaining the complete pre-write and write-time digest comparison and the conservative fallback for unsupported or already-writable sources.
 - Aligned fresh-profile defaults with pinned upstream Rufus: post-write verification is opt-in, quick format remains on, bad-block testing and persistence remain off, and Windows partition/target choices now default to image-derived Automatic rather than preselecting GPT/UEFI.
+- Recognized proven BIOS-only Windows setup ISOs by binding root `bootmgr` to bounded `boot.wim` x86/x64 metadata, allowing Automatic to choose MBR/BIOS without weakening ARM64 UEFI checks.
 - Preserved every existing source/target identity, privilege, destructive confirmation, cancellation, verification, reproducibility, and native ARM64 gate. Physical hardware boot and persistence qualification remain separate release evidence.
 
 ## 0.12.1 — 2026-07-20

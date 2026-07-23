@@ -44,7 +44,7 @@
       "status": "conformant",
       "high_risk": true,
       "sources": ["src/rufus.c", "internal/windowsmedia/options.go", "gui/rufusarm64.py"],
-      "note": "Supported UEFI-capable Windows media resolves Automatic to GPT; explicit MBR remains available."
+      "note": "UEFI-capable media resolves Automatic to GPT; proven BIOS-only x86/x64 media resolves Automatic to MBR."
     },
     {
       "id": "windows_target_system",
@@ -53,7 +53,7 @@
       "status": "conformant",
       "high_risk": true,
       "sources": ["src/rufus.c", "internal/windowsmedia/options.go", "gui/rufusarm64.py"],
-      "note": "Supported UEFI-capable media resolves Automatic to UEFI; BIOS-only media is tracked by issue 260."
+      "note": "UEFI-capable media resolves Automatic to UEFI; root bootmgr plus bounded x86/x64 boot.wim metadata resolves BIOS-only media to BIOS."
     },
     {
       "id": "windows_filesystem",
