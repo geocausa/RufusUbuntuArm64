@@ -45,34 +45,44 @@ type freeDOSProgressRecord struct {
 
 type freeDOSProgressEmitter struct {
 	writer      io.Writer
-	deviceSize  uint64
+	writeTotal  uint64
+	verifyTotal uint64
 	started     time.Time
 	lastPhase   freedos.ExecutionPhase
 	lastPercent int
 }
 
-func newFreeDOSProgressEmitter(writer io.Writer, deviceSize uint64) *freeDOSProgressEmitter {
-	return &freeDOSProgressEmitter{writer: writer, deviceSize: deviceSize, started: time.Now(), lastPercent: -1}
+func newFreeDOSProgressEmitter(writer io.Writer, writeTotal, verifyTotal uint64) *freeDOSProgressEmitter {
+	return &freeDOSProgressEmitter{
+		writer: writer, writeTotal: writeTotal, verifyTotal: verifyTotal,
+		started: time.Now(), lastPercent: -1,
+	}
 }
 
 func (emitter *freeDOSProgressEmitter) Emit(progress freedos.ExecutionProgress) error {
-	if emitter == nil || emitter.writer == nil || emitter.deviceSize == 0 {
+	if emitter == nil || emitter.writer == nil || emitter.writeTotal == 0 || emitter.verifyTotal == 0 {
 		return errors.New("FreeDOS progress emitter is not configured")
 	}
-	if emitter.deviceSize > ^uint64(0)/2 {
+	if emitter.writeTotal > ^uint64(0)-emitter.verifyTotal {
 		return errors.New("FreeDOS progress byte accounting overflow")
 	}
-	overallTotal := emitter.deviceSize * 2
+	overallTotal := emitter.writeTotal + emitter.verifyTotal
 	var overallDone uint64
 	switch progress.Phase {
 	case freedos.ExecutionPhasePrepare:
 		overallDone = 0
 	case freedos.ExecutionPhaseWrite:
+		if progress.Total != emitter.writeTotal {
+			return errors.New("FreeDOS write progress total differs from the reviewed extent total")
+		}
 		overallDone = progress.Processed
 	case freedos.ExecutionPhaseFlush:
-		overallDone = emitter.deviceSize
+		overallDone = emitter.writeTotal
 	case freedos.ExecutionPhaseReadback:
-		overallDone = emitter.deviceSize + progress.Processed
+		if progress.Total != emitter.verifyTotal {
+			return errors.New("FreeDOS verification progress total differs from the reviewed extent total")
+		}
+		overallDone = emitter.writeTotal + progress.Processed
 	case freedos.ExecutionPhaseFinish, freedos.ExecutionPhaseComplete:
 		overallDone = overallTotal
 	default:
@@ -267,7 +277,7 @@ func run(argv []string) error {
 
 	execution := freedos.ExecutionOptions{}
 	if opts.asJSON {
-		execution.PhaseProgress = newFreeDOSProgressEmitter(os.Stderr, selected.Size).Emit
+		execution.PhaseProgress = newFreeDOSProgressEmitter(os.Stderr, plan.MutationBytes, plan.VerificationBytes).Emit
 	}
 	report, runErr := freedos.ExecuteLinuxDevice(ctx, plan, freedos.LinuxDeviceOptions{
 		ExpectedDeviceID: kernelDeviceID,
@@ -379,6 +389,8 @@ func printPlan(planned plannedFormat) {
 	fmt.Printf("Identity: %s\n", planned.Identity)
 	fmt.Printf("Media: %s, one active FAT32 partition, label %q\n", planned.Plan.Distribution, planned.Plan.Label)
 	fmt.Printf("Partition: start %d bytes, size %d bytes\n", planned.Plan.PartitionStartBytes, planned.Plan.PartitionSizeBytes)
+	fmt.Printf("Creation I/O: write %d required bytes, verify %d required bytes; %d free-data bytes remain untouched\n",
+		planned.Plan.MutationBytes, planned.Plan.VerificationBytes, planned.Plan.UntouchedBytes)
 	fmt.Printf("Target platform: %s; firmware: %s\n", planned.Plan.TargetCPU, planned.Plan.Firmware)
 	for _, warning := range planned.Plan.Warnings {
 		fmt.Printf("WARNING: %s\n", warning)
@@ -389,9 +401,9 @@ func printPlan(planned plannedFormat) {
 func printReport(report freedos.ExecutionReport) {
 	fmt.Printf("Status: %s; phase: %s\n", report.Status, report.Phase)
 	fmt.Printf("Media changed: %t; verified: %t; reusable: %t\n", report.MediaChanged, report.Verified, report.Reusable)
-	fmt.Printf("Bytes written: %d\n", report.BytesWritten)
+	fmt.Printf("Bytes written: %d; bytes verified: %d; scope: %s\n", report.BytesWritten, report.BytesVerified, report.VerificationScope)
 	if report.SHA256 != "" {
-		fmt.Printf("Whole-media SHA-256: %s\n", report.SHA256)
+		fmt.Printf("Required-extents SHA-256: %s\n", report.SHA256)
 	}
 	if report.FailureReason != "" {
 		fmt.Printf("Failure: %s\n", report.FailureReason)
@@ -410,8 +422,10 @@ Usage:
   sudo rufusarm64-freedos-format --device /dev/DEVICE [--label FREEDOS]
 
 This dedicated command erases one removable whole drive and constructs verified
-FreeDOS 1.4 media for x86 BIOS or UEFI Legacy/CSM systems. It does not support
-fixed disks, ARM64 boot, UEFI-only boot, or a claim that physical hardware will
-boot. Use rufusarm64-cli list --json to obtain the exact path and identity token.
+FreeDOS 1.4 media for x86 BIOS or UEFI Legacy/CSM systems. It writes and verifies
+only the required boot and FAT32 filesystem extents; exhaustive device testing
+remains a separate qualification workflow. It does not support fixed disks,
+ARM64 boot, UEFI-only boot, or a claim that physical hardware will boot. Use
+rufusarm64-cli list --json to obtain the exact path and identity token.
 `, version)
 }
