@@ -12,10 +12,9 @@ import (
 )
 
 const (
-	securityHeaderBytes = 32
-	imageHeaderBytes    = 24
-	storeHeaderV2Bytes  = 248
-	storeHeaderV3Bytes  = 252
+	securityHeaderBytes    = 32
+	imageHeaderBytes       = 24
+	storeCommonHeaderBytes = 248
 
 	maxChunkBytes = uint64(1 << 30)
 	maxBlockBytes = uint64(1 << 30)
@@ -42,33 +41,32 @@ type ImageHeader struct {
 	ChunkSizeKB    uint32 `json:"chunk_size_kb"`
 }
 
-// StoreHeader describes the known Full Flash store header versions. Version 3
-// adds CompressionAlgorithm after the version-2 fields.
+// StoreHeader describes only the 248-byte prefix common to known FFU store
+// layouts. Extensions after FinalTableCount are deliberately unresolved.
 type StoreHeader struct {
-	HeaderSize               uint32  `json:"header_size"`
-	UpdateType               uint32  `json:"update_type"`
-	MajorVersion             uint16  `json:"major_version"`
-	MinorVersion             uint16  `json:"minor_version"`
-	FullFlashMajorVersion    uint16  `json:"full_flash_major_version"`
-	FullFlashMinorVersion    uint16  `json:"full_flash_minor_version"`
-	PlatformID               string  `json:"platform_id,omitempty"`
-	BlockSizeBytes           uint32  `json:"block_size_bytes"`
-	WriteDescriptorCount     uint32  `json:"write_descriptor_count"`
-	WriteDescriptorLength    uint32  `json:"write_descriptor_length"`
-	ValidateDescriptorCount  uint32  `json:"validate_descriptor_count"`
-	ValidateDescriptorLength uint32  `json:"validate_descriptor_length"`
-	InitialTableIndex        uint32  `json:"initial_table_index"`
-	InitialTableCount        uint32  `json:"initial_table_count"`
-	FlashOnlyTableIndex      uint32  `json:"flash_only_table_index"`
-	FlashOnlyTableCount      uint32  `json:"flash_only_table_count"`
-	FinalTableIndex          uint32  `json:"final_table_index"`
-	FinalTableCount          uint32  `json:"final_table_count"`
-	CompressionAlgorithm     *uint32 `json:"compression_algorithm,omitempty"`
+	CommonHeaderSize         uint32 `json:"common_header_size"`
+	UpdateType               uint32 `json:"update_type"`
+	MajorVersion             uint16 `json:"major_version"`
+	MinorVersion             uint16 `json:"minor_version"`
+	FullFlashMajorVersion    uint16 `json:"full_flash_major_version"`
+	FullFlashMinorVersion    uint16 `json:"full_flash_minor_version"`
+	PlatformID               string `json:"platform_id,omitempty"`
+	BlockSizeBytes           uint32 `json:"block_size_bytes"`
+	WriteDescriptorCount     uint32 `json:"write_descriptor_count"`
+	WriteDescriptorLength    uint32 `json:"write_descriptor_length"`
+	ValidateDescriptorCount  uint32 `json:"validate_descriptor_count"`
+	ValidateDescriptorLength uint32 `json:"validate_descriptor_length"`
+	InitialTableIndex        uint32 `json:"initial_table_index"`
+	InitialTableCount        uint32 `json:"initial_table_count"`
+	FlashOnlyTableIndex      uint32 `json:"flash_only_table_index"`
+	FlashOnlyTableCount      uint32 `json:"flash_only_table_count"`
+	FinalTableIndex          uint32 `json:"final_table_index"`
+	FinalTableCount          uint32 `json:"final_table_count"`
 }
 
-// Inspection is an immutable read-only description of the known FFU container
-// regions. RestorationSupported remains false until descriptor semantics,
-// catalog/hash verification, payload decoding, and the executor are qualified.
+// Inspection is an immutable read-only description of the FFU regions whose
+// boundaries are independently established. Descriptor and payload offsets are
+// not reported until the variable store extension is parsed safely.
 type Inspection struct {
 	Schema                   int            `json:"schema"`
 	FileSize                 uint64         `json:"file_size"`
@@ -78,21 +76,21 @@ type Inspection struct {
 	ImageHeaderOffset        uint64         `json:"image_header_offset"`
 	ManifestOffset           uint64         `json:"manifest_offset"`
 	StoreHeaderOffset        uint64         `json:"store_header_offset"`
-	ValidateDescriptorOffset uint64         `json:"validate_descriptor_offset"`
-	WriteDescriptorOffset    uint64         `json:"write_descriptor_offset"`
-	PayloadOffset            uint64         `json:"payload_offset"`
-	LogicalPayloadBytes      uint64         `json:"logical_payload_bytes"`
-	PayloadFileBytes         uint64         `json:"payload_file_bytes"`
+	StoreCommonEndOffset     uint64         `json:"store_common_end_offset"`
+	MinimumDescriptorBytes   uint64         `json:"minimum_descriptor_bytes"`
+	BytesAfterStoreCommon    uint64         `json:"bytes_after_store_common"`
 	Security                 SecurityHeader `json:"security"`
 	Image                    ImageHeader    `json:"image"`
 	Store                    StoreHeader    `json:"store"`
 	IntegrityMetadataPresent bool           `json:"integrity_metadata_present"`
+	DescriptorLayoutResolved bool           `json:"descriptor_layout_resolved"`
+	PayloadLayoutResolved    bool           `json:"payload_layout_resolved"`
 	RestorationSupported     bool           `json:"restoration_supported"`
 	Limitations              []string       `json:"limitations"`
 }
 
-// Inspect validates the known FFU header regions without allocating from
-// untrusted length fields and without reading or writing any target device.
+// Inspect validates known FFU header regions without allocating from untrusted
+// length fields and without reading or writing any target device.
 func Inspect(reader io.ReaderAt, size uint64) (Inspection, error) {
 	if reader == nil {
 		return Inspection{}, errors.New("FFU reader is nil")
@@ -180,12 +178,12 @@ func Inspect(reader io.ReaderAt, size uint64) (Inspection, error) {
 		return Inspection{}, fmt.Errorf("align FFU store header: %w", err)
 	}
 
-	storeBytes, err := readRegion(reader, size, storeOffset, storeHeaderV2Bytes, "store header")
+	storeBytes, err := readRegion(reader, size, storeOffset, storeCommonHeaderBytes, "common store header")
 	if err != nil {
 		return Inspection{}, err
 	}
 	store := StoreHeader{
-		HeaderSize:               storeHeaderV2Bytes,
+		CommonHeaderSize:         storeCommonHeaderBytes,
 		UpdateType:               binary.LittleEndian.Uint32(storeBytes[0:4]),
 		MajorVersion:             binary.LittleEndian.Uint16(storeBytes[4:6]),
 		MinorVersion:             binary.LittleEndian.Uint16(storeBytes[6:8]),
@@ -205,23 +203,6 @@ func Inspect(reader io.ReaderAt, size uint64) (Inspection, error) {
 		FinalTableCount:          binary.LittleEndian.Uint32(storeBytes[244:248]),
 	}
 
-	minimumWriteDescriptorBytes := uint64(16)
-	switch store.FullFlashMajorVersion {
-	case 2:
-		// Version 2 ends after the common store fields.
-	case 3:
-		compressionBytes, readErr := readRegion(reader, size, mustAdd(storeOffset, storeHeaderV2Bytes), 4, "version-3 compression field")
-		if readErr != nil {
-			return Inspection{}, readErr
-		}
-		compression := binary.LittleEndian.Uint32(compressionBytes)
-		store.CompressionAlgorithm = &compression
-		store.HeaderSize = storeHeaderV3Bytes
-		minimumWriteDescriptorBytes = 20
-	default:
-		return Inspection{}, fmt.Errorf("unsupported Full Flash format version %d.%d", store.FullFlashMajorVersion, store.FullFlashMinorVersion)
-	}
-
 	blockBytes := uint64(store.BlockSizeBytes)
 	if blockBytes == 0 || blockBytes > maxBlockBytes || blockBytes%512 != 0 || !isPowerOfTwo(blockBytes) {
 		return Inspection{}, fmt.Errorf("invalid FFU block size %d bytes", store.BlockSizeBytes)
@@ -229,8 +210,8 @@ func Inspect(reader io.ReaderAt, size uint64) (Inspection, error) {
 	if store.WriteDescriptorCount == 0 || store.WriteDescriptorLength == 0 {
 		return Inspection{}, errors.New("FFU contains no write descriptors")
 	}
-	minimumLength, err := checkedMul(uint64(store.WriteDescriptorCount), minimumWriteDescriptorBytes)
-	if err != nil || uint64(store.WriteDescriptorLength) < minimumLength {
+	minimumWriteLength, err := checkedMul(uint64(store.WriteDescriptorCount), 16)
+	if err != nil || uint64(store.WriteDescriptorLength) < minimumWriteLength {
 		return Inspection{}, fmt.Errorf("FFU write descriptor table is too short for %d entries", store.WriteDescriptorCount)
 	}
 	if (store.ValidateDescriptorCount == 0) != (store.ValidateDescriptorLength == 0) {
@@ -246,33 +227,20 @@ func Inspect(reader io.ReaderAt, size uint64) (Inspection, error) {
 		return Inspection{}, err
 	}
 
-	storeEnd, err := checkedAdd(storeOffset, uint64(store.HeaderSize))
+	storeCommonEnd, err := checkedAdd(storeOffset, storeCommonHeaderBytes)
 	if err != nil {
-		return Inspection{}, errors.New("FFU store-header boundary overflows")
+		return Inspection{}, errors.New("FFU common store-header boundary overflows")
 	}
-	validateOffset := storeEnd
-	writeOffset, err := checkedAdd(validateOffset, uint64(store.ValidateDescriptorLength))
+	minimumDescriptorBytes, err := checkedAdd(uint64(store.ValidateDescriptorLength), uint64(store.WriteDescriptorLength))
 	if err != nil {
-		return Inspection{}, errors.New("FFU validation descriptor boundary overflows")
+		return Inspection{}, errors.New("FFU descriptor lengths overflow")
 	}
-	writeEnd, err := checkedAdd(writeOffset, uint64(store.WriteDescriptorLength))
-	if err != nil {
-		return Inspection{}, errors.New("FFU write descriptor boundary overflows")
-	}
-	payloadOffset, err := alignUp(writeEnd, chunkBytes)
-	if err != nil {
-		return Inspection{}, fmt.Errorf("align FFU payload: %w", err)
-	}
-	if payloadOffset > size {
-		return Inspection{}, fmt.Errorf("FFU payload starts at %d beyond file size %d", payloadOffset, size)
-	}
-	logicalPayloadBytes, err := checkedMul(uint64(store.WriteDescriptorCount), blockBytes)
-	if err != nil {
-		return Inspection{}, errors.New("FFU logical payload size overflows")
+	if minimumDescriptorBytes > size-storeCommonEnd {
+		return Inspection{}, errors.New("FFU is too short to contain its declared descriptor tables after the common store header")
 	}
 
 	return Inspection{
-		Schema:                   1,
+		Schema:                   2,
 		FileSize:                 size,
 		SecurityHeaderOffset:     0,
 		CatalogOffset:            catalogOffset,
@@ -280,20 +248,22 @@ func Inspect(reader io.ReaderAt, size uint64) (Inspection, error) {
 		ImageHeaderOffset:        imageOffset,
 		ManifestOffset:           manifestOffset,
 		StoreHeaderOffset:        storeOffset,
-		ValidateDescriptorOffset: validateOffset,
-		WriteDescriptorOffset:    writeOffset,
-		PayloadOffset:            payloadOffset,
-		LogicalPayloadBytes:      logicalPayloadBytes,
-		PayloadFileBytes:         size - payloadOffset,
+		StoreCommonEndOffset:     storeCommonEnd,
+		MinimumDescriptorBytes:   minimumDescriptorBytes,
+		BytesAfterStoreCommon:    size - storeCommonEnd,
 		Security:                 security,
 		Image:                    image,
 		Store:                    store,
 		IntegrityMetadataPresent: true,
+		DescriptorLayoutResolved: false,
+		PayloadLayoutResolved:    false,
 		RestorationSupported:     false,
 		Limitations: []string{
+			"only the 248-byte common store prefix is parsed",
+			"variable store extensions and descriptor-table offsets are not yet resolved",
 			"write and validation descriptor semantics are not yet parsed",
 			"the security catalog and chunk hash table are located but not yet authenticated",
-			"payload compression and sparse destination mapping are not yet decoded",
+			"payload location, compression, and sparse destination mapping are unresolved",
 			"split SFU and optimized FFU resize semantics are unsupported",
 			"no target device can be written by this package",
 		},
@@ -321,14 +291,6 @@ func checkedAdd(left, right uint64) (uint64, error) {
 		return 0, errors.New("unsigned addition overflow")
 	}
 	return result, nil
-}
-
-func mustAdd(left uint64, right int) uint64 {
-	result, err := checkedAdd(left, uint64(right))
-	if err != nil {
-		panic(err)
-	}
-	return result
 }
 
 func checkedMul(left, right uint64) (uint64, error) {
