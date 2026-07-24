@@ -48,7 +48,19 @@ jobs:
           git diff --check
 
       - name: Run FFU package tests
-        run: go test -count=1 ./internal/ffu
+        shell: bash
+        run: |
+          set -o pipefail
+          go test -count=1 -json ./internal/ffu 2>&1 | tee "$RUNNER_TEMP/ffu-package-test.json"
+
+      - name: Upload FFU package test log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ffu-publication-package-test-log
+          path: ${{ runner.temp }}/ffu-package-test.json
+          if-no-files-found: warn
+          retention-days: 1
 
       - name: Vet FFU package
         run: go vet ./internal/ffu
