@@ -25,91 +25,77 @@ jobs:
         with:
           go-version: '1.22.x'
           cache: false
-      - name: Apply exact reviewed patch and verify
+
+      - name: Reconstruct and apply reviewed patch
         shell: bash
         run: |
           set -euo pipefail
-          log="$RUNNER_TEMP/ffu-publication-executor.log"
-          {
-            echo '=== reconstruct reviewed patch ==='
-            cat .github/patches/ffu-trust-publication.*.b64 > "$RUNNER_TEMP/ffu-trust-publication.patch.gz.b64"
-            printf '%s  %s\n' \
-              e35e13f6b343ea712f11ed7d1e6793b30a98f16b5a14585169f36b5eaec6c60b \
-              "$RUNNER_TEMP/ffu-trust-publication.patch.gz.b64" \
-              | sha256sum --check --strict
-            base64 --decode "$RUNNER_TEMP/ffu-trust-publication.patch.gz.b64" \
-              | gzip --decompress --stdout \
-              > "$RUNNER_TEMP/ffu-trust-publication.patch"
-            printf '%s  %s\n' \
-              ae58d3129f96dace9d9782af5f2c884aa4b6be64b2fe8a2ff06235af1baee31c \
-              "$RUNNER_TEMP/ffu-trust-publication.patch" \
-              | sha256sum --check --strict
+          cat .github/patches/ffu-trust-publication.*.b64 > "$RUNNER_TEMP/ffu-trust-publication.patch.gz.b64"
+          printf '%s  %s\n' \
+            e35e13f6b343ea712f11ed7d1e6793b30a98f16b5a14585169f36b5eaec6c60b \
+            "$RUNNER_TEMP/ffu-trust-publication.patch.gz.b64" \
+            | sha256sum --check --strict
+          base64 --decode "$RUNNER_TEMP/ffu-trust-publication.patch.gz.b64" \
+            | gzip --decompress --stdout \
+            > "$RUNNER_TEMP/ffu-trust-publication.patch"
+          printf '%s  %s\n' \
+            ae58d3129f96dace9d9782af5f2c884aa4b6be64b2fe8a2ff06235af1baee31c \
+            "$RUNNER_TEMP/ffu-trust-publication.patch" \
+            | sha256sum --check --strict
+          git apply --check "$RUNNER_TEMP/ffu-trust-publication.patch"
+          git apply "$RUNNER_TEMP/ffu-trust-publication.patch"
+          gofmt -w internal/ffu/trust_store*.go
+          git diff --check
 
-            echo '=== apply reviewed patch ==='
-            git apply --check "$RUNNER_TEMP/ffu-trust-publication.patch"
-            git apply "$RUNNER_TEMP/ffu-trust-publication.patch"
-            gofmt -w internal/ffu/trust_store*.go
+      - name: Run FFU package tests
+        run: go test -count=1 ./internal/ffu
 
-            echo '=== package tests ==='
-            go test -count=1 ./internal/ffu
-            echo '=== vet ==='
-            go vet ./internal/ffu
-            echo '=== race tests ==='
-            go test -race -count=1 ./internal/ffu
-            echo '=== fuzz smoke ==='
-            go test -run='^$' -fuzz='FuzzDecodeCanonicalTrustStoreJSONDoesNotPanic' -fuzztime=5s ./internal/ffu
-            echo '=== ARM64 cross-build ==='
-            GOOS=linux GOARCH=arm64 go test -c ./internal/ffu -o "$RUNNER_TEMP/ffu-publication-arm64.test"
+      - name: Vet FFU package
+        run: go vet ./internal/ffu
 
-            echo '=== remove temporary machinery ==='
-            rm -f \
-              .github/workflows/snapshot-ffu-publication.yml \
-              .github/workflows/apply-ffu-trust-publication.yml \
-              .github/patches/ffu-trust-publication.*.b64
-            git diff --check
-            python3 - <<'PY'
-            import subprocess
+      - name: Run FFU race tests
+        run: go test -race -count=1 ./internal/ffu
 
-            allowed = {
-                '.github/patches/ffu-trust-publication.00a.b64',
-                '.github/patches/ffu-trust-publication.00b.b64',
-                '.github/patches/ffu-trust-publication.01.b64',
-                '.github/workflows/apply-ffu-trust-publication.yml',
-                '.github/workflows/snapshot-ffu-publication.yml',
-                'docs/ffu-trust-bundle-publication.md',
-                'internal/ffu/trust_store_linux.go',
-                'internal/ffu/trust_store_linux_test.go',
-                'internal/ffu/trust_store_rename_linux.go',
-                'internal/ffu/trust_store_rename_linux_amd64.go',
-                'internal/ffu/trust_store_rename_linux_arm64.go',
-            }
-            paths = {line[3:] for line in subprocess.check_output(
-                ['git', 'status', '--short'], text=True
-            ).splitlines()}
-            unexpected = sorted(paths - allowed)
-            if unexpected:
-                raise SystemExit('unexpected changed paths: ' + ', '.join(unexpected))
-            required = {
-                'docs/ffu-trust-bundle-publication.md',
-                'internal/ffu/trust_store_linux.go',
-                'internal/ffu/trust_store_linux_test.go',
-                'internal/ffu/trust_store_rename_linux.go',
-                'internal/ffu/trust_store_rename_linux_amd64.go',
-                'internal/ffu/trust_store_rename_linux_arm64.go',
-            }
-            missing = sorted(required - paths)
-            if missing:
-                raise SystemExit('missing product paths: ' + ', '.join(missing))
-            PY
-          } 2>&1 | tee "$log"
-      - name: Upload executor log
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: ffu-publication-executor-log
-          path: ${{ runner.temp }}/ffu-publication-executor.log
-          if-no-files-found: warn
-          retention-days: 1
+      - name: Fuzz canonical store parser
+        run: go test -run='^$' -fuzz='FuzzDecodeCanonicalTrustStoreJSONDoesNotPanic' -fuzztime=5s ./internal/ffu
+
+      - name: Cross-build FFU package for ARM64
+        run: GOOS=linux GOARCH=arm64 go test -c ./internal/ffu -o "$RUNNER_TEMP/ffu-publication-arm64.test"
+
+      - name: Remove temporary machinery and verify scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            .github/workflows/snapshot-ffu-publication.yml \
+            .github/workflows/apply-ffu-trust-publication.yml \
+            .github/patches/ffu-trust-publication.*.b64
+          git diff --check
+          changed="$(git status --short | cut -c4- | sort)"
+          expected="$(printf '%s\n' \
+            .github/patches/ffu-trust-publication.00a.b64 \
+            .github/patches/ffu-trust-publication.00b.b64 \
+            .github/patches/ffu-trust-publication.01.b64 \
+            .github/workflows/apply-ffu-trust-publication.yml \
+            .github/workflows/snapshot-ffu-publication.yml \
+            docs/ffu-trust-bundle-publication.md \
+            internal/ffu/trust_store_linux.go \
+            internal/ffu/trust_store_linux_test.go \
+            internal/ffu/trust_store_rename_linux.go \
+            internal/ffu/trust_store_rename_linux_amd64.go \
+            internal/ffu/trust_store_rename_linux_arm64.go \
+            | sort)"
+          test "$changed" = "$expected"
+          for path in \
+            docs/ffu-trust-bundle-publication.md \
+            internal/ffu/trust_store_linux.go \
+            internal/ffu/trust_store_linux_test.go \
+            internal/ffu/trust_store_rename_linux.go \
+            internal/ffu/trust_store_rename_linux_amd64.go \
+            internal/ffu/trust_store_rename_linux_arm64.go; do
+            test -f "$path"
+          done
+
       - name: Commit clean product change
         shell: bash
         run: |
