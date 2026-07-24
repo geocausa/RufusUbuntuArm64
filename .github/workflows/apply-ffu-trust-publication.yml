@@ -50,7 +50,8 @@ jobs:
           import subprocess
 
           allowed = {
-              '.github/patches/ffu-trust-publication.00.b64',
+              '.github/patches/ffu-trust-publication.00a.b64',
+              '.github/patches/ffu-trust-publication.00b.b64',
               '.github/patches/ffu-trust-publication.01.b64',
               '.github/workflows/apply-ffu-trust-publication.yml',
               '.github/workflows/snapshot-ffu-publication.yml',
