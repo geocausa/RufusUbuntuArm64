@@ -1,0 +1,46 @@
+name: Snapshot FFU publication sources
+
+on:
+  pull_request:
+    branches:
+      - stage3/0.14.0
+    paths:
+      - .github/workflows/snapshot-ffu-publication.yml
+      - internal/ffu/**
+      - internal/runtimeintegrity/**
+      - internal/acquisition/**
+      - go.mod
+
+permissions:
+  contents: read
+
+jobs:
+  source-snapshot:
+    if: github.event.pull_request.head.ref == 'feature/ffu-trust-bundle-publication'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Create reviewed-source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/ffu-publication-source"
+          mkdir -p "$root/internal" "$root/docs"
+          cp -a internal/ffu "$root/internal/"
+          cp -a internal/runtimeintegrity "$root/internal/"
+          cp -a internal/acquisition "$root/internal/"
+          cp go.mod "$root/"
+          for file in docs/ffu-trust-metadata-authentication.md docs/acquisition-admin.md docs/code-audit-0.12.0.md; do
+            if test -f "$file"; then
+              cp "$file" "$root/docs/"
+            fi
+          done
+          tar -C "$RUNNER_TEMP" -czf "$RUNNER_TEMP/ffu-publication-source.tar.gz" ffu-publication-source
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ffu-publication-source
+          path: ${{ runner.temp }}/ffu-publication-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1
