@@ -6,7 +6,7 @@ on:
       - stage3/0.14.0
     paths:
       - .github/workflows/apply-ffu-trust-publication.yml
-      - .github/patches/ffu-trust-publication.*.b64
+      - .github/patches/ffu-trust-publication.*
 
 permissions:
   contents: write
@@ -42,8 +42,14 @@ jobs:
             ae58d3129f96dace9d9782af5f2c884aa4b6be64b2fe8a2ff06235af1baee31c \
             "$RUNNER_TEMP/ffu-trust-publication.patch" \
             | sha256sum --check --strict
+          printf '%s  %s\n' \
+            e41e8c6a155e0005596b695a13ab2d7e88e3a05ce125f348204e0dbcb39d047b \
+            .github/patches/ffu-trust-publication-test-permissions.patch \
+            | sha256sum --check --strict
           git apply --check "$RUNNER_TEMP/ffu-trust-publication.patch"
           git apply "$RUNNER_TEMP/ffu-trust-publication.patch"
+          git apply --check .github/patches/ffu-trust-publication-test-permissions.patch
+          git apply .github/patches/ffu-trust-publication-test-permissions.patch
           gofmt -w internal/ffu/trust_store*.go
           git diff --check
 
@@ -81,13 +87,14 @@ jobs:
           rm -f \
             .github/workflows/snapshot-ffu-publication.yml \
             .github/workflows/apply-ffu-trust-publication.yml \
-            .github/patches/ffu-trust-publication.*.b64
+            .github/patches/ffu-trust-publication.*
           git diff --check
           changed="$(git status --short | cut -c4- | sort)"
           expected="$(printf '%s\n' \
             .github/patches/ffu-trust-publication.00a.b64 \
             .github/patches/ffu-trust-publication.00b.b64 \
             .github/patches/ffu-trust-publication.01.b64 \
+            .github/patches/ffu-trust-publication-test-permissions.patch \
             .github/workflows/apply-ffu-trust-publication.yml \
             .github/workflows/snapshot-ffu-publication.yml \
             docs/ffu-trust-bundle-publication.md \
