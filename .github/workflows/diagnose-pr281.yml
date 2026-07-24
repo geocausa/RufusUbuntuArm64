@@ -1,0 +1,41 @@
+name: Diagnose PR281 catalog tests
+
+on:
+  pull_request:
+    branches:
+      - feature/ffu-content-verification
+    paths:
+      - internal/ffu/**
+      - .github/workflows/diagnose-pr281.yml
+
+permissions:
+  contents: read
+
+jobs:
+  focused-catalog-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Capture focused package output
+        shell: bash
+        run: |
+          set +e
+          go test -count=1 -run 'TestPlanCatalogMember|TestParseWindowsCatalog' ./internal/ffu > pr281-go-test.log 2>&1
+          status=$?
+          printf '%s\n' "$status" > pr281-go-test.status
+          cat pr281-go-test.log
+          exit 0
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr281-focused-diagnostics
+          path: |
+            pr281-go-test.log
+            pr281-go-test.status
+          if-no-files-found: error
+          retention-days: 1
