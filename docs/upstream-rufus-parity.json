@@ -1,6 +1,6 @@
 {
-  "schema": 1,
-  "generated_on": "2026-07-17",
+  "schema": 2,
+  "generated_on": "2026-07-24",
   "upstream": {
     "repository": "pbatard/rufus",
     "version": "4.15",
@@ -9,107 +9,145 @@
   },
   "project": {
     "repository": "geocausa/RufusUbuntuArm64",
-    "baseline": "0.10.6",
-    "target_milestone": "0.11.0"
+    "baseline": "stage3/0.14.0",
+    "baseline_commit": "6d2e4f295105f91d8d2db02879b7b100d81d4327",
+    "target_milestone": "1.0",
+    "windows_to_go_policy": "deferred-maybe"
   },
   "status_definitions": {
-    "implemented": "Available through a tested Linux-native path.",
-    "partial": "A useful subset is available, with documented missing behavior.",
-    "in_progress": "Implementation exists on the 0.11 development branch but is not released.",
+    "implemented": "Available through a tested Linux-native path, subject to any stated qualification scope.",
+    "partial": "A useful tested subset is available, with explicit missing behavior.",
+    "in_progress": "Implementation is active on Stage 3 but is not yet an enabled end-to-end product path.",
     "planned": "Suitable for a Linux-native implementation but not yet present.",
     "not_portable": "Depends on a Windows-only provider or filesystem with no verified Linux equivalent.",
-    "out_of_scope": "Not appropriate for the ARM64/Linux product goal."
+    "deferred": "Deliberately outside the current critical path and not promised for the next release."
   },
   "features": [
     {
       "id": "raw-image-write",
-      "upstream_feature": "Create bootable drives from disk images, including compressed images",
+      "upstream_feature": "Create bootable drives from disk images, including compressed and virtual-disk images",
       "status": "implemented",
-      "notes": "Raw, ISOHybrid, ZIP, gzip, bzip2, XZ, LZMA, Zstandard, VHD, VHDX, QCOW2, and VMDK inputs are supported with source and target identity checks."
+      "notes": "Raw, ISOHybrid, ZIP, gzip, bzip2, XZ, LZMA, Zstandard, VHD, VHDX, QCOW2, and VMDK inputs use source/target identity checks, cancellation, flush, and optional physical-device verification.",
+      "upstream_sources": ["src/rufus.c", "src/format.c", "src/vhd.c", "src/bled/"]
     },
     {
       "id": "windows-install-media",
       "upstream_feature": "Create Windows installation drives",
       "status": "implemented",
-      "notes": "GPT/MBR, UEFI, x86 BIOS/CSM, FAT32, NTFS, WIM splitting, UEFI:NTFS, setup options, and driver staging are available."
+      "notes": "GPT/MBR, UEFI, x86 BIOS/CSM, FAT32, NTFS, WIM splitting, UEFI:NTFS, setup options, and driver staging are implemented through Linux-native tooling.",
+      "upstream_sources": ["src/format.c", "src/iso.c", "src/wimlib.c", "src/wue.c"]
     },
     {
-      "id": "windows-11-oobe-options",
-      "upstream_feature": "Improve Windows installation experience through OOBE parameters",
+      "id": "windows-user-experience",
+      "upstream_feature": "Customize Windows Setup and OOBE behavior",
       "status": "partial",
-      "notes": "Hardware-check bypass, local/offline account, privacy, regional settings, and BitLocker controls exist; newer Rufus policy and application-removal options remain to be inventoried."
+      "notes": "Hardware-check bypass, offline/local account, privacy, regional settings, time zone, BitLocker suppression, and driver loading are implemented. Rufus 4.15 Quality of Life policy is under exact-head review in PR #290. Silent installation, SkuSiPolicy deployment, and Windows CA 2023 bootloader selection remain separate high-risk/media-policy tranches.",
+      "upstream_sources": ["src/wue.c", "src/rufus.h"]
     },
     {
       "id": "linux-persistence",
       "upstream_feature": "Create persistent Linux partitions",
       "status": "implemented",
-      "notes": "Guarded GPT/UEFI creation is available for the qualified Ubuntu casper and Debian live-boot contract; broader distribution coverage remains planned."
+      "notes": "Guarded GPT/UEFI creation, verified writable-tree copy, identity-bound GUI flow, and reboot qualification are available for qualified Ubuntu casper and Debian live-boot media. Broader distribution-specific support remains planned.",
+      "upstream_sources": ["src/format.c", "src/iso.c"]
     },
     {
       "id": "uefi-runtime-validation",
       "upstream_feature": "Perform runtime validation of UEFI bootable media",
-      "status": "in_progress",
-      "notes": "The existing 0.11 CLI and GTK UEFI structural/Secure Boot analyzer is distinct from upstream runtime validation. A descriptor-rooted uefi-md5sum-compatible manifest generator, strict parser, and full-tree verifier are now implemented; bootloader provenance, transactional fallback-loader wrapping, QEMU chainload tests, and physical qualification remain planned."
+      "status": "implemented",
+      "notes": "Descriptor-rooted UEFI structural and Secure Boot analysis, Rufus-compatible md5sum manifests, full-tree verification, a reproducibly built ARM64 validation loader, transactional installation, and QEMU chainload qualification are implemented. Physical hardware coverage remains a release-qualification item.",
+      "upstream_sources": ["src/format.c", "src/iso.c", "res/uefi/uefi-md5sum/README.md"]
     },
     {
       "id": "image-checksums",
       "upstream_feature": "Compute MD5, SHA-1, SHA-256, and SHA-512 checksums",
-      "status": "partial",
-      "notes": "SHA-256 is implemented throughout destructive workflows; user-facing MD5, SHA-1, SHA-512, and checksum-file comparison remain planned."
+      "status": "implemented",
+      "notes": "All four Rufus-compatible image checksum algorithms are available in one descriptor-bound pass. MD5 and SHA-1 are explicitly excluded from trust decisions.",
+      "upstream_sources": ["src/hash.c", "src/rufus.c"]
     },
     {
       "id": "bad-blocks-and-fake-capacity",
       "upstream_feature": "Perform bad-block checks, including fake flash-drive detection",
       "status": "partial",
-      "notes": "Windows-media workflows provide a destructive single-pass write/read option; multi-pattern tests, wraparound detection, and reusable qualification reports remain planned."
+      "notes": "Windows-media workflows provide a destructive write/read qualification option. Rufus-style multi-pattern passes, wraparound/fake-capacity detection, and reusable qualification reports remain planned.",
+      "upstream_sources": ["src/badblocks.c", "src/format.c"]
     },
     {
       "id": "drive-to-image",
-      "upstream_feature": "Create VHD/DD, VHDX, and FFU images of an existing drive",
-      "status": "planned",
-      "notes": "Start with identity-bound raw and compressed backups, then evaluate sparse VHD/VHDX export."
+      "upstream_feature": "Create DD/VHD, VHDX, FFU, and ISO images of an existing drive",
+      "status": "partial",
+      "notes": "Identity-bound raw drive-image backup with progress, cancellation, SHA-256, atomic publication, and GTK integration is complete. Sparse VHD/VHDX export, UDF ISO capture, and FFU capture remain unimplemented Linux-native formats.",
+      "upstream_sources": ["src/vhd.c"]
     },
     {
       "id": "windows-to-go",
       "upstream_feature": "Create Windows To Go drives",
-      "status": "planned",
-      "notes": "Requires a Linux-native wimlib deployment path, BCD construction, offline registry changes, and extensive physical qualification."
+      "status": "deferred",
+      "notes": "Explicitly deferred as a later maybe. It is not on the Stage 3 critical path and requires Linux-native deployment, BCD/offline-registry work, and extensive physical qualification.",
+      "upstream_sources": ["src/wue.c", "src/format.c", "src/vhd.c"]
     },
     {
       "id": "official-image-downloads",
       "upstream_feature": "Download official Microsoft Windows and UEFI Shell images",
       "status": "partial",
-      "notes": "Threshold-signed acquisition and rollback-resistant cache foundations exist, but the production catalog is deliberately disabled until offline trust metadata is provisioned."
+      "notes": "Resumable verified acquisition, threshold-signed metadata, rollback-resistant cache, GUI workflow, and offline administration tools exist. Production offline-key ceremony and signed catalog publication remain pending.",
+      "upstream_sources": ["src/fido.c", "src/net.c"]
     },
     {
       "id": "filesystems",
       "upstream_feature": "Format FAT/FAT32/NTFS/UDF/exFAT/ReFS/ext2/ext3",
       "status": "partial",
-      "notes": "FAT32, NTFS, and ext4 persistence are implemented. exFAT, UDF, and selected ext workflows are planned; ReFS is not portable through a verified Linux formatter."
+      "notes": "FAT32, NTFS, and ext4 persistence paths are implemented. exFAT, UDF, and selected ext workflows remain planned. ReFS has no verified Linux-native formatter and is not portable today.",
+      "upstream_sources": ["src/format.c", "src/fat32.c", "src/ext2fs/"]
     },
     {
       "id": "dos-media",
       "upstream_feature": "Create FreeDOS or MS-DOS bootable drives",
-      "status": "out_of_scope",
-      "notes": "DOS boot targets are x86 BIOS environments and do not advance the primary Ubuntu ARM64 goal; FreeDOS may be reconsidered only as an explicitly cross-architecture utility."
+      "status": "partial",
+      "notes": "Deterministic FreeDOS 1.4 media creation is complete. MS-DOS binary acquisition and licensing-dependent creation are not implemented.",
+      "upstream_sources": ["src/dos.c", "res/freedos/"]
     },
     {
       "id": "ffu",
-      "upstream_feature": "Read and write Full Flash Update images",
-      "status": "not_portable",
-      "notes": "The official Windows FFU provider has no verified Linux-native equivalent; RufusArm64 continues to refuse FFU rather than claim unsafe compatibility."
+      "upstream_feature": "Read, write, and capture Full Flash Update images",
+      "status": "in_progress",
+      "notes": "Linux-native read-only inspection, descriptor planning, chunk hash verification, catalog-member binding, PKCS#7 signature verification, and an inactive explicit Authenticode trust-bundle foundation are implemented. Chain/publisher trust, authenticated root activation, loop restoration, privileged restore, GTK flow, and hardware qualification remain disabled. Upstream Rufus delegates FFU operations to Windows DISM/FfuProvider and therefore does not supply a portable executor.",
+      "upstream_sources": ["src/vhd.c"]
+    },
+    {
+      "id": "uefi-ntfs-architectures",
+      "upstream_feature": "Provide UEFI:NTFS boot support across firmware architectures",
+      "status": "partial",
+      "notes": "Verified x86, x86-64, and ARM64 UEFI:NTFS assets are integrated. Upstream Rufus 4.15 adds RISC-V64 support, which remains planned and is outside current ARM64 qualification.",
+      "upstream_sources": ["res/uefi/uefi-ntfs/", "ChangeLog.txt"]
+    },
+    {
+      "id": "el-torito-uefi-extraction",
+      "upstream_feature": "Extract limited El Torito UEFI images for firmware and nonstandard optical media",
+      "status": "partial",
+      "notes": "El Torito and optical boot structures are inspected and reported, but upstream-compatible UEFI image extraction is not yet implemented.",
+      "upstream_sources": ["src/iso.c", "ChangeLog.txt"]
     },
     {
       "id": "localization",
       "upstream_feature": "Localized user interface",
       "status": "planned",
-      "notes": "GTK strings and diagnostics must be moved into a translation catalog before language packs are accepted."
+      "notes": "GTK strings and diagnostics must move into a translation catalog before language packs are accepted.",
+      "upstream_sources": ["src/localization.c", "res/loc/"]
     },
     {
       "id": "portable-distribution",
-      "upstream_feature": "Small portable executable",
+      "upstream_feature": "Small portable executable and updateable distribution",
       "status": "partial",
-      "notes": "The Debian package is self-contained for privileged helpers and WIM support; AppImage/portable packaging and verified updates remain planned."
+      "notes": "The Debian package is reproducible and includes privileged helpers and the WIM engine. AppImage or another audited portable format, signed release artifacts, and verified updates remain planned.",
+      "upstream_sources": ["src/rufus.c", "src/update.c"]
+    },
+    {
+      "id": "appearance-and-accessibility",
+      "upstream_feature": "Dark mode, tooltips, keyboard navigation, and accessible UI",
+      "status": "partial",
+      "notes": "GTK keyboard navigation, assistive names, selectable diagnostics, resizable layout, and system-theme behavior exist. Complete option tooltips, explicit light/dark selection, and translation-aware accessibility review remain planned.",
+      "upstream_sources": ["src/ui.c", "src/rufus.c", "ChangeLog.txt"]
     }
   ]
 }
