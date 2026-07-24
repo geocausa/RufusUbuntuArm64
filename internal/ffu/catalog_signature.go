@@ -18,14 +18,14 @@ import (
 const catalogSignaturePlanSchema = 1
 
 const (
-	oidPKCS9ContentType     = "1.2.840.113549.1.9.3"
-	oidPKCS9MessageDigest   = "1.2.840.113549.1.9.4"
-	oidSHA256               = "2.16.840.1.101.3.4.2.1"
-	oidRSAEncryption        = "1.2.840.113549.1.1.1"
-	oidSHA1WithRSA          = "1.2.840.113549.1.1.5"
-	oidSHA256WithRSA        = "1.2.840.113549.1.1.11"
-	oidECDSAWithSHA256      = "1.2.840.10045.4.3.2"
-	oidEd25519              = "1.3.101.112"
+	oidPKCS9ContentType   = "1.2.840.113549.1.9.3"
+	oidPKCS9MessageDigest = "1.2.840.113549.1.9.4"
+	oidSHA256             = "2.16.840.1.101.3.4.2.1"
+	oidRSAEncryption      = "1.2.840.113549.1.1.1"
+	oidSHA1WithRSA        = "1.2.840.113549.1.1.5"
+	oidSHA256WithRSA      = "1.2.840.113549.1.1.11"
+	oidECDSAWithSHA256    = "1.2.840.10045.4.3.2"
+	oidEd25519            = "1.3.101.112"
 )
 
 // CatalogSignaturePlan records cryptographic verification of one supported
@@ -40,25 +40,25 @@ type CatalogSignaturePlan struct {
 	EncapsulatedContentLength      uint64   `json:"encapsulated_content_length"`
 	EncapsulatedContentSHA256      string   `json:"encapsulated_content_sha256"`
 	SignerIndex                    int      `json:"signer_index"`
-	SignerIdentifierType          string   `json:"signer_identifier_type"`
-	SignerIdentifierSHA256        string   `json:"signer_identifier_sha256"`
-	CertificateIndex              int      `json:"certificate_index"`
-	CertificateSHA256             string   `json:"certificate_sha256"`
-	CertificateSubject            string   `json:"certificate_subject"`
-	DigestAlgorithmOID            string   `json:"digest_algorithm_oid"`
-	DigestAlgorithm               string   `json:"digest_algorithm"`
-	SignatureAlgorithmOID         string   `json:"signature_algorithm_oid"`
-	SignatureAlgorithm            string   `json:"signature_algorithm"`
-	SignedAttributesSHA256        string   `json:"signed_attributes_sha256"`
-	SignedAttributeOIDs           []string `json:"signed_attribute_oids"`
-	EncodedMessageDigest          string   `json:"encoded_message_digest"`
-	CalculatedMessageDigest       string   `json:"calculated_message_digest"`
-	ContentDigestVerified         bool     `json:"content_digest_verified"`
-	SignatureVerificationAttempted bool    `json:"signature_verification_attempted"`
-	CryptographicSignatureVerified bool    `json:"cryptographic_signature_verified"`
-	CertificateChainBuilt          bool    `json:"certificate_chain_built"`
-	PublisherTrusted               bool    `json:"publisher_trusted"`
-	HashTableCatalogAuthenticated  bool    `json:"hash_table_catalog_authenticated"`
+	SignerIdentifierType           string   `json:"signer_identifier_type"`
+	SignerIdentifierSHA256         string   `json:"signer_identifier_sha256"`
+	CertificateIndex               int      `json:"certificate_index"`
+	CertificateSHA256              string   `json:"certificate_sha256"`
+	CertificateSubject             string   `json:"certificate_subject"`
+	DigestAlgorithmOID             string   `json:"digest_algorithm_oid"`
+	DigestAlgorithm                string   `json:"digest_algorithm"`
+	SignatureAlgorithmOID          string   `json:"signature_algorithm_oid"`
+	SignatureAlgorithm             string   `json:"signature_algorithm"`
+	SignedAttributesSHA256         string   `json:"signed_attributes_sha256"`
+	SignedAttributeOIDs            []string `json:"signed_attribute_oids"`
+	EncodedMessageDigest           string   `json:"encoded_message_digest"`
+	CalculatedMessageDigest        string   `json:"calculated_message_digest"`
+	ContentDigestVerified          bool     `json:"content_digest_verified"`
+	SignatureVerificationAttempted bool     `json:"signature_verification_attempted"`
+	CryptographicSignatureVerified bool     `json:"cryptographic_signature_verified"`
+	CertificateChainBuilt          bool     `json:"certificate_chain_built"`
+	PublisherTrusted               bool     `json:"publisher_trusted"`
+	HashTableCatalogAuthenticated  bool     `json:"hash_table_catalog_authenticated"`
 	PlanSHA256                     string   `json:"plan_sha256"`
 	Limitations                    []string `json:"limitations"`
 }
@@ -356,7 +356,7 @@ func parseCatalogSignatureSigner(value derValue, budget *derBudget) (catalogSign
 	// CMS signs the DER SET OF encoding, while SignerInfo stores the same
 	// content under the IMPLICIT context-specific [0] tag.
 	signer.signedAttributesDER[0] = 0x31
-	attributes, err := parseImplicitChildren(signedAttributes, 2, maxCatalogAttributes, budget, "catalog signature signed attributes")
+	attributes, err := parseImplicitChildren(signedAttributes, 0, maxCatalogAttributes, budget, "catalog signature signed attributes")
 	if err != nil {
 		return catalogSignatureSigner{}, err
 	}

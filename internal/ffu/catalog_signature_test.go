@@ -159,16 +159,16 @@ func FuzzParseCatalogSignatureEnvelopeDoesNotPanic(f *testing.F) {
 }
 
 type signedCatalogOptions struct {
-	wrongMessageDigest    bool
-	corruptSignature     bool
-	wrongEmbeddedKey     bool
-	duplicateCertificate bool
-	omitCertificate      bool
-	omitMessageDigest    bool
+	wrongMessageDigest     bool
+	corruptSignature       bool
+	wrongEmbeddedKey       bool
+	duplicateCertificate   bool
+	omitCertificate        bool
+	omitMessageDigest      bool
 	duplicateMessageDigest bool
-	omitContentType      bool
-	duplicateContentType bool
-	signatureOID         string
+	omitContentType        bool
+	duplicateContentType   bool
+	signatureOID           string
 }
 
 func signedCatalogFixture(t *testing.T, options signedCatalogOptions) []byte {
