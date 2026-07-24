@@ -40,6 +40,7 @@ type CapabilityProfile struct {
 	ReduceDataCollection OptionCapability `json:"reduce_data_collection"`
 	DisableBitLocker     OptionCapability `json:"disable_bitlocker"`
 	LoadDrivers          OptionCapability `json:"load_drivers"`
+	QualityOfLife        OptionCapability `json:"quality_of_life"`
 	Locale               OptionCapability `json:"locale"`
 	TimeZone             OptionCapability `json:"time_zone"`
 }
@@ -83,6 +84,12 @@ func Capabilities(metadata MediaMetadata) CapabilityProfile {
 	profile.Locale = generic
 	profile.TimeZone = generic
 
+	if family == "client" {
+		profile.QualityOfLife = generic
+	} else {
+		profile.QualityOfLife = OptionCapability{Reason: "Available only for positively identified Windows client media"}
+	}
+
 	if family == "client" && generation == "11" {
 		profile.BypassHardwareChecks = generic
 		profile.BypassOnlineAccount = generic
@@ -118,6 +125,7 @@ func ValidateForMedia(metadata MediaMetadata, options Options) error {
 		{options.ReduceDataCollection, "reduced data collection", profile.ReduceDataCollection},
 		{options.DisableBitLocker, "BitLocker suppression", profile.DisableBitLocker},
 		{options.LoadDrivers, "driver loading", profile.LoadDrivers},
+		{options.QualityOfLife, "Quality of Life policy", profile.QualityOfLife},
 		{strings.TrimSpace(options.Locale) != "", "locale", profile.Locale},
 		{strings.TrimSpace(options.TimeZone) != "", "time zone", profile.TimeZone},
 	}
@@ -138,6 +146,7 @@ func disabledProfile(profile CapabilityProfile, reason string) CapabilityProfile
 	profile.ReduceDataCollection = disabled
 	profile.DisableBitLocker = disabled
 	profile.LoadDrivers = disabled
+	profile.QualityOfLife = disabled
 	profile.Locale = disabled
 	profile.TimeZone = disabled
 	return profile
