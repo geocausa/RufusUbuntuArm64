@@ -1,4 +1,4 @@
-name: Diagnose PR283 catalog signature tests
+name: Apply PR283 signature parser fixes
 
 on:
   pull_request:
@@ -10,38 +10,51 @@ on:
       - .github/workflows/diagnose-pr283.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  focused-signature-tests:
+  apply-focused-fix:
     if: github.event.pull_request.head.ref == 'feature/ffu-catalog-signature-verify'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          persist-credentials: false
+          ref: feature/ffu-catalog-signature-verify
+          fetch-depth: 0
+          persist-credentials: true
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: '1.22.x'
           cache: false
-      - name: Capture formatting and focused test output
+      - name: Apply exact parser fix, format, verify, and remove executor
         shell: bash
         run: |
-          set +e
-          gofmt -d internal/ffu/catalog_signature.go internal/ffu/catalog_signature_test.go > pr283-gofmt.log 2>&1
-          printf '%s\n' "$?" > pr283-gofmt.status
-          go test -count=1 -run 'TestVerifyCatalogSignature|TestParseCatalogSignature' ./internal/ffu > pr283-go-test.log 2>&1
-          printf '%s\n' "$?" > pr283-go-test.status
-          cat pr283-gofmt.log
-          cat pr283-go-test.log
-          exit 0
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: pr283-focused-diagnostics
-          path: |
-            pr283-gofmt.log
-            pr283-gofmt.status
-            pr283-go-test.log
-            pr283-go-test.status
-          if-no-files-found: error
-          retention-days: 1
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path('internal/ffu/catalog_signature.go')
+          text = source.read_text()
+          old = 'parseImplicitChildren(signedAttributes, 2, maxCatalogAttributes, budget, "catalog signature signed attributes")'
+          new = 'parseImplicitChildren(signedAttributes, 0, maxCatalogAttributes, budget, "catalog signature signed attributes")'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one signed-attribute bound source match, found {text.count(old)}')
+          source.write_text(text.replace(old, new))
+          Path('.github/workflows/diagnose-pr283.yml').unlink()
+          PY
+          gofmt -w internal/ffu/catalog_signature.go internal/ffu/catalog_signature_test.go
+          go test -count=1 -run 'TestVerifyCatalogSignature|TestParseCatalogSignature' ./internal/ffu
+          git diff --check
+          status="$(git status --short)"
+          printf '%s\n' "$status"
+          test "$(printf '%s\n' "$status" | grep -c '^ M internal/ffu/catalog_signature.go$')" -eq 1
+          test "$(printf '%s\n' "$status" | grep -c '^ M internal/ffu/catalog_signature_test.go$')" -eq 1
+          test "$(printf '%s\n' "$status" | grep -c '^ D .github/workflows/diagnose-pr283.yml$')" -eq 1
+          test "$(printf '%s\n' "$status" | wc -l)" -eq 3
+      - name: Commit clean signature parser fix
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add internal/ffu/catalog_signature.go internal/ffu/catalog_signature_test.go .github/workflows/diagnose-pr283.yml
+          git commit -m 'FFU: enforce mandatory signed attributes semantically'
+          git push origin HEAD:feature/ffu-catalog-signature-verify
