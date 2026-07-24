@@ -1,0 +1,47 @@
+name: Diagnose PR283 catalog signature tests
+
+on:
+  pull_request:
+    branches:
+      - stage3/0.14.0
+    paths:
+      - internal/ffu/catalog_signature.go
+      - internal/ffu/catalog_signature_test.go
+      - .github/workflows/diagnose-pr283.yml
+
+permissions:
+  contents: read
+
+jobs:
+  focused-signature-tests:
+    if: github.event.pull_request.head.ref == 'feature/ffu-catalog-signature-verify'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Capture formatting and focused test output
+        shell: bash
+        run: |
+          set +e
+          gofmt -d internal/ffu/catalog_signature.go internal/ffu/catalog_signature_test.go > pr283-gofmt.log 2>&1
+          printf '%s\n' "$?" > pr283-gofmt.status
+          go test -count=1 -run 'TestVerifyCatalogSignature|TestParseCatalogSignature' ./internal/ffu > pr283-go-test.log 2>&1
+          printf '%s\n' "$?" > pr283-go-test.status
+          cat pr283-gofmt.log
+          cat pr283-go-test.log
+          exit 0
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr283-focused-diagnostics
+          path: |
+            pr283-gofmt.log
+            pr283-gofmt.status
+            pr283-go-test.log
+            pr283-go-test.status
+          if-no-files-found: error
+          retention-days: 1
