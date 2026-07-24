@@ -46,27 +46,27 @@ type ImageHeader struct {
 // The three table ranges are block ranges within the payload, not indexes into
 // the write-descriptor array.
 type StoreHeader struct {
-	CommonHeaderSize             uint32 `json:"common_header_size"`
-	UpdateType                   uint32 `json:"update_type"`
-	MajorVersion                 uint16 `json:"major_version"`
-	MinorVersion                 uint16 `json:"minor_version"`
-	FullFlashMajorVersion        uint16 `json:"full_flash_major_version"`
-	FullFlashMinorVersion        uint16 `json:"full_flash_minor_version"`
-	PlatformID                   string `json:"platform_id,omitempty"`
-	BlockSizeBytes               uint32 `json:"block_size_bytes"`
-	WriteDescriptorCount         uint32 `json:"write_descriptor_count"`
-	WriteDescriptorLength        uint32 `json:"write_descriptor_length"`
-	ValidateDescriptorCount      uint32 `json:"validate_descriptor_count"`
-	ValidateDescriptorLength     uint32 `json:"validate_descriptor_length"`
-	InitialTableBlockIndex       uint32 `json:"initial_table_block_index"`
-	InitialTableBlockCount       uint32 `json:"initial_table_block_count"`
-	InitialTableBlockEnd         uint64 `json:"initial_table_block_end"`
-	FlashOnlyTableBlockIndex     uint32 `json:"flash_only_table_block_index"`
-	FlashOnlyTableBlockCount     uint32 `json:"flash_only_table_block_count"`
-	FlashOnlyTableBlockEnd       uint64 `json:"flash_only_table_block_end"`
-	FinalTableBlockIndex         uint32 `json:"final_table_block_index"`
-	FinalTableBlockCount         uint32 `json:"final_table_block_count"`
-	FinalTableBlockEnd           uint64 `json:"final_table_block_end"`
+	CommonHeaderSize         uint32 `json:"common_header_size"`
+	UpdateType               uint32 `json:"update_type"`
+	MajorVersion             uint16 `json:"major_version"`
+	MinorVersion             uint16 `json:"minor_version"`
+	FullFlashMajorVersion    uint16 `json:"full_flash_major_version"`
+	FullFlashMinorVersion    uint16 `json:"full_flash_minor_version"`
+	PlatformID               string `json:"platform_id,omitempty"`
+	BlockSizeBytes           uint32 `json:"block_size_bytes"`
+	WriteDescriptorCount     uint32 `json:"write_descriptor_count"`
+	WriteDescriptorLength    uint32 `json:"write_descriptor_length"`
+	ValidateDescriptorCount  uint32 `json:"validate_descriptor_count"`
+	ValidateDescriptorLength uint32 `json:"validate_descriptor_length"`
+	InitialTableBlockIndex   uint32 `json:"initial_table_block_index"`
+	InitialTableBlockCount   uint32 `json:"initial_table_block_count"`
+	InitialTableBlockEnd     uint64 `json:"initial_table_block_end"`
+	FlashOnlyTableBlockIndex uint32 `json:"flash_only_table_block_index"`
+	FlashOnlyTableBlockCount uint32 `json:"flash_only_table_block_count"`
+	FlashOnlyTableBlockEnd   uint64 `json:"flash_only_table_block_end"`
+	FinalTableBlockIndex     uint32 `json:"final_table_block_index"`
+	FinalTableBlockCount     uint32 `json:"final_table_block_count"`
+	FinalTableBlockEnd       uint64 `json:"final_table_block_end"`
 }
 
 // Inspection is an immutable read-only description of the FFU regions whose
