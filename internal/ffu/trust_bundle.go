@@ -69,26 +69,27 @@ type TrustAnchor struct {
 // Authenticode trust bundle. It deliberately cannot make any certificate or
 // publisher trusted in this tranche.
 type TrustBundlePlan struct {
-	Schema                       int           `json:"schema"`
-	Purpose                      string        `json:"purpose"`
-	Sequence                     uint64        `json:"sequence"`
-	MinimumAcceptedSequence      uint64        `json:"minimum_accepted_sequence"`
-	GeneratedAt                  string        `json:"generated_at"`
-	ExpiresAt                    string        `json:"expires_at"`
-	EvaluationTime               string        `json:"evaluation_time"`
-	RootCount                    int           `json:"root_count"`
-	DistrustedCount              int           `json:"distrusted_count"`
-	Roots                        []TrustAnchor `json:"roots"`
-	DistrustedSHA256             []string      `json:"distrusted_sha256"`
-	BundleSHA256                 string        `json:"bundle_sha256"`
-	PlanSHA256                   string        `json:"plan_sha256"`
-	BundleStructureValidated     bool          `json:"bundle_structure_validated"`
-	BundleSignatureAuthenticated bool          `json:"bundle_signature_authenticated"`
-	TrustAnchorsActivated        bool          `json:"trust_anchors_activated"`
-	HostTLSStoreConsulted        bool          `json:"host_tls_store_consulted"`
-	CertificateChainBuilt        bool          `json:"certificate_chain_built"`
-	PublisherTrusted             bool          `json:"publisher_trusted"`
-	Limitations                  []string      `json:"limitations"`
+	Schema                       int                        `json:"schema"`
+	Purpose                      string                     `json:"purpose"`
+	Sequence                     uint64                     `json:"sequence"`
+	MinimumAcceptedSequence      uint64                     `json:"minimum_accepted_sequence"`
+	GeneratedAt                  string                     `json:"generated_at"`
+	ExpiresAt                    string                     `json:"expires_at"`
+	EvaluationTime               string                     `json:"evaluation_time"`
+	RootCount                    int                        `json:"root_count"`
+	DistrustedCount              int                        `json:"distrusted_count"`
+	Roots                        []TrustAnchor              `json:"roots"`
+	DistrustedSHA256             []string                   `json:"distrusted_sha256"`
+	BundleSHA256                 string                     `json:"bundle_sha256"`
+	PlanSHA256                   string                     `json:"plan_sha256"`
+	BundleStructureValidated     bool                       `json:"bundle_structure_validated"`
+	BundleSignatureAuthenticated bool                       `json:"bundle_signature_authenticated"`
+	TrustAnchorsActivated        bool                       `json:"trust_anchors_activated"`
+	HostTLSStoreConsulted        bool                       `json:"host_tls_store_consulted"`
+	CertificateChainBuilt        bool                       `json:"certificate_chain_built"`
+	PublisherTrusted             bool                       `json:"publisher_trusted"`
+	Authentication               *TrustBundleAuthentication `json:"authentication,omitempty"`
+	Limitations                  []string                   `json:"limitations"`
 }
 
 // ParseTrustBundle validates a bounded explicit trust-bundle document. The
@@ -385,6 +386,27 @@ func trustBundlePlanDigest(plan TrustBundlePlan) string {
 	writeTrustBool(digest, plan.HostTLSStoreConsulted)
 	writeTrustBool(digest, plan.CertificateChainBuilt)
 	writeTrustBool(digest, plan.PublisherTrusted)
+	if plan.Authentication == nil {
+		writeTrustBool(digest, false)
+	} else {
+		writeTrustBool(digest, true)
+		writeTrustUint64(digest, uint64(plan.Authentication.Schema))
+		writeTrustString(digest, plan.Authentication.Purpose)
+		writeTrustUint64(digest, plan.Authentication.Sequence)
+		writeTrustUint64(digest, plan.Authentication.KeySetVersion)
+		writeTrustString(digest, plan.Authentication.KeySetSHA256)
+		writeTrustUint64(digest, uint64(plan.Authentication.Threshold))
+		writeTrustString(digest, plan.Authentication.GeneratedAt)
+		writeTrustString(digest, plan.Authentication.ExpiresAt)
+		writeTrustString(digest, plan.Authentication.EvaluationTime)
+		writeTrustUint64(digest, plan.Authentication.BundleSize)
+		writeTrustString(digest, plan.Authentication.BundleSHA256)
+		writeTrustString(digest, plan.Authentication.MetadataSHA256)
+		writeTrustUint64(digest, uint64(len(plan.Authentication.SigningKeyIDs)))
+		for _, keyID := range plan.Authentication.SigningKeyIDs {
+			writeTrustString(digest, keyID)
+		}
+	}
 	return hex.EncodeToString(digest.Sum(nil))
 }
 
