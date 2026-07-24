@@ -1,10 +1,9 @@
 name: Apply FFU signature DER hardening
 
-# Synchronize the exact self-removing application workflow after PR creation.
 on:
-  pull_request:
+  push:
     branches:
-      - stage3/0.14.0
+      - fix/ffu-signature-canonical-der
     paths:
       - internal/ffu/catalog_signature.go
       - internal/ffu/catalog_signature_der.go
@@ -17,7 +16,6 @@ permissions:
 
 jobs:
   apply-and-remove:
-    if: github.event.pull_request.head.ref == 'fix/ffu-signature-canonical-der'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
