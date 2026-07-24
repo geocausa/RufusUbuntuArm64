@@ -1,41 +1,58 @@
-name: Diagnose PR281 catalog tests
+name: Apply PR281 catalog bound fix
 
 on:
   pull_request:
     branches:
-      - feature/ffu-content-verification
+      - stage3/0.14.0
     paths:
       - internal/ffu/**
       - .github/workflows/diagnose-pr281.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  focused-catalog-tests:
+  apply-focused-fix:
+    if: github.event.pull_request.head.ref == 'feature/ffu-catalog-member-plan'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          persist-credentials: false
+          ref: feature/ffu-catalog-member-plan
+          fetch-depth: 0
+          persist-credentials: true
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: '1.22.x'
           cache: false
-      - name: Capture focused package output
+      - name: Apply exact fix and remove executor
         shell: bash
         run: |
-          set +e
-          go test -count=1 -run 'TestPlanCatalogMember|TestParseWindowsCatalog' ./internal/ffu > pr281-go-test.log 2>&1
-          status=$?
-          printf '%s\n' "$status" > pr281-go-test.status
-          cat pr281-go-test.log
-          exit 0
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: pr281-focused-diagnostics
-          path: |
-            pr281-go-test.log
-            pr281-go-test.status
-          if-no-files-found: error
-          retention-days: 1
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path('internal/ffu/catalog_member.go')
+          text = source.read_text()
+          old = 'parseImplicitChildren(*certificateNode, 3, maxCatalogCertificates, budget, "catalog certificates")'
+          new = 'parseImplicitChildren(*certificateNode, 1, maxCatalogCertificates, budget, "catalog certificates")'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one certificate-bound source match, found {text.count(old)}')
+          source.write_text(text.replace(old, new))
+          Path('.github/workflows/diagnose-pr281.yml').unlink()
+          PY
+          gofmt -w internal/ffu/catalog_member.go
+          go test -count=1 -run 'TestPlanCatalogMember|TestParseWindowsCatalog' ./internal/ffu
+          git diff --check
+          status="$(git status --short)"
+          printf '%s\n' "$status"
+          test "$(printf '%s\n' "$status" | grep -c '^ M internal/ffu/catalog_member.go$')" -eq 1
+          test "$(printf '%s\n' "$status" | grep -c '^ D .github/workflows/diagnose-pr281.yml$')" -eq 1
+          test "$(printf '%s\n' "$status" | wc -l)" -eq 2
+      - name: Commit clean product fix
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add internal/ffu/catalog_member.go .github/workflows/diagnose-pr281.yml
+          git commit -m 'FFU: accept a single embedded catalog certificate'
+          git push origin HEAD:feature/ffu-catalog-member-plan
