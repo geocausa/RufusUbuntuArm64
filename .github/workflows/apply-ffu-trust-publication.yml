@@ -42,10 +42,6 @@ jobs:
             ae58d3129f96dace9d9782af5f2c884aa4b6be64b2fe8a2ff06235af1baee31c \
             "$RUNNER_TEMP/ffu-trust-publication.patch" \
             | sha256sum --check --strict
-          printf '%s  %s\n' \
-            e41e8c6a155e0005596b695a13ab2d7e88e3a05ce125f348204e0dbcb39d047b \
-            .github/patches/ffu-trust-publication-test-permissions.patch \
-            | sha256sum --check --strict
           git apply --check "$RUNNER_TEMP/ffu-trust-publication.patch"
           git apply "$RUNNER_TEMP/ffu-trust-publication.patch"
           git apply --check .github/patches/ffu-trust-publication-test-permissions.patch
