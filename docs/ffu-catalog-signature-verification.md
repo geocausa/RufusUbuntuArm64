@@ -39,7 +39,7 @@ The verifier requires exactly one of each mandatory PKCS#9 attribute:
 - content type `1.2.840.113549.1.9.3`, whose single value must be the Microsoft CTL OID;
 - message digest `1.2.840.113549.1.9.4`, whose single value must be an OCTET STRING.
 
-Duplicate mandatory attributes, missing attributes, empty values, unsupported multi-value forms, malformed DER, and a content-type mismatch are hard failures.
+Duplicate mandatory attributes, missing attributes, empty values, unsupported multi-value forms, noncanonical DER SET ordering, malformed DER, and a content-type mismatch are hard failures.
 
 CMS signs the DER `SET OF` encoding of the attributes even though SignerInfo stores that same content under the implicit `[0]` tag. The verifier preserves the exact encoded length and attribute bytes and changes only the outer tag from context-specific `[0]` to universal SET before cryptographic verification. It does not reserialize the attributes from application-level values.
 
@@ -64,13 +64,12 @@ The verifier resolves the SignerInfo identifier against exactly one embedded cer
 The initial supported combinations are:
 
 - RSA PKCS#1 v1.5 with SHA-256;
-- RSA PKCS#1 v1.5 with explicitly declared legacy SHA-1;
 - ECDSA with SHA-256;
 - Ed25519 SignerInfo signatures with a SHA-256 content digest.
 
 Unknown algorithms, mismatched digest/signature combinations, malformed parameters, wrong keys, altered signed attributes, or any signature mismatch are hard failures.
 
-Legacy SHA-1 is accepted only when the catalog explicitly declares it. It is not used as a new trust primitive and cannot by itself make a publisher trusted.
+SHA-1 remains limited to the legacy `HashTable.blob` catalog-member digest. SignerInfo content digests and signatures that require SHA-1 are refused.
 
 ## Trust-state separation
 
