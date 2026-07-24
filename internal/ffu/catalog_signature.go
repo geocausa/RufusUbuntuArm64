@@ -3,7 +3,6 @@ package ffu
 import (
 	"bytes"
 	"context"
-	"crypto/sha1" // #nosec G505 -- accepted only when the catalog explicitly declares the legacy SHA-1 digest.
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/x509"
@@ -360,6 +359,9 @@ func parseCatalogSignatureSigner(value derValue, budget *derBudget) (catalogSign
 	if err != nil {
 		return catalogSignatureSigner{}, err
 	}
+	if err := requireCanonicalDEROrder(attributes, "catalog signature signed attributes"); err != nil {
+		return catalogSignatureSigner{}, err
+	}
 	contentTypeCount := 0
 	messageDigestCount := 0
 	for index, attribute := range attributes {
@@ -461,9 +463,6 @@ func calculateCatalogContentDigest(oid string, content []byte) ([]byte, string, 
 	case oidSHA256:
 		digest := sha256.Sum256(content)
 		return digest[:], "SHA-256", nil
-	case oidSHA1:
-		digest := sha1.Sum(content) // #nosec G401 -- accepted only for explicitly declared legacy catalog signatures.
-		return digest[:], "SHA-1", nil
 	default:
 		return nil, "", fmt.Errorf("unsupported FFU catalog signer digest algorithm %s", oid)
 	}
@@ -475,16 +474,10 @@ func catalogSignatureAlgorithm(digestOID, signatureOID string) (x509.SignatureAl
 		switch digestOID {
 		case oidSHA256:
 			return x509.SHA256WithRSA, "RSA PKCS#1 v1.5 with SHA-256", nil
-		case oidSHA1:
-			return x509.SHA1WithRSA, "RSA PKCS#1 v1.5 with SHA-1", nil
 		}
 	case oidSHA256WithRSA:
 		if digestOID == oidSHA256 {
 			return x509.SHA256WithRSA, "RSA PKCS#1 v1.5 with SHA-256", nil
-		}
-	case oidSHA1WithRSA:
-		if digestOID == oidSHA1 {
-			return x509.SHA1WithRSA, "RSA PKCS#1 v1.5 with SHA-1", nil
 		}
 	case oidECDSAWithSHA256:
 		if digestOID == oidSHA256 {
