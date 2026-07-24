@@ -3,7 +3,7 @@
 Status: **read-only planning only**. This document does not define or authorize an executor.
 
 Tracking issue: #269  
-+Planner PR: #275
+Planner PR: #275
 
 ## Supported layout
 
