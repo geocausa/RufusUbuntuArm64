@@ -166,7 +166,6 @@ func Generate(architecture string, o Options) ([]byte, error) {
 			if timeZone != "" {
 				fmt.Fprintf(&b, "      <TimeZone>%s</TimeZone>\n", escapeText(timeZone))
 			}
-			firstLogonCommands := []string{}
 			username := strings.TrimSpace(o.LocalAccount)
 			if username != "" {
 				escaped := escapeText(username)
@@ -174,18 +173,22 @@ func Generate(architecture string, o Options) ([]byte, error) {
 				fmt.Fprintf(&b, "            <Name>%s</Name>\n            <DisplayName>%s</DisplayName>\n", escaped, escaped)
 				b.WriteString("            <Group>Administrators</Group>\n            <Password><Value>UABhAHMAcwB3AG8AcgBkAA==</Value><PlainText>false</PlainText></Password>\n")
 				b.WriteString("          </LocalAccount>\n        </LocalAccounts>\n      </UserAccounts>\n")
-				firstLogonCommands = append(firstLogonCommands,
-					fmt.Sprintf(`net user "%s" /logonpasswordchg:yes`, username),
-					`net accounts /maxpwage:unlimited`,
-				)
 			}
-			if o.QualityOfLife {
-				firstLogonCommands = append(firstLogonCommands, qualityOfLifeFirstLogonCommands()...)
-			}
-			if len(firstLogonCommands) > 0 {
+			if username != "" || o.QualityOfLife {
 				b.WriteString("      <FirstLogonCommands>\n")
-				for index, command := range firstLogonCommands {
-					fmt.Fprintf(&b, "        <SynchronousCommand wcm:action=\"add\"><Order>%d</Order><CommandLine>%s</CommandLine></SynchronousCommand>\n", index+1, escapeText(command))
+				order := 1
+				if username != "" {
+					escaped := escapeText(username)
+					fmt.Fprintf(&b, "        <SynchronousCommand wcm:action=\"add\"><Order>%d</Order><CommandLine>net user &quot;%s&quot; /logonpasswordchg:yes</CommandLine></SynchronousCommand>\n", order, escaped)
+					order++
+					fmt.Fprintf(&b, "        <SynchronousCommand wcm:action=\"add\"><Order>%d</Order><CommandLine>net accounts /maxpwage:unlimited</CommandLine></SynchronousCommand>\n", order)
+					order++
+				}
+				if o.QualityOfLife {
+					for _, command := range qualityOfLifeFirstLogonCommands() {
+						fmt.Fprintf(&b, "        <SynchronousCommand wcm:action=\"add\"><Order>%d</Order><CommandLine>%s</CommandLine></SynchronousCommand>\n", order, escapeText(command))
+						order++
+					}
 				}
 				b.WriteString("      </FirstLogonCommands>\n")
 			}
