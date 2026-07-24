@@ -1,0 +1,103 @@
+name: Apply FFU signature DER hardening
+
+on:
+  pull_request:
+    branches:
+      - stage3/0.14.0
+    paths:
+      - internal/ffu/catalog_signature.go
+      - internal/ffu/catalog_signature_der.go
+      - internal/ffu/catalog_signature_der_test.go
+      - docs/ffu-catalog-signature-verification.md
+      - .github/workflows/apply-ffu-signature-hardening.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-remove:
+    if: github.event.pull_request.head.ref == 'fix/ffu-signature-canonical-der'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: fix/ffu-signature-canonical-der
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Apply exact hardening, verify, and remove executor
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path('internal/ffu/catalog_signature.go')
+          text = source.read_text()
+          replacements = [
+              ('\t"crypto/sha1" // #nosec G505 -- accepted only when the catalog explicitly declares the legacy SHA-1 digest.\n', ''),
+              (
+                  '\tattributes, err := parseImplicitChildren(signedAttributes, 0, maxCatalogAttributes, budget, "catalog signature signed attributes")\n\tif err != nil {\n\t\treturn catalogSignatureSigner{}, err\n\t}\n',
+                  '\tattributes, err := parseImplicitChildren(signedAttributes, 0, maxCatalogAttributes, budget, "catalog signature signed attributes")\n\tif err != nil {\n\t\treturn catalogSignatureSigner{}, err\n\t}\n\tif err := requireCanonicalDEROrder(attributes, "catalog signature signed attributes"); err != nil {\n\t\treturn catalogSignatureSigner{}, err\n\t}\n',
+              ),
+              (
+                  '\tcase oidSHA1:\n\t\tdigest := sha1.Sum(content) // #nosec G401 -- accepted only for explicitly declared legacy catalog signatures.\n\t\treturn digest[:], "SHA-1", nil\n',
+                  '',
+              ),
+              (
+                  '\t\tcase oidSHA1:\n\t\t\treturn x509.SHA1WithRSA, "RSA PKCS#1 v1.5 with SHA-1", nil\n',
+                  '',
+              ),
+              (
+                  '\tcase oidSHA1WithRSA:\n\t\tif digestOID == oidSHA1 {\n\t\t\treturn x509.SHA1WithRSA, "RSA PKCS#1 v1.5 with SHA-1", nil\n\t\t}\n',
+                  '',
+              ),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one source match, found {count}: {old!r}')
+              text = text.replace(old, new)
+          source.write_text(text)
+
+          doc = Path('docs/ffu-catalog-signature-verification.md')
+          text = doc.read_text()
+          old = '''- RSA PKCS#1 v1.5 with SHA-256;
+- RSA PKCS#1 v1.5 with explicitly declared legacy SHA-1;
+- ECDSA with SHA-256;
+- Ed25519 SignerInfo signatures with a SHA-256 content digest.
+'''
+          new = '''- RSA PKCS#1 v1.5 with SHA-256;
+- ECDSA with SHA-256;
+- Ed25519 SignerInfo signatures with a SHA-256 content digest.
+'''
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one supported-combinations block')
+          text = text.replace(old, new)
+          old = 'Legacy SHA-1 is accepted only when the catalog explicitly declares it. It is not used as a new trust primitive and cannot by itself make a publisher trusted.\n'
+          new = 'SHA-1 remains limited to the legacy `HashTable.blob` catalog-member digest. SignerInfo content digests and signatures that require SHA-1 are refused.\n'
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one legacy SHA-1 paragraph')
+          text = text.replace(old, new)
+          old = 'Duplicate mandatory attributes, missing attributes, empty values, unsupported multi-value forms, malformed DER, and a content-type mismatch are hard failures.\n'
+          new = 'Duplicate mandatory attributes, missing attributes, empty values, unsupported multi-value forms, noncanonical DER SET ordering, malformed DER, and a content-type mismatch are hard failures.\n'
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one signed-attribute refusal paragraph')
+          doc.write_text(text.replace(old, new))
+
+          Path('.github/workflows/apply-ffu-signature-hardening.yml').unlink()
+          PY
+          gofmt -w internal/ffu/catalog_signature.go internal/ffu/catalog_signature_der.go internal/ffu/catalog_signature_der_test.go
+          go test -count=1 -run 'TestParseCatalogSignatureSigner|TestCatalogSignerSHA1|TestVerifyCatalogSignature' ./internal/ffu
+          git diff --check
+          test ! -e .github/workflows/apply-ffu-signature-hardening.yml
+      - name: Commit clean product hardening
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add internal/ffu/catalog_signature.go internal/ffu/catalog_signature_der.go internal/ffu/catalog_signature_der_test.go docs/ffu-catalog-signature-verification.md .github/workflows/apply-ffu-signature-hardening.yml
+          git commit -m 'FFU: enforce canonical signed attributes and SHA-256 signatures'
+          git push origin HEAD:fix/ffu-signature-canonical-der
