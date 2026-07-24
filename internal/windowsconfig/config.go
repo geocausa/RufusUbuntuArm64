@@ -21,12 +21,13 @@ type Options struct {
 	ReduceDataCollection bool
 	DisableBitLocker     bool
 	LoadDrivers          bool
+	QualityOfLife        bool
 	Locale               string
 	TimeZone             string
 }
 
 func (o Options) Enabled() bool {
-	return o.BypassHardwareChecks || o.BypassOnlineAccount || strings.TrimSpace(o.LocalAccount) != "" || o.ReduceDataCollection || o.DisableBitLocker || o.LoadDrivers || strings.TrimSpace(o.Locale) != "" || strings.TrimSpace(o.TimeZone) != ""
+	return o.BypassHardwareChecks || o.BypassOnlineAccount || strings.TrimSpace(o.LocalAccount) != "" || o.ReduceDataCollection || o.DisableBitLocker || o.LoadDrivers || o.QualityOfLife || strings.TrimSpace(o.Locale) != "" || strings.TrimSpace(o.TimeZone) != ""
 }
 
 var validLocale = regexp.MustCompile(`^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$`)
@@ -120,7 +121,7 @@ func Generate(architecture string, o Options) ([]byte, error) {
 		b.WriteString("  </settings>\n")
 	}
 
-	if o.BypassOnlineAccount || o.ReduceDataCollection || o.DisableBitLocker {
+	if o.BypassOnlineAccount || o.ReduceDataCollection || o.DisableBitLocker || o.QualityOfLife {
 		fmt.Fprintf(&b, "  <settings pass=\"specialize\">\n    <component name=\"Microsoft-Windows-Deployment\" processorArchitecture=\"%s\" language=\"neutral\" publicKeyToken=\"31bf3856ad364e35\" versionScope=\"nonSxS\" xmlns:wcm=\"http://schemas.microsoft.com/WMIConfig/2002/State\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n      <RunSynchronous>\n", arch)
 		order := 1
 		commands := []string{}
@@ -137,6 +138,9 @@ func Generate(architecture string, o Options) ([]byte, error) {
 		if o.DisableBitLocker {
 			commands = append(commands, `reg add "HKLM\SYSTEM\CurrentControlSet\Control\BitLocker" /v PreventDeviceEncryption /t REG_DWORD /d 1 /f`)
 		}
+		if o.QualityOfLife {
+			commands = append(commands, qualityOfLifeSpecializeCommands()...)
+		}
 		for _, command := range commands {
 			fmt.Fprintf(&b, "        <RunSynchronousCommand wcm:action=\"add\"><Order>%d</Order><Path>%s</Path></RunSynchronousCommand>\n", order, escapeText(command))
 			order++
@@ -144,7 +148,7 @@ func Generate(architecture string, o Options) ([]byte, error) {
 		b.WriteString("      </RunSynchronous>\n    </component>\n  </settings>\n")
 	}
 
-	shellComponent := o.BypassOnlineAccount || o.ReduceDataCollection || strings.TrimSpace(o.LocalAccount) != "" || timeZone != ""
+	shellComponent := o.BypassOnlineAccount || o.ReduceDataCollection || strings.TrimSpace(o.LocalAccount) != "" || o.QualityOfLife || timeZone != ""
 	if shellComponent || locale != "" {
 		b.WriteString("  <settings pass=\"oobeSystem\">\n")
 		if shellComponent {
@@ -162,6 +166,7 @@ func Generate(architecture string, o Options) ([]byte, error) {
 			if timeZone != "" {
 				fmt.Fprintf(&b, "      <TimeZone>%s</TimeZone>\n", escapeText(timeZone))
 			}
+			firstLogonCommands := []string{}
 			username := strings.TrimSpace(o.LocalAccount)
 			if username != "" {
 				escaped := escapeText(username)
@@ -169,9 +174,19 @@ func Generate(architecture string, o Options) ([]byte, error) {
 				fmt.Fprintf(&b, "            <Name>%s</Name>\n            <DisplayName>%s</DisplayName>\n", escaped, escaped)
 				b.WriteString("            <Group>Administrators</Group>\n            <Password><Value>UABhAHMAcwB3AG8AcgBkAA==</Value><PlainText>false</PlainText></Password>\n")
 				b.WriteString("          </LocalAccount>\n        </LocalAccounts>\n      </UserAccounts>\n")
+				firstLogonCommands = append(firstLogonCommands,
+					fmt.Sprintf(`net user "%s" /logonpasswordchg:yes`, username),
+					`net accounts /maxpwage:unlimited`,
+				)
+			}
+			if o.QualityOfLife {
+				firstLogonCommands = append(firstLogonCommands, qualityOfLifeFirstLogonCommands()...)
+			}
+			if len(firstLogonCommands) > 0 {
 				b.WriteString("      <FirstLogonCommands>\n")
-				fmt.Fprintf(&b, "        <SynchronousCommand wcm:action=\"add\"><Order>1</Order><Description>Require a password change</Description><CommandLine>net user &quot;%s&quot; /logonpasswordchg:yes</CommandLine></SynchronousCommand>\n", escaped)
-				b.WriteString("        <SynchronousCommand wcm:action=\"add\"><Order>2</Order><Description>Disable password expiry</Description><CommandLine>net accounts /maxpwage:unlimited</CommandLine></SynchronousCommand>\n")
+				for index, command := range firstLogonCommands {
+					fmt.Fprintf(&b, "        <SynchronousCommand wcm:action=\"add\"><Order>%d</Order><CommandLine>%s</CommandLine></SynchronousCommand>\n", index+1, escapeText(command))
+				}
 				b.WriteString("      </FirstLogonCommands>\n")
 			}
 			b.WriteString("    </component>\n")
