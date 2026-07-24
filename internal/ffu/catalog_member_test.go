@@ -173,10 +173,10 @@ func FuzzParseWindowsCatalogDoesNotPanic(f *testing.F) {
 }
 
 type catalogFixtureOptions struct {
-	memberName         string
-	memberDigestOID    string
-	memberDigest       []byte
-	duplicateMember    bool
+	memberName          string
+	memberDigestOID     string
+	memberDigest        []byte
+	duplicateMember     bool
 	catalogTrailingByte bool
 }
 
@@ -346,8 +346,8 @@ func derContext(tag byte, parts ...[]byte) []byte {
 	return derWrap(0xa0|tag, bytes.Join(parts, nil))
 }
 func derContextPrimitive(tag byte, content []byte) []byte { return derWrap(0x80|tag, content) }
-func derOctet(content []byte) []byte                       { return derWrap(0x04, content) }
-func derNull() []byte                                      { return []byte{0x05, 0x00} }
+func derOctet(content []byte) []byte                      { return derWrap(0x04, content) }
+func derNull() []byte                                     { return []byte{0x05, 0x00} }
 
 func derOID(value string) []byte {
 	var oid asn1.ObjectIdentifier
