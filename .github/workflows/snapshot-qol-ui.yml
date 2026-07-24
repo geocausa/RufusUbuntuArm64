@@ -1,4 +1,4 @@
-name: Snapshot QoL UI branch
+name: Apply tested QoL UI patch
 
 on:
   pull_request:
@@ -6,28 +6,61 @@ on:
       - stage3/0.14.0
     paths:
       - .github/workflows/snapshot-qol-ui.yml
-      - cmd/rufus-linux/main.go
-      - gui/rufusarm64.py
-      - gui/rufusarm64_logic.py
-      - gui/test_logic.py
+      - .github/qol-ui-tested.patch
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  source-snapshot:
+  apply-tested-patch:
     if: github.event.pull_request.head.ref == 'feature/windows-qol-ui'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          persist-credentials: false
-      - name: Create source snapshot
-        run: |
-          tar --exclude=.git -czf "$RUNNER_TEMP/qol-ui-source.tar.gz" .
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+          ref: feature/windows-qol-ui
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
-          name: qol-ui-source
-          path: ${{ runner.temp }}/qol-ui-source.tar.gz
-          if-no-files-found: error
-          retention-days: 1
+          go-version: '1.22.x'
+          cache: false
+      - name: Apply exact reviewed patch and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check .github/qol-ui-tested.patch
+          git apply .github/qol-ui-tested.patch
+          gofmt -w cmd/rufus-linux/main.go cmd/rufus-linux/main_test.go
+          go test ./cmd/rufus-linux ./internal/windowsconfig
+          PYTHONPATH=gui python3 -m unittest \
+            gui.test_logic \
+            gui.test_windows_qol_ui \
+            gui.test_default_parity \
+            gui.test_source_structure \
+            gui.test_windows_bios_capability
+          python3 -m py_compile \
+            gui/rufusarm64.py \
+            gui/rufusarm64_logic.py \
+            gui/test_logic.py \
+            gui/test_windows_qol_ui.py
+          rm .github/qol-ui-tested.patch .github/workflows/snapshot-qol-ui.yml
+          git diff --check
+          test ! -e .github/qol-ui-tested.patch
+          test ! -e .github/workflows/snapshot-qol-ui.yml
+      - name: Commit clean product changes
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            cmd/rufus-linux/main.go \
+            cmd/rufus-linux/main_test.go \
+            gui/rufusarm64.py \
+            gui/rufusarm64_logic.py \
+            gui/test_logic.py \
+            gui/test_windows_qol_ui.py \
+            .github/qol-ui-tested.patch \
+            .github/workflows/snapshot-qol-ui.yml
+          git commit -m 'Windows: expose Quality of Life policy in CLI and GTK'
+          git push origin HEAD:feature/windows-qol-ui
