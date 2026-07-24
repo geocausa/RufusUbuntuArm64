@@ -1,0 +1,57 @@
+name: Apply FFU signature-format hardening
+
+on:
+  pull_request:
+    branches:
+      - stage3/0.14.0
+    paths:
+      - .github/ffu-signature-canonical.patch
+      - .github/workflows/apply-ffu-signature-canonical.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-tested-patch:
+    if: github.event.pull_request.head.ref == 'fix/ffu-signature-canonical-der-v2'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: fix/ffu-signature-canonical-der-v2
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Apply exact reviewed patch and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check .github/ffu-signature-canonical.patch
+          git apply .github/ffu-signature-canonical.patch
+          gofmt -w \
+            internal/ffu/catalog_signature.go \
+            internal/ffu/catalog_signature_der.go \
+            internal/ffu/catalog_signature_der_test.go
+          go test ./internal/ffu
+          go vet ./internal/ffu
+          rm .github/ffu-signature-canonical.patch .github/workflows/apply-ffu-signature-canonical.yml
+          git diff --check
+          test ! -e .github/ffu-signature-canonical.patch
+          test ! -e .github/workflows/apply-ffu-signature-canonical.yml
+      - name: Commit clean product hardening
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            internal/ffu/catalog_signature.go \
+            internal/ffu/catalog_signature_der.go \
+            internal/ffu/catalog_signature_der_test.go \
+            docs/ffu-catalog-signature-verification.md \
+            .github/ffu-signature-canonical.patch \
+            .github/workflows/apply-ffu-signature-canonical.yml
+          git commit -m 'FFU: require canonical SHA-256 catalog signatures'
+          git push origin HEAD:fix/ffu-signature-canonical-der-v2
