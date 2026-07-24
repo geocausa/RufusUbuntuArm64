@@ -186,7 +186,8 @@ func TestVerifyHashTableContentRejectsChangingHashTable(t *testing.T) {
 func TestVerifyHashTableContentRejectsNilContext(t *testing.T) {
 	data := validV1PlanFixture()
 	sealV1HashTable(t, data)
-	if _, _, _, err := VerifyHashTableContent(nil, bytes.NewReader(data), uint64(len(data))); err == nil || !strings.Contains(err.Error(), "context is nil") {
+	var nilContext context.Context
+	if _, _, _, err := VerifyHashTableContent(nilContext, bytes.NewReader(data), uint64(len(data))); err == nil || !strings.Contains(err.Error(), "context is nil") {
 		t.Fatalf("error=%v", err)
 	}
 }
