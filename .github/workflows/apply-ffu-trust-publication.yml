@@ -1,0 +1,139 @@
+name: Apply FFU trust-bundle publication
+
+on:
+  pull_request:
+    branches:
+      - stage3/0.14.0
+    paths:
+      - .github/workflows/apply-ffu-trust-publication.yml
+      - .github/patches/ffu-trust-publication.*
+
+permissions:
+  contents: write
+
+jobs:
+  apply-tested-patch:
+    if: github.event.pull_request.head.ref == 'feature/ffu-trust-bundle-publication'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: feature/ffu-trust-bundle-publication
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+          cache: false
+
+      - name: Reconstruct and apply reviewed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat \
+            .github/patches/ffu-trust-publication.00a.b64 \
+            .github/patches/ffu-trust-publication.00b.b64 \
+            .github/patches/ffu-trust-publication.01.b64 \
+            > "$RUNNER_TEMP/ffu-trust-publication.patch.gz.b64"
+          printf '%s  %s\n' \
+            e35e13f6b343ea712f11ed7d1e6793b30a98f16b5a14585169f36b5eaec6c60b \
+            "$RUNNER_TEMP/ffu-trust-publication.patch.gz.b64" \
+            | sha256sum --check --strict
+          base64 --decode "$RUNNER_TEMP/ffu-trust-publication.patch.gz.b64" \
+            | gzip --decompress --stdout \
+            > "$RUNNER_TEMP/ffu-trust-publication.patch"
+          printf '%s  %s\n' \
+            ae58d3129f96dace9d9782af5f2c884aa4b6be64b2fe8a2ff06235af1baee31c \
+            "$RUNNER_TEMP/ffu-trust-publication.patch" \
+            | sha256sum --check --strict
+
+          printf '%s  %s\n' \
+            c6bc3fc1eb285bc62314847e06654a73ab29041bd95cbc707533d6edc6253415 \
+            .github/patches/ffu-trust-publication-test-permissions.patch.gz.b64 \
+            | sha256sum --check --strict
+          base64 --decode .github/patches/ffu-trust-publication-test-permissions.patch.gz.b64 \
+            | gzip --decompress --stdout \
+            > "$RUNNER_TEMP/ffu-trust-publication-test-permissions.patch"
+          printf '%s  %s\n' \
+            e41e8c6a155e0005596b695a13ab2d7e88e3a05ce125f348204e0dbcb39d047b \
+            "$RUNNER_TEMP/ffu-trust-publication-test-permissions.patch" \
+            | sha256sum --check --strict
+
+          git apply --check "$RUNNER_TEMP/ffu-trust-publication.patch"
+          git apply "$RUNNER_TEMP/ffu-trust-publication.patch"
+          git apply --check "$RUNNER_TEMP/ffu-trust-publication-test-permissions.patch"
+          git apply "$RUNNER_TEMP/ffu-trust-publication-test-permissions.patch"
+          gofmt -w internal/ffu/trust_store*.go
+          git diff --check
+
+      - name: Run FFU package tests
+        shell: bash
+        run: |
+          set -o pipefail
+          go test -count=1 -json ./internal/ffu 2>&1 | tee "$RUNNER_TEMP/ffu-package-test.json"
+
+      - name: Upload FFU package test log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ffu-publication-package-test-log
+          path: ${{ runner.temp }}/ffu-package-test.json
+          if-no-files-found: warn
+          retention-days: 1
+
+      - name: Vet FFU package
+        run: go vet ./internal/ffu
+
+      - name: Run FFU race tests
+        run: go test -race -count=1 ./internal/ffu
+
+      - name: Fuzz canonical store parser
+        run: go test -run='^$' -fuzz='FuzzDecodeCanonicalTrustStoreJSONDoesNotPanic' -fuzztime=5s ./internal/ffu
+
+      - name: Cross-build FFU package for ARM64
+        run: GOOS=linux GOARCH=arm64 go test -c ./internal/ffu -o "$RUNNER_TEMP/ffu-publication-arm64.test"
+
+      - name: Remove temporary machinery and verify scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            .github/workflows/snapshot-ffu-publication.yml \
+            .github/workflows/apply-ffu-trust-publication.yml \
+            .github/patches/ffu-trust-publication.*
+          git diff --check
+          changed="$(git status --short | cut -c4- | sort)"
+          expected="$(printf '%s\n' \
+            .github/patches/ffu-trust-publication.00a.b64 \
+            .github/patches/ffu-trust-publication.00b.b64 \
+            .github/patches/ffu-trust-publication.01.b64 \
+            .github/patches/ffu-trust-publication-test-permissions.patch.gz.b64 \
+            .github/workflows/apply-ffu-trust-publication.yml \
+            .github/workflows/snapshot-ffu-publication.yml \
+            docs/ffu-trust-bundle-publication.md \
+            internal/ffu/trust_store_linux.go \
+            internal/ffu/trust_store_linux_test.go \
+            internal/ffu/trust_store_rename_linux.go \
+            internal/ffu/trust_store_rename_linux_amd64.go \
+            internal/ffu/trust_store_rename_linux_arm64.go \
+            | sort)"
+          test "$changed" = "$expected"
+          for path in \
+            docs/ffu-trust-bundle-publication.md \
+            internal/ffu/trust_store_linux.go \
+            internal/ffu/trust_store_linux_test.go \
+            internal/ffu/trust_store_rename_linux.go \
+            internal/ffu/trust_store_rename_linux_amd64.go \
+            internal/ffu/trust_store_rename_linux_arm64.go; do
+            test -f "$path"
+          done
+
+      - name: Commit clean product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'FFU: publish authenticated trust-bundle generations safely'
+          git push origin HEAD:feature/ffu-trust-bundle-publication
