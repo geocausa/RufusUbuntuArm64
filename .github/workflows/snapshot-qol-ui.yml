@@ -24,10 +24,10 @@ jobs:
           persist-credentials: false
       - name: Create source snapshot
         run: |
-          tar --exclude=.git -czf qol-ui-source.tar.gz .
+          tar --exclude=.git -czf "$RUNNER_TEMP/qol-ui-source.tar.gz" .
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: qol-ui-source
-          path: qol-ui-source.tar.gz
+          path: ${{ runner.temp }}/qol-ui-source.tar.gz
           if-no-files-found: error
           retention-days: 1
