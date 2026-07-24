@@ -1,0 +1,47 @@
+name: Apply PR281 canonical formatting
+
+on:
+  pull_request:
+    branches:
+      - stage3/0.14.0
+    paths:
+      - internal/ffu/catalog_member_test.go
+      - .github/workflows/fix-pr281-gofmt.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format-and-remove:
+    if: github.event.pull_request.head.ref == 'feature/ffu-catalog-member-plan'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: feature/ffu-catalog-member-plan
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Format, verify, and remove executor
+        shell: bash
+        run: |
+          gofmt -w internal/ffu/catalog_member_test.go
+          rm .github/workflows/fix-pr281-gofmt.yml
+          go test -count=1 -run 'TestPlanCatalogMember|TestParseWindowsCatalog' ./internal/ffu
+          git diff --check
+          status="$(git status --short)"
+          printf '%s\n' "$status"
+          test "$(printf '%s\n' "$status" | grep -c '^ M internal/ffu/catalog_member_test.go$')" -eq 1
+          test "$(printf '%s\n' "$status" | grep -c '^ D .github/workflows/fix-pr281-gofmt.yml$')" -eq 1
+          test "$(printf '%s\n' "$status" | wc -l)" -eq 2
+      - name: Commit clean formatting fix
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add internal/ffu/catalog_member_test.go .github/workflows/fix-pr281-gofmt.yml
+          git commit -m 'Tests: format FFU catalog fixtures canonically'
+          git push origin HEAD:feature/ffu-catalog-member-plan
