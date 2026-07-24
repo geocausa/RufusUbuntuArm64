@@ -13,7 +13,7 @@ func TestInspectCommonStorePrefix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inspection.Schema != 2 || inspection.RestorationSupported {
+	if inspection.Schema != 3 || inspection.RestorationSupported {
 		t.Fatalf("unexpected inspection state: %#v", inspection)
 	}
 	if inspection.ImageHeaderOffset != 4096 || inspection.StoreHeaderOffset != 8192 {
@@ -34,8 +34,34 @@ func TestInspectCommonStorePrefix(t *testing.T) {
 	if inspection.Security.ChunkSizeBytes != 4096 || inspection.Store.BlockSizeBytes != 4096 {
 		t.Fatalf("unexpected geometry: %#v %#v", inspection.Security, inspection.Store)
 	}
+	if inspection.Store.InitialTableBlockEnd != 1 || inspection.Store.FinalTableBlockEnd != 2 {
+		t.Fatalf("unexpected payload table ranges: %#v", inspection.Store)
+	}
 	if !inspection.IntegrityMetadataPresent || len(inspection.Limitations) == 0 {
 		t.Fatalf("missing integrity/limitation reporting: %#v", inspection)
+	}
+}
+
+func TestInspectTreatsGPTTablesAsPayloadBlockRanges(t *testing.T) {
+	data := validFixtureBytes(2)
+	const storeOffset = 8192
+	binary.LittleEndian.PutUint32(data[storeOffset+224:storeOffset+228], 100)
+	binary.LittleEndian.PutUint32(data[storeOffset+228:storeOffset+232], 7)
+	binary.LittleEndian.PutUint32(data[storeOffset+232:storeOffset+236], 200)
+	binary.LittleEndian.PutUint32(data[storeOffset+236:storeOffset+240], 11)
+	binary.LittleEndian.PutUint32(data[storeOffset+240:storeOffset+244], 300)
+	binary.LittleEndian.PutUint32(data[storeOffset+244:storeOffset+248], 13)
+
+	inspection, err := Inspect(bytes.NewReader(data), uint64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := inspection.Store
+	if store.InitialTableBlockEnd != 107 || store.FlashOnlyTableBlockEnd != 211 || store.FinalTableBlockEnd != 313 {
+		t.Fatalf("payload table ranges were compared with descriptor count: %#v", store)
+	}
+	if store.WriteDescriptorCount != 2 {
+		t.Fatalf("write descriptor count=%d", store.WriteDescriptorCount)
 	}
 }
 
@@ -139,15 +165,6 @@ func TestInspectRejectsMalformedFixtures(t *testing.T) {
 				return data
 			},
 			want: "write descriptor table is too short",
-		},
-		{
-			name: "table range outside descriptors",
-			edit: func(data []byte) []byte {
-				binary.LittleEndian.PutUint32(data[storeOffset+240:storeOffset+244], 2)
-				binary.LittleEndian.PutUint32(data[storeOffset+244:storeOffset+248], 1)
-				return data
-			},
-			want: "final table range",
 		},
 		{
 			name: "declared descriptors exceed tail",

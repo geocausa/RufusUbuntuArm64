@@ -2,7 +2,7 @@
 
 Status: **read-only common-prefix inspection**. No FFU target can be written by the code in this tranche.
 
-Tracking issues: #269 and #271
+Tracking issues: #269, #271 and #273
 
 ## Why FFU is a separate workflow
 
@@ -22,9 +22,10 @@ Windows Rufus uses the Windows virtual-disk/FFU provider rather than treating FF
 Independent structural cross-checks:
 
 - NXP FFU definitions: <https://github.com/nxp-imx/mfgtools/blob/59c76388743cd1fb78375469b5bac6beacddb1ae/libuuu/ffu_format.h>
+- FfuConvert: <https://github.com/smourier/FfuConvert/blob/9ffff57aa9451ccd0cd50c83f8b7c09efe2f6ceb/FfuConvert/FfuFile.cs>
 - Historical MIT `ffu2img.py`: <https://github.com/t0x0/random/blob/master/ffu2img.py>
 
-The historical converter is not accepted as a production provider or conformance oracle. NXP's definitions are used only to prevent overconfident boundary assumptions until supported real-image fixtures and further independent agreement exist.
+The historical converters are not accepted as production providers or conformance oracles. Independent definitions are used to prevent overconfident assumptions until supported real-image fixtures and further agreement exist.
 
 ## Independently established regions
 
@@ -39,6 +40,8 @@ The read-only parser currently establishes:
 
 The 248 bytes are a **common prefix**, not a complete versioned store header. Known FFU layouts can append additional fixed or variable fields before validation descriptors, write descriptors and payload data. Consequently the parser deliberately does not report descriptor-table or payload offsets yet.
 
+The `dwInitialTableIndex/Count`, `dwFlashOnlyTableIndex/Count` and `dwFinalTableIndex/Count` pairs describe **block ranges in the payload**. They are not indexes into the write-descriptor array. Common-prefix inspection records their overflow-safe end block, but cannot bound them until a supported descriptor layout yields the total payload block count.
+
 ## Current guarantees
 
 `internal/ffu.Inspect`:
@@ -47,7 +50,8 @@ The 248 bytes are a **common prefix**, not a complete versioned store header. Kn
 - performs no device discovery, mounting, authentication or writing;
 - validates known signatures and exact security/image header sizes;
 - uses checked addition, multiplication and alignment for every established boundary;
-- refuses missing catalog/hash metadata, inconsistent chunk sizes, invalid block geometry, empty or impossibly short declared descriptor tables, inconsistent validation metadata, invalid table-index/count ranges and truncated common regions;
+- refuses missing catalog/hash metadata, inconsistent chunk sizes, invalid block geometry, empty or impossibly short declared descriptor tables, inconsistent validation metadata and truncated common regions;
+- records payload GPT-table block ranges without comparing them with descriptor count;
 - records reported version fields as metadata without using them to guess a variable extension size;
 - reports `descriptor_layout_resolved: false`, `payload_layout_resolved: false` and `restoration_supported: false` for every image.
 
@@ -63,7 +67,7 @@ The next research gate must identify and validate the complete store extension f
 - payload start, padding and compression semantics;
 - multi-store relationships and per-store payload sizes.
 
-Unknown layouts remain useful for common-prefix inspection but cannot produce a restoration plan.
+The first supported planner is intentionally limited to store-header `MajorVersion == 1`, for which independent implementations agree that the 248-byte prefix is the complete store header. Store versions greater than 1 remain inspectable but unresolved.
 
 ## What remains before a loop-file restore
 
@@ -72,11 +76,11 @@ After a store layout is supported, every descriptor must produce a deterministic
 - source payload range and compression semantics;
 - destination disk-access method and exact destination byte range;
 - logical block count and ordering;
-- overlap and out-of-range rejection;
-- relationship to validation descriptors and security hash metadata;
+- overlap and out-of-range analysis;
+- relationship to validation descriptors, payload GPT-table block ranges and security hash metadata;
 - minimum target surface and any resize semantics.
 
-Unknown disk-access methods, split SFU sets, optimized/resizable FFUs, unrecognized compression, duplicate or overlapping destinations and arithmetic overflow remain hard refusals.
+Unknown disk-access methods, split SFU sets, optimized/resizable FFUs, unrecognized compression, unresolved destination overlap and arithmetic overflow remain hard refusals.
 
 Only after that plan is stable may an executor target a regular file or disposable loop device. A physical removable drive is a later gate.
 

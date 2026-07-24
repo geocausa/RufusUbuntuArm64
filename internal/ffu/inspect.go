@@ -42,7 +42,9 @@ type ImageHeader struct {
 }
 
 // StoreHeader describes only the 248-byte prefix common to known FFU store
-// layouts. Extensions after FinalTableCount are deliberately unresolved.
+// layouts. Extensions after FinalTableBlockCount are deliberately unresolved.
+// The three table ranges are block ranges within the payload, not indexes into
+// the write-descriptor array.
 type StoreHeader struct {
 	CommonHeaderSize         uint32 `json:"common_header_size"`
 	UpdateType               uint32 `json:"update_type"`
@@ -56,12 +58,15 @@ type StoreHeader struct {
 	WriteDescriptorLength    uint32 `json:"write_descriptor_length"`
 	ValidateDescriptorCount  uint32 `json:"validate_descriptor_count"`
 	ValidateDescriptorLength uint32 `json:"validate_descriptor_length"`
-	InitialTableIndex        uint32 `json:"initial_table_index"`
-	InitialTableCount        uint32 `json:"initial_table_count"`
-	FlashOnlyTableIndex      uint32 `json:"flash_only_table_index"`
-	FlashOnlyTableCount      uint32 `json:"flash_only_table_count"`
-	FinalTableIndex          uint32 `json:"final_table_index"`
-	FinalTableCount          uint32 `json:"final_table_count"`
+	InitialTableBlockIndex   uint32 `json:"initial_table_block_index"`
+	InitialTableBlockCount   uint32 `json:"initial_table_block_count"`
+	InitialTableBlockEnd     uint64 `json:"initial_table_block_end"`
+	FlashOnlyTableBlockIndex uint32 `json:"flash_only_table_block_index"`
+	FlashOnlyTableBlockCount uint32 `json:"flash_only_table_block_count"`
+	FlashOnlyTableBlockEnd   uint64 `json:"flash_only_table_block_end"`
+	FinalTableBlockIndex     uint32 `json:"final_table_block_index"`
+	FinalTableBlockCount     uint32 `json:"final_table_block_count"`
+	FinalTableBlockEnd       uint64 `json:"final_table_block_end"`
 }
 
 // Inspection is an immutable read-only description of the FFU regions whose
@@ -195,12 +200,24 @@ func Inspect(reader io.ReaderAt, size uint64) (Inspection, error) {
 		WriteDescriptorLength:    binary.LittleEndian.Uint32(storeBytes[212:216]),
 		ValidateDescriptorCount:  binary.LittleEndian.Uint32(storeBytes[216:220]),
 		ValidateDescriptorLength: binary.LittleEndian.Uint32(storeBytes[220:224]),
-		InitialTableIndex:        binary.LittleEndian.Uint32(storeBytes[224:228]),
-		InitialTableCount:        binary.LittleEndian.Uint32(storeBytes[228:232]),
-		FlashOnlyTableIndex:      binary.LittleEndian.Uint32(storeBytes[232:236]),
-		FlashOnlyTableCount:      binary.LittleEndian.Uint32(storeBytes[236:240]),
-		FinalTableIndex:          binary.LittleEndian.Uint32(storeBytes[240:244]),
-		FinalTableCount:          binary.LittleEndian.Uint32(storeBytes[244:248]),
+		InitialTableBlockIndex:   binary.LittleEndian.Uint32(storeBytes[224:228]),
+		InitialTableBlockCount:   binary.LittleEndian.Uint32(storeBytes[228:232]),
+		FlashOnlyTableBlockIndex: binary.LittleEndian.Uint32(storeBytes[232:236]),
+		FlashOnlyTableBlockCount: binary.LittleEndian.Uint32(storeBytes[236:240]),
+		FinalTableBlockIndex:     binary.LittleEndian.Uint32(storeBytes[240:244]),
+		FinalTableBlockCount:     binary.LittleEndian.Uint32(storeBytes[244:248]),
+	}
+	store.InitialTableBlockEnd, err = payloadBlockEnd(store.InitialTableBlockIndex, store.InitialTableBlockCount)
+	if err != nil {
+		return Inspection{}, fmt.Errorf("FFU initial-table payload range: %w", err)
+	}
+	store.FlashOnlyTableBlockEnd, err = payloadBlockEnd(store.FlashOnlyTableBlockIndex, store.FlashOnlyTableBlockCount)
+	if err != nil {
+		return Inspection{}, fmt.Errorf("FFU flash-only-table payload range: %w", err)
+	}
+	store.FinalTableBlockEnd, err = payloadBlockEnd(store.FinalTableBlockIndex, store.FinalTableBlockCount)
+	if err != nil {
+		return Inspection{}, fmt.Errorf("FFU final-table payload range: %w", err)
 	}
 
 	blockBytes := uint64(store.BlockSizeBytes)
@@ -217,15 +234,6 @@ func Inspect(reader io.ReaderAt, size uint64) (Inspection, error) {
 	if (store.ValidateDescriptorCount == 0) != (store.ValidateDescriptorLength == 0) {
 		return Inspection{}, errors.New("FFU validation descriptor count/length are inconsistent")
 	}
-	if err := validateTableRange("initial", store.InitialTableIndex, store.InitialTableCount, store.WriteDescriptorCount); err != nil {
-		return Inspection{}, err
-	}
-	if err := validateTableRange("flash-only", store.FlashOnlyTableIndex, store.FlashOnlyTableCount, store.WriteDescriptorCount); err != nil {
-		return Inspection{}, err
-	}
-	if err := validateTableRange("final", store.FinalTableIndex, store.FinalTableCount, store.WriteDescriptorCount); err != nil {
-		return Inspection{}, err
-	}
 
 	storeCommonEnd, err := checkedAdd(storeOffset, storeCommonHeaderBytes)
 	if err != nil {
@@ -240,7 +248,7 @@ func Inspect(reader io.ReaderAt, size uint64) (Inspection, error) {
 	}
 
 	return Inspection{
-		Schema:                   2,
+		Schema:                   3,
 		FileSize:                 size,
 		SecurityHeaderOffset:     0,
 		CatalogOffset:            catalogOffset,
@@ -262,6 +270,7 @@ func Inspect(reader io.ReaderAt, size uint64) (Inspection, error) {
 			"only the 248-byte common store prefix is parsed",
 			"variable store extensions and descriptor-table offsets are not yet resolved",
 			"write and validation descriptor semantics are not yet parsed",
+			"payload GPT table ranges are recorded but cannot be bounded until total payload blocks are parsed",
 			"the security catalog and chunk hash table are located but not yet authenticated",
 			"payload location, compression, and sparse destination mapping are unresolved",
 			"split SFU and optimized FFU resize semantics are unsupported",
@@ -322,10 +331,6 @@ func trimPlatformID(raw []byte) string {
 	return strings.TrimSpace(string(raw))
 }
 
-func validateTableRange(name string, index, count, total uint32) error {
-	end, err := checkedAdd(uint64(index), uint64(count))
-	if err != nil || end > uint64(total) {
-		return fmt.Errorf("FFU %s table range [%d,%d) exceeds %d write descriptors", name, index, end, total)
-	}
-	return nil
+func payloadBlockEnd(index, count uint32) (uint64, error) {
+	return checkedAdd(uint64(index), uint64(count))
 }
