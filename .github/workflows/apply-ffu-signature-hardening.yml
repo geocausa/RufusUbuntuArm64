@@ -1,5 +1,6 @@
 name: Apply FFU signature DER hardening
 
+# Synchronize the exact self-removing application workflow after PR creation.
 on:
   pull_request:
     branches:
