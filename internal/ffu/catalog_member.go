@@ -30,13 +30,13 @@ const (
 )
 
 const (
-	oidPKCS7SignedData       = "1.2.840.113549.1.7.2"
-	oidMicrosoftCTL         = "1.3.6.1.4.1.311.10.1"
-	oidCatalogNameValue     = "1.3.6.1.4.1.311.12.2.1"
-	oidSPCIndirectData      = "1.3.6.1.4.1.311.2.1.4"
-	oidSHA1                 = "1.3.14.3.2.26"
-	catalogHashTableMember  = "HashTable.blob"
-	catalogNameBase64Flag   = uint64(0x00020000)
+	oidPKCS7SignedData     = "1.2.840.113549.1.7.2"
+	oidMicrosoftCTL        = "1.3.6.1.4.1.311.10.1"
+	oidCatalogNameValue    = "1.3.6.1.4.1.311.12.2.1"
+	oidSPCIndirectData     = "1.3.6.1.4.1.311.2.1.4"
+	oidSHA1                = "1.3.14.3.2.26"
+	catalogHashTableMember = "HashTable.blob"
+	catalogNameBase64Flag  = uint64(0x00020000)
 )
 
 // CatalogCertificate reports embedded certificate metadata only. Parsing an
@@ -442,7 +442,7 @@ func parseSignedDataMetadata(nodes []derValue, budget *derBudget, result *parsed
 		return errors.New("FFU catalog SignedData contains no signerInfos set")
 	}
 	if certificateNode != nil {
-		certificates, err := parseImplicitChildren(*certificateNode, 3, maxCatalogCertificates, budget, "catalog certificates")
+		certificates, err := parseImplicitChildren(*certificateNode, 1, maxCatalogCertificates, budget, "catalog certificates")
 		if err != nil {
 			return err
 		}
