@@ -350,6 +350,7 @@ func runWrite(args []string) error {
 	winBypassOnline := fs.Bool("win-bypass-online-account", false, "remove Windows online-account requirement")
 	winLocalUser := fs.String("win-local-user", "", "create a local Windows administrator account")
 	winPrivacy := fs.Bool("win-reduce-data-collection", false, "reduce Windows setup data collection and recommendations")
+	winQualityOfLife := fs.Bool("win-quality-of-life", false, "remove bundled OneDrive setup, Outlook and Teams and apply Rufus Quality of Life policies")
 	winDisableBitLocker := fs.Bool("win-disable-bitlocker", false, "disable automatic Windows device encryption provisioning")
 	winLocale := fs.String("win-locale", "", "apply a Windows regional locale, such as en-GB")
 	winTimeZone := fs.String("win-timezone", "", "apply a Windows time-zone name")
@@ -503,6 +504,7 @@ func runWrite(args []string) error {
 		BypassOnlineAccount:  *winBypassOnline,
 		LocalAccount:         *winLocalUser,
 		ReduceDataCollection: *winPrivacy,
+		QualityOfLife:        *winQualityOfLife,
 		DisableBitLocker:     *winDisableBitLocker,
 		Locale:               *winLocale,
 		TimeZone:             *winTimeZone,

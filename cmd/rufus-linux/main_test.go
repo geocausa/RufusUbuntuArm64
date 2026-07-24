@@ -193,6 +193,13 @@ func TestPKExecWriterRejectsExperimentalPersistenceMode(t *testing.T) {
 	}
 }
 
+func TestWriteRecognizesQualityOfLifeFlag(t *testing.T) {
+	err := run([]string{"write", "--win-quality-of-life"})
+	if err == nil || err.Error() != "--image and --device are required" {
+		t.Fatalf("Quality of Life flag was not parsed before required-argument validation: %v", err)
+	}
+}
+
 func TestParseClusterSize(t *testing.T) {
 	for input, want := range map[string]uint64{"": 0, "auto": 0, "4096": 4096, "32768": 32768} {
 		got, err := parseClusterSize(input)

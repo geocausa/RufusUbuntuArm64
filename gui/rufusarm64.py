@@ -166,6 +166,7 @@ def unavailable_windows_capability_analysis(reason):
             "bypass_online_account": dict(disabled),
             "local_account": dict(disabled),
             "reduce_data_collection": dict(disabled),
+            "quality_of_life": dict(disabled),
             "disable_bitlocker": dict(disabled),
             "load_drivers": dict(disabled),
             "locale": dict(disabled),
@@ -254,6 +255,12 @@ class WindowsOptionsDialog(Gtk.Dialog):
             "Sets Windows Setup privacy choices and disables advertising/consumer-content policies where supported.",
             previous.get("reduce_data_collection", False),
         )
+        self.quality_of_life = self.check(
+            box,
+            "Apply Rufus Quality of Life changes",
+            "Removes bundled OneDrive setup, Outlook and Teams, and disables Copilot, web search, consumer-content suggestions and related Microsoft promotions.",
+            previous.get("quality_of_life", False),
+        )
         self.region_locale, self.region_timezone, self.region_iana = current_regional_settings()
         region_parts = []
         if self.region_locale:
@@ -329,6 +336,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
         self.apply_option_capability(self.bypass_online, "bypass_online_account")
         self.local_account_allowed = self.apply_option_capability(self.local_account, "local_account")
         self.apply_option_capability(self.reduce_data, "reduce_data_collection")
+        self.apply_option_capability(self.quality_of_life, "quality_of_life")
         self.apply_option_capability(self.disable_bitlocker, "disable_bitlocker")
         regional_keys = []
         if self.region_locale:
@@ -376,6 +384,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
             "bypass_online_account": self.bypass_online.get_active(),
             "local_user": local_user,
             "reduce_data_collection": self.reduce_data.get_active(),
+            "quality_of_life": self.quality_of_life.get_active(),
             "disable_bitlocker": self.disable_bitlocker.get_active(),
             "use_regional_settings": self.use_region.get_active(),
             "locale": self.region_locale if self.use_region.get_active() else "",
@@ -2256,6 +2265,7 @@ class RufusWindow(Gtk.ApplicationWindow):
                 (options.get("bypass_online_account"), "offline-account setup"),
                 (bool(options.get("local_user")), f"local account {options.get('local_user', '')}"),
                 (options.get("reduce_data_collection"), "reduced setup data collection"),
+                (options.get("quality_of_life"), "Quality of Life app removals and policies"),
                 (options.get("disable_bitlocker"), "automatic encryption disabled"),
                 (options.get("use_regional_settings"), "Ubuntu regional settings"),
             )

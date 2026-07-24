@@ -276,6 +276,7 @@ class LogicTests(unittest.TestCase):
                 "bypass_online_account": True,
                 "local_user": "geoca",
                 "reduce_data_collection": True,
+                "quality_of_life": True,
                 "disable_bitlocker": True,
                 "use_regional_settings": True,
                 "locale": "en_GB.UTF-8",
@@ -298,6 +299,7 @@ class LogicTests(unittest.TestCase):
             "--win-bypass-online-account",
             "--win-local-user",
             "--win-reduce-data-collection",
+            "--win-quality-of-life",
             "--win-disable-bitlocker",
             "--win-locale",
             "--win-timezone",
@@ -312,6 +314,14 @@ class LogicTests(unittest.TestCase):
         ):
             self.assertIn(flag, command)
         self.assertEqual(command[command.index("--volume-label") + 1], "WIN11")
+
+
+    def test_writer_command_keeps_quality_of_life_off_by_default(self):
+        command = build_writer_command(
+            "pkexec", "/helper", "/image.iso", "/dev/sda", "abc", False,
+            "/run/user/1000/rufusarm64-x.cancel",
+        )
+        self.assertNotIn("--win-quality-of-life", command)
 
 
     def test_drive_option_validation(self):

@@ -845,6 +845,8 @@ def build_writer_command(
         command.extend(["--win-local-user", local_user])
     if options.get("reduce_data_collection"):
         command.append("--win-reduce-data-collection")
+    if options.get("quality_of_life"):
+        command.append("--win-quality-of-life")
     if options.get("disable_bitlocker"):
         command.append("--win-disable-bitlocker")
     if options.get("use_regional_settings"):
