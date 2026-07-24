@@ -1,0 +1,33 @@
+name: Snapshot QoL UI branch
+
+on:
+  pull_request:
+    branches:
+      - stage3/0.14.0
+    paths:
+      - .github/workflows/snapshot-qol-ui.yml
+      - cmd/rufus-linux/main.go
+      - gui/rufusarm64.py
+      - gui/rufusarm64_logic.py
+      - gui/test_logic.py
+
+permissions:
+  contents: read
+
+jobs:
+  source-snapshot:
+    if: github.event.pull_request.head.ref == 'feature/windows-qol-ui'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Create source snapshot
+        run: |
+          tar --exclude=.git -czf qol-ui-source.tar.gz .
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qol-ui-source
+          path: qol-ui-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1
