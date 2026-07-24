@@ -51,44 +51,44 @@ type TrustAnchorDocument struct {
 // for chain construction until the containing bundle is authenticated by a
 // separate policy gate.
 type TrustAnchor struct {
-	ID                 string `json:"id"`
-	CertificateSHA256  string `json:"certificate_sha256"`
-	Subject            string `json:"subject"`
-	Issuer             string `json:"issuer"`
-	SerialNumber       string `json:"serial_number"`
-	NotBefore          string `json:"not_before"`
-	NotAfter           string `json:"not_after"`
-	PublicKeyAlgorithm string `json:"public_key_algorithm"`
-	SignatureAlgorithm string `json:"signature_algorithm"`
-	SelfSigned         bool   `json:"self_signed"`
-	IsCA               bool   `json:"is_ca"`
-	CanSignCertificates bool  `json:"can_sign_certificates"`
+	ID                  string `json:"id"`
+	CertificateSHA256   string `json:"certificate_sha256"`
+	Subject             string `json:"subject"`
+	Issuer              string `json:"issuer"`
+	SerialNumber        string `json:"serial_number"`
+	NotBefore           string `json:"not_before"`
+	NotAfter            string `json:"not_after"`
+	PublicKeyAlgorithm  string `json:"public_key_algorithm"`
+	SignatureAlgorithm  string `json:"signature_algorithm"`
+	SelfSigned          bool   `json:"self_signed"`
+	IsCA                bool   `json:"is_ca"`
+	CanSignCertificates bool   `json:"can_sign_certificates"`
 }
 
 // TrustBundlePlan is a deterministic, read-only description of an explicit
 // Authenticode trust bundle. It deliberately cannot make any certificate or
 // publisher trusted in this tranche.
 type TrustBundlePlan struct {
-	Schema                     int           `json:"schema"`
-	Purpose                    string        `json:"purpose"`
-	Sequence                   uint64        `json:"sequence"`
-	MinimumAcceptedSequence    uint64        `json:"minimum_accepted_sequence"`
-	GeneratedAt                string        `json:"generated_at"`
-	ExpiresAt                  string        `json:"expires_at"`
-	EvaluationTime             string        `json:"evaluation_time"`
-	RootCount                  int           `json:"root_count"`
-	DistrustedCount            int           `json:"distrusted_count"`
-	Roots                      []TrustAnchor `json:"roots"`
-	DistrustedSHA256           []string      `json:"distrusted_sha256"`
-	BundleSHA256               string        `json:"bundle_sha256"`
-	PlanSHA256                 string        `json:"plan_sha256"`
-	BundleStructureValidated   bool          `json:"bundle_structure_validated"`
-	BundleSignatureAuthenticated bool        `json:"bundle_signature_authenticated"`
-	TrustAnchorsActivated      bool          `json:"trust_anchors_activated"`
-	HostTLSStoreConsulted      bool          `json:"host_tls_store_consulted"`
-	CertificateChainBuilt      bool          `json:"certificate_chain_built"`
-	PublisherTrusted           bool          `json:"publisher_trusted"`
-	Limitations                []string      `json:"limitations"`
+	Schema                       int           `json:"schema"`
+	Purpose                      string        `json:"purpose"`
+	Sequence                     uint64        `json:"sequence"`
+	MinimumAcceptedSequence      uint64        `json:"minimum_accepted_sequence"`
+	GeneratedAt                  string        `json:"generated_at"`
+	ExpiresAt                    string        `json:"expires_at"`
+	EvaluationTime               string        `json:"evaluation_time"`
+	RootCount                    int           `json:"root_count"`
+	DistrustedCount              int           `json:"distrusted_count"`
+	Roots                        []TrustAnchor `json:"roots"`
+	DistrustedSHA256             []string      `json:"distrusted_sha256"`
+	BundleSHA256                 string        `json:"bundle_sha256"`
+	PlanSHA256                   string        `json:"plan_sha256"`
+	BundleStructureValidated     bool          `json:"bundle_structure_validated"`
+	BundleSignatureAuthenticated bool          `json:"bundle_signature_authenticated"`
+	TrustAnchorsActivated        bool          `json:"trust_anchors_activated"`
+	HostTLSStoreConsulted        bool          `json:"host_tls_store_consulted"`
+	CertificateChainBuilt        bool          `json:"certificate_chain_built"`
+	PublisherTrusted             bool          `json:"publisher_trusted"`
+	Limitations                  []string      `json:"limitations"`
 }
 
 // ParseTrustBundle validates a bounded explicit trust-bundle document. The
