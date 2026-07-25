@@ -1,0 +1,47 @@
+name: Validate exclusive FFU target acquisition v2
+
+on:
+  push:
+    branches: [feature/ffu-exclusive-target-acquisition]
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+          cache: true
+      - name: Apply verified fixes and format
+        run: |
+          python3 .github/tmp/apply_ffu_target_session_fix.py
+          gofmt -w internal/ffu/restore_target_session_linux.go internal/ffu/restore_target_session_linux_test.go internal/ffu/restore_target_session_policy_contract_test.go
+      - name: Test focused package
+        run: go test -count=1 ./internal/ffu
+      - name: Vet focused package
+        run: go vet ./internal/ffu
+      - name: Race focused package
+        run: go test -race -count=1 ./internal/ffu
+      - name: Staticcheck focused package
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          "$(go env GOPATH)/bin/staticcheck" ./internal/ffu
+      - name: Cross-compile ARM64 focused package
+        run: GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go test -c ./internal/ffu -o /tmp/ffu-arm64.test
+      - name: Publish clean product tree
+        env:
+          BRANCH: feature/ffu-exclusive-target-acquisition
+        run: |
+          git rm .github/workflows/check-ffu-target-session-v2.yml
+          git rm .github/tmp/apply_ffu_target_session_fix.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs/ffu-exclusive-target-acquisition.md internal/ffu/restore_target_session_linux.go internal/ffu/restore_target_session_linux_test.go internal/ffu/restore_target_session_policy_contract_test.go
+          git commit -m "FFU: acquire exclusive targets without mutation"
+          git push origin "HEAD:${BRANCH}"
