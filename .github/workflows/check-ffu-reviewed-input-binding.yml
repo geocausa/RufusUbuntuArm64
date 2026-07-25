@@ -1,0 +1,49 @@
+name: Validate FFU reviewed-input binding
+
+on:
+  push:
+    branches: [feature/ffu-reviewed-input-binding]
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+          cache: true
+      - name: Apply reviewed-input binding patch and format
+        run: |
+          python3 scripts/patch-ffu-reviewed-input-binding.py
+          gofmt -w cmd/rufus-linux/ffu_linux.go cmd/rufus-linux/ffu_linux_test.go cmd/rufus-linux/ffu_review_binding_linux.go
+      - name: Test CLI and FFU packages
+        run: go test -count=1 ./cmd/rufus-linux ./internal/ffu
+      - name: Vet CLI and FFU packages
+        run: go vet ./cmd/rufus-linux ./internal/ffu
+      - name: Race CLI and FFU packages
+        run: go test -race -count=1 ./cmd/rufus-linux ./internal/ffu
+      - name: Staticcheck CLI and FFU packages
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          "$(go env GOPATH)/bin/staticcheck" ./cmd/rufus-linux ./internal/ffu
+      - name: Cross-compile ARM64 CLI and FFU package
+        run: |
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /tmp/rufusarm64-cli ./cmd/rufus-linux
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go test -c ./internal/ffu -o /tmp/ffu-arm64.test
+      - name: Publish clean product tree
+        env:
+          BRANCH: feature/ffu-reviewed-input-binding
+        run: |
+          git rm .github/workflows/check-ffu-reviewed-input-binding.yml scripts/patch-ffu-reviewed-input-binding.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add cmd/rufus-linux/ffu_linux.go cmd/rufus-linux/ffu_linux_test.go cmd/rufus-linux/ffu_review_binding_linux.go docs/ffu-experimental-cli-provider.md
+          git commit -m "FFU: bind restore to the reviewed source and policies"
+          git push origin "HEAD:${BRANCH}"
