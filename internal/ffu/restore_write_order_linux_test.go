@@ -184,12 +184,12 @@ func validSinglePhaseWriteOrderFixture() (DescriptorPlan, RestoreTargetPlan, Ful
 		targetBlocks = uint64(8)
 	)
 	descriptor := DescriptorPlan{
-		Schema:                    1,
-		StoreMajorVersion:         1,
-		StoreMinorVersion:         0,
-		SourceFileSize:            sourceSize,
-		ChunkSizeBytes:            blockSize,
-		BlockSizeBytes:            blockSize,
+		Schema:                     1,
+		StoreMajorVersion:          1,
+		StoreMinorVersion:          0,
+		SourceFileSize:             sourceSize,
+		ChunkSizeBytes:             blockSize,
+		BlockSizeBytes:             blockSize,
 		ValidationDescriptorOffset: 4096,
 		WriteDescriptorOffset:      4096,
 		WriteDescriptorEnd:         4160,
