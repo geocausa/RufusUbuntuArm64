@@ -21,7 +21,20 @@ jobs:
       - name: Format
         run: gofmt -w internal/ffu/restore_mutation_authorization_linux.go internal/ffu/restore_mutation_authorization_linux_test.go internal/ffu/restore_mutation_authorization_policy_contract_test.go
       - name: Test focused package
-        run: go test -count=1 ./internal/ffu
+        run: |
+          set +e
+          go test -count=1 ./internal/ffu 2>&1 | tee /tmp/ffu-mutation-authorization-test.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            cp /tmp/ffu-mutation-authorization-test.log internal/ffu/restore_mutation_authorization_diagnostic.txt
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add internal/ffu/restore_mutation_authorization_diagnostic.txt
+            git commit -m "Diagnostic: capture mutation authorization failure"
+            git push origin "HEAD:feature/ffu-sealed-mutation-authorization"
+            exit "$status"
+          fi
       - name: Vet focused package
         run: go vet ./internal/ffu
       - name: Race focused package
@@ -37,6 +50,7 @@ jobs:
           BRANCH: feature/ffu-sealed-mutation-authorization
         run: |
           git rm .github/workflows/check-ffu-mutation-authorization.yml
+          git rm -f internal/ffu/restore_mutation_authorization_diagnostic.txt || true
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add docs/ffu-sealed-mutation-authorization.md internal/ffu/restore_mutation_authorization_linux.go internal/ffu/restore_mutation_authorization_linux_test.go internal/ffu/restore_mutation_authorization_policy_contract_test.go
