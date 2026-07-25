@@ -24,8 +24,8 @@ text = replace_once(
 )
 text = replace_once(
     text,
-    '''\tprepared, err := prepareFFUCLIReview(context.Background(), options)\n\tif err != nil {\n\t\treturn err\n\t}\n''',
-    '''\tctx, stop, err := newFFUCLIContext()\n\tif err != nil {\n\t\treturn err\n\t}\n\tdefer stop()\n\tprepared, err := prepareFFUCLIReview(ctx, options)\n\tif err != nil {\n\t\treturn err\n\t}\n''',
+    '''func runFFUReview(args []string) error {\n\toptions, err := parseFFUCLIOptions("review", args, false)\n\tif err != nil {\n\t\treturn err\n\t}\n\tprepared, err := prepareFFUCLIReview(context.Background(), options)\n\tif err != nil {\n\t\treturn err\n\t}\n''',
+    '''func runFFUReview(args []string) error {\n\toptions, err := parseFFUCLIOptions("review", args, false)\n\tif err != nil {\n\t\treturn err\n\t}\n\tctx, stop, err := newFFUCLIContext()\n\tif err != nil {\n\t\treturn err\n\t}\n\tdefer stop()\n\tprepared, err := prepareFFUCLIReview(ctx, options)\n\tif err != nil {\n\t\treturn err\n\t}\n''',
     "review signal context",
 )
 text = replace_once(
