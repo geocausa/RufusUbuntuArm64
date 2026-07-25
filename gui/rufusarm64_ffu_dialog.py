@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Read-only GTK review for authenticated Full Flash Update images."""
+"""GTK review and guarded privileged launch for authenticated FFU images."""
 
+import copy
 import json
 import os
+import signal
 import subprocess
 import threading
 
@@ -11,6 +13,11 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import GLib, Gtk
 
+from rufusarm64_ffu_restore_logic import (
+    build_ffu_restore_command,
+    ffu_restore_summary,
+    normalize_ffu_restore_output,
+)
 from rufusarm64_logic import (
     build_ffu_review_command,
     ffu_review_summary,
@@ -19,15 +26,15 @@ from rufusarm64_logic import (
 
 
 class FFUReviewDialog(Gtk.Dialog):
-    """Collect explicit trust inputs and run only the unprivileged FFU review."""
+    """Review one FFU and allow one exact, evidence-bound restore attempt."""
 
-    def __init__(self, parent, helper, image, device):
+    def __init__(self, parent, pkexec, helper, image, device):
         super().__init__(
             title="Review Full Flash Update",
             transient_for=parent,
             modal=True,
         )
-        self.set_default_size(760, 620)
+        self.set_default_size(780, 720)
         self.set_resizable(True)
         self.add_button("Close", Gtk.ResponseType.CLOSE)
         self.set_default_response(Gtk.ResponseType.CLOSE)
@@ -35,13 +42,19 @@ class FFUReviewDialog(Gtk.Dialog):
         self.connect("response", self.on_response)
 
         self.parent_window = parent
+        self.pkexec = pkexec
         self.helper = helper
         self.image = image
         self.device = dict(device or {})
         self.running = False
+        self.restoring = False
         self.closed = False
         self.generation = 0
         self.review = None
+        self.review_payload = None
+        self.restore_attempted = False
+        self.process = None
+        self.cancel_requested = False
 
         content = self.get_content_area()
         content.set_spacing(12)
@@ -51,9 +64,9 @@ class FFUReviewDialog(Gtk.Dialog):
         warning.set_xalign(0)
         warning.set_line_wrap(True)
         warning.set_markup(
-            "<b>Experimental, read-only review</b> — this verifies the signed FFU, "
-            "publisher policy, exact removable target and planned changed bytes. "
-            "It does not open, unmount or modify the target."
+            "<b>Experimental FFU provider</b> — authenticate and review first. "
+            "Restoration is available only for an already-unmounted removable whole disk "
+            "and destroys data on the exact reviewed target."
         )
         content.pack_start(warning, False, False, 0)
 
@@ -101,6 +114,7 @@ class FFUReviewDialog(Gtk.Dialog):
             label.set_xalign(0)
             grid.attach(label, 0, row, 1, 1)
             chooser.set_hexpand(True)
+            chooser.connect("file-set", self.review_input_changed)
             grid.attach(chooser, 1, row, 1, 1)
 
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -127,17 +141,38 @@ class FFUReviewDialog(Gtk.Dialog):
         )
         result_scroll.add(self.result)
         content.pack_start(result_scroll, True, True, 0)
-        self.show_all()
 
-    def set_running(self, running):
-        self.running = bool(running)
-        for chooser in (self.trust_store, self.metadata_policy, self.publisher_policy):
-            chooser.set_sensitive(not self.running)
-        self.review_button.set_sensitive(not self.running)
-        if self.running:
-            self.spinner.start()
-        else:
-            self.spinner.stop()
+        destructive = Gtk.Frame(label="Exact destructive confirmation")
+        destructive_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        destructive_box.set_border_width(12)
+        destructive.add(destructive_box)
+        destructive_note = Gtk.Label()
+        destructive_note.set_xalign(0)
+        destructive_note.set_line_wrap(True)
+        destructive_note.set_markup(
+            "After a successful unmounted-target review, type the displayed phrase exactly. "
+            "Administrator authentication then reruns every source, policy, trust-generation, "
+            "target and geometry check before any write."
+        )
+        destructive_box.pack_start(destructive_note, False, False, 0)
+        self.confirmation_entry = Gtk.Entry()
+        self.confirmation_entry.set_placeholder_text(
+            "RESTORE AUTHENTICATED FFU TO /dev/DEVICE SIZE N BYTES"
+        )
+        self.confirmation_entry.connect("changed", self.confirmation_changed)
+        destructive_box.pack_start(self.confirmation_entry, False, False, 0)
+        destructive_actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.restore_button = Gtk.Button(label="Restore authenticated FFU")
+        self.restore_button.connect("clicked", self.start_restore)
+        destructive_actions.pack_start(self.restore_button, False, False, 0)
+        self.cancel_button = Gtk.Button(label="Cancel restore")
+        self.cancel_button.connect("clicked", self.cancel_restore)
+        destructive_actions.pack_start(self.cancel_button, False, False, 0)
+        destructive_box.pack_start(destructive_actions, False, False, 0)
+        content.pack_start(destructive, False, False, 0)
+
+        self.show_all()
+        self.update_restore_controls()
 
     def selected_inputs(self):
         return (
@@ -145,6 +180,62 @@ class FFUReviewDialog(Gtk.Dialog):
             self.metadata_policy.get_filename() or "",
             self.publisher_policy.get_filename() or "",
         )
+
+    def invalidate_review(self, clear_result=False):
+        self.review = None
+        self.review_payload = None
+        self.restore_attempted = False
+        self.confirmation_entry.set_text("")
+        if clear_result:
+            self.result.get_buffer().set_text(
+                "The previous review is no longer valid. Authenticate and review again."
+            )
+        self.update_restore_controls()
+
+    def review_input_changed(self, *_):
+        if not self.running and self.review_payload is not None:
+            self.invalidate_review(clear_result=True)
+            self.status.set_text("Trust inputs changed; authenticate and review again.")
+
+    def confirmation_changed(self, *_):
+        self.update_restore_controls()
+
+    def set_running(self, running, restoring=False):
+        self.running = bool(running)
+        self.restoring = self.running and bool(restoring)
+        for chooser in (self.trust_store, self.metadata_policy, self.publisher_policy):
+            chooser.set_sensitive(not self.running)
+        self.review_button.set_sensitive(not self.running)
+        if self.running:
+            self.spinner.start()
+        else:
+            self.spinner.stop()
+        self.update_restore_controls()
+
+    def update_restore_controls(self):
+        review_ready = (
+            self.review is not None
+            and self.review_payload is not None
+            and not self.review.get("unmount_required")
+            and not self.review.get("mounted_targets")
+            and not self.restore_attempted
+        )
+        phrase_matches = (
+            review_ready
+            and self.confirmation_entry.get_text()
+            == self.review.get("exact_confirmation_phrase")
+        )
+        auth_ready = (
+            os.path.isfile(self.pkexec)
+            and os.access(self.pkexec, os.X_OK)
+            and os.path.isfile(self.helper)
+            and os.access(self.helper, os.X_OK)
+        )
+        self.confirmation_entry.set_sensitive(review_ready and not self.running)
+        self.restore_button.set_sensitive(
+            bool(review_ready and phrase_matches and auth_ready and not self.running)
+        )
+        self.cancel_button.set_sensitive(bool(self.running and self.restoring))
 
     def start_review(self, *_):
         if self.running:
@@ -164,8 +255,8 @@ class FFUReviewDialog(Gtk.Dialog):
             return
         self.generation += 1
         generation = self.generation
-        self.review = None
-        self.set_running(True)
+        self.invalidate_review()
+        self.set_running(True, restoring=False)
         self.status.set_text("Authenticating the FFU and rediscovering the exact target…")
         self.result.get_buffer().set_text(
             "Review in progress. The target is not being opened or modified."
@@ -208,30 +299,206 @@ class FFUReviewDialog(Gtk.Dialog):
             self.status.set_text("Review could not be completed.")
             self.result.get_buffer().set_text(failure)
             self.parent_window.append_log(f"FFU review failed: {failure}")
+            self.invalidate_review()
             return False
         try:
-            self.review = normalize_ffu_review(payload)
+            review = normalize_ffu_review(payload)
             report = ffu_review_summary(payload)
         except ValueError as exc:
             self.status.set_text("Review evidence was rejected.")
             self.result.get_buffer().set_text(str(exc))
             self.parent_window.append_log(f"FFU review evidence rejected: {exc}")
+            self.invalidate_review()
             return False
+        self.review = review
+        self.review_payload = copy.deepcopy(payload)
+        self.restore_attempted = False
         self.status.set_text("Authenticated read-only review passed.")
+        if review["unmount_required"]:
+            self.status.set_text(
+                "Review passed, but the target is mounted. Unmount it outside RufusArm64, refresh, and review again."
+            )
         self.result.get_buffer().set_text(report)
         self.parent_window.append_log(
             "Authenticated FFU review:\n" + json.dumps(payload, indent=2, sort_keys=True)
         )
+        self.update_restore_controls()
+        return False
+
+    def start_restore(self, *_):
+        if self.running or self.review_payload is None or self.restore_attempted:
+            return
+        confirmation = self.confirmation_entry.get_text()
+        try:
+            command = build_ffu_restore_command(
+                self.pkexec,
+                self.helper,
+                self.review_payload,
+                confirmation,
+            )
+        except ValueError as exc:
+            self.status.set_text(str(exc))
+            return
+        self.restore_attempted = True
+        self.cancel_requested = False
+        self.generation += 1
+        generation = self.generation
+        expected_review = copy.deepcopy(self.review_payload)
+        self.set_running(True, restoring=True)
+        self.status.set_text("Requesting administrator authentication for the exact reviewed FFU restore…")
+        self.result.get_buffer().set_text(
+            "Restoration is starting. Do not disconnect the source or target. "
+            "Cancellation after writing begins can leave the target partially modified."
+        )
+        threading.Thread(
+            target=self._run_restore,
+            args=(command, generation, expected_review),
+            daemon=True,
+        ).start()
+
+    def _run_restore(self, command, generation, expected_review):
+        process = None
+        payload = None
+        normalized = None
+        failure = ""
+        uncertain = False
+        return_code = 1
+        try:
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+            self.process = process
+            if self.cancel_requested and process.poll() is None:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except (ProcessLookupError, PermissionError, OSError):
+                    pass
+            stdout, stderr = process.communicate()
+            return_code = process.returncode
+            if stdout.strip():
+                try:
+                    payload = json.loads(stdout)
+                    normalized = normalize_ffu_restore_output(payload, expected_review)
+                except (ValueError, json.JSONDecodeError) as exc:
+                    failure = str(exc)
+                    uncertain = True
+            if normalized is None:
+                failure = failure or stderr.strip() or stdout.strip() or "The privileged FFU provider returned no verifiable result evidence."
+                uncertain = True
+            elif stderr.strip():
+                failure = stderr.strip()
+        except OSError as exc:
+            failure = str(exc)
+            uncertain = True
+        finally:
+            if self.process is process:
+                self.process = None
+        GLib.idle_add(
+            self._finish_restore,
+            generation,
+            return_code,
+            payload,
+            normalized,
+            failure,
+            uncertain,
+        )
+
+    def cancel_restore(self, *_):
+        if not self.running or not self.restoring:
+            return
+        self.cancel_requested = True
+        self.cancel_button.set_sensitive(False)
+        self.status.set_text(
+            "Cancellation requested. Waiting for the provider's final evidence; the target state is not yet known."
+        )
+        process = self.process
+        if process is not None and process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+
+    def _finish_restore(
+        self,
+        generation,
+        return_code,
+        payload,
+        normalized,
+        failure,
+        uncertain,
+    ):
+        if self.closed or generation != self.generation:
+            return False
+        was_cancelled = self.cancel_requested
+        self.cancel_requested = False
+        self.set_running(False)
+        self.confirmation_entry.set_sensitive(False)
+        self.restore_button.set_sensitive(False)
+        if payload is not None:
+            self.parent_window.append_log(
+                "Privileged FFU restore evidence:\n" + json.dumps(payload, indent=2, sort_keys=True)
+            )
+        if normalized is not None and not uncertain:
+            report = ffu_restore_summary(normalized)
+            if failure:
+                report += "\n\nProvider diagnostic:\n" + failure
+            self.result.get_buffer().set_text(report)
+            outcome = normalized["outcome"]
+            if outcome == "verified":
+                self.status.set_text("FFU restoration completed and readback-verified.")
+                self.parent_window.message(
+                    "The authenticated FFU was restored, synchronized, and verified by complete readback.",
+                    Gtk.MessageType.INFO,
+                )
+            elif outcome == "unchanged":
+                self.status.set_text("FFU restoration did not write target bytes.")
+                self.parent_window.message(
+                    "The restore did not begin writing. Perform a fresh review before retrying.",
+                    Gtk.MessageType.WARNING,
+                )
+            else:
+                self.status.set_text("FFU target may be modified and is not safe to boot.")
+                self.parent_window.message(
+                    "The FFU target may be partially modified or unverified. Do not boot it; perform a fresh full restoration.",
+                    Gtk.MessageType.ERROR,
+                )
+        else:
+            report = (
+                "DANGER: RufusArm64 could not validate final FFU execution evidence.\n"
+                "The target state is unknown and it may have been modified. Do not boot, mount, or reuse it. "
+                "Perform a fresh full restoration before trusting the device."
+            )
+            if was_cancelled:
+                report += "\nCancellation was requested, but no trustworthy final mutation state was returned."
+            if return_code is not None:
+                report += f"\nProvider exit status: {return_code}"
+            if failure:
+                report += "\nProvider diagnostic: " + failure
+            self.result.get_buffer().set_text(report)
+            self.status.set_text("FFU target state is unknown; do not boot or reuse it.")
+            self.parent_window.append_log(report)
+            self.parent_window.message(
+                "No trustworthy final FFU evidence was returned. Treat the target as possibly modified and do not boot it.",
+                Gtk.MessageType.ERROR,
+            )
+        self.review = None
+        self.review_payload = None
         return False
 
     def on_response(self, dialog, response_id):
         if self.running:
-            self.status.set_text("The read-only review is still running; close it after completion.")
+            operation = "restore" if self.restoring else "read-only review"
+            self.status.set_text(f"The {operation} is still running; close it after completion.")
             dialog.stop_emission_by_name("response")
 
     def on_delete_event(self, *_):
         if self.running:
-            self.status.set_text("The read-only review is still running; close it after completion.")
+            operation = "restore" if self.restoring else "read-only review"
+            self.status.set_text(f"The {operation} is still running; close it after completion.")
             return True
         self.closed = True
         self.generation += 1

@@ -1577,7 +1577,7 @@ class RufusWindow(Gtk.ApplicationWindow):
             )
             return
         image, device = selected
-        dialog = FFUReviewDialog(self, helper_path(), image, device)
+        dialog = FFUReviewDialog(self, PKEXEC, helper_path(), image, device)
         dialog.run()
         if dialog.running:
             return
