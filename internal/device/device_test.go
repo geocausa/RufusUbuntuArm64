@@ -75,7 +75,7 @@ func TestListParsesIdentityFields(t *testing.T) {
 	fakeBin := t.TempDir()
 	script := `#!/bin/sh
 cat <<'JSON'
-{"blockdevices":[{"name":"sda","path":"/dev/sda","type":"disk","size":16000000000,"model":"Flash","vendor":"Acme","tran":"usb","rm":0,"ro":0,"hotplug":1,"mountpoints":[null],"pkname":null,"maj:min":"8:0","serial":"SER123","wwn":"WWN123"}]}
+{"blockdevices":[{"name":"sda","path":"/dev/sda","type":"disk","size":16000000000,"model":"Flash","vendor":"Acme","tran":"usb","rm":0,"ro":0,"hotplug":1,"mountpoints":[null],"pkname":null,"maj:min":"8:0","serial":"SER123","wwn":"WWN123","log-sec":512,"phy-sec":4096}]}
 JSON
 `
 	path := fakeBin + "/lsblk"
@@ -93,6 +93,9 @@ JSON
 	dev := devices[0]
 	if dev.MajorMinor != "8:0" || dev.Serial != "SER123" || dev.WWN != "WWN123" || dev.Identity == "" {
 		t.Fatalf("identity fields missing: %#v", dev)
+	}
+	if dev.LogicalSectorSize != 512 || dev.PhysicalSectorSize != 4096 {
+		t.Fatalf("sector geometry missing: %#v", dev)
 	}
 	if !dev.Hotplug || !IsNormalRemovableTarget(dev) {
 		t.Fatalf("USB hotplug target was not accepted: %#v", dev)

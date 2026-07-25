@@ -22,43 +22,47 @@ import (
 // back to the privileged helper. It is not an authentication token; it is a
 // fail-closed guard against /dev/sdX being reassigned between selection and use.
 type BlockDevice struct {
-	Name         string        `json:"name"`
-	Path         string        `json:"path"`
-	Type         string        `json:"type"`
-	Size         uint64        `json:"size"`
-	Model        string        `json:"model"`
-	Vendor       string        `json:"vendor"`
-	Transport    string        `json:"tran"`
-	Removable    bool          `json:"removable"`
-	ReadOnly     bool          `json:"read_only"`
-	Hotplug      bool          `json:"hotplug"`
-	ParentName   string        `json:"pkname"`
-	MajorMinor   string        `json:"major_minor"`
-	Serial       string        `json:"serial"`
-	WWN          string        `json:"wwn"`
-	DiskSequence string        `json:"disk_sequence"`
-	Identity     string        `json:"identity"`
-	Mountpoints  []string      `json:"mountpoints"`
-	Children     []BlockDevice `json:"children,omitempty"`
+	Name               string        `json:"name"`
+	Path               string        `json:"path"`
+	Type               string        `json:"type"`
+	Size               uint64        `json:"size"`
+	Model              string        `json:"model"`
+	Vendor             string        `json:"vendor"`
+	Transport          string        `json:"tran"`
+	Removable          bool          `json:"removable"`
+	ReadOnly           bool          `json:"read_only"`
+	Hotplug            bool          `json:"hotplug"`
+	ParentName         string        `json:"pkname"`
+	MajorMinor         string        `json:"major_minor"`
+	Serial             string        `json:"serial"`
+	WWN                string        `json:"wwn"`
+	DiskSequence       string        `json:"disk_sequence"`
+	LogicalSectorSize  uint64        `json:"logical_sector_size"`
+	PhysicalSectorSize uint64        `json:"physical_sector_size"`
+	Identity           string        `json:"identity"`
+	Mountpoints        []string      `json:"mountpoints"`
+	Children           []BlockDevice `json:"children,omitempty"`
 }
 
 type rawDevice struct {
-	Name        string      `json:"name"`
-	Path        string      `json:"path"`
-	Type        string      `json:"type"`
-	Size        any         `json:"size"`
-	Model       string      `json:"model"`
-	Vendor      string      `json:"vendor"`
-	Transport   string      `json:"tran"`
-	Removable   any         `json:"rm"`
-	ReadOnly    any         `json:"ro"`
-	Hotplug     any         `json:"hotplug"`
-	ParentName  string      `json:"pkname"`
-	MajorMinor  string      `json:"maj:min"`
-	Serial      string      `json:"serial"`
-	WWN         string      `json:"wwn"`
-	Mountpoints any         `json:"mountpoints"`
-	Children    []rawDevice `json:"children,omitempty"`
+	Name               string      `json:"name"`
+	Path               string      `json:"path"`
+	Type               string      `json:"type"`
+	Size               any         `json:"size"`
+	Model              string      `json:"model"`
+	Vendor             string      `json:"vendor"`
+	Transport          string      `json:"tran"`
+	Removable          any         `json:"rm"`
+	ReadOnly           any         `json:"ro"`
+	Hotplug            any         `json:"hotplug"`
+	ParentName         string      `json:"pkname"`
+	MajorMinor         string      `json:"maj:min"`
+	Serial             string      `json:"serial"`
+	WWN                string      `json:"wwn"`
+	LogicalSectorSize  any         `json:"log-sec"`
+	PhysicalSectorSize any         `json:"phy-sec"`
+	Mountpoints        any         `json:"mountpoints"`
+	Children           []rawDevice `json:"children,omitempty"`
 }
 
 type rawList struct {
@@ -72,7 +76,7 @@ func List() ([]BlockDevice, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx,
 		"lsblk", "--json", "--bytes", "--output",
-		"NAME,PATH,TYPE,SIZE,MODEL,VENDOR,TRAN,RM,RO,HOTPLUG,MOUNTPOINTS,PKNAME,MAJ:MIN,SERIAL,WWN",
+		"NAME,PATH,TYPE,SIZE,MODEL,VENDOR,TRAN,RM,RO,HOTPLUG,MOUNTPOINTS,PKNAME,MAJ:MIN,SERIAL,WWN,LOG-SEC,PHY-SEC",
 	)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -200,28 +204,38 @@ func convert(in rawDevice) (BlockDevice, error) {
 	if err != nil {
 		return BlockDevice{}, fmt.Errorf("parse hotplug flag for %s: %w", in.Path, err)
 	}
+	logicalSectorSize, err := parseUint(in.LogicalSectorSize)
+	if err != nil {
+		return BlockDevice{}, fmt.Errorf("parse logical sector size for %s: %w", in.Path, err)
+	}
+	physicalSectorSize, err := parseUint(in.PhysicalSectorSize)
+	if err != nil {
+		return BlockDevice{}, fmt.Errorf("parse physical sector size for %s: %w", in.Path, err)
+	}
 	mounts, err := parseMountpoints(in.Mountpoints)
 	if err != nil {
 		return BlockDevice{}, fmt.Errorf("parse mountpoints for %s: %w", in.Path, err)
 	}
 
 	out := BlockDevice{
-		Name:         strings.TrimSpace(in.Name),
-		Path:         strings.TrimSpace(in.Path),
-		Type:         strings.TrimSpace(in.Type),
-		Size:         size,
-		Model:        strings.TrimSpace(in.Model),
-		Vendor:       strings.TrimSpace(in.Vendor),
-		Transport:    strings.ToLower(strings.TrimSpace(in.Transport)),
-		Removable:    removable,
-		ReadOnly:     readOnly,
-		Hotplug:      hotplug,
-		ParentName:   strings.TrimSpace(in.ParentName),
-		MajorMinor:   strings.TrimSpace(in.MajorMinor),
-		Serial:       strings.TrimSpace(in.Serial),
-		WWN:          strings.TrimSpace(in.WWN),
-		DiskSequence: readDiskSequence(strings.TrimSpace(in.Name)),
-		Mountpoints:  mounts,
+		Name:               strings.TrimSpace(in.Name),
+		Path:               strings.TrimSpace(in.Path),
+		Type:               strings.TrimSpace(in.Type),
+		Size:               size,
+		Model:              strings.TrimSpace(in.Model),
+		Vendor:             strings.TrimSpace(in.Vendor),
+		Transport:          strings.ToLower(strings.TrimSpace(in.Transport)),
+		Removable:          removable,
+		ReadOnly:           readOnly,
+		Hotplug:            hotplug,
+		ParentName:         strings.TrimSpace(in.ParentName),
+		MajorMinor:         strings.TrimSpace(in.MajorMinor),
+		Serial:             strings.TrimSpace(in.Serial),
+		WWN:                strings.TrimSpace(in.WWN),
+		DiskSequence:       readDiskSequence(strings.TrimSpace(in.Name)),
+		LogicalSectorSize:  logicalSectorSize,
+		PhysicalSectorSize: physicalSectorSize,
+		Mountpoints:        mounts,
 	}
 	out.Identity = IdentityToken(out)
 	for _, child := range in.Children {
