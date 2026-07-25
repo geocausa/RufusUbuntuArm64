@@ -196,7 +196,8 @@ func TestActivateAuthenticatedTrustBundleProducesCatalogChainCapability(t *testi
 
 func TestBuildCatalogCertificateChainRejectsNilAndCancelledContext(t *testing.T) {
 	fixture := newCatalogChainFixture(t, catalogChainFixtureOptions{})
-	if _, _, _, _, _, err := BuildCatalogCertificateChain(nil, bytes.NewReader(fixture.data), uint64(len(fixture.data)), fixture.activation, catalogChainEvaluationTime); err == nil || !strings.Contains(err.Error(), "context is nil") {
+	var nilContext context.Context
+	if _, _, _, _, _, err := BuildCatalogCertificateChain(nilContext, bytes.NewReader(fixture.data), uint64(len(fixture.data)), fixture.activation, catalogChainEvaluationTime); err == nil || !strings.Contains(err.Error(), "context is nil") {
 		t.Fatalf("nil context error=%v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
