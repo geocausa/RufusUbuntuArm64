@@ -170,12 +170,12 @@ func buildFullFlashTargetPreflight(
 	if err := safety.ValidateTargetMetadata(validation.DevicePath, dev, false); err != nil {
 		return FullFlashTargetPreflightPlan{}, err
 	}
+	if dev.Size != validation.TargetSizeBytes {
+		return FullFlashTargetPreflightPlan{}, fmt.Errorf("FFU target capacity changed from %d to %d bytes", validation.TargetSizeBytes, dev.Size)
+	}
 	actualIdentity := device.IdentityToken(dev)
 	if validation.ExpectedTargetIdentity != actualIdentity {
 		return FullFlashTargetPreflightPlan{}, errors.New("FFU target identity differs from the authenticated restore plan")
-	}
-	if dev.Size != validation.TargetSizeBytes {
-		return FullFlashTargetPreflightPlan{}, fmt.Errorf("FFU target capacity changed from %d to %d bytes", validation.TargetSizeBytes, dev.Size)
 	}
 	if logicalSector != validation.LogicalSectorSizeBytes || physicalSector != validation.PhysicalSectorSizeBytes {
 		return FullFlashTargetPreflightPlan{}, fmt.Errorf("FFU target sector geometry changed from %d/%d to %d/%d bytes", validation.LogicalSectorSizeBytes, validation.PhysicalSectorSizeBytes, logicalSector, physicalSector)

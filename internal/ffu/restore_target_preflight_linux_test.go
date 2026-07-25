@@ -51,13 +51,13 @@ func TestBuildFullFlashTargetPreflight(t *testing.T) {
 func TestBuildFullFlashTargetPreflightRejectsUnsafeSnapshots(t *testing.T) {
 	validation, validDevice := fullFlashPreflightTestFixture(t)
 	tests := []struct {
-		name       string
-		mutate     func(*device.BlockDevice)
-		kernelID   uint64
-		logical    uint64
-		physical   uint64
-		rootSafe   bool
-		want       string
+		name     string
+		mutate   func(*device.BlockDevice)
+		kernelID uint64
+		logical  uint64
+		physical uint64
+		rootSafe bool
+		want     string
 	}{
 		{name: "partition", mutate: func(dev *device.BlockDevice) { dev.Type = "part" }, kernelID: 1, logical: 512, physical: 512, rootSafe: true, want: "whole disk"},
 		{name: "read only", mutate: func(dev *device.BlockDevice) { dev.ReadOnly = true }, kernelID: 1, logical: 512, physical: 512, rootSafe: true, want: "read-only"},
@@ -67,7 +67,9 @@ func TestBuildFullFlashTargetPreflightRejectsUnsafeSnapshots(t *testing.T) {
 		{name: "geometry changed", mutate: func(dev *device.BlockDevice) {}, kernelID: 1, logical: 4096, physical: 4096, rootSafe: true, want: "sector geometry changed"},
 		{name: "zero kernel identity", mutate: func(dev *device.BlockDevice) {}, kernelID: 0, logical: 512, physical: 512, rootSafe: true, want: "kernel device identity is zero"},
 		{name: "system disk unresolved", mutate: func(dev *device.BlockDevice) {}, kernelID: 1, logical: 512, physical: 512, rootSafe: false, want: "not excluded the running system disk"},
-		{name: "protected mount", mutate: func(dev *device.BlockDevice) { dev.Children = []device.BlockDevice{{Path: "/dev/test-ffu1", Type: "part", Mountpoints: []string{"/home"}}} }, kernelID: 1, logical: 512, physical: 512, rootSafe: true, want: "running system"},
+		{name: "protected mount", mutate: func(dev *device.BlockDevice) {
+			dev.Children = []device.BlockDevice{{Path: "/dev/test-ffu1", Type: "part", Mountpoints: []string{"/home"}}}
+		}, kernelID: 1, logical: 512, physical: 512, rootSafe: true, want: "running system"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
