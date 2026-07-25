@@ -22,19 +22,19 @@ const restoreTargetPlanSchema = 1
 // privileges. A future privileged provider must rediscover and revalidate every
 // field before any mutation.
 type RestoreTargetRequest struct {
-	DevicePath             string `json:"device_path"`
-	ExpectedTargetIdentity string `json:"expected_target_identity"`
-	TargetSizeBytes        uint64 `json:"target_size_bytes"`
-	LogicalSectorSizeBytes uint64 `json:"logical_sector_size_bytes"`
+	DevicePath              string `json:"device_path"`
+	ExpectedTargetIdentity  string `json:"expected_target_identity"`
+	TargetSizeBytes         uint64 `json:"target_size_bytes"`
+	LogicalSectorSizeBytes  uint64 `json:"logical_sector_size_bytes"`
 	PhysicalSectorSizeBytes uint64 `json:"physical_sector_size_bytes"`
 }
 
 // ResolvedWriteExtent binds one FFU destination expression to exact target and
 // source-payload byte ranges. It grants no authority to open either path.
 type ResolvedWriteExtent struct {
-	DescriptorIndex uint32 `json:"descriptor_index"`
-	LocationIndex   uint32 `json:"location_index"`
-	Anchor          string `json:"anchor"`
+	DescriptorIndex  uint32 `json:"descriptor_index"`
+	LocationIndex    uint32 `json:"location_index"`
+	Anchor           string `json:"anchor"`
 	TargetStartBlock uint64 `json:"target_start_block"`
 	TargetEndBlock   uint64 `json:"target_end_block"`
 	TargetOffset     uint64 `json:"target_offset"`
@@ -47,38 +47,38 @@ type ResolvedWriteExtent struct {
 // authenticated single-store-v1 FFU and one exact target. Validation reads and
 // all writes remain disabled.
 type RestoreTargetPlan struct {
-	Schema                          int                   `json:"schema"`
-	Mode                            string                `json:"mode"`
-	Destructive                     bool                  `json:"destructive"`
-	SourceFileSize                  uint64                `json:"source_file_size"`
-	AuthenticatedIntegrityPlanSHA256 string               `json:"authenticated_integrity_plan_sha256"`
-	DescriptorPlanSHA256            string                `json:"descriptor_plan_sha256"`
-	CatalogSHA256                   string                `json:"catalog_sha256"`
-	HashTableSHA256                 string                `json:"hash_table_sha256"`
-	DevicePath                      string                `json:"device_path"`
-	ExpectedTargetIdentity          string                `json:"expected_target_identity"`
-	TargetSizeBytes                 uint64                `json:"target_size_bytes"`
-	LogicalSectorSizeBytes          uint64                `json:"logical_sector_size_bytes"`
-	PhysicalSectorSizeBytes         uint64                `json:"physical_sector_size_bytes"`
-	StoreBlockSizeBytes             uint64                `json:"store_block_size_bytes"`
-	TargetBlockCount                uint64                `json:"target_block_count"`
-	MinimumTargetBytes              uint64                `json:"minimum_target_bytes"`
-	WriteExtentCount                uint64                `json:"write_extent_count"`
-	MutationBytes                   uint64                `json:"mutation_bytes"`
-	ResolvedWriteExtents            []ResolvedWriteExtent `json:"resolved_write_extents"`
-	ValidationDescriptorCount       uint64                `json:"validation_descriptor_count"`
-	SourceIntegrityAuthenticated    bool                  `json:"source_integrity_authenticated"`
-	TargetIdentityBound             bool                  `json:"target_identity_bound"`
-	TargetGeometryBound             bool                  `json:"target_geometry_bound"`
-	DestinationMapResolved          bool                  `json:"destination_map_resolved"`
-	DestinationOverlap              bool                  `json:"destination_overlap"`
-	ValidationChecksRequired        bool                  `json:"validation_checks_required"`
-	ValidationChecksResolved        bool                  `json:"validation_checks_resolved"`
-	ConfirmationRequired            bool                  `json:"confirmation_required"`
-	ExecutionSupported              bool                  `json:"execution_supported"`
-	PlanSHA256                      string                `json:"plan_sha256"`
-	Warnings                        []string              `json:"warnings"`
-	Limitations                     []string              `json:"limitations"`
+	Schema                           int                   `json:"schema"`
+	Mode                             string                `json:"mode"`
+	Destructive                      bool                  `json:"destructive"`
+	SourceFileSize                   uint64                `json:"source_file_size"`
+	AuthenticatedIntegrityPlanSHA256 string                `json:"authenticated_integrity_plan_sha256"`
+	DescriptorPlanSHA256             string                `json:"descriptor_plan_sha256"`
+	CatalogSHA256                    string                `json:"catalog_sha256"`
+	HashTableSHA256                  string                `json:"hash_table_sha256"`
+	DevicePath                       string                `json:"device_path"`
+	ExpectedTargetIdentity           string                `json:"expected_target_identity"`
+	TargetSizeBytes                  uint64                `json:"target_size_bytes"`
+	LogicalSectorSizeBytes           uint64                `json:"logical_sector_size_bytes"`
+	PhysicalSectorSizeBytes          uint64                `json:"physical_sector_size_bytes"`
+	StoreBlockSizeBytes              uint64                `json:"store_block_size_bytes"`
+	TargetBlockCount                 uint64                `json:"target_block_count"`
+	MinimumTargetBytes               uint64                `json:"minimum_target_bytes"`
+	WriteExtentCount                 uint64                `json:"write_extent_count"`
+	MutationBytes                    uint64                `json:"mutation_bytes"`
+	ResolvedWriteExtents             []ResolvedWriteExtent `json:"resolved_write_extents"`
+	ValidationDescriptorCount        uint64                `json:"validation_descriptor_count"`
+	SourceIntegrityAuthenticated     bool                  `json:"source_integrity_authenticated"`
+	TargetIdentityBound              bool                  `json:"target_identity_bound"`
+	TargetGeometryBound              bool                  `json:"target_geometry_bound"`
+	DestinationMapResolved           bool                  `json:"destination_map_resolved"`
+	DestinationOverlap               bool                  `json:"destination_overlap"`
+	ValidationChecksRequired         bool                  `json:"validation_checks_required"`
+	ValidationChecksResolved         bool                  `json:"validation_checks_resolved"`
+	ConfirmationRequired             bool                  `json:"confirmation_required"`
+	ExecutionSupported               bool                  `json:"execution_supported"`
+	PlanSHA256                       string                `json:"plan_sha256"`
+	Warnings                         []string              `json:"warnings"`
+	Limitations                      []string              `json:"limitations"`
 }
 
 // BindAuthenticatedSingleStoreV1Target re-runs complete read-only source
@@ -156,12 +156,7 @@ func BindAuthenticatedSingleStoreV1Target(ctx context.Context, reader io.ReaderA
 		ConfirmationRequired:             true,
 		ExecutionSupported:               false,
 		Warnings:                         restoreTargetWarnings(),
-		Limitations: []string{
-			"the plan is bound to caller-discovered target facts but opens no device",
-			"a privileged provider must independently rediscover and revalidate identity, size, sector geometry, source evidence, and the complete plan",
-			"target-side validation descriptor semantics, cancellation, write ordering, flush, readback, and changed-media reporting remain unresolved",
-			"software planning and verification cannot prove physical bootability or whole-device health",
-		},
+		Limitations:                      restoreTargetLimitations(),
 	}
 	plan.PlanSHA256 = restoreTargetPlanDigest(plan)
 	if err := validateRestoreTargetPlan(plan); err != nil {
@@ -207,7 +202,8 @@ func validFFUTargetSectorSize(value uint64) bool {
 func resolveRestoreWriteExtents(descriptor DescriptorPlan, targetBlocks uint64) ([]ResolvedWriteExtent, uint64, error) {
 	extents := make([]ResolvedWriteExtent, 0)
 	for _, write := range descriptor.WriteDescriptors {
-		if write.BlockCount == 0 || write.PayloadLength == 0 || write.PayloadLength != uint64(write.BlockCount)*descriptor.BlockSizeBytes {
+		expectedPayloadLength, err := checkedMul(uint64(write.BlockCount), descriptor.BlockSizeBytes)
+		if err != nil || write.BlockCount == 0 || write.PayloadLength == 0 || write.PayloadLength != expectedPayloadLength {
 			return nil, 0, fmt.Errorf("FFU write descriptor %d has inconsistent payload geometry", write.Index)
 		}
 		for _, location := range write.Locations {
@@ -296,7 +292,10 @@ func validateRestoreTargetPlan(plan RestoreTargetPlan) error {
 	}
 	mutationBytes := uint64(0)
 	for index, extent := range plan.ResolvedWriteExtents {
-		if extent.Anchor != "begin" && extent.Anchor != "end" || extent.TargetStartBlock >= extent.TargetEndBlock || extent.TargetEndBlock > plan.TargetBlockCount || extent.TargetOffset != extent.TargetStartBlock*plan.StoreBlockSizeBytes || extent.TargetLength != (extent.TargetEndBlock-extent.TargetStartBlock)*plan.StoreBlockSizeBytes || extent.PayloadLength != extent.TargetLength {
+		expectedOffset, offsetErr := checkedMul(extent.TargetStartBlock, plan.StoreBlockSizeBytes)
+		expectedLength, lengthErr := checkedMul(extent.TargetEndBlock-extent.TargetStartBlock, plan.StoreBlockSizeBytes)
+		payloadEnd, payloadErr := checkedAdd(extent.PayloadOffset, extent.PayloadLength)
+		if (extent.Anchor != "begin" && extent.Anchor != "end") || extent.TargetStartBlock >= extent.TargetEndBlock || extent.TargetEndBlock > plan.TargetBlockCount || offsetErr != nil || lengthErr != nil || payloadErr != nil || extent.TargetOffset != expectedOffset || extent.TargetLength != expectedLength || extent.PayloadLength != extent.TargetLength || payloadEnd > plan.SourceFileSize {
 			return fmt.Errorf("FFU restore target-plan extent %d is inconsistent", index)
 		}
 		if index != 0 && extent.TargetStartBlock < plan.ResolvedWriteExtents[index-1].TargetEndBlock {
@@ -308,8 +307,8 @@ func validateRestoreTargetPlan(plan RestoreTargetPlan) error {
 			return errors.New("FFU restore target-plan mutation accounting overflows")
 		}
 	}
-	if mutationBytes != plan.MutationBytes || plan.PlanSHA256 != restoreTargetPlanDigest(plan) || !equalRestoreStrings(plan.Warnings, restoreTargetWarnings()) {
-		return errors.New("FFU restore target-plan evidence or warnings were altered")
+	if mutationBytes != plan.MutationBytes || mutationBytes > plan.TargetSizeBytes || plan.PlanSHA256 != restoreTargetPlanDigest(plan) || !equalRestoreStrings(plan.Warnings, restoreTargetWarnings()) || !equalRestoreStrings(plan.Limitations, restoreTargetLimitations()) {
+		return errors.New("FFU restore target-plan evidence, warnings, or limitations were altered")
 	}
 	return nil
 }
@@ -332,6 +331,15 @@ func restoreTargetWarnings() []string {
 		"The exact target identity, capacity, and sector geometry must be rediscovered and match immediately before any future write.",
 		"FFU validation descriptors are not yet resolved or executed, so this plan cannot authorize restoration.",
 		"Software authentication and restoration cannot prove that the resulting device will boot or that the complete device is healthy.",
+	}
+}
+
+func restoreTargetLimitations() []string {
+	return []string{
+		"the plan is bound to caller-discovered target facts but opens no device",
+		"a privileged provider must independently rediscover and revalidate identity, size, sector geometry, source evidence, and the complete plan",
+		"target-side validation descriptor semantics, cancellation, write ordering, flush, readback, and changed-media reporting remain unresolved",
+		"software planning and verification cannot prove physical bootability or whole-device health",
 	}
 }
 
@@ -387,4 +395,4 @@ func restoreTargetPlanDigest(plan RestoreTargetPlan) string {
 
 func writeRestoreUint64(digest hash.Hash, value uint64) { writeSignatureUint64(digest, value) }
 func writeRestoreString(digest hash.Hash, value string) { writeSignatureString(digest, value) }
-func writeRestoreBool(digest hash.Hash, value bool) { writeSignatureBool(digest, value) }
+func writeRestoreBool(digest hash.Hash, value bool)     { writeSignatureBool(digest, value) }

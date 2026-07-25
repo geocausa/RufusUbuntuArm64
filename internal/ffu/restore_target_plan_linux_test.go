@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -64,7 +65,7 @@ func TestBindAuthenticatedSingleStoreV1TargetResolvesExactTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if phrase != "RESTORE AUTHENTICATED FFU TO /dev/test-ffu SIZE "+uint64Text(request.TargetSizeBytes)+" BYTES" {
+	if phrase != "RESTORE AUTHENTICATED FFU TO /dev/test-ffu SIZE "+strconv.FormatUint(request.TargetSizeBytes, 10)+" BYTES" {
 		t.Fatalf("confirmation phrase=%q", phrase)
 	}
 	if targetPlan.PlanSHA256 != restoreTargetPlanDigest(targetPlan) {
@@ -103,10 +104,15 @@ func TestBindAuthenticatedSingleStoreV1TargetRejectsInvalidTargetFacts(t *testin
 	}{
 		{name: "relative path", mutate: func(request *RestoreTargetRequest) { request.DevicePath = "dev/test" }, message: "canonical absolute path"},
 		{name: "empty identity", mutate: func(request *RestoreTargetRequest) { request.ExpectedTargetIdentity = "" }, message: "identity"},
-		{name: "small target", mutate: func(request *RestoreTargetRequest) { request.TargetSizeBytes = descriptor.MinimumTargetBytes - descriptor.BlockSizeBytes }, message: "smaller than required"},
+		{name: "small target", mutate: func(request *RestoreTargetRequest) {
+			request.TargetSizeBytes = descriptor.MinimumTargetBytes - descriptor.BlockSizeBytes
+		}, message: "smaller than required"},
 		{name: "unaligned target", mutate: func(request *RestoreTargetRequest) { request.TargetSizeBytes++ }, message: "not aligned"},
 		{name: "bad logical sector", mutate: func(request *RestoreTargetRequest) { request.LogicalSectorSizeBytes = 1000 }, message: "sector geometry"},
-		{name: "physical below logical", mutate: func(request *RestoreTargetRequest) { request.LogicalSectorSizeBytes = 4096; request.PhysicalSectorSizeBytes = 512 }, message: "sector geometry"},
+		{name: "physical below logical", mutate: func(request *RestoreTargetRequest) {
+			request.LogicalSectorSizeBytes = 4096
+			request.PhysicalSectorSizeBytes = 512
+		}, message: "sector geometry"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -134,14 +140,14 @@ func TestResolveRestoreWriteExtentsResolvesBeginAndEnd(t *testing.T) {
 				BlockCount:    2,
 				PayloadOffset: 1000,
 				PayloadLength: 8192,
-				Locations: []DiskLocation{{Index: 0, Anchor: "begin", BlockIndex: 2, BlockEnd: 4}},
+				Locations:     []DiskLocation{{Index: 0, Anchor: "begin", BlockIndex: 2, BlockEnd: 4}},
 			},
 			{
 				Index:         1,
 				BlockCount:    2,
 				PayloadOffset: 9192,
 				PayloadLength: 8192,
-				Locations: []DiskLocation{{Index: 0, Anchor: "end", BlockIndex: 1, BlockEnd: 3}},
+				Locations:     []DiskLocation{{Index: 0, Anchor: "end", BlockIndex: 1, BlockEnd: 3}},
 			},
 		},
 	}
@@ -205,12 +211,4 @@ func TestBindAuthenticatedSingleStoreV1TargetRejectsNilAndCancelledContext(t *te
 	if _, _, _, _, _, _, _, err := BindAuthenticatedSingleStoreV1Target(ctx, bytes.NewReader(fixture.data), uint64(len(fixture.data)), fixture.activation, catalogChainEvaluationTime, policy, request); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled context error=%v", err)
 	}
-}
-
-func uint64Text(value uint64) string {
-	return strings.TrimSpace(strings.ReplaceAll(strings.TrimPrefix(strings.TrimSuffix(strings.TrimSpace(string([]byte{})), ""), ""), "", "")) + formatUint64ForTest(value)
-}
-
-func formatUint64ForTest(value uint64) string {
-	return fmt.Sprintf("%d", value)
 }
