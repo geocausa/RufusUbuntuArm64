@@ -52,6 +52,7 @@ type ffuCLIOptions struct {
 	trustMetadataPolicy    string
 	publisherPolicy        string
 	confirmationPhrase     string
+	expectedReviewBinding  string
 	experimental           bool
 	jsonOutput             bool
 }
@@ -59,6 +60,15 @@ type ffuCLIOptions struct {
 type ffuCLIReview struct {
 	EvaluationTime          string                           `json:"evaluation_time"`
 	TrustActivationSHA256   string                           `json:"trust_activation_sha256"`
+	TrustStoreRoot          string                           `json:"trust_store_root"`
+	TrustGeneration         string                           `json:"trust_generation"`
+	TrustSequence           uint64                           `json:"trust_sequence"`
+	TrustBundleSHA256       string                           `json:"trust_bundle_sha256"`
+	TrustMetadataPolicyPath string                           `json:"trust_metadata_policy_path"`
+	TrustMetadataIdentity   sourcefile.Identity              `json:"trust_metadata_policy_identity"`
+	PublisherPolicyPath     string                           `json:"publisher_policy_path"`
+	PublisherPolicyIdentity sourcefile.Identity              `json:"publisher_policy_identity"`
+	ReviewBindingSHA256     string                           `json:"review_binding_sha256"`
 	SourcePath              string                           `json:"source_path"`
 	SourceIdentity          sourcefile.Identity              `json:"source_identity"`
 	DescriptorPlanSHA256    string                           `json:"descriptor_plan_sha256"`
@@ -145,6 +155,10 @@ func runFFURestore(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := requireExpectedFFUCLIReviewBinding(options.expectedReviewBinding, prepared.review.ReviewBindingSHA256); err != nil {
+		closeErr := prepared.file.Close()
+		return errors.Join(err, closeErr)
+	}
 	prepared.review.ExecutionAttempted = true
 	if prepared.preflight.UnmountRequired || len(prepared.preflight.MountedTargets) != 0 {
 		closeErr := prepared.file.Close()
@@ -216,6 +230,7 @@ func parseFFUCLIOptions(command string, args []string, requireConfirmation bool)
 	flags.StringVar(&options.publisherPolicy, "publisher-policy", "", "explicit catalog publisher policy JSON")
 	if requireConfirmation {
 		flags.StringVar(&options.confirmationPhrase, "confirm", "", "exact destructive target-and-capacity phrase")
+		flags.StringVar(&options.expectedReviewBinding, "expected-review-binding", "", "exact reviewed source, trust-policy, and target binding SHA-256")
 	}
 	flags.BoolVar(&options.experimental, "experimental-ffu", false, "acknowledge the Stage 3 experimental FFU boundary")
 	flags.BoolVar(&options.jsonOutput, "json", false, "emit JSON evidence")
@@ -246,6 +261,12 @@ func parseFFUCLIOptions(command string, args []string, requireConfirmation bool)
 	if requireConfirmation && options.confirmationPhrase == "" {
 		return ffuCLIOptions{}, errors.New("--confirm is required")
 	}
+	if requireConfirmation && options.expectedReviewBinding == "" {
+		return ffuCLIOptions{}, errors.New("--expected-review-binding is required")
+	}
+	if requireConfirmation && !isCanonicalFFUCLISHA256(options.expectedReviewBinding) {
+		return ffuCLIOptions{}, errors.New("--expected-review-binding must be one lowercase SHA-256")
+	}
 	return options, nil
 }
 
@@ -256,11 +277,11 @@ func prepareFFUCLIReview(ctx context.Context, options ffuCLIOptions) (preparedFF
 	if err := ctx.Err(); err != nil {
 		return preparedFFUCLIReview{}, err
 	}
-	metadataPolicy, err := readStrictFFUCLIJSON[ffu.TrustMetadataPolicy](options.trustMetadataPolicy)
+	metadataPolicy, metadataPolicyPath, metadataPolicyIdentity, err := readStrictFFUCLIJSONWithIdentity[ffu.TrustMetadataPolicy](options.trustMetadataPolicy)
 	if err != nil {
 		return preparedFFUCLIReview{}, fmt.Errorf("read FFU trust metadata policy: %w", err)
 	}
-	publisherPolicy, err := readStrictFFUCLIJSON[ffu.CatalogPublisherPolicy](options.publisherPolicy)
+	publisherPolicy, publisherPolicyPath, publisherPolicyIdentity, err := readStrictFFUCLIJSONWithIdentity[ffu.CatalogPublisherPolicy](options.publisherPolicy)
 	if err != nil {
 		return preparedFFUCLIReview{}, fmt.Errorf("read FFU publisher policy: %w", err)
 	}
@@ -314,9 +335,25 @@ func prepareFFUCLIReview(ctx context.Context, options ffuCLIOptions) (preparedFF
 	if err := sourcefile.Verify(file, identity); err != nil {
 		return preparedFFUCLIReview{}, err
 	}
+	_, reviewBindingSHA256, err := buildFFUCLIReviewBinding(
+		resolved, identity, descriptor, targetPlan, preflight, activation,
+		metadataPolicyPath, metadataPolicyIdentity, publisherPolicyPath, publisherPolicyIdentity, phrase,
+	)
+	if err != nil {
+		return preparedFFUCLIReview{}, err
+	}
 	review := ffuCLIReview{
 		EvaluationTime:          evaluationTime.Format(time.RFC3339),
 		TrustActivationSHA256:   activation.ActivationSHA256,
+		TrustStoreRoot:          activation.Root,
+		TrustGeneration:         activation.Generation,
+		TrustSequence:           activation.Sequence,
+		TrustBundleSHA256:       activation.BundleSHA256,
+		TrustMetadataPolicyPath: metadataPolicyPath,
+		TrustMetadataIdentity:   metadataPolicyIdentity,
+		PublisherPolicyPath:     publisherPolicyPath,
+		PublisherPolicyIdentity: publisherPolicyIdentity,
+		ReviewBindingSHA256:     reviewBindingSHA256,
 		SourcePath:              resolved,
 		SourceIdentity:          identity,
 		DescriptorPlanSHA256:    descriptor.PlanSHA256,
@@ -336,40 +373,45 @@ func prepareFFUCLIReview(ctx context.Context, options ffuCLIOptions) (preparedFF
 }
 
 func readStrictFFUCLIJSON[T any](path string) (T, error) {
+	value, _, _, err := readStrictFFUCLIJSONWithIdentity[T](path)
+	return value, err
+}
+
+func readStrictFFUCLIJSONWithIdentity[T any](path string) (T, string, sourcefile.Identity, error) {
 	var zero T
 	resolved, identity, err := sourcefile.Inspect(path)
 	if err != nil {
-		return zero, err
+		return zero, "", sourcefile.Identity{}, err
 	}
 	file, err := sourcefile.OpenRegular(resolved, identity)
 	if err != nil {
-		return zero, err
+		return zero, "", sourcefile.Identity{}, err
 	}
 	defer file.Close()
 	data, err := io.ReadAll(io.LimitReader(file, maxFFUCLIPolicyBytes+1))
 	if err != nil {
-		return zero, err
+		return zero, "", sourcefile.Identity{}, err
 	}
 	if len(data) == 0 || len(data) > maxFFUCLIPolicyBytes {
-		return zero, fmt.Errorf("policy file size is outside the 1..%d byte range", maxFFUCLIPolicyBytes)
+		return zero, "", sourcefile.Identity{}, fmt.Errorf("policy file size is outside the 1..%d byte range", maxFFUCLIPolicyBytes)
 	}
 	if err := sourcefile.Verify(file, identity); err != nil {
-		return zero, err
+		return zero, "", sourcefile.Identity{}, err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var value T
 	if err := decoder.Decode(&value); err != nil {
-		return zero, err
+		return zero, "", sourcefile.Identity{}, err
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		if err == nil {
-			return zero, errors.New("policy file contains multiple JSON values")
+			return zero, "", sourcefile.Identity{}, errors.New("policy file contains multiple JSON values")
 		}
-		return zero, err
+		return zero, "", sourcefile.Identity{}, err
 	}
-	return value, nil
+	return value, resolved, identity, nil
 }
 
 func emitFFUCLIReview(jsonOutput bool, review ffuCLIReview) error {
@@ -379,6 +421,8 @@ func emitFFUCLIReview(jsonOutput bool, review ffuCLIReview) error {
 	fmt.Printf("FFU source: %s\n", review.SourcePath)
 	fmt.Printf("Target: %s (%d bytes)\n", review.TargetPreflight.DevicePath, review.TargetPreflight.TargetSizeBytes)
 	fmt.Printf("Target identity: %s\n", review.TargetPreflight.ExpectedTargetIdentity)
+	fmt.Printf("Reviewed-input binding: %s\n", review.ReviewBindingSHA256)
+	fmt.Printf("Trust generation: %s (sequence %d, bundle %s)\n", review.TrustGeneration, review.TrustSequence, review.TrustBundleSHA256)
 	fmt.Printf("Mutation bytes: %d\n", review.TargetPreflight.MutationBytes)
 	fmt.Printf("Unmount required: %t\n", review.TargetPreflight.UnmountRequired)
 	fmt.Printf("Exact confirmation: %s\n", review.ExactConfirmationPhrase)
