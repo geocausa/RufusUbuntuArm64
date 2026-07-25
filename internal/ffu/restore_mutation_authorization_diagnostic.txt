@@ -1,0 +1,5 @@
+--- FAIL: TestAuthorizeSinglePhaseFullFlashMutationRejectsTargetSubstitution (0.00s)
+    restore_mutation_authorization_linux_test.go:93: error=FFU confirmation does not bind the supplied full-flash prerequisites authorization=(*ffu.FullFlashMutationAuthorization)(nil)
+FAIL
+FAIL	github.com/geocausa/RufusArm64/internal/ffu	0.963s
+FAIL
