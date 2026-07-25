@@ -1,0 +1,45 @@
+name: Validate graphical FFU review dialog
+
+on:
+  push:
+    branches: [feature/ffu-graphical-review-dialog]
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+      - name: Apply dialog integration patch
+        run: python3 scripts/patch-ffu-graphical-review-dialog.py
+      - name: Compile Python sources
+        run: python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_logic.py gui/rufusarm64_ffu_dialog.py gui/test_logic.py gui/test_source_structure.py
+      - name: Run complete GUI unit suite
+        run: PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
+      - name: Verify read-only dialog boundary
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('gui/rufusarm64_ffu_dialog.py').read_text()
+          for required in ('build_ffu_review_command', 'normalize_ffu_review', 'threading.Thread(', 'subprocess.run(', 'timeout=300'):
+              if required not in source:
+                  raise SystemExit(f'missing graphical FFU review boundary: {required}')
+          for forbidden in ('pkexec', '"restore"', '--confirm', '--expected-review-binding', 'os.remove(', 'os.unlink(', 'settings['):
+              if forbidden in source:
+                  raise SystemExit(f'forbidden graphical FFU review primitive: {forbidden}')
+          PY
+      - name: Publish clean product tree
+        env:
+          BRANCH: feature/ffu-graphical-review-dialog
+        run: |
+          git rm .github/workflows/check-ffu-graphical-review-dialog.yml scripts/patch-ffu-graphical-review-dialog.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add gui/rufusarm64.py gui/rufusarm64_logic.py gui/rufusarm64_ffu_dialog.py gui/test_logic.py gui/test_source_structure.py
+          git commit -m "FFU: add a read-only graphical review dialog"
+          git push origin "HEAD:${BRANCH}"
