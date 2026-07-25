@@ -21,8 +21,16 @@ jobs:
           cache: true
       - name: Apply reviewed-input binding patch and format
         run: |
-          python3 scripts/patch-ffu-reviewed-input-binding.py
+          set -o pipefail
+          python3 scripts/patch-ffu-reviewed-input-binding.py 2>&1 | tee /tmp/ffu-reviewed-input-binding-patch.log
           gofmt -w cmd/rufus-linux/ffu_linux.go cmd/rufus-linux/ffu_linux_test.go cmd/rufus-linux/ffu_review_binding_linux.go
+      - name: Upload patch diagnostic
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ffu-reviewed-input-binding-patch-diagnostic
+          path: /tmp/ffu-reviewed-input-binding-patch.log
+          if-no-files-found: error
       - name: Test CLI and FFU packages
         run: go test -count=1 ./cmd/rufus-linux ./internal/ffu
       - name: Vet CLI and FFU packages
