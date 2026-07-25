@@ -35,6 +35,10 @@ type ActivatedTrustAnchor struct {
 	CertificateDER []byte      `json:"certificate_der"`
 }
 
+type trustBundleActivationCapability struct {
+	activationSHA256 string
+}
+
 // TrustBundleActivation is a read-only capability derived from the currently
 // active, descriptor-verified trust-store generation. It deliberately provides
 // no certificate pool, chain builder, publisher decision, network operation,
@@ -57,6 +61,7 @@ type TrustBundleActivation struct {
 	Authentication           *TrustBundleAuthentication `json:"authentication"`
 	Plan                     TrustBundlePlan            `json:"plan"`
 	ActivationSHA256         string                     `json:"activation_sha256"`
+	capability               *trustBundleActivationCapability
 }
 
 // ActivateAuthenticatedTrustBundle crosses only the trust-anchor activation
@@ -174,6 +179,7 @@ func ActivateAuthenticatedTrustBundle(ctx context.Context, root string, policy T
 	if err := trustActivationStage(ctx, opts, "verified"); err != nil {
 		return TrustBundleActivation{}, err
 	}
+	activation.capability = &trustBundleActivationCapability{activationSHA256: activation.ActivationSHA256}
 	return activation, nil
 }
 
