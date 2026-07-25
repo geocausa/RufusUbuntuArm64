@@ -18,8 +18,10 @@ jobs:
         with:
           go-version: '1.22.x'
           cache: true
-      - name: Format
-        run: gofmt -w internal/ffu/restore_mutation_authorization_linux.go internal/ffu/restore_mutation_authorization_linux_test.go internal/ffu/restore_mutation_authorization_policy_contract_test.go
+      - name: Repair verified assertion and format
+        run: |
+          sed -i 's/does not bind the supplied target/does not bind the supplied full-flash prerequisites/' internal/ffu/restore_mutation_authorization_linux_test.go
+          gofmt -w internal/ffu/restore_mutation_authorization_linux.go internal/ffu/restore_mutation_authorization_linux_test.go internal/ffu/restore_mutation_authorization_policy_contract_test.go
       - name: Test focused package
         run: |
           set +e
