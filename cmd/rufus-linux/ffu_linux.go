@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/geocausa/RufusArm64/internal/ffu"
@@ -23,7 +25,21 @@ const maxFFUCLIPolicyBytes = 1 << 20
 var (
 	ffuCLIGeteuid = os.Geteuid
 	ffuCLINow     = time.Now
+	ffuCLIContext = func() (context.Context, context.CancelFunc) {
+		return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	}
 )
+
+func newFFUCLIContext() (context.Context, context.CancelFunc, error) {
+	ctx, stop := ffuCLIContext()
+	if ctx == nil || stop == nil {
+		if stop != nil {
+			stop()
+		}
+		return nil, nil, errors.New("FFU signal context factory returned an invalid context")
+	}
+	return ctx, stop, nil
+}
 
 type ffuCLIOptions struct {
 	imagePath              string
@@ -95,7 +111,12 @@ func runFFUReview(args []string) error {
 	if err != nil {
 		return err
 	}
-	prepared, err := prepareFFUCLIReview(context.Background(), options)
+	ctx, stop, err := newFFUCLIContext()
+	if err != nil {
+		return err
+	}
+	defer stop()
+	prepared, err := prepareFFUCLIReview(ctx, options)
 	if err != nil {
 		return err
 	}
@@ -115,7 +136,12 @@ func runFFURestore(args []string) error {
 	if ffuCLIGeteuid() != 0 {
 		return errors.New("FFU restore requires administrator privileges")
 	}
-	prepared, err := prepareFFUCLIReview(context.Background(), options)
+	ctx, stop, err := newFFUCLIContext()
+	if err != nil {
+		return err
+	}
+	defer stop()
+	prepared, err := prepareFFUCLIReview(ctx, options)
 	if err != nil {
 		return err
 	}
@@ -124,7 +150,6 @@ func runFFURestore(args []string) error {
 		closeErr := prepared.file.Close()
 		return errors.Join(errors.New("FFU target must be fully unmounted before restore"), closeErr)
 	}
-	ctx := context.Background()
 	sourceLease, err := ffu.AcquireAuthenticatedFullFlashSourceLease(
 		ctx,
 		prepared.file,
@@ -225,6 +250,12 @@ func parseFFUCLIOptions(command string, args []string, requireConfirmation bool)
 }
 
 func prepareFFUCLIReview(ctx context.Context, options ffuCLIOptions) (preparedFFUCLIReview, error) {
+	if ctx == nil {
+		return preparedFFUCLIReview{}, errors.New("FFU CLI context is nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return preparedFFUCLIReview{}, err
+	}
 	metadataPolicy, err := readStrictFFUCLIJSON[ffu.TrustMetadataPolicy](options.trustMetadataPolicy)
 	if err != nil {
 		return preparedFFUCLIReview{}, fmt.Errorf("read FFU trust metadata policy: %w", err)
