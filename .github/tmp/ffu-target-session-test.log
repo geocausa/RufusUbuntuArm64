@@ -1,8 +1,0 @@
---- FAIL: TestAcquireExclusiveFullFlashTargetRejectsClosedSourceAndCancelledContext (0.00s)
-    restore_target_session_linux_test.go:226: closed source error=FFU target-acquisition operations are incomplete
---- FAIL: TestExclusiveTargetSessionProductionBoundary (0.00s)
-    restore_target_session_policy_contract_test.go:34: exclusive FFU target-session source is missing required boundary "exposes no descriptor, read, write, seek, sync, or ioctl method"
-FAIL
-FAIL	github.com/geocausa/RufusArm64/internal/ffu	1.017s
-FAIL
-exit_status=1
