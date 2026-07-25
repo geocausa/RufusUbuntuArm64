@@ -21,9 +21,10 @@ type TrustUpdateApplyOptions struct {
 	hook func(stage string) error
 }
 
-// TrustBundleUpdateExecutionResult reports one committed signed publish
-// operation. The authorization plan remains the exact pre-mutation plan that
-// operators signed and reviewed; execution state is reported separately.
+// TrustBundleUpdateExecutionResult reports one committed signed publish or
+// withdrawal operation. The authorization plan remains the exact pre-mutation
+// plan that operators signed and reviewed; execution state is reported
+// separately.
 type TrustBundleUpdateExecutionResult struct {
 	Root                  string                 `json:"root"`
 	Generation            string                 `json:"generation"`
@@ -38,8 +39,8 @@ type TrustBundleUpdateExecutionResult struct {
 
 // ApplyAuthenticatedTrustBundlePublishOperation executes one signed publish
 // operation while holding the trust-store root lock across authentication and
-// commit. Withdrawal deliberately remains a separate future tombstone
-// transaction and is refused here.
+// commit. Withdrawal is handled by a separate tombstone transaction and is
+// refused here.
 func ApplyAuthenticatedTrustBundlePublishOperation(
 	ctx context.Context,
 	root string,
@@ -349,6 +350,7 @@ func buildTrustStoreUpdateRecords(
 		PreviousEnvelopeSHA256:    state.active.record.EnvelopeSHA256,
 		PreviousEvidenceSHA256:    state.active.record.EvidenceSHA256,
 		PreviousPlanSHA256:        state.active.record.PlanSHA256,
+		PreviousWithdrawn:         state.active.record.Withdrawn,
 	}
 	evidenceData, err := json.Marshal(evidence)
 	if err != nil {

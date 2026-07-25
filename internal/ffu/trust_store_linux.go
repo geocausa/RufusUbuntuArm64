@@ -23,21 +23,22 @@ import (
 )
 
 const (
-	trustStoreSchema                  = 1
-	trustStoreGenerationPurpose       = "ffu-trust-bundle-generation"
-	trustStoreUpdateGenerationPurpose = "ffu-trust-bundle-update-generation"
-	trustStoreActivePurpose           = "ffu-trust-bundle-active"
-	trustStoreGenerationsName         = "generations"
-	trustStoreActiveName              = "active.json"
-	trustStoreBundleName              = "bundle.json"
-	trustStoreEnvelopeName            = "metadata.json"
-	trustStoreEvidenceName            = "evidence.json"
-	trustStoreGenerationPrefix        = "generation-"
-	trustStoreTempGeneration          = ".generation-"
-	trustStoreTempActive              = ".active-"
-	maxTrustStoreEvidenceBytes        = 1 << 20
-	maxTrustStoreActiveBytes          = 32 << 10
-	maxTrustStoreGenerations          = 256
+	trustStoreSchema                      = 1
+	trustStoreGenerationPurpose           = "ffu-trust-bundle-generation"
+	trustStoreUpdateGenerationPurpose     = "ffu-trust-bundle-update-generation"
+	trustStoreWithdrawalGenerationPurpose = "ffu-trust-bundle-withdrawal-generation"
+	trustStoreActivePurpose               = "ffu-trust-bundle-active"
+	trustStoreGenerationsName             = "generations"
+	trustStoreActiveName                  = "active.json"
+	trustStoreBundleName                  = "bundle.json"
+	trustStoreEnvelopeName                = "metadata.json"
+	trustStoreEvidenceName                = "evidence.json"
+	trustStoreGenerationPrefix            = "generation-"
+	trustStoreTempGeneration              = ".generation-"
+	trustStoreTempActive                  = ".active-"
+	maxTrustStoreEvidenceBytes            = 1 << 20
+	maxTrustStoreActiveBytes              = 32 << 10
+	maxTrustStoreGenerations              = 256
 )
 
 // TrustStoreOptions configures durable publication. The hook is intentionally
@@ -47,7 +48,7 @@ type TrustStoreOptions struct {
 }
 
 // TrustStoreActiveRecord is the single atomic commit point for a published,
-// still-inactive trust-bundle generation.
+// still-inactive trust-bundle generation or an explicit withdrawal tombstone.
 type TrustStoreActiveRecord struct {
 	Schema         int    `json:"schema"`
 	Purpose        string `json:"purpose"`
@@ -57,6 +58,7 @@ type TrustStoreActiveRecord struct {
 	EnvelopeSHA256 string `json:"envelope_sha256"`
 	EvidenceSHA256 string `json:"evidence_sha256"`
 	PlanSHA256     string `json:"plan_sha256"`
+	Withdrawn      bool   `json:"withdrawn,omitempty"`
 }
 
 // TrustStoreGenerationEvidence binds the immutable files in one generation to
@@ -97,10 +99,13 @@ type TrustStoreGenerationEvidence struct {
 	PreviousEnvelopeSHA256    string   `json:"previous_envelope_sha256,omitempty"`
 	PreviousEvidenceSHA256    string   `json:"previous_evidence_sha256,omitempty"`
 	PreviousPlanSHA256        string   `json:"previous_plan_sha256,omitempty"`
+	PreviousWithdrawn         bool     `json:"previous_withdrawn,omitempty"`
+	Withdrawn                 bool     `json:"withdrawn,omitempty"`
 }
 
-// TrustStoreResult reports the exact committed generation. The plan remains
-// inactive even after durable publication.
+// TrustStoreResult reports the exact committed generation. A withdrawal
+// tombstone preserves the last authenticated historical plan while marking the
+// active record withdrawn. Trust anchors remain inactive in both states.
 type TrustStoreResult struct {
 	Root               string                 `json:"root"`
 	Generation         string                 `json:"generation"`
@@ -181,6 +186,9 @@ func PublishAuthenticatedTrustBundle(ctx context.Context, root string, bundleDat
 	previous, _, err := readCurrentTrustStoreState(ctx, rootFile, generations, policy, evaluationTime)
 	if err != nil {
 		return TrustStoreResult{}, err
+	}
+	if previous.exists && previous.record.Withdrawn {
+		return TrustStoreResult{}, errors.New("FFU trust-store active bundle is withdrawn")
 	}
 	if err := cleanTrustStoreTemporaries(rootFile, generations); err != nil {
 		return TrustStoreResult{}, err
@@ -544,7 +552,7 @@ func loadTrustStoreGenerationDepth(ctx context.Context, generations *os.File, ac
 	if err != nil {
 		return TrustBundlePlan{}, err
 	}
-	if evidence.Generation != active.Generation || evidence.Sequence != active.Sequence || evidence.BundleSHA256 != active.BundleSHA256 || evidence.EnvelopeSHA256 != active.EnvelopeSHA256 || evidence.PlanSHA256 != active.PlanSHA256 {
+	if evidence.Generation != active.Generation || evidence.Sequence != active.Sequence || evidence.BundleSHA256 != active.BundleSHA256 || evidence.EnvelopeSHA256 != active.EnvelopeSHA256 || evidence.PlanSHA256 != active.PlanSHA256 || evidence.Withdrawn != active.Withdrawn {
 		return TrustBundlePlan{}, errors.New("FFU trust-store evidence does not match the active record")
 	}
 	if evidence.BundleSize != uint64(len(bundleData)) || evidence.EnvelopeSize != uint64(len(envelopeData)) {
@@ -561,6 +569,8 @@ func loadTrustStoreGenerationDepth(ctx context.Context, generations *os.File, ac
 		plan, err = reproduceLegacyTrustStoreGeneration(bundleData, envelopeData, active, evidence, policy, publicationTime, evaluationTime)
 	case trustStoreUpdateGenerationPurpose:
 		plan, err = reproduceUpdatedTrustStoreGeneration(ctx, generations, bundleData, envelopeData, active, evidence, policy, publicationTime, evaluationTime, depth)
+	case trustStoreWithdrawalGenerationPurpose:
+		plan, err = reproduceWithdrawnTrustStoreGeneration(ctx, generations, bundleData, envelopeData, active, evidence, policy, publicationTime, evaluationTime, depth)
 	default:
 		err = errors.New("FFU trust-store generation evidence purpose is unsupported")
 	}
@@ -616,6 +626,9 @@ func reproduceLegacyTrustStoreGeneration(bundleData, envelopeData []byte, active
 }
 
 func reproduceUpdatedTrustStoreGeneration(ctx context.Context, generations *os.File, bundleData, envelopeData []byte, active TrustStoreActiveRecord, evidence TrustStoreGenerationEvidence, suppliedPolicy TrustMetadataPolicy, publicationTime, evaluationTime time.Time, depth int) (TrustBundlePlan, error) {
+	if active.Withdrawn || evidence.Withdrawn {
+		return TrustBundlePlan{}, errors.New("signed FFU trust publish generation cannot be withdrawn")
+	}
 	operationData, _, nextPolicyData, currentPolicy, nextPolicy, err := decodeTrustStoreUpdateEvidence(evidence)
 	if err != nil {
 		return TrustBundlePlan{}, err
@@ -644,6 +657,7 @@ func reproduceUpdatedTrustStoreGeneration(ctx context.Context, generations *os.F
 		EnvelopeSHA256: evidence.PreviousEnvelopeSHA256,
 		EvidenceSHA256: evidence.PreviousEvidenceSHA256,
 		PlanSHA256:     evidence.PreviousPlanSHA256,
+		Withdrawn:      evidence.PreviousWithdrawn,
 	}
 	if err := validateTrustStoreActiveRecord(previous); err != nil {
 		return TrustBundlePlan{}, fmt.Errorf("validate previous signed FFU trust update generation: %w", err)
@@ -717,7 +731,7 @@ func trustStoreGenerationPublicationTime(generations *os.File, active TrustStore
 	if err != nil {
 		return time.Time{}, err
 	}
-	if evidence.Generation != active.Generation || evidence.Sequence != active.Sequence || evidence.BundleSHA256 != active.BundleSHA256 || evidence.EnvelopeSHA256 != active.EnvelopeSHA256 || evidence.PlanSHA256 != active.PlanSHA256 {
+	if evidence.Generation != active.Generation || evidence.Sequence != active.Sequence || evidence.BundleSHA256 != active.BundleSHA256 || evidence.EnvelopeSHA256 != active.EnvelopeSHA256 || evidence.PlanSHA256 != active.PlanSHA256 || evidence.Withdrawn != active.Withdrawn {
 		return time.Time{}, errors.New("previous FFU trust-store evidence does not match its active record")
 	}
 	return parseCanonicalTrustMetadataTime(evidence.PublicationEvaluationTime, "publication_evaluation_time")
@@ -735,7 +749,7 @@ func parseTrustStoreEvidence(data []byte) (TrustStoreGenerationEvidence, error) 
 	if _, err := decodeCanonicalTrustStoreJSON(data, &evidence, "FFU trust-store generation evidence"); err != nil {
 		return TrustStoreGenerationEvidence{}, err
 	}
-	if evidence.Schema != trustStoreSchema || (evidence.Purpose != trustStoreGenerationPurpose && evidence.Purpose != trustStoreUpdateGenerationPurpose) || !validTrustStoreGenerationName(evidence.Generation) || evidence.Sequence == 0 || evidence.BundleSize == 0 || evidence.EnvelopeSize == 0 || evidence.Threshold <= 0 || evidence.TrustAnchorsActivated {
+	if evidence.Schema != trustStoreSchema || (evidence.Purpose != trustStoreGenerationPurpose && evidence.Purpose != trustStoreUpdateGenerationPurpose && evidence.Purpose != trustStoreWithdrawalGenerationPurpose) || !validTrustStoreGenerationName(evidence.Generation) || evidence.Sequence == 0 || evidence.BundleSize == 0 || evidence.EnvelopeSize == 0 || evidence.Threshold <= 0 || evidence.TrustAnchorsActivated {
 		return TrustStoreGenerationEvidence{}, errors.New("FFU trust-store generation evidence has an invalid schema or inactive-trust contract")
 	}
 	if _, err := validateTrustMetadataRollbackState(TrustMetadataRollbackState{Sequence: evidence.PreviousSequence, BundleSHA256: evidence.PreviousBundleSHA256}); err != nil {
@@ -758,10 +772,20 @@ func parseTrustStoreEvidence(data []byte) (TrustStoreGenerationEvidence, error) 
 
 	switch evidence.Purpose {
 	case trustStoreGenerationPurpose:
-		if trustStoreEvidenceHasUpdateFields(evidence) {
-			return TrustStoreGenerationEvidence{}, errors.New("legacy FFU trust-store evidence must not contain signed-update fields")
+		if evidence.Withdrawn || trustStoreEvidenceHasUpdateFields(evidence) {
+			return TrustStoreGenerationEvidence{}, errors.New("legacy FFU trust-store evidence must not contain withdrawal or signed-update fields")
 		}
 	case trustStoreUpdateGenerationPurpose:
+		if evidence.Withdrawn {
+			return TrustStoreGenerationEvidence{}, errors.New("signed FFU trust publish evidence cannot be withdrawn")
+		}
+		if _, _, _, _, _, err := decodeTrustStoreUpdateEvidence(evidence); err != nil {
+			return TrustStoreGenerationEvidence{}, err
+		}
+	case trustStoreWithdrawalGenerationPurpose:
+		if !evidence.Withdrawn {
+			return TrustStoreGenerationEvidence{}, errors.New("signed FFU trust withdrawal evidence must mark the generation withdrawn")
+		}
 		if _, _, _, _, _, err := decodeTrustStoreUpdateEvidence(evidence); err != nil {
 			return TrustStoreGenerationEvidence{}, err
 		}
@@ -770,11 +794,11 @@ func parseTrustStoreEvidence(data []byte) (TrustStoreGenerationEvidence, error) 
 }
 
 func trustStoreEvidenceHasUpdateFields(evidence TrustStoreGenerationEvidence) bool {
-	return evidence.UpdatePlanSHA256 != "" || evidence.OperationSize != 0 || evidence.OperationSHA256 != "" || evidence.OperationBase64 != "" || evidence.CurrentPolicySize != 0 || evidence.CurrentPolicySHA256 != "" || evidence.CurrentPolicyBase64 != "" || evidence.NextPolicySize != 0 || evidence.NextPolicySHA256 != "" || evidence.NextPolicyBase64 != "" || evidence.PolicyRotated || len(evidence.OperationSigningKeyIDs) != 0 || len(evidence.ReplacementSigningKeyIDs) != 0 || evidence.PreviousGeneration != "" || evidence.PreviousEnvelopeSHA256 != "" || evidence.PreviousEvidenceSHA256 != "" || evidence.PreviousPlanSHA256 != ""
+	return evidence.UpdatePlanSHA256 != "" || evidence.OperationSize != 0 || evidence.OperationSHA256 != "" || evidence.OperationBase64 != "" || evidence.CurrentPolicySize != 0 || evidence.CurrentPolicySHA256 != "" || evidence.CurrentPolicyBase64 != "" || evidence.NextPolicySize != 0 || evidence.NextPolicySHA256 != "" || evidence.NextPolicyBase64 != "" || evidence.PolicyRotated || len(evidence.OperationSigningKeyIDs) != 0 || len(evidence.ReplacementSigningKeyIDs) != 0 || evidence.PreviousGeneration != "" || evidence.PreviousEnvelopeSHA256 != "" || evidence.PreviousEvidenceSHA256 != "" || evidence.PreviousPlanSHA256 != "" || evidence.PreviousWithdrawn
 }
 
 func decodeTrustStoreUpdateEvidence(evidence TrustStoreGenerationEvidence) ([]byte, []byte, []byte, TrustMetadataPolicy, TrustMetadataPolicy, error) {
-	if evidence.Purpose != trustStoreUpdateGenerationPurpose || evidence.PreviousSequence == 0 || evidence.PreviousGeneration == "" {
+	if (evidence.Purpose != trustStoreUpdateGenerationPurpose && evidence.Purpose != trustStoreWithdrawalGenerationPurpose) || evidence.PreviousSequence == 0 || evidence.PreviousGeneration == "" {
 		return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, errors.New("signed FFU trust update evidence is incomplete")
 	}
 	for _, pair := range []struct{ value, field string }{
@@ -799,6 +823,7 @@ func decodeTrustStoreUpdateEvidence(evidence TrustStoreGenerationEvidence) ([]by
 		EnvelopeSHA256: evidence.PreviousEnvelopeSHA256,
 		EvidenceSHA256: evidence.PreviousEvidenceSHA256,
 		PlanSHA256:     evidence.PreviousPlanSHA256,
+		Withdrawn:      evidence.PreviousWithdrawn,
 	}
 	if err := validateTrustStoreActiveRecord(previous); err != nil {
 		return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, fmt.Errorf("signed FFU trust update previous active evidence: %w", err)

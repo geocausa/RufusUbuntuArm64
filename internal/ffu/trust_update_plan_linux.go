@@ -263,6 +263,9 @@ func planAuthenticatedTrustBundleOperationOpen(
 	if err != nil {
 		return trustBundleUpdatePlanningState{}, err
 	}
+	if active.record.Withdrawn && verifiedOperation.document.Action == trustUpdateActionWithdraw {
+		return trustBundleUpdatePlanningState{}, errors.New("current FFU trust bundle is already withdrawn")
+	}
 
 	var candidatePlan *TrustBundlePlan
 	if verifiedOperation.document.Action == trustUpdateActionPublish {

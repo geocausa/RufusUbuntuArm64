@@ -100,6 +100,9 @@ func ActivateAuthenticatedTrustBundle(ctx context.Context, root string, policy T
 	if !active.exists {
 		return TrustBundleActivation{}, os.ErrNotExist
 	}
+	if active.record.Withdrawn {
+		return TrustBundleActivation{}, errors.New("activate FFU trust bundle: active bundle is withdrawn")
+	}
 	if err := requireInactiveAuthenticatedTrustPlan(plan); err != nil {
 		return TrustBundleActivation{}, fmt.Errorf("activate FFU trust bundle: %w", err)
 	}

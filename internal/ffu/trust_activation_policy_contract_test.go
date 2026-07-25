@@ -31,4 +31,7 @@ func TestTrustActivationProductionSourceKeepsLaterPolicyGatesOut(t *testing.T) {
 			t.Fatalf("activation production source contains forbidden later-gate or write primitive %q", forbidden)
 		}
 	}
+	if !strings.Contains(source, "active bundle is withdrawn") {
+		t.Fatal("activation production source does not fail closed on withdrawal tombstones")
+	}
 }
