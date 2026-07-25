@@ -128,10 +128,14 @@ func TestAcquireExclusiveFullFlashTargetRejectsUnsafeStates(t *testing.T) {
 			t.Fatal(err)
 		}
 		ops := fullFlashTargetOpenOps{
-			openTarget: func(string) (*os.File, error) { return os.OpenFile(targetPath, os.O_RDWR, 0) },
+			openTarget:       func(string) (*os.File, error) { return os.OpenFile(targetPath, os.O_RDWR, 0) },
 			verifyOpenTarget: func(*os.File, uint64, uint64) error { return nil },
-			revalidateTarget: func(string, uint64) (device.BlockDevice, uint64, error) { return dev, fixture.preflight.KernelDeviceID, nil },
-			readSectorGeometry: func(string) (uint64, uint64, error) { return fixture.preflight.LogicalSectorSizeBytes, fixture.preflight.PhysicalSectorSizeBytes, nil },
+			revalidateTarget: func(string, uint64) (device.BlockDevice, uint64, error) {
+				return dev, fixture.preflight.KernelDeviceID, nil
+			},
+			readSectorGeometry: func(string) (uint64, uint64, error) {
+				return fixture.preflight.LogicalSectorSizeBytes, fixture.preflight.PhysicalSectorSizeBytes, nil
+			},
 			ensureSourceOutside: func(*os.File, device.BlockDevice) error { return nil },
 		}
 		return fixture, sourceLease, dev, ops
@@ -158,14 +162,30 @@ func TestAcquireExclusiveFullFlashTargetRejectsUnsafeStates(t *testing.T) {
 		mutate func(*fullFlashTargetOpenOps, *device.BlockDevice, FullFlashTargetPreflightPlan)
 		want   string
 	}{
-		{name: "open failure", mutate: func(ops *fullFlashTargetOpenOps, _ *device.BlockDevice, _ FullFlashTargetPreflightPlan) { ops.openTarget = func(string) (*os.File, error) { return nil, errors.New("open denied") } }, want: "open denied"},
-		{name: "descriptor verification", mutate: func(ops *fullFlashTargetOpenOps, _ *device.BlockDevice, _ FullFlashTargetPreflightPlan) { ops.verifyOpenTarget = func(*os.File, uint64, uint64) error { return errors.New("wrong descriptor") } }, want: "wrong descriptor"},
-		{name: "kernel identity", mutate: func(ops *fullFlashTargetOpenOps, dev *device.BlockDevice, preflight FullFlashTargetPreflightPlan) { ops.revalidateTarget = func(string, uint64) (device.BlockDevice, uint64, error) { return *dev, preflight.KernelDeviceID + 1, nil } }, want: "kernel identity changed"},
-		{name: "target identity", mutate: func(_ *fullFlashTargetOpenOps, dev *device.BlockDevice, _ FullFlashTargetPreflightPlan) { dev.MajorMinor = "7:9" }, want: "target identity changed"},
+		{name: "open failure", mutate: func(ops *fullFlashTargetOpenOps, _ *device.BlockDevice, _ FullFlashTargetPreflightPlan) {
+			ops.openTarget = func(string) (*os.File, error) { return nil, errors.New("open denied") }
+		}, want: "open denied"},
+		{name: "descriptor verification", mutate: func(ops *fullFlashTargetOpenOps, _ *device.BlockDevice, _ FullFlashTargetPreflightPlan) {
+			ops.verifyOpenTarget = func(*os.File, uint64, uint64) error { return errors.New("wrong descriptor") }
+		}, want: "wrong descriptor"},
+		{name: "kernel identity", mutate: func(ops *fullFlashTargetOpenOps, dev *device.BlockDevice, preflight FullFlashTargetPreflightPlan) {
+			ops.revalidateTarget = func(string, uint64) (device.BlockDevice, uint64, error) {
+				return *dev, preflight.KernelDeviceID + 1, nil
+			}
+		}, want: "kernel identity changed"},
+		{name: "target identity", mutate: func(_ *fullFlashTargetOpenOps, dev *device.BlockDevice, _ FullFlashTargetPreflightPlan) {
+			dev.MajorMinor = "7:9"
+		}, want: "target identity changed"},
 		{name: "capacity", mutate: func(_ *fullFlashTargetOpenOps, dev *device.BlockDevice, _ FullFlashTargetPreflightPlan) { dev.Size++ }, want: "whole-disk metadata changed"},
-		{name: "became mounted", mutate: func(_ *fullFlashTargetOpenOps, dev *device.BlockDevice, _ FullFlashTargetPreflightPlan) { dev.Children = []device.BlockDevice{{Path: "/dev/test-ffu1", Type: "part", Mountpoints: []string{"/media/user/FFU"}}} }, want: "became mounted"},
-		{name: "geometry", mutate: func(ops *fullFlashTargetOpenOps, _ *device.BlockDevice, _ FullFlashTargetPreflightPlan) { ops.readSectorGeometry = func(string) (uint64, uint64, error) { return 4096, 4096, nil } }, want: "sector geometry changed"},
-		{name: "source on target", mutate: func(ops *fullFlashTargetOpenOps, _ *device.BlockDevice, _ FullFlashTargetPreflightPlan) { ops.ensureSourceOutside = func(*os.File, device.BlockDevice) error { return errors.New("source is on target") } }, want: "source is on target"},
+		{name: "became mounted", mutate: func(_ *fullFlashTargetOpenOps, dev *device.BlockDevice, _ FullFlashTargetPreflightPlan) {
+			dev.Children = []device.BlockDevice{{Path: "/dev/test-ffu1", Type: "part", Mountpoints: []string{"/media/user/FFU"}}}
+		}, want: "became mounted"},
+		{name: "geometry", mutate: func(ops *fullFlashTargetOpenOps, _ *device.BlockDevice, _ FullFlashTargetPreflightPlan) {
+			ops.readSectorGeometry = func(string) (uint64, uint64, error) { return 4096, 4096, nil }
+		}, want: "sector geometry changed"},
+		{name: "source on target", mutate: func(ops *fullFlashTargetOpenOps, _ *device.BlockDevice, _ FullFlashTargetPreflightPlan) {
+			ops.ensureSourceOutside = func(*os.File, device.BlockDevice) error { return errors.New("source is on target") }
+		}, want: "source is on target"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -174,7 +194,9 @@ func TestAcquireExclusiveFullFlashTargetRejectsUnsafeStates(t *testing.T) {
 			defer sourceLease.Close()
 			test.mutate(&ops, &dev, fixture.preflight)
 			if test.name == "target identity" || test.name == "capacity" || test.name == "became mounted" {
-				ops.revalidateTarget = func(string, uint64) (device.BlockDevice, uint64, error) { return dev, fixture.preflight.KernelDeviceID, nil }
+				ops.revalidateTarget = func(string, uint64) (device.BlockDevice, uint64, error) {
+					return dev, fixture.preflight.KernelDeviceID, nil
+				}
 			}
 			session, err := acquireExclusiveFullFlashTargetWithOps(context.Background(), sourceLease, fixture.preflight, ops)
 			if err == nil || !strings.Contains(err.Error(), test.want) {

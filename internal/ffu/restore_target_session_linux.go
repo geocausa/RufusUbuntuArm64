@@ -93,14 +93,14 @@ var productionFullFlashTargetOpenOps = fullFlashTargetOpenOps{
 // no descriptor, read, write, seek, sync, or ioctl method. Future mutation code
 // must live in this package and pass a separate execution-authorization gate.
 type FullFlashTargetSession struct {
-	mu       sync.Mutex
-	file     *os.File
-	source   *FullFlashSourceLease
+	mu        sync.Mutex
+	file      *os.File
+	source    *FullFlashSourceLease
 	preflight FullFlashTargetPreflightPlan
-	evidence FullFlashTargetSessionEvidence
-	ops      fullFlashTargetOpenOps
-	seal     *fullFlashTargetSessionSeal
-	closed   bool
+	evidence  FullFlashTargetSessionEvidence
+	ops       fullFlashTargetOpenOps
+	seal      *fullFlashTargetSessionSeal
+	closed    bool
 }
 
 // AcquireExclusiveFullFlashTarget requires an authenticated source lease and an
