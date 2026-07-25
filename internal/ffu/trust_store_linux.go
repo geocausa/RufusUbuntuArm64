@@ -23,21 +23,23 @@ import (
 )
 
 const (
-	trustStoreSchema                  = 1
-	trustStoreGenerationPurpose       = "ffu-trust-bundle-generation"
-	trustStoreUpdateGenerationPurpose = "ffu-trust-bundle-update-generation"
-	trustStoreActivePurpose           = "ffu-trust-bundle-active"
-	trustStoreGenerationsName         = "generations"
-	trustStoreActiveName              = "active.json"
-	trustStoreBundleName              = "bundle.json"
-	trustStoreEnvelopeName            = "metadata.json"
-	trustStoreEvidenceName            = "evidence.json"
-	trustStoreGenerationPrefix        = "generation-"
-	trustStoreTempGeneration          = ".generation-"
-	trustStoreTempActive              = ".active-"
-	maxTrustStoreEvidenceBytes        = 1 << 20
-	maxTrustStoreActiveBytes          = 32 << 10
-	maxTrustStoreGenerations          = 256
+	trustStoreSchema                      = 1
+	trustStoreGenerationPurpose           = "ffu-trust-bundle-generation"
+	trustStoreUpdateGenerationPurpose     = "ffu-trust-bundle-update-generation"
+	trustStoreWithdrawalGenerationPurpose = "ffu-trust-bundle-withdrawal-generation"
+	trustStoreActivePurpose               = "ffu-trust-bundle-active"
+	trustStoreWithdrawnPurpose            = "ffu-trust-bundle-withdrawn"
+	trustStoreGenerationsName             = "generations"
+	trustStoreActiveName                  = "active.json"
+	trustStoreBundleName                  = "bundle.json"
+	trustStoreEnvelopeName                = "metadata.json"
+	trustStoreEvidenceName                = "evidence.json"
+	trustStoreGenerationPrefix            = "generation-"
+	trustStoreTempGeneration              = ".generation-"
+	trustStoreTempActive                  = ".active-"
+	maxTrustStoreEvidenceBytes            = 1 << 20
+	maxTrustStoreActiveBytes              = 32 << 10
+	maxTrustStoreGenerations              = 256
 )
 
 // TrustStoreOptions configures durable publication. The hook is intentionally
@@ -550,17 +552,23 @@ func loadTrustStoreGenerationDepth(ctx context.Context, generations *os.File, ac
 	if evidence.BundleSize != uint64(len(bundleData)) || evidence.EnvelopeSize != uint64(len(envelopeData)) {
 		return TrustBundlePlan{}, errors.New("FFU trust-store evidence does not match generation file sizes")
 	}
+	if (active.Purpose == trustStoreWithdrawnPurpose) != (evidence.Purpose == trustStoreWithdrawalGenerationPurpose) {
+		return TrustBundlePlan{}, errors.New("ffu trust-store active purpose does not match generation evidence purpose")
+	}
 	publicationTime, err := parseCanonicalTrustMetadataTime(evidence.PublicationEvaluationTime, "publication_evaluation_time")
 	if err != nil {
 		return TrustBundlePlan{}, err
 	}
 
 	var plan TrustBundlePlan
+	var withdrawal *TrustBundleWithdrawal
 	switch evidence.Purpose {
 	case trustStoreGenerationPurpose:
 		plan, err = reproduceLegacyTrustStoreGeneration(bundleData, envelopeData, active, evidence, policy, publicationTime, evaluationTime)
 	case trustStoreUpdateGenerationPurpose:
 		plan, err = reproduceUpdatedTrustStoreGeneration(ctx, generations, bundleData, envelopeData, active, evidence, policy, publicationTime, evaluationTime, depth)
+	case trustStoreWithdrawalGenerationPurpose:
+		withdrawal, err = reproduceWithdrawnTrustStoreGeneration(ctx, generations, bundleData, envelopeData, active, evidence, policy, publicationTime, depth)
 	default:
 		err = errors.New("FFU trust-store generation evidence purpose is unsupported")
 	}
@@ -583,6 +591,9 @@ func loadTrustStoreGenerationDepth(ctx context.Context, generations *os.File, ac
 	}
 	if err := ensureTrustStoreDirectoryEntryIdentity(generations, active.Generation, generationIdentity); err != nil {
 		return TrustBundlePlan{}, err
+	}
+	if withdrawal != nil {
+		return TrustBundlePlan{}, &TrustBundleWithdrawnError{Withdrawal: *withdrawal}
 	}
 	return plan, nil
 }
@@ -735,7 +746,7 @@ func parseTrustStoreEvidence(data []byte) (TrustStoreGenerationEvidence, error) 
 	if _, err := decodeCanonicalTrustStoreJSON(data, &evidence, "FFU trust-store generation evidence"); err != nil {
 		return TrustStoreGenerationEvidence{}, err
 	}
-	if evidence.Schema != trustStoreSchema || (evidence.Purpose != trustStoreGenerationPurpose && evidence.Purpose != trustStoreUpdateGenerationPurpose) || !validTrustStoreGenerationName(evidence.Generation) || evidence.Sequence == 0 || evidence.BundleSize == 0 || evidence.EnvelopeSize == 0 || evidence.Threshold <= 0 || evidence.TrustAnchorsActivated {
+	if evidence.Schema != trustStoreSchema || (evidence.Purpose != trustStoreGenerationPurpose && evidence.Purpose != trustStoreUpdateGenerationPurpose && evidence.Purpose != trustStoreWithdrawalGenerationPurpose) || !validTrustStoreGenerationName(evidence.Generation) || evidence.Sequence == 0 || evidence.BundleSize == 0 || evidence.EnvelopeSize == 0 || evidence.Threshold <= 0 || evidence.TrustAnchorsActivated {
 		return TrustStoreGenerationEvidence{}, errors.New("FFU trust-store generation evidence has an invalid schema or inactive-trust contract")
 	}
 	if _, err := validateTrustMetadataRollbackState(TrustMetadataRollbackState{Sequence: evidence.PreviousSequence, BundleSHA256: evidence.PreviousBundleSHA256}); err != nil {
@@ -761,7 +772,7 @@ func parseTrustStoreEvidence(data []byte) (TrustStoreGenerationEvidence, error) 
 		if trustStoreEvidenceHasUpdateFields(evidence) {
 			return TrustStoreGenerationEvidence{}, errors.New("legacy FFU trust-store evidence must not contain signed-update fields")
 		}
-	case trustStoreUpdateGenerationPurpose:
+	case trustStoreUpdateGenerationPurpose, trustStoreWithdrawalGenerationPurpose:
 		if _, _, _, _, _, err := decodeTrustStoreUpdateEvidence(evidence); err != nil {
 			return TrustStoreGenerationEvidence{}, err
 		}
@@ -774,7 +785,7 @@ func trustStoreEvidenceHasUpdateFields(evidence TrustStoreGenerationEvidence) bo
 }
 
 func decodeTrustStoreUpdateEvidence(evidence TrustStoreGenerationEvidence) ([]byte, []byte, []byte, TrustMetadataPolicy, TrustMetadataPolicy, error) {
-	if evidence.Purpose != trustStoreUpdateGenerationPurpose || evidence.PreviousSequence == 0 || evidence.PreviousGeneration == "" {
+	if (evidence.Purpose != trustStoreUpdateGenerationPurpose && evidence.Purpose != trustStoreWithdrawalGenerationPurpose) || evidence.PreviousSequence == 0 || evidence.PreviousGeneration == "" {
 		return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, errors.New("signed FFU trust update evidence is incomplete")
 	}
 	for _, pair := range []struct{ value, field string }{
@@ -843,6 +854,14 @@ func decodeTrustStoreUpdateEvidence(evidence TrustStoreGenerationEvidence) ([]by
 	} else if len(evidence.ReplacementSigningKeyIDs) != 0 {
 		return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, errors.New("unchanged signed FFU trust update policy must not carry replacement signer evidence")
 	}
+	if evidence.Purpose == trustStoreWithdrawalGenerationPurpose {
+		if rotated || !bytes.Equal(currentPolicyData, nextPolicyData) {
+			return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, errors.New("signed FFU trust withdrawal must preserve the authorization policy")
+		}
+		if evidence.BundleSHA256 != evidence.PreviousBundleSHA256 || evidence.EnvelopeSHA256 != evidence.PreviousEnvelopeSHA256 {
+			return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, errors.New("signed FFU trust withdrawal must preserve the previous bundle and metadata bytes")
+		}
+	}
 	return operationData, currentPolicyData, nextPolicyData, currentPolicy, nextPolicy, nil
 }
 
@@ -906,7 +925,7 @@ func readTrustStoreActive(root *os.File) (trustStoreActiveSnapshot, error) {
 }
 
 func validateTrustStoreActiveRecord(record TrustStoreActiveRecord) error {
-	if record.Schema != trustStoreSchema || record.Purpose != trustStoreActivePurpose || record.Sequence == 0 || !validTrustStoreGenerationName(record.Generation) {
+	if record.Schema != trustStoreSchema || (record.Purpose != trustStoreActivePurpose && record.Purpose != trustStoreWithdrawnPurpose) || record.Sequence == 0 || !validTrustStoreGenerationName(record.Generation) {
 		return errors.New("FFU trust-store active record has an invalid schema or generation")
 	}
 	for _, pair := range []struct{ value, field string }{{record.BundleSHA256, "bundle_sha256"}, {record.EnvelopeSHA256, "envelope_sha256"}, {record.EvidenceSHA256, "evidence_sha256"}, {record.PlanSHA256, "plan_sha256"}} {
