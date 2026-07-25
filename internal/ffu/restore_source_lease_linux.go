@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"hash"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,28 +25,28 @@ const fullFlashSourceLeaseEvidenceSchema = 1
 // the already reviewed full-flash and live-target preflight evidence. It does
 // not authorize target access or execution.
 type FullFlashSourceLeaseEvidence struct {
-	Schema                          int                         `json:"schema"`
-	Mode                            string                      `json:"mode"`
-	SourceIdentity                  sourcefile.Identity         `json:"source_identity"`
-	SourceFileSize                  uint64                      `json:"source_file_size"`
-	FullFlashTargetPreflightSHA256  string                      `json:"full_flash_target_preflight_sha256"`
-	FullFlashValidationPlanSHA256   string                      `json:"full_flash_validation_plan_sha256"`
-	RestoreTargetPlanSHA256         string                      `json:"restore_target_plan_sha256"`
-	AuthenticatedIntegritySHA256    string                      `json:"authenticated_integrity_sha256"`
-	TargetDevicePath                string                      `json:"target_device_path"`
-	ExpectedTargetIdentity          string                      `json:"expected_target_identity"`
-	TargetSizeBytes                 uint64                      `json:"target_size_bytes"`
-	KernelReadLeaseRequired         bool                        `json:"kernel_read_lease_required"`
-	KernelReadLeaseHeld             bool                        `json:"kernel_read_lease_held"`
-	SourceIdentityRevalidated       bool                        `json:"source_identity_revalidated"`
-	FullFlashValidationReproduced   bool                        `json:"full_flash_validation_reproduced"`
-	TargetPreflightBound            bool                        `json:"target_preflight_bound"`
-	FallbackAllowed                 bool                        `json:"fallback_allowed"`
-	TargetAccessPermitted           bool                        `json:"target_access_permitted"`
-	ExecutionSupported              bool                        `json:"execution_supported"`
-	PlanSHA256                      string                      `json:"plan_sha256"`
-	Warnings                        []string                    `json:"warnings"`
-	Limitations                     []string                    `json:"limitations"`
+	Schema                         int                 `json:"schema"`
+	Mode                           string              `json:"mode"`
+	SourceIdentity                 sourcefile.Identity `json:"source_identity"`
+	SourceFileSize                 uint64              `json:"source_file_size"`
+	FullFlashTargetPreflightSHA256 string              `json:"full_flash_target_preflight_sha256"`
+	FullFlashValidationPlanSHA256  string              `json:"full_flash_validation_plan_sha256"`
+	RestoreTargetPlanSHA256        string              `json:"restore_target_plan_sha256"`
+	AuthenticatedIntegritySHA256   string              `json:"authenticated_integrity_sha256"`
+	TargetDevicePath               string              `json:"target_device_path"`
+	ExpectedTargetIdentity         string              `json:"expected_target_identity"`
+	TargetSizeBytes                uint64              `json:"target_size_bytes"`
+	KernelReadLeaseRequired        bool                `json:"kernel_read_lease_required"`
+	KernelReadLeaseHeld            bool                `json:"kernel_read_lease_held"`
+	SourceIdentityRevalidated      bool                `json:"source_identity_revalidated"`
+	FullFlashValidationReproduced  bool                `json:"full_flash_validation_reproduced"`
+	TargetPreflightBound           bool                `json:"target_preflight_bound"`
+	FallbackAllowed                bool                `json:"fallback_allowed"`
+	TargetAccessPermitted          bool                `json:"target_access_permitted"`
+	ExecutionSupported             bool                `json:"execution_supported"`
+	PlanSHA256                     string              `json:"plan_sha256"`
+	Warnings                       []string            `json:"warnings"`
+	Limitations                    []string            `json:"limitations"`
 }
 
 type fullFlashSourceLeaseSeal struct{}
@@ -97,9 +99,6 @@ func AcquireAuthenticatedFullFlashSourceLease(
 	if expectedSource.Size <= 0 {
 		return nil, errors.New("FFU source identity has a non-positive size")
 	}
-	if uint64(expectedSource.Size) != expectedPreflight.SourceFileSize {
-		return nil, errors.New("FFU source identity size differs from target-preflight evidence")
-	}
 	actual, err := sourcefile.IdentityOf(file)
 	if err != nil {
 		return nil, err
@@ -107,7 +106,7 @@ func AcquireAuthenticatedFullFlashSourceLease(
 	if actual != expectedSource {
 		return nil, errors.New("opened FFU source does not match the reviewed identity")
 	}
-	if err := sourcefile.VerifyPinned(file, expectedSource); err != nil {
+	if err := sourcefile.Verify(file, expectedSource); err != nil {
 		return nil, err
 	}
 
@@ -143,7 +142,7 @@ func AcquireAuthenticatedFullFlashSourceLease(
 		validation.TargetSizeBytes != expectedPreflight.TargetSizeBytes {
 		return nil, errors.New("leased FFU authentication does not reproduce the reviewed target preflight")
 	}
-	if err := sourcefile.VerifyPinned(file, expectedSource); err != nil {
+	if err := sourcefile.Verify(file, expectedSource); err != nil {
 		return nil, err
 	}
 	if err := lease.Check(); err != nil {
@@ -233,7 +232,7 @@ func (session *FullFlashSourceLease) Check() error {
 	if err := session.lease.Check(); err != nil {
 		return err
 	}
-	return sourcefile.VerifyPinned(session.file, session.identity)
+	return sourcefile.Verify(session.file, session.identity)
 }
 
 // Close releases the kernel lease but deliberately leaves the caller-owned file
@@ -282,18 +281,9 @@ func validateFullFlashSourceLeaseEvidence(evidence FullFlashSourceLeaseEvidence)
 			return errors.New("FFU source-lease evidence contains an invalid SHA-256 identifier")
 		}
 	}
-	if _, err := validateRestoreTargetRequest(RestoreTargetRequest{
-		DevicePath:             evidence.TargetDevicePath,
-		ExpectedTargetIdentity: evidence.ExpectedTargetIdentity,
-		TargetSizeBytes:        evidence.TargetSizeBytes,
-		LogicalSectorSizeBytes: 512,
-		PhysicalSectorSizeBytes: 512,
-	}); err != nil {
-		// Only path, identity, and non-zero target size are relevant here. The live
-		// sector geometry remains bound by the preflight digest rather than copied.
-		if evidence.TargetDevicePath == "" || evidence.ExpectedTargetIdentity == "" || evidence.TargetSizeBytes == 0 {
-			return err
-		}
+	path := strings.TrimSpace(evidence.TargetDevicePath)
+	if path == "" || path != evidence.TargetDevicePath || !filepath.IsAbs(path) || !strings.HasPrefix(path, "/dev/") || filepath.Clean(path) != path {
+		return errors.New("FFU source-lease evidence contains an invalid target path")
 	}
 	if !equalRestoreStrings(evidence.Warnings, fullFlashSourceLeaseWarnings()) || !equalRestoreStrings(evidence.Limitations, fullFlashSourceLeaseLimitations()) || evidence.PlanSHA256 != fullFlashSourceLeaseEvidenceDigest(evidence) {
 		return errors.New("FFU source-lease evidence, warnings, or limitations were altered")

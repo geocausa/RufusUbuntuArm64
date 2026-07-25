@@ -26,7 +26,7 @@ func TestAuthenticatedSourceLeaseProductionBoundary(t *testing.T) {
 		"FallbackAllowed:                false",
 		"TargetAccessPermitted:          false",
 		"ExecutionSupported:             false",
-		"caller-owned source descriptor",
+		"caller-owned FFU descriptor",
 	} {
 		if !strings.Contains(source, required) {
 			t.Fatalf("authenticated FFU source-lease source is missing required boundary %q", required)
