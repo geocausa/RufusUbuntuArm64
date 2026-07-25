@@ -114,6 +114,13 @@ class SourceStructureTests(unittest.TestCase):
                     "_finish_device_refresh": ("generation != self.device_generation", "self.closed"),
                 },
             },
+            "rufusarm64_ffu_dialog.py": {
+                "FFUReviewDialog": {
+                    "start_review": ("threading.Thread(",),
+                    "_run_review": ("subprocess.run(", "timeout=300"),
+                    "_finish_review": ("generation != self.generation", "self.closed"),
+                },
+            },
             "rufusarm64_persistence.py": {
                 "Window": {
                     "refresh_devices": ("threading.Thread(",),
@@ -142,7 +149,7 @@ class SourceStructureTests(unittest.TestCase):
                     if not body:
                         failures.append(f"{filename}:{class_name}.{method_name} is missing")
                         continue
-                    if method_name in {"verify_catalog", "image_changed", "refresh_devices"} and "subprocess.run(" in body:
+                    if method_name in {"verify_catalog", "image_changed", "refresh_devices", "start_review"} and "subprocess.run(" in body:
                         failures.append(f"{filename}:{class_name}.{method_name} blocks the GTK thread")
                     for fragment in required_fragments:
                         if fragment not in body:

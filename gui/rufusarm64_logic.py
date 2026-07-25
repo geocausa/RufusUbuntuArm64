@@ -970,15 +970,35 @@ def normalize_ffu_review(payload):
     trust_activation = _ffu_sha256(
         payload.get("trust_activation_sha256"), "trust activation"
     )
+    trust_store_root = _ffu_absolute_path(payload.get("trust_store_root"), "trust store")
+    trust_generation = str(payload.get("trust_generation") or "").strip()
+    if not trust_generation:
+        raise ValueError("The FFU review returned an invalid trust generation.")
+    trust_sequence = _ffu_positive_int(payload, "trust_sequence", "trust sequence")
+    trust_bundle = _ffu_sha256(payload.get("trust_bundle_sha256"), "trust bundle")
+    metadata_policy_path = _ffu_absolute_path(
+        payload.get("trust_metadata_policy_path"), "trust-metadata policy"
+    )
+    publisher_policy_path = _ffu_absolute_path(
+        payload.get("publisher_policy_path"), "publisher policy"
+    )
+    review_binding = _ffu_sha256(payload.get("review_binding_sha256"), "review binding")
     descriptor_digest = _ffu_sha256(
         payload.get("descriptor_plan_sha256"), "descriptor plan"
     )
     source_identity = _ffu_mapping(payload.get("source_identity"), "source identity")
     source_size = _ffu_positive_int(source_identity, "Size", "source identity size")
-    for key, label in (("Device", "source device"), ("Inode", "source inode")):
-        _ffu_positive_int(source_identity, key, label)
-    for key, label in (("ModifiedNS", "source modification time"), ("ChangedNS", "source change time")):
-        _ffu_positive_int(source_identity, key, label, allow_zero=True)
+    policy_identities = (
+        (source_identity, "source"),
+        (_ffu_mapping(payload.get("trust_metadata_policy_identity"), "trust-metadata policy identity"), "trust-metadata policy"),
+        (_ffu_mapping(payload.get("publisher_policy_identity"), "publisher policy identity"), "publisher policy"),
+    )
+    for identity, label in policy_identities:
+        _ffu_positive_int(identity, "Size", f"{label} identity size")
+        for key, field in (("Device", "device"), ("Inode", "inode")):
+            _ffu_positive_int(identity, key, f"{label} {field}")
+        for key, field in (("ModifiedNS", "modification time"), ("ChangedNS", "change time")):
+            _ffu_positive_int(identity, key, f"{label} {field}", allow_zero=True)
 
     target = _ffu_mapping(payload.get("target_plan"), "target plan")
     full = _ffu_mapping(payload.get("full_flash_plan"), "full-flash plan")
@@ -1106,6 +1126,13 @@ def normalize_ffu_review(payload):
     return {
         "evaluation_time": evaluation_time,
         "trust_activation_sha256": trust_activation,
+        "trust_store_root": trust_store_root,
+        "trust_generation": trust_generation,
+        "trust_sequence": trust_sequence,
+        "trust_bundle_sha256": trust_bundle,
+        "trust_metadata_policy_path": metadata_policy_path,
+        "publisher_policy_path": publisher_policy_path,
+        "review_binding_sha256": review_binding,
         "source_path": source_path,
         "source_size": source_size,
         "descriptor_plan_sha256": descriptor_digest,
@@ -1137,6 +1164,8 @@ def ffu_review_summary(payload):
         f"Target: {target} ({human_bytes(review['target_size'])})",
         f"Sector geometry: {review['logical_sector_size']} logical / {review['physical_sector_size']} physical bytes",
         f"Planned changed bytes: {human_bytes(review['mutation_bytes'])}",
+        f"Reviewed-input binding: {review['review_binding_sha256']}",
+        f"Trust generation: {review['trust_generation']} (sequence {review['trust_sequence']})",
     ]
     if review["unmount_required"]:
         lines.append("The target is still mounted and must be safely unmounted before restoration.")

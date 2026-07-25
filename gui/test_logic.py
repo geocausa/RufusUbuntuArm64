@@ -161,6 +161,19 @@ def valid_ffu_review_payload():
     return {
         "evaluation_time": "2026-07-25T21:00:00Z",
         "trust_activation_sha256": "a" * 64,
+        "trust_store_root": "/var/lib/rufusarm64/ffu-trust",
+        "trust_generation": "generation-1",
+        "trust_sequence": 1,
+        "trust_bundle_sha256": "1" * 64,
+        "trust_metadata_policy_path": "/etc/rufusarm64/trust-metadata.json",
+        "trust_metadata_policy_identity": {
+            "Device": 5, "Inode": 6, "Size": 100, "ModifiedNS": 7, "ChangedNS": 8,
+        },
+        "publisher_policy_path": "/etc/rufusarm64/publishers.json",
+        "publisher_policy_identity": {
+            "Device": 9, "Inode": 10, "Size": 100, "ModifiedNS": 11, "ChangedNS": 12,
+        },
+        "review_binding_sha256": "2" * 64,
         "source_path": "/images/device.ffu",
         "source_identity": {
             "Device": 1,
@@ -628,10 +641,13 @@ class LogicTests(unittest.TestCase):
         self.assertEqual(review["target_path"], "/dev/sdz")
         self.assertEqual(review["logical_sector_size"], 512)
         self.assertFalse(review["unmount_required"])
+        self.assertEqual(review["review_binding_sha256"], "2" * 64)
+        self.assertEqual(review["trust_generation"], "generation-1")
         summary = ffu_review_summary(payload)
         self.assertIn("Authenticated full-flash FFU review passed", summary)
         self.assertIn("Acme Disposable", summary)
         self.assertIn(payload["exact_confirmation_phrase"], summary)
+        self.assertIn(payload["review_binding_sha256"], summary)
         self.assertIn("read-only", summary)
 
     def test_ffu_review_normalization_rejects_cross_plan_substitution(self):
@@ -654,6 +670,12 @@ class LogicTests(unittest.TestCase):
         mutations.append(changed)
         changed = copy.deepcopy(payload)
         changed["execution_attempted"] = True
+        mutations.append(changed)
+        changed = copy.deepcopy(payload)
+        changed["review_binding_sha256"] = "A" * 64
+        mutations.append(changed)
+        changed = copy.deepcopy(payload)
+        changed["publisher_policy_identity"]["Inode"] = 0
         mutations.append(changed)
         for changed in mutations:
             with self.subTest(changed=changed):
