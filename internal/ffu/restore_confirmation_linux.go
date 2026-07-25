@@ -142,9 +142,9 @@ func ConfirmExclusiveFullFlashTarget(
 		return nil, err
 	}
 	return &FullFlashDestructiveConfirmation{
-		target: targetSession,
+		target:   targetSession,
 		evidence: evidence,
-		seal: issuedFullFlashConfirmationSeal,
+		seal:     issuedFullFlashConfirmationSeal,
 	}, nil
 }
 

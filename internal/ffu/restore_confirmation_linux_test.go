@@ -138,12 +138,12 @@ func TestValidateFullFlashConfirmationEvidenceRejectsTampering(t *testing.T) {
 }
 
 type fullFlashConfirmationFixture struct {
-	sourceFixture fullFlashSourceLeaseFixture
-	source        *FullFlashSourceLease
-	target        *FullFlashTargetSession
+	sourceFixture  fullFlashSourceLeaseFixture
+	source         *FullFlashSourceLease
+	target         *FullFlashTargetSession
 	targetEvidence FullFlashTargetSessionEvidence
-	targetPath    string
-	original      []byte
+	targetPath     string
+	original       []byte
 }
 
 func newFullFlashConfirmationFixture(t testing.TB) fullFlashConfirmationFixture {
@@ -195,12 +195,12 @@ func newFullFlashConfirmationFixture(t testing.TB) fullFlashConfirmationFixture 
 		t.Fatal(err)
 	}
 	return fullFlashConfirmationFixture{
-		sourceFixture: sourceFixture,
-		source: source,
-		target: target,
+		sourceFixture:  sourceFixture,
+		source:         source,
+		target:         target,
 		targetEvidence: targetEvidence,
-		targetPath: targetPath,
-		original: original,
+		targetPath:     targetPath,
+		original:       original,
 	}
 }
 
