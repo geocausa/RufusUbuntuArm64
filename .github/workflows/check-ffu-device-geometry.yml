@@ -42,9 +42,10 @@ jobs:
         env:
           BRANCH: feature/ffu-device-sector-geometry
         run: |
+          git checkout -- .github/workflows/ffu-loop-qualification.yml
           git rm .github/workflows/check-ffu-device-geometry.yml scripts/patch-ffu-device-geometry.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add internal/device/device.go internal/device/device_test.go .github/workflows/ffu-loop-qualification.yml
+          git add internal/device/device.go internal/device/device_test.go
           git commit -m "FFU: expose target sector geometry in device discovery"
           git push origin "HEAD:${BRANCH}"
