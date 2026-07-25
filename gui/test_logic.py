@@ -1,3 +1,4 @@
+import copy
 import os
 import tempfile
 import unittest
@@ -10,6 +11,7 @@ from rufusarm64_logic import (
     build_acquisition_channel_list_command,
     build_acquisition_download_command,
     build_acquisition_list_command,
+    build_ffu_review_command,
     build_persistence_analyze_command,
     build_persistence_plan_command,
     build_uefi_validate_command,
@@ -19,6 +21,7 @@ from rufusarm64_logic import (
     human_bytes,
     human_duration,
     human_rate,
+    ffu_review_summary,
     inspect_source_identity,
     normalize_acquisition_channel,
     normalize_acquisition_images,
@@ -26,6 +29,7 @@ from rufusarm64_logic import (
     persistence_plan_summary,
     progress_status,
     normalize_cluster_size,
+    normalize_ffu_review,
     normalize_filesystem,
     normalize_partition_scheme,
     normalize_target_system,
@@ -38,6 +42,140 @@ from rufusarm64_logic import (
     validate_local_username,
     windows_timezone_for_iana,
 )
+
+
+
+def valid_ffu_review_payload():
+    target_size = 64 * 1024 * 1024
+    source_size = 1024 * 1024
+    mutation = 2 * 1024 * 1024
+    identity = "f" * 64
+    descriptor = "b" * 64
+    integrity = "c" * 64
+    target_digest = "7" * 64
+    full_digest = "8" * 64
+    phrase = f"RESTORE AUTHENTICATED FFU TO /dev/sdz SIZE {target_size} BYTES"
+    target = {
+        "schema": 1,
+        "mode": "ffu-restore",
+        "destructive": True,
+        "source_file_size": source_size,
+        "authenticated_integrity_plan_sha256": integrity,
+        "descriptor_plan_sha256": descriptor,
+        "catalog_sha256": "d" * 64,
+        "hash_table_sha256": "e" * 64,
+        "device_path": "/dev/sdz",
+        "expected_target_identity": identity,
+        "target_size_bytes": target_size,
+        "logical_sector_size_bytes": 512,
+        "physical_sector_size_bytes": 4096,
+        "store_block_size_bytes": 4096,
+        "target_block_count": target_size // 4096,
+        "minimum_target_bytes": mutation,
+        "write_extent_count": 1,
+        "mutation_bytes": mutation,
+        "resolved_write_extents": [],
+        "validation_descriptor_count": 0,
+        "source_integrity_authenticated": True,
+        "target_identity_bound": True,
+        "target_geometry_bound": True,
+        "destination_map_resolved": True,
+        "destination_overlap": False,
+        "validation_checks_required": False,
+        "validation_checks_resolved": False,
+        "confirmation_required": True,
+        "execution_supported": False,
+        "plan_sha256": target_digest,
+        "warnings": [],
+        "limitations": [],
+    }
+    full = {
+        "schema": 1,
+        "mode": "ffu-full-flash-restore",
+        "destructive": True,
+        "source_file_size": source_size,
+        "restore_target_plan_sha256": target_digest,
+        "authenticated_integrity_plan_sha256": integrity,
+        "descriptor_plan_sha256": descriptor,
+        "catalog_sha256": "d" * 64,
+        "hash_table_sha256": "e" * 64,
+        "device_path": "/dev/sdz",
+        "expected_target_identity": identity,
+        "target_size_bytes": target_size,
+        "logical_sector_size_bytes": 512,
+        "physical_sector_size_bytes": 4096,
+        "store_block_size_bytes": 4096,
+        "target_block_count": target_size // 4096,
+        "mutation_bytes": mutation,
+        "store_update_type": 0,
+        "validation_descriptor_count": 0,
+        "full_flash_update_confirmed": True,
+        "validation_descriptors_absent": True,
+        "validation_checks_resolved": True,
+        "confirmation_required": True,
+        "confirmation_phrase": phrase,
+        "execution_supported": False,
+        "plan_sha256": full_digest,
+        "warnings": [],
+        "limitations": [],
+    }
+    preflight = {
+        "schema": 1,
+        "mode": "ffu-full-flash-target-preflight",
+        "destructive": True,
+        "full_flash_validation_plan_sha256": full_digest,
+        "restore_target_plan_sha256": target_digest,
+        "authenticated_integrity_sha256": integrity,
+        "device_path": "/dev/sdz",
+        "expected_target_identity": identity,
+        "rediscovered_target_identity": identity,
+        "target_size_bytes": target_size,
+        "logical_sector_size_bytes": 512,
+        "physical_sector_size_bytes": 4096,
+        "store_block_size_bytes": 4096,
+        "kernel_device_id": 1234,
+        "major_minor": "8:240",
+        "vendor": "Acme",
+        "model": "Disposable",
+        "transport": "usb",
+        "removable": True,
+        "hotplug": True,
+        "mutation_bytes": mutation,
+        "mounted_targets": [],
+        "unmount_required": False,
+        "target_discovery_completed": True,
+        "whole_disk_confirmed": True,
+        "normal_removable_target_confirmed": True,
+        "running_system_disk_excluded": True,
+        "protected_mounts_excluded": True,
+        "target_identity_revalidated": True,
+        "target_capacity_revalidated": True,
+        "target_geometry_revalidated": True,
+        "fixed_disk_override_allowed": False,
+        "privileged_open_required": True,
+        "execution_supported": False,
+        "plan_sha256": "9" * 64,
+        "warnings": [],
+        "limitations": [],
+    }
+    return {
+        "evaluation_time": "2026-07-25T21:00:00Z",
+        "trust_activation_sha256": "a" * 64,
+        "source_path": "/images/device.ffu",
+        "source_identity": {
+            "Device": 1,
+            "Inode": 2,
+            "Size": source_size,
+            "ModifiedNS": 3,
+            "ChangedNS": 4,
+        },
+        "descriptor_plan_sha256": descriptor,
+        "target_plan": target,
+        "full_flash_plan": full,
+        "target_preflight": preflight,
+        "exact_confirmation_phrase": phrase,
+        "execution_attempted": False,
+    }
 
 
 class LogicTests(unittest.TestCase):
@@ -442,6 +580,98 @@ class LogicTests(unittest.TestCase):
         self.assertIn("does not prove", summary)
         with self.assertRaises(ValueError):
             normalize_uefi_validation({"root": "/mnt/usb", "files": []})
+
+
+    def test_ffu_review_command_is_unprivileged_and_exact(self):
+        device = {
+            "path": "/dev/sdz",
+            "identity": "f" * 64,
+            "size": 64 * 1024 * 1024,
+            "logical_sector_size": 512,
+            "physical_sector_size": 4096,
+        }
+        command = build_ffu_review_command(
+            "/usr/lib/rufusarm64/rufusarm64-helper",
+            "/images/device.ffu",
+            device,
+            "/var/lib/rufusarm64/ffu-trust",
+            "/etc/rufusarm64/trust-metadata.json",
+            "/etc/rufusarm64/publishers.json",
+        )
+        self.assertEqual(command[:3], ["/usr/lib/rufusarm64/rufusarm64-helper", "ffu", "review"])
+        self.assertIn("--experimental-ffu", command)
+        self.assertEqual(command[command.index("--logical-sector-size") + 1], "512")
+        self.assertEqual(command[command.index("--physical-sector-size") + 1], "4096")
+        self.assertEqual(command[-1], "--json")
+        for unsafe in ("pkexec", "restore", "--confirm", "--yes", "--allow-fixed"):
+            self.assertNotIn(unsafe, command)
+
+    def test_ffu_review_command_refuses_incomplete_or_ambiguous_inputs(self):
+        device = {
+            "path": "/dev/sdz", "identity": "f" * 64, "size": 1024,
+            "logical_sector_size": 512, "physical_sector_size": 4096,
+        }
+        with self.assertRaises(ValueError):
+            build_ffu_review_command("/helper", "/image.iso", device, "/trust", "/metadata", "/publishers")
+        with self.assertRaises(ValueError):
+            build_ffu_review_command("/helper", "/image.ffu", {**device, "logical_sector_size": 0}, "/trust", "/metadata", "/publishers")
+        with self.assertRaises(ValueError):
+            build_ffu_review_command("/helper", "/image.ffu", {**device, "physical_sector_size": 768}, "/trust", "/metadata", "/publishers")
+        with self.assertRaises(ValueError):
+            build_ffu_review_command("helper", "/image.ffu", device, "/trust", "/metadata", "/publishers")
+        with self.assertRaises(ValueError):
+            build_ffu_review_command("/helper", "/image.ffu", device, "relative", "/metadata", "/publishers")
+
+    def test_ffu_review_normalization_and_summary(self):
+        payload = valid_ffu_review_payload()
+        review = normalize_ffu_review(payload)
+        self.assertEqual(review["target_path"], "/dev/sdz")
+        self.assertEqual(review["logical_sector_size"], 512)
+        self.assertFalse(review["unmount_required"])
+        summary = ffu_review_summary(payload)
+        self.assertIn("Authenticated full-flash FFU review passed", summary)
+        self.assertIn("Acme Disposable", summary)
+        self.assertIn(payload["exact_confirmation_phrase"], summary)
+        self.assertIn("read-only", summary)
+
+    def test_ffu_review_normalization_rejects_cross_plan_substitution(self):
+        mutations = []
+        payload = valid_ffu_review_payload()
+        changed = copy.deepcopy(payload)
+        changed["target_preflight"]["rediscovered_target_identity"] = "0" * 64
+        mutations.append(changed)
+        changed = copy.deepcopy(payload)
+        changed["full_flash_plan"]["restore_target_plan_sha256"] = "0" * 64
+        mutations.append(changed)
+        changed = copy.deepcopy(payload)
+        changed["target_preflight"]["logical_sector_size_bytes"] = 4096
+        mutations.append(changed)
+        changed = copy.deepcopy(payload)
+        changed["full_flash_plan"]["confirmation_phrase"] += " "
+        mutations.append(changed)
+        changed = copy.deepcopy(payload)
+        changed["target_plan"]["destination_overlap"] = True
+        mutations.append(changed)
+        changed = copy.deepcopy(payload)
+        changed["execution_attempted"] = True
+        mutations.append(changed)
+        for changed in mutations:
+            with self.subTest(changed=changed):
+                with self.assertRaises(ValueError):
+                    normalize_ffu_review(changed)
+
+    def test_ffu_review_reports_mounts_without_authorizing_unmount(self):
+        payload = valid_ffu_review_payload()
+        payload["target_preflight"]["mounted_targets"] = [{
+            "device_path": "/dev/sdz1",
+            "mountpoint": "/media/geoca/FFU",
+        }]
+        payload["target_preflight"]["unmount_required"] = True
+        review = normalize_ffu_review(payload)
+        self.assertTrue(review["unmount_required"])
+        summary = ffu_review_summary(payload)
+        self.assertIn("must be safely unmounted", summary)
+        self.assertNotIn("unmounting was performed", summary)
 
 
 if __name__ == "__main__":
