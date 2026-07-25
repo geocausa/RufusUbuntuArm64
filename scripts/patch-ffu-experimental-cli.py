@@ -3,13 +3,13 @@ from pathlib import Path
 
 main = Path("cmd/rufus-linux/main.go")
 text = main.read_text()
-old = '''\tcase "uefi-integrity":\n\t\treturn runUEFIIntegrity(args[1:])\n\tdefault:\n'''
-new = '''\tcase "uefi-integrity":\n\t\treturn runUEFIIntegrity(args[1:])\n\tcase "ffu":\n\t\treturn runFFU(args[1:])\n\tdefault:\n'''
+old = '''\tcase "qualify":\n\t\treturn runQualify(args[1:])\n\tcase "version", "--version", "-v":\n'''
+new = '''\tcase "qualify":\n\t\treturn runQualify(args[1:])\n\tcase "ffu":\n\t\treturn runFFU(args[1:])\n\tcase "version", "--version", "-v":\n'''
 if old not in text:
     raise SystemExit("main command switch anchor not found")
 text = text.replace(old, new, 1)
-old = '''  rufusarm64-cli uefi-integrity verify --directory /media/USB [--manifest FILE] [--json]\n'''
-new = '''  rufusarm64-cli uefi-integrity verify --directory /media/USB [--manifest FILE] [--json]\n  rufusarm64-cli ffu review --experimental-ffu --image IMAGE.ffu --device /dev/sdX --expected-identity TOKEN --target-size BYTES --logical-sector-size BYTES --physical-sector-size BYTES --trust-store DIR --trust-metadata-policy FILE --publisher-policy FILE [--json]\n  sudo rufusarm64-cli ffu restore --experimental-ffu --image IMAGE.ffu --device /dev/sdX --expected-identity TOKEN --target-size BYTES --logical-sector-size BYTES --physical-sector-size BYTES --trust-store DIR --trust-metadata-policy FILE --publisher-policy FILE --confirm PHRASE [--json]\n'''
+old = '''  sudo rufusarm64-cli qualify verify --record FILE --output FILE [--state-dir DIR] [--json]\n'''
+new = '''  sudo rufusarm64-cli qualify verify --record FILE --output FILE [--state-dir DIR] [--json]\n  rufusarm64-cli ffu review --experimental-ffu --image IMAGE.ffu --device /dev/sdX --expected-identity TOKEN --target-size BYTES --logical-sector-size BYTES --physical-sector-size BYTES --trust-store DIR --trust-metadata-policy FILE --publisher-policy FILE [--json]\n  sudo rufusarm64-cli ffu restore --experimental-ffu --image IMAGE.ffu --device /dev/sdX --expected-identity TOKEN --target-size BYTES --logical-sector-size BYTES --physical-sector-size BYTES --trust-store DIR --trust-metadata-policy FILE --publisher-policy FILE --confirm PHRASE [--json]\n'''
 if old not in text:
     raise SystemExit("main usage anchor not found")
 text = text.replace(old, new, 1)
@@ -27,5 +27,9 @@ new = '''\t\tEvaluationTime:          evaluationTime.Format(time.RFC3339),\n\t\t
 if old not in text:
     raise SystemExit("FFU review initializer anchor not found")
 text = text.replace(old, new, 1)
-text = text.replace('fmt.Printf("FFU source: %s\\n", review.SourceIdentity.ResolvedPath)', 'fmt.Printf("FFU source: %s\\n", review.SourcePath)', 1)
+old = 'fmt.Printf("FFU source: %s\\n", review.SourceIdentity.ResolvedPath)'
+new = 'fmt.Printf("FFU source: %s\\n", review.SourcePath)'
+if old not in text:
+    raise SystemExit("FFU review output anchor not found")
+text = text.replace(old, new, 1)
 ffu.write_text(text)
