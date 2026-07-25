@@ -219,14 +219,15 @@ func TestAcquireExclusiveFullFlashTargetRejectsClosedSourceAndCancelledContext(t
 	if err := sourceLease.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if session, err := acquireExclusiveFullFlashTargetWithOps(context.Background(), sourceLease, fixture.preflight, fullFlashTargetOpenOps{}); err == nil || !strings.Contains(err.Error(), "closed") {
+	ops := completeTargetSessionTestOps()
+	if session, err := acquireExclusiveFullFlashTargetWithOps(context.Background(), sourceLease, fixture.preflight, ops); err == nil || !strings.Contains(err.Error(), "closed") {
 		if session != nil {
 			session.Close()
 		}
 		t.Fatalf("closed source error=%v", err)
 	}
 	var nilContext context.Context
-	if session, err := acquireExclusiveFullFlashTargetWithOps(nilContext, sourceLease, fixture.preflight, fullFlashTargetOpenOps{}); err == nil || !strings.Contains(err.Error(), "context is nil") {
+	if session, err := acquireExclusiveFullFlashTargetWithOps(nilContext, sourceLease, fixture.preflight, ops); err == nil || !strings.Contains(err.Error(), "context is nil") {
 		if session != nil {
 			session.Close()
 		}
@@ -234,7 +235,7 @@ func TestAcquireExclusiveFullFlashTargetRejectsClosedSourceAndCancelledContext(t
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if session, err := acquireExclusiveFullFlashTargetWithOps(ctx, sourceLease, fixture.preflight, fullFlashTargetOpenOps{}); !errors.Is(err, context.Canceled) {
+	if session, err := acquireExclusiveFullFlashTargetWithOps(ctx, sourceLease, fixture.preflight, ops); !errors.Is(err, context.Canceled) {
 		if session != nil {
 			session.Close()
 		}
@@ -263,6 +264,18 @@ func TestValidateFullFlashTargetSessionEvidenceRejectsTampering(t *testing.T) {
 	evidence.MajorMinor = "7:2"
 	if err := validateFullFlashTargetSessionEvidence(evidence); err == nil || !strings.Contains(err.Error(), "altered") {
 		t.Fatalf("tamper error=%v", err)
+	}
+}
+
+func completeTargetSessionTestOps() fullFlashTargetOpenOps {
+	return fullFlashTargetOpenOps{
+		openTarget:       func(string) (*os.File, error) { return nil, errors.New("unexpected target open") },
+		verifyOpenTarget: func(*os.File, uint64, uint64) error { return nil },
+		revalidateTarget: func(string, uint64) (device.BlockDevice, uint64, error) {
+			return device.BlockDevice{}, 0, nil
+		},
+		readSectorGeometry:  func(string) (uint64, uint64, error) { return 512, 512, nil },
+		ensureSourceOutside: func(*os.File, device.BlockDevice) error { return nil },
 	}
 }
 

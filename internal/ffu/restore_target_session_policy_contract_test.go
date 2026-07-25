@@ -28,7 +28,8 @@ func TestExclusiveTargetSessionProductionBoundary(t *testing.T) {
 		"TargetAccessAcquired:           true",
 		"MutationPermitted:              false",
 		"ExecutionSupported:             false",
-		"exposes no descriptor, read, write, seek, sync, or ioctl method",
+		"but exposes",
+		"no descriptor, read, write, seek, sync, or ioctl method",
 	} {
 		if !strings.Contains(source, required) {
 			t.Fatalf("exclusive FFU target-session source is missing required boundary %q", required)
