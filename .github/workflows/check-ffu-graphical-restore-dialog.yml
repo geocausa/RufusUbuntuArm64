@@ -1,0 +1,49 @@
+name: Validate graphical FFU restore dialog
+
+on:
+  push:
+    branches: [feature/ffu-graphical-restore-dialog]
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+      - name: Apply graphical restore integration patch
+        run: python3 scripts/patch-ffu-graphical-restore-dialog.py
+      - name: Compile graphical sources
+        run: python3 -m py_compile gui/rufusarm64.py gui/rufusarm64_ffu_dialog.py gui/rufusarm64_ffu_restore_logic.py gui/test_source_structure.py
+      - name: Run complete GUI unit suite
+        run: PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
+      - name: Verify guarded destructive lifecycle
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('gui/rufusarm64_ffu_dialog.py').read_text()
+          for required in (
+              'build_ffu_restore_command', 'normalize_ffu_restore_output',
+              'start_new_session=True', 'os.killpg(', 'signal.SIGTERM',
+              'target state is unknown', 'possibly modified', 'Do not boot',
+          ):
+              if required not in source:
+                  raise SystemExit(f'missing guarded FFU restore primitive: {required}')
+          for forbidden in ('--allow-fixed', '--unmount', '--yes', 'Gtk.ResponseType.OK'):
+              if forbidden in source:
+                  raise SystemExit(f'forbidden FFU restore dialog primitive: {forbidden}')
+          PY
+      - name: Publish clean product tree
+        env:
+          BRANCH: feature/ffu-graphical-restore-dialog
+        run: |
+          git rm .github/workflows/check-ffu-graphical-restore-dialog.yml scripts/patch-ffu-graphical-restore-dialog.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add gui/rufusarm64.py gui/rufusarm64_ffu_dialog.py gui/test_source_structure.py docs/ffu-graphical-restore-dialog.md
+          git commit -m "FFU: add guarded graphical restore lifecycle"
+          git push origin "HEAD:${BRANCH}"
