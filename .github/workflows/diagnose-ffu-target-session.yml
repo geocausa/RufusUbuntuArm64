@@ -1,0 +1,38 @@
+name: Diagnose FFU target session
+
+on:
+  push:
+    branches: [feature/ffu-exclusive-target-acquisition]
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+          cache: true
+      - name: Capture focused failure
+        run: |
+          mkdir -p .github/tmp
+          gofmt -w internal/ffu/restore_target_session_linux.go internal/ffu/restore_target_session_linux_test.go internal/ffu/restore_target_session_policy_contract_test.go
+          set +e
+          go test -count=1 ./internal/ffu > .github/tmp/ffu-target-session-test.log 2>&1
+          status=$?
+          echo "exit_status=${status}" >> .github/tmp/ffu-target-session-test.log
+          exit 0
+      - name: Publish diagnostic log
+        env:
+          BRANCH: feature/ffu-exclusive-target-acquisition
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/tmp/ffu-target-session-test.log internal/ffu/restore_target_session_linux.go internal/ffu/restore_target_session_linux_test.go internal/ffu/restore_target_session_policy_contract_test.go
+          git commit -m "CI: capture FFU target-session failure"
+          git push origin "HEAD:${BRANCH}"
