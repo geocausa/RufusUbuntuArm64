@@ -1,0 +1,66 @@
+name: Validate privileged FFU loop execution
+
+on:
+  push:
+    branches: [feature/ffu-loop-execution-qualification]
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+          cache: true
+      - name: Format
+        run: gofmt -w internal/ffu/restore_executor_loop_linux_test.go
+      - name: Execute authenticated FFU transaction on loop block device
+        shell: bash
+        run: |
+          set -euo pipefail
+          backing="$(mktemp)"
+          truncate -s 64M "$backing"
+          loop="$(sudo losetup --find --show "$backing")"
+          cleanup() {
+            sudo losetup -d "$loop" 2>/dev/null || true
+            rm -f "$backing"
+          }
+          trap cleanup EXIT
+          size="$(sudo blockdev --getsize64 "$loop")"
+          sudo -E env \
+            PATH="$PATH" \
+            HOME="$HOME" \
+            GOCACHE="$(go env GOCACHE)" \
+            GOMODCACHE="$(go env GOMODCACHE)" \
+            RUFUSARM64_FFU_LOOP_DEVICE="$loop" \
+            RUFUSARM64_FFU_LOOP_SIZE="$size" \
+            go test -count=1 -run '^TestPrivilegedSinglePhaseFullFlashLoopExecution$' ./internal/ffu
+      - name: Test focused package
+        run: go test -count=1 ./internal/ffu
+      - name: Vet focused package
+        run: go vet ./internal/ffu
+      - name: Race focused package
+        run: go test -race -count=1 ./internal/ffu
+      - name: Staticcheck focused package
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          "$(go env GOPATH)/bin/staticcheck" ./internal/ffu
+      - name: Cross-compile ARM64 focused package
+        run: GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go test -c ./internal/ffu -o /tmp/ffu-arm64.test
+      - name: Publish clean product tree
+        env:
+          BRANCH: feature/ffu-loop-execution-qualification
+        run: |
+          git rm .github/workflows/check-ffu-loop-execution.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/ffu-loop-qualification.yml docs/ffu-loop-execution-qualification.md internal/ffu/restore_executor_loop_linux_test.go
+          git commit -m "FFU: qualify execution on privileged loop devices"
+          git push origin "HEAD:${BRANCH}"
