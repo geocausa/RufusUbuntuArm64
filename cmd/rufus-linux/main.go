@@ -103,6 +103,8 @@ func run(args []string) error {
 		return runWindows(args[1:])
 	case "qualify":
 		return runQualify(args[1:])
+	case "ffu":
+		return runFFU(args[1:])
 	case "version", "--version", "-v":
 		fmt.Println(version)
 		return nil
@@ -142,6 +144,8 @@ Usage:
   sudo rufusarm64-cli windows analyze --image FILE --expected-source-identity ID [--json]
   sudo rufusarm64-cli qualify start --record FILE --output FILE [--state-dir DIR] [--json]
   sudo rufusarm64-cli qualify verify --record FILE --output FILE [--state-dir DIR] [--json]
+  rufusarm64-cli ffu review --experimental-ffu --image IMAGE.ffu --device /dev/sdX --expected-identity TOKEN --target-size BYTES --logical-sector-size BYTES --physical-sector-size BYTES --trust-store DIR --trust-metadata-policy FILE --publisher-policy FILE [--json]
+  sudo rufusarm64-cli ffu restore --experimental-ffu --image IMAGE.ffu --device /dev/sdX --expected-identity TOKEN --target-size BYTES --logical-sector-size BYTES --physical-sector-size BYTES --trust-store DIR --trust-metadata-policy FILE --publisher-policy FILE --confirm PHRASE [--json]
 
 Acquisition catalogs are accepted only after detached Ed25519 signature, expiry, URL, size, filename, and SHA-256 validation.
 The built-in channel additionally enforces threshold root/catalog signatures, key rotation, version rollback protection, and owner-only atomic trust state.

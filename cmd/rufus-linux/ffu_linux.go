@@ -26,8 +26,8 @@ var (
 )
 
 type ffuCLIOptions struct {
-	imagePath             string
-	devicePath            string
+	imagePath              string
+	devicePath             string
 	expectedTargetIdentity string
 	targetSizeBytes        uint64
 	logicalSectorBytes     uint64
@@ -43,6 +43,7 @@ type ffuCLIOptions struct {
 type ffuCLIReview struct {
 	EvaluationTime          string                           `json:"evaluation_time"`
 	TrustActivationSHA256   string                           `json:"trust_activation_sha256"`
+	SourcePath              string                           `json:"source_path"`
 	SourceIdentity          sourcefile.Identity              `json:"source_identity"`
 	DescriptorPlanSHA256    string                           `json:"descriptor_plan_sha256"`
 	TargetPlan              ffu.RestoreTargetPlan            `json:"target_plan"`
@@ -285,6 +286,7 @@ func prepareFFUCLIReview(ctx context.Context, options ffuCLIOptions) (preparedFF
 	review := ffuCLIReview{
 		EvaluationTime:          evaluationTime.Format(time.RFC3339),
 		TrustActivationSHA256:   activation.ActivationSHA256,
+		SourcePath:              resolved,
 		SourceIdentity:          identity,
 		DescriptorPlanSHA256:    descriptor.PlanSHA256,
 		TargetPlan:              targetPlan,
@@ -343,7 +345,7 @@ func emitFFUCLIReview(jsonOutput bool, review ffuCLIReview) error {
 	if jsonOutput {
 		return json.NewEncoder(os.Stdout).Encode(review)
 	}
-	fmt.Printf("FFU source: %s\n", review.SourceIdentity.ResolvedPath)
+	fmt.Printf("FFU source: %s\n", review.SourcePath)
 	fmt.Printf("Target: %s (%d bytes)\n", review.TargetPreflight.DevicePath, review.TargetPreflight.TargetSizeBytes)
 	fmt.Printf("Target identity: %s\n", review.TargetPreflight.ExpectedTargetIdentity)
 	fmt.Printf("Mutation bytes: %d\n", review.TargetPreflight.MutationBytes)
