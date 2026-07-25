@@ -23,6 +23,7 @@ from gi.repository import GLib, Gtk
 
 from rufusarm64_checksums import ChecksumDialog
 from rufusarm64_device_qualify_dialog import DeviceQualificationDialog
+from rufusarm64_ffu_dialog import FFUReviewDialog
 from rufusarm64_persistence_logic import (
     build_create_command as build_persistence_create_command,
     completion_checklist,
@@ -1093,6 +1094,13 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.checksum_button.set_tooltip_text("Calculate MD5, SHA-1, SHA-256, and SHA-512 for the selected image")
         self.checksum_button.connect("clicked", self.open_checksum_dialog)
         image_row.pack_start(self.checksum_button, False, False, 0)
+        self.ffu_review_button = Gtk.Button(label="Review FFU…")
+        self.ffu_review_button.set_sensitive(False)
+        self.ffu_review_button.set_tooltip_text(
+            "Authenticate a Full Flash Update and review the exact removable target without modifying it"
+        )
+        self.ffu_review_button.connect("clicked", self.open_ffu_review)
+        image_row.pack_start(self.ffu_review_button, False, False, 0)
         grid.attach(image_row, 1, 0, 2, 1)
 
         self.attach_label(grid, "USB drive", 1)
@@ -1495,6 +1503,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.checksum_button.set_sensitive(
             not busy and background_idle and bool(selected_image) and os.path.isfile(selected_image)
         )
+        self.update_ffu_review_button()
         self.refresh_button.set_sensitive(not busy and not self.device_refreshing)
         self.qualify_button.set_sensitive(not busy and not self.device_refreshing and self.target_combo.get_active() >= 0)
         windows_controls = not busy and self.inspection.get("mode") == "windows"
@@ -1535,6 +1544,46 @@ class RufusWindow(Gtk.ApplicationWindow):
             return
         dialog.destroy()
         self.refresh_devices()
+
+    def selected_ffu_review_inputs(self):
+        image = self.image_chooser.get_filename() or ""
+        index = self.target_combo.get_active()
+        if self.busy or not image.lower().endswith(".ffu") or not os.path.isfile(image):
+            return None
+        if not (0 <= index < len(self.devices)):
+            return None
+        device = self.devices[index]
+        required = (
+            str(device.get("path") or ""),
+            str(device.get("identity") or ""),
+            int(device.get("size") or 0),
+            int(device.get("logical_sector_size") or 0),
+            int(device.get("physical_sector_size") or 0),
+        )
+        if not all(required):
+            return None
+        return image, device
+
+    def update_ffu_review_button(self):
+        if getattr(self, "ffu_review_button", None) is not None:
+            self.ffu_review_button.set_sensitive(self.selected_ffu_review_inputs() is not None)
+
+    def open_ffu_review(self, *_):
+        selected = self.selected_ffu_review_inputs()
+        if selected is None:
+            self.message(
+                "Choose a .ffu image and refresh/select a removable drive with complete identity and sector geometry first.",
+                Gtk.MessageType.INFO,
+            )
+            return
+        image, device = selected
+        dialog = FFUReviewDialog(self, helper_path(), image, device)
+        dialog.run()
+        if dialog.running:
+            return
+        dialog.closed = True
+        dialog.generation += 1
+        dialog.destroy()
 
     def open_checksum_dialog(self, *_):
         if self.busy:
@@ -1893,6 +1942,7 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.persistence_plan = None
             self.persistence_plan_key = None
             self.persistence_source_identity = ""
+        self.update_ffu_review_button()
         if getattr(self, "inspection", {}).get("recognized"):
             self.update_layout(self.inspection)
 
