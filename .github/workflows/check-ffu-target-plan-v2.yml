@@ -1,0 +1,43 @@
+name: Validate FFU target plan v2
+
+on:
+  push:
+    branches:
+      - feature/ffu-target-bound-restore-plan
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+          cache: true
+      - name: Apply cleanup and format
+        run: python3 .github/ffu_target_cleanup.py && gofmt -w internal/ffu/restore_target_plan_linux.go internal/ffu/restore_target_plan_linux_test.go internal/ffu/restore_target_plan_policy_contract_test.go
+      - name: Test
+        run: go test -count=1 ./internal/ffu
+      - name: Vet
+        run: go vet ./internal/ffu
+      - name: Race
+        run: go test -race -count=1 ./internal/ffu
+      - name: Staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.7.0 && "$(go env GOPATH)/bin/staticcheck" ./internal/ffu
+      - name: ARM64 compile
+        run: GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go test -c ./internal/ffu -o /tmp/ffu-arm64.test
+      - name: Publish clean tree
+        env:
+          BRANCH: feature/ffu-target-bound-restore-plan
+        run: |
+          git rm .github/workflows/check-ffu-target-plan.yml .github/workflows/check-ffu-target-plan-v2.yml .github/ffu_target_cleanup.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs/ffu-target-bound-restore-plan.md internal/ffu/restore_target_plan_linux.go internal/ffu/restore_target_plan_linux_test.go internal/ffu/restore_target_plan_policy_contract_test.go
+          git commit -m "FFU: bind authenticated restore plans to exact targets"
+          git push origin "HEAD:${BRANCH}"
