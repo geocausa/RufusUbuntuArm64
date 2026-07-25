@@ -89,7 +89,7 @@ func TestAuthorizeSinglePhaseFullFlashMutationRejectsTargetSubstitution(t *testi
 	full.ExpectedTargetIdentity = target.ExpectedTargetIdentity
 	rebindMutationAuthorizationPlans(&descriptor, &target, &full)
 	authorization, err := AuthorizeSinglePhaseFullFlashMutation(context.Background(), fixture.confirmation, descriptor, target, full)
-	if err == nil || !strings.Contains(err.Error(), "does not bind the supplied target") {
+	if err == nil || !strings.Contains(err.Error(), "does not bind the supplied full-flash prerequisites") {
 		t.Fatalf("error=%v authorization=%#v", err, authorization)
 	}
 	if authorization != nil {
