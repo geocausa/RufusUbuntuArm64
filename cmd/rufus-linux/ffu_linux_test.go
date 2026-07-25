@@ -3,6 +3,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,13 +43,60 @@ func TestParseFFUCLIRestoreRequiresExactConfirmationInput(t *testing.T) {
 }
 
 func TestFFURestoreRequiresRootBeforeOpeningInputs(t *testing.T) {
-	previous := ffuCLIGeteuid
+	previousUID := ffuCLIGeteuid
+	previousContext := ffuCLIContext
 	ffuCLIGeteuid = func() int { return 1000 }
-	defer func() { ffuCLIGeteuid = previous }()
+	ffuCLIContext = func() (context.Context, context.CancelFunc) {
+		t.Fatal("signal context was created before the root gate")
+		return nil, nil
+	}
+	defer func() {
+		ffuCLIGeteuid = previousUID
+		ffuCLIContext = previousContext
+	}()
 	args := append(validFFUCLIArgumentFixture(t), "--confirm", "exact phrase")
 	if err := runFFURestore(args); err == nil || err.Error() != "FFU restore requires administrator privileges" {
 		t.Fatalf("non-root restore error = %v", err)
 	}
+}
+
+func TestFFUReviewHonorsCancellationBeforeOpeningInputs(t *testing.T) {
+	previous := ffuCLIContext
+	ffuCLIContext = cancelledFFUCLIContext
+	defer func() { ffuCLIContext = previous }()
+	if err := runFFUReview(validFFUCLIArgumentFixture(t)); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-input review cancellation error = %v", err)
+	}
+}
+
+func TestFFURestoreHonorsCancellationBeforeOpeningInputs(t *testing.T) {
+	previousUID := ffuCLIGeteuid
+	previousContext := ffuCLIContext
+	ffuCLIGeteuid = func() int { return 0 }
+	ffuCLIContext = cancelledFFUCLIContext
+	defer func() {
+		ffuCLIGeteuid = previousUID
+		ffuCLIContext = previousContext
+	}()
+	args := append(validFFUCLIArgumentFixture(t), "--confirm", "exact phrase")
+	if err := runFFURestore(args); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-input restore cancellation error = %v", err)
+	}
+}
+
+func TestNewFFUCLIContextRejectsInvalidFactoryResult(t *testing.T) {
+	previous := ffuCLIContext
+	ffuCLIContext = func() (context.Context, context.CancelFunc) { return nil, nil }
+	defer func() { ffuCLIContext = previous }()
+	if _, _, err := newFFUCLIContext(); err == nil || !strings.Contains(err.Error(), "invalid context") {
+		t.Fatalf("invalid signal context error = %v", err)
+	}
+}
+
+func cancelledFFUCLIContext() (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx, cancel
 }
 
 func TestReadStrictFFUCLIJSON(t *testing.T) {
@@ -109,6 +158,10 @@ func TestFFUCLIProviderSourceContract(t *testing.T) {
 		"FFU restore requires administrator privileges",
 		"sourcefile.OpenRegular",
 		"sourcefile.Verify",
+		"signal.NotifyContext",
+		"os.Interrupt",
+		"syscall.SIGTERM",
+		"ctx.Err()",
 	} {
 		if !strings.Contains(source, required) {
 			t.Fatalf("FFU CLI provider is missing required boundary %q", required)

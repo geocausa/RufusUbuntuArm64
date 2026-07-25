@@ -57,6 +57,18 @@ There is no built-in Microsoft, OEM, test, host-TLS, or accept-all trust policy.
 A restore cannot proceed until an operator has independently published a valid
 trust-store generation and supplied matching explicit policies.
 
+## Signal cancellation
+
+Both review and restore install one signal-aware context for `SIGINT` and
+`SIGTERM`. Cancellation is checked before policy or image inputs are opened and
+is carried through authentication, source leasing, target acquisition,
+confirmation, authorization, writing, synchronization, and readback.
+
+A signal observed before the first target write returns without modifying the
+target. A signal observed after mutation begins returns the executor's structured
+partial-modification evidence; the command never reports an interrupted target as
+verified.
+
 ## Output and failure state
 
 JSON mode emits the review evidence, source lease, target session, destructive
