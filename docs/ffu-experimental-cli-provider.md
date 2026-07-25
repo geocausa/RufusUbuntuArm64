@@ -26,6 +26,21 @@ administrator privileges, and `--experimental-ffu`. It reruns the entire review
 inside the privileged process rather than trusting serialized plans from the
 unprivileged invocation.
 
+## Stable reviewed-input binding
+
+Every successful review now emits a lowercase SHA-256 binding over the stable
+source snapshot, explicit trust-store generation, trust bundle, both policy-file
+identities, exact target snapshot and exact phrase. Evaluation-time-dependent
+plan identifiers are deliberately excluded so the binding can be reproduced by a
+later privileged process without weakening expiry checks.
+
+`ffu restore` requires the exact value through `--expected-review-binding`. The
+privileged command rereads every input, reactivates trust, reauthenticates the
+source and rediscovers the target before comparing the binding in constant time.
+Any source replacement, policy replacement, trust-generation change, target
+reconnection/substitution, capacity or sector change is refused before target
+acquisition.
+
 ## Single-process capability chain
 
 The restore command keeps every destructive capability in one process:

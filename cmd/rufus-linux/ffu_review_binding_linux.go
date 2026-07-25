@@ -106,8 +106,8 @@ func validateFFUCLIReviewBinding(binding ffuCLIReviewBinding) error {
 		return errors.New("invalid FFU reviewed-input binding envelope")
 	}
 	for label, path := range map[string]string{
-		"source":               binding.SourcePath,
-		"trust store":          binding.TrustStoreRoot,
+		"source":                binding.SourcePath,
+		"trust store":           binding.TrustStoreRoot,
 		"trust metadata policy": binding.TrustMetadataPolicyPath,
 		"publisher policy":      binding.PublisherPolicyPath,
 	} {
