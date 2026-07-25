@@ -8,7 +8,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"hash"
 	"io"
 	"math"
@@ -19,56 +18,56 @@ import (
 
 const (
 	fullFlashExecutionResultSchema = 1
-	defaultFullFlashChunkSize       = 4 * 1024 * 1024
+	defaultFullFlashChunkSize      = 4 * 1024 * 1024
 )
 
 const (
-	fullFlashExecutionStatusNotStarted      = "not-started"
-	fullFlashExecutionStatusPartiallyChanged = "partially-modified"
+	fullFlashExecutionStatusNotStarted        = "not-started"
+	fullFlashExecutionStatusPartiallyChanged  = "partially-modified"
 	fullFlashExecutionStatusWrittenUnverified = "written-unverified"
-	fullFlashExecutionStatusVerified        = "verified"
+	fullFlashExecutionStatusVerified          = "verified"
 )
 
 // FullFlashExecutionResult records the exact state reached by one attempted
 // single-phase FFU transaction. It is returned on both success and failure so a
 // caller never has to infer whether destructive mutation may have begun.
 type FullFlashExecutionResult struct {
-	Schema                         int      `json:"schema"`
-	Mode                           string   `json:"mode"`
-	Status                         string   `json:"status"`
-	MutationAuthorizationSHA256    string   `json:"mutation_authorization_sha256"`
-	ConfirmationEvidenceSHA256     string   `json:"confirmation_evidence_sha256"`
-	TargetSessionEvidenceSHA256    string   `json:"target_session_evidence_sha256"`
-	SourceLeaseEvidenceSHA256      string   `json:"source_lease_evidence_sha256"`
-	WriteOrderPlanSHA256           string   `json:"write_order_plan_sha256"`
-	FullFlashValidationPlanSHA256  string   `json:"full_flash_validation_plan_sha256"`
-	RestoreTargetPlanSHA256        string   `json:"restore_target_plan_sha256"`
-	DescriptorPlanSHA256           string   `json:"descriptor_plan_sha256"`
-	AuthenticatedIntegritySHA256   string   `json:"authenticated_integrity_sha256"`
-	DevicePath                     string   `json:"device_path"`
-	ExpectedTargetIdentity         string   `json:"expected_target_identity"`
-	TargetSizeBytes                uint64   `json:"target_size_bytes"`
-	OperationCountPlanned          uint64   `json:"operation_count_planned"`
-	OperationCountCompleted        uint64   `json:"operation_count_completed"`
-	MutationBytesPlanned           uint64   `json:"mutation_bytes_planned"`
-	MutationBytesWritten           uint64   `json:"mutation_bytes_written"`
-	AuthorizationConsumed          bool     `json:"authorization_consumed"`
-	SourceLeaseRevalidated         bool     `json:"source_lease_revalidated"`
-	TargetSessionRevalidated       bool     `json:"target_session_revalidated"`
-	MutationStarted                bool     `json:"mutation_started"`
-	WriteCompleted                 bool     `json:"write_completed"`
-	SyncCompleted                  bool     `json:"sync_completed"`
-	ReadbackCompleted              bool     `json:"readback_completed"`
-	CancellationObserved           bool     `json:"cancellation_observed"`
-	CancelledBeforeMutation        bool     `json:"cancelled_before_mutation"`
-	CancelledAfterMutation         bool     `json:"cancelled_after_mutation"`
-	TargetMayBePartiallyModified   bool     `json:"target_may_be_partially_modified"`
-	ExecutionSucceeded             bool     `json:"execution_succeeded"`
-	ErrorObserved                  bool     `json:"error_observed"`
-	ErrorStage                     string   `json:"error_stage"`
-	ResultSHA256                   string   `json:"result_sha256"`
-	Warnings                       []string `json:"warnings"`
-	Limitations                    []string `json:"limitations"`
+	Schema                        int      `json:"schema"`
+	Mode                          string   `json:"mode"`
+	Status                        string   `json:"status"`
+	MutationAuthorizationSHA256   string   `json:"mutation_authorization_sha256"`
+	ConfirmationEvidenceSHA256    string   `json:"confirmation_evidence_sha256"`
+	TargetSessionEvidenceSHA256   string   `json:"target_session_evidence_sha256"`
+	SourceLeaseEvidenceSHA256     string   `json:"source_lease_evidence_sha256"`
+	WriteOrderPlanSHA256          string   `json:"write_order_plan_sha256"`
+	FullFlashValidationPlanSHA256 string   `json:"full_flash_validation_plan_sha256"`
+	RestoreTargetPlanSHA256       string   `json:"restore_target_plan_sha256"`
+	DescriptorPlanSHA256          string   `json:"descriptor_plan_sha256"`
+	AuthenticatedIntegritySHA256  string   `json:"authenticated_integrity_sha256"`
+	DevicePath                    string   `json:"device_path"`
+	ExpectedTargetIdentity        string   `json:"expected_target_identity"`
+	TargetSizeBytes               uint64   `json:"target_size_bytes"`
+	OperationCountPlanned         uint64   `json:"operation_count_planned"`
+	OperationCountCompleted       uint64   `json:"operation_count_completed"`
+	MutationBytesPlanned          uint64   `json:"mutation_bytes_planned"`
+	MutationBytesWritten          uint64   `json:"mutation_bytes_written"`
+	AuthorizationConsumed         bool     `json:"authorization_consumed"`
+	SourceLeaseRevalidated        bool     `json:"source_lease_revalidated"`
+	TargetSessionRevalidated      bool     `json:"target_session_revalidated"`
+	MutationStarted               bool     `json:"mutation_started"`
+	WriteCompleted                bool     `json:"write_completed"`
+	SyncCompleted                 bool     `json:"sync_completed"`
+	ReadbackCompleted             bool     `json:"readback_completed"`
+	CancellationObserved          bool     `json:"cancellation_observed"`
+	CancelledBeforeMutation       bool     `json:"cancelled_before_mutation"`
+	CancelledAfterMutation        bool     `json:"cancelled_after_mutation"`
+	TargetMayBePartiallyModified  bool     `json:"target_may_be_partially_modified"`
+	ExecutionSucceeded            bool     `json:"execution_succeeded"`
+	ErrorObserved                 bool     `json:"error_observed"`
+	ErrorStage                    string   `json:"error_stage"`
+	ResultSHA256                  string   `json:"result_sha256"`
+	Warnings                      []string `json:"warnings"`
+	Limitations                   []string `json:"limitations"`
 }
 
 type fullFlashExecutionOps struct {
@@ -398,6 +397,7 @@ func newFullFlashExecutionResult(authorization *FullFlashMutationAuthorization) 
 		TargetSizeBytes:               evidence.TargetSizeBytes,
 		OperationCountPlanned:         order.OperationCount,
 		MutationBytesPlanned:          order.MutationBytes,
+		AuthorizationConsumed:         authorization.consumed,
 		Warnings:                      fullFlashExecutionWarnings(),
 		Limitations:                   fullFlashExecutionLimitations(),
 	}
@@ -529,5 +529,3 @@ func writeExecutionString(digest hash.Hash, value string) {
 func writeExecutionBool(digest hash.Hash, value bool) {
 	writeMutationAuthorizationBool(digest, value)
 }
-
-var _ = fmt.Sprintf
