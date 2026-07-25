@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -22,20 +23,21 @@ import (
 )
 
 const (
-	trustStoreSchema            = 1
-	trustStoreGenerationPurpose = "ffu-trust-bundle-generation"
-	trustStoreActivePurpose     = "ffu-trust-bundle-active"
-	trustStoreGenerationsName   = "generations"
-	trustStoreActiveName        = "active.json"
-	trustStoreBundleName        = "bundle.json"
-	trustStoreEnvelopeName      = "metadata.json"
-	trustStoreEvidenceName      = "evidence.json"
-	trustStoreGenerationPrefix  = "generation-"
-	trustStoreTempGeneration    = ".generation-"
-	trustStoreTempActive        = ".active-"
-	maxTrustStoreEvidenceBytes  = 128 << 10
-	maxTrustStoreActiveBytes    = 32 << 10
-	maxTrustStoreGenerations    = 256
+	trustStoreSchema                  = 1
+	trustStoreGenerationPurpose       = "ffu-trust-bundle-generation"
+	trustStoreUpdateGenerationPurpose = "ffu-trust-bundle-update-generation"
+	trustStoreActivePurpose           = "ffu-trust-bundle-active"
+	trustStoreGenerationsName         = "generations"
+	trustStoreActiveName              = "active.json"
+	trustStoreBundleName              = "bundle.json"
+	trustStoreEnvelopeName            = "metadata.json"
+	trustStoreEvidenceName            = "evidence.json"
+	trustStoreGenerationPrefix        = "generation-"
+	trustStoreTempGeneration          = ".generation-"
+	trustStoreTempActive              = ".active-"
+	maxTrustStoreEvidenceBytes        = 1 << 20
+	maxTrustStoreActiveBytes          = 32 << 10
+	maxTrustStoreGenerations          = 256
 )
 
 // TrustStoreOptions configures durable publication. The hook is intentionally
@@ -78,6 +80,23 @@ type TrustStoreGenerationEvidence struct {
 	PreviousBundleSHA256      string   `json:"previous_bundle_sha256,omitempty"`
 	PublicationEvaluationTime string   `json:"publication_evaluation_time"`
 	TrustAnchorsActivated     bool     `json:"trust_anchors_activated"`
+	UpdatePlanSHA256          string   `json:"update_plan_sha256,omitempty"`
+	OperationSize             uint64   `json:"operation_size,omitempty"`
+	OperationSHA256           string   `json:"operation_sha256,omitempty"`
+	OperationBase64           string   `json:"operation_base64,omitempty"`
+	CurrentPolicySize         uint64   `json:"current_policy_size,omitempty"`
+	CurrentPolicySHA256       string   `json:"current_policy_sha256,omitempty"`
+	CurrentPolicyBase64       string   `json:"current_policy_base64,omitempty"`
+	NextPolicySize            uint64   `json:"next_policy_size,omitempty"`
+	NextPolicySHA256          string   `json:"next_policy_sha256,omitempty"`
+	NextPolicyBase64          string   `json:"next_policy_base64,omitempty"`
+	PolicyRotated             bool     `json:"policy_rotated,omitempty"`
+	OperationSigningKeyIDs    []string `json:"operation_signing_key_ids,omitempty"`
+	ReplacementSigningKeyIDs  []string `json:"replacement_signing_key_ids,omitempty"`
+	PreviousGeneration        string   `json:"previous_generation,omitempty"`
+	PreviousEnvelopeSHA256    string   `json:"previous_envelope_sha256,omitempty"`
+	PreviousEvidenceSHA256    string   `json:"previous_evidence_sha256,omitempty"`
+	PreviousPlanSHA256        string   `json:"previous_plan_sha256,omitempty"`
 }
 
 // TrustStoreResult reports the exact committed generation. The plan remains
@@ -469,6 +488,13 @@ func readCurrentTrustStoreState(ctx context.Context, root, generations *os.File,
 }
 
 func loadTrustStoreGeneration(ctx context.Context, generations *os.File, active TrustStoreActiveRecord, policy TrustMetadataPolicy, evaluationTime time.Time) (TrustBundlePlan, error) {
+	return loadTrustStoreGenerationDepth(ctx, generations, active, policy, evaluationTime, 0)
+}
+
+func loadTrustStoreGenerationDepth(ctx context.Context, generations *os.File, active TrustStoreActiveRecord, policy TrustMetadataPolicy, evaluationTime time.Time, depth int) (TrustBundlePlan, error) {
+	if depth >= maxTrustStoreGenerations {
+		return TrustBundlePlan{}, errors.New("FFU trust-store generation history exceeds the bounded replay limit")
+	}
 	if err := trustStoreContext(ctx); err != nil {
 		return TrustBundlePlan{}, err
 	}
@@ -528,6 +554,40 @@ func loadTrustStoreGeneration(ctx context.Context, generations *os.File, active 
 	if err != nil {
 		return TrustBundlePlan{}, err
 	}
+
+	var plan TrustBundlePlan
+	switch evidence.Purpose {
+	case trustStoreGenerationPurpose:
+		plan, err = reproduceLegacyTrustStoreGeneration(bundleData, envelopeData, active, evidence, policy, publicationTime, evaluationTime)
+	case trustStoreUpdateGenerationPurpose:
+		plan, err = reproduceUpdatedTrustStoreGeneration(ctx, generations, bundleData, envelopeData, active, evidence, policy, publicationTime, evaluationTime, depth)
+	default:
+		err = errors.New("FFU trust-store generation evidence purpose is unsupported")
+	}
+	if err != nil {
+		return TrustBundlePlan{}, err
+	}
+
+	for _, snapshot := range []struct {
+		name     string
+		identity trustStoreFileIdentity
+		maximum  int
+	}{
+		{trustStoreBundleName, bundleIdentity, int(maxFFUTrustBundleBytes)},
+		{trustStoreEnvelopeName, envelopeIdentity, maxFFUTrustMetadataBytes},
+		{trustStoreEvidenceName, evidenceIdentity, maxTrustStoreEvidenceBytes},
+	} {
+		if err := verifyTrustStoreRegularSnapshot(generation, snapshot.name, snapshot.identity, snapshot.maximum, 0o400); err != nil {
+			return TrustBundlePlan{}, err
+		}
+	}
+	if err := ensureTrustStoreDirectoryEntryIdentity(generations, active.Generation, generationIdentity); err != nil {
+		return TrustBundlePlan{}, err
+	}
+	return plan, nil
+}
+
+func reproduceLegacyTrustStoreGeneration(bundleData, envelopeData []byte, active TrustStoreActiveRecord, evidence TrustStoreGenerationEvidence, policy TrustMetadataPolicy, publicationTime, evaluationTime time.Time) (TrustBundlePlan, error) {
 	publicationRollback := TrustMetadataRollbackState{Sequence: evidence.PreviousSequence, BundleSHA256: evidence.PreviousBundleSHA256}
 	publicationPlan, err := AuthenticateTrustBundleMetadata(bundleData, envelopeData, policy, publicationRollback, publicationTime)
 	if err != nil {
@@ -549,36 +609,133 @@ func loadTrustStoreGeneration(ctx context.Context, generations *os.File, active 
 			return TrustBundlePlan{}, err
 		}
 	}
-	if plan.Authentication == nil || plan.Authentication.MetadataSHA256 != evidence.SignedMetadataSHA256 || plan.Authentication.KeySetVersion != evidence.KeySetVersion || plan.Authentication.KeySetSHA256 != evidence.KeySetSHA256 || plan.Authentication.Threshold != evidence.Threshold || !equalTrustStoreStrings(plan.Authentication.SigningKeyIDs, evidence.SigningKeyIDs) {
-		return TrustBundlePlan{}, errors.New("FFU trust-store evidence does not match regenerated authentication evidence")
-	}
-	for _, snapshot := range []struct {
-		name     string
-		identity trustStoreFileIdentity
-		maximum  int
-	}{
-		{trustStoreBundleName, bundleIdentity, int(maxFFUTrustBundleBytes)},
-		{trustStoreEnvelopeName, envelopeIdentity, maxFFUTrustMetadataBytes},
-		{trustStoreEvidenceName, evidenceIdentity, maxTrustStoreEvidenceBytes},
-	} {
-		if err := verifyTrustStoreRegularSnapshot(generation, snapshot.name, snapshot.identity, snapshot.maximum, 0o400); err != nil {
-			return TrustBundlePlan{}, err
-		}
-	}
-	if err := ensureTrustStoreDirectoryEntryIdentity(generations, active.Generation, generationIdentity); err != nil {
+	if err := verifyTrustStoreAuthenticationEvidence(plan, evidence); err != nil {
 		return TrustBundlePlan{}, err
 	}
 	return plan, nil
 }
 
+func reproduceUpdatedTrustStoreGeneration(ctx context.Context, generations *os.File, bundleData, envelopeData []byte, active TrustStoreActiveRecord, evidence TrustStoreGenerationEvidence, suppliedPolicy TrustMetadataPolicy, publicationTime, evaluationTime time.Time, depth int) (TrustBundlePlan, error) {
+	operationData, _, nextPolicyData, currentPolicy, nextPolicy, err := decodeTrustStoreUpdateEvidence(evidence)
+	if err != nil {
+		return TrustBundlePlan{}, err
+	}
+	suppliedPolicyData, err := canonicalTrustMetadataPolicyBytes(suppliedPolicy)
+	if err != nil {
+		return TrustBundlePlan{}, fmt.Errorf("validate supplied FFU trust-store policy: %w", err)
+	}
+	if !bytes.Equal(suppliedPolicyData, nextPolicyData) {
+		return TrustBundlePlan{}, errors.New("supplied FFU trust-store policy does not match the signed update generation policy")
+	}
+	currentVerified, err := verifyTrustMetadataPolicy(currentPolicy)
+	if err != nil {
+		return TrustBundlePlan{}, err
+	}
+	nextVerified, err := verifyTrustMetadataPolicy(nextPolicy)
+	if err != nil {
+		return TrustBundlePlan{}, err
+	}
+	previous := TrustStoreActiveRecord{
+		Schema:         trustStoreSchema,
+		Purpose:        trustStoreActivePurpose,
+		Generation:     evidence.PreviousGeneration,
+		Sequence:       evidence.PreviousSequence,
+		BundleSHA256:   evidence.PreviousBundleSHA256,
+		EnvelopeSHA256: evidence.PreviousEnvelopeSHA256,
+		EvidenceSHA256: evidence.PreviousEvidenceSHA256,
+		PlanSHA256:     evidence.PreviousPlanSHA256,
+	}
+	if err := validateTrustStoreActiveRecord(previous); err != nil {
+		return TrustBundlePlan{}, fmt.Errorf("validate previous signed FFU trust update generation: %w", err)
+	}
+	if previous.Sequence >= active.Sequence {
+		return TrustBundlePlan{}, errors.New("signed FFU trust update history does not move strictly backwards")
+	}
+	previousPublicationTime, err := trustStoreGenerationPublicationTime(generations, previous)
+	if err != nil {
+		return TrustBundlePlan{}, err
+	}
+	previousPlan, err := loadTrustStoreGenerationDepth(ctx, generations, previous, currentPolicy, previousPublicationTime, depth+1)
+	if err != nil {
+		return TrustBundlePlan{}, fmt.Errorf("reproduce previous signed FFU trust update generation: %w", err)
+	}
+	verifiedOperation, err := verifyTrustUpdateOperation(operationData, previous, previousPlan, previousPublicationTime, currentVerified, nextVerified, bundleData, envelopeData, publicationTime)
+	if err != nil {
+		return TrustBundlePlan{}, fmt.Errorf("reproduce signed FFU trust update authorization: %w", err)
+	}
+	if verifiedOperation.document.Action != trustUpdateActionPublish {
+		return TrustBundlePlan{}, errors.New("signed FFU trust update generation was not authorized by a publish operation")
+	}
+	candidatePlan, err := AuthenticateTrustBundleMetadata(bundleData, envelopeData, nextPolicy, TrustMetadataRollbackState{Sequence: previous.Sequence, BundleSHA256: previous.BundleSHA256}, publicationTime)
+	if err != nil {
+		return TrustBundlePlan{}, fmt.Errorf("reproduce signed FFU trust update candidate: %w", err)
+	}
+	if err := requireInactiveAuthenticatedTrustPlan(candidatePlan); err != nil {
+		return TrustBundlePlan{}, err
+	}
+	updatePlan := buildTrustBundleUpdatePlan(previous, previousPlan, previousPublicationTime, verifiedOperation, currentVerified, nextVerified, &candidatePlan, operationData, publicationTime)
+	if updatePlan.PlanSHA256 != evidence.UpdatePlanSHA256 {
+		return TrustBundlePlan{}, errors.New("signed FFU trust update authorization plan does not match durable evidence")
+	}
+	if updatePlan.PolicyRotated != evidence.PolicyRotated || !equalTrustStoreStrings(updatePlan.OperationSigningKeyIDs, evidence.OperationSigningKeyIDs) || !equalTrustStoreStrings(updatePlan.ReplacementSigningKeyIDs, evidence.ReplacementSigningKeyIDs) {
+		return TrustBundlePlan{}, errors.New("signed FFU trust update authorization evidence does not match durable signer evidence")
+	}
+	if candidatePlan.PlanSHA256 != active.PlanSHA256 || candidatePlan.PlanSHA256 != evidence.PlanSHA256 {
+		return TrustBundlePlan{}, errors.New("signed FFU trust update candidate plan does not match durable evidence")
+	}
+	plan := candidatePlan
+	if !evaluationTime.UTC().Equal(publicationTime) {
+		plan, err = AuthenticateTrustBundleMetadata(bundleData, envelopeData, nextPolicy, TrustMetadataRollbackState{Sequence: active.Sequence, BundleSHA256: active.BundleSHA256}, evaluationTime)
+		if err != nil {
+			return TrustBundlePlan{}, err
+		}
+		if err := requireInactiveAuthenticatedTrustPlan(plan); err != nil {
+			return TrustBundlePlan{}, err
+		}
+	}
+	if err := verifyTrustStoreAuthenticationEvidence(plan, evidence); err != nil {
+		return TrustBundlePlan{}, err
+	}
+	return plan, nil
+}
+
+func trustStoreGenerationPublicationTime(generations *os.File, active TrustStoreActiveRecord) (time.Time, error) {
+	generation, err := openTrustStoreDirectory(generations, active.Generation)
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer generation.Close()
+	evidenceData, _, err := readTrustStoreRegular(generation, trustStoreEvidenceName, maxTrustStoreEvidenceBytes, 0o400)
+	if err != nil {
+		return time.Time{}, err
+	}
+	evidenceDigest := sha256.Sum256(evidenceData)
+	if hex.EncodeToString(evidenceDigest[:]) != active.EvidenceSHA256 {
+		return time.Time{}, errors.New("previous FFU trust-store evidence digest does not match its active record")
+	}
+	evidence, err := parseTrustStoreEvidence(evidenceData)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if evidence.Generation != active.Generation || evidence.Sequence != active.Sequence || evidence.BundleSHA256 != active.BundleSHA256 || evidence.EnvelopeSHA256 != active.EnvelopeSHA256 || evidence.PlanSHA256 != active.PlanSHA256 {
+		return time.Time{}, errors.New("previous FFU trust-store evidence does not match its active record")
+	}
+	return parseCanonicalTrustMetadataTime(evidence.PublicationEvaluationTime, "publication_evaluation_time")
+}
+
+func verifyTrustStoreAuthenticationEvidence(plan TrustBundlePlan, evidence TrustStoreGenerationEvidence) error {
+	if plan.Authentication == nil || plan.Authentication.MetadataSHA256 != evidence.SignedMetadataSHA256 || plan.Authentication.KeySetVersion != evidence.KeySetVersion || plan.Authentication.KeySetSHA256 != evidence.KeySetSHA256 || plan.Authentication.Threshold != evidence.Threshold || !equalTrustStoreStrings(plan.Authentication.SigningKeyIDs, evidence.SigningKeyIDs) {
+		return errors.New("FFU trust-store evidence does not match regenerated authentication evidence")
+	}
+	return nil
+}
+
 func parseTrustStoreEvidence(data []byte) (TrustStoreGenerationEvidence, error) {
 	var evidence TrustStoreGenerationEvidence
-	canonical, err := decodeCanonicalTrustStoreJSON(data, &evidence, "FFU trust-store generation evidence")
-	if err != nil {
+	if _, err := decodeCanonicalTrustStoreJSON(data, &evidence, "FFU trust-store generation evidence"); err != nil {
 		return TrustStoreGenerationEvidence{}, err
 	}
-	_ = canonical
-	if evidence.Schema != trustStoreSchema || evidence.Purpose != trustStoreGenerationPurpose || !validTrustStoreGenerationName(evidence.Generation) || evidence.Sequence == 0 || evidence.BundleSize == 0 || evidence.EnvelopeSize == 0 || evidence.Threshold <= 0 || evidence.TrustAnchorsActivated {
+	if evidence.Schema != trustStoreSchema || (evidence.Purpose != trustStoreGenerationPurpose && evidence.Purpose != trustStoreUpdateGenerationPurpose) || !validTrustStoreGenerationName(evidence.Generation) || evidence.Sequence == 0 || evidence.BundleSize == 0 || evidence.EnvelopeSize == 0 || evidence.Threshold <= 0 || evidence.TrustAnchorsActivated {
 		return TrustStoreGenerationEvidence{}, errors.New("FFU trust-store generation evidence has an invalid schema or inactive-trust contract")
 	}
 	if _, err := validateTrustMetadataRollbackState(TrustMetadataRollbackState{Sequence: evidence.PreviousSequence, BundleSHA256: evidence.PreviousBundleSHA256}); err != nil {
@@ -595,17 +752,142 @@ func parseTrustStoreEvidence(data []byte) (TrustStoreGenerationEvidence, error) 
 			return TrustStoreGenerationEvidence{}, err
 		}
 	}
-	if len(evidence.SigningKeyIDs) < evidence.Threshold || !sort.StringsAreSorted(evidence.SigningKeyIDs) {
-		return TrustStoreGenerationEvidence{}, errors.New("FFU trust-store signing-key evidence is incomplete or unsorted")
+	if err := validateTrustStoreKeyIDs(evidence.SigningKeyIDs, evidence.Threshold, "signing-key evidence"); err != nil {
+		return TrustStoreGenerationEvidence{}, err
+	}
+
+	switch evidence.Purpose {
+	case trustStoreGenerationPurpose:
+		if trustStoreEvidenceHasUpdateFields(evidence) {
+			return TrustStoreGenerationEvidence{}, errors.New("legacy FFU trust-store evidence must not contain signed-update fields")
+		}
+	case trustStoreUpdateGenerationPurpose:
+		if _, _, _, _, _, err := decodeTrustStoreUpdateEvidence(evidence); err != nil {
+			return TrustStoreGenerationEvidence{}, err
+		}
+	}
+	return evidence, nil
+}
+
+func trustStoreEvidenceHasUpdateFields(evidence TrustStoreGenerationEvidence) bool {
+	return evidence.UpdatePlanSHA256 != "" || evidence.OperationSize != 0 || evidence.OperationSHA256 != "" || evidence.OperationBase64 != "" || evidence.CurrentPolicySize != 0 || evidence.CurrentPolicySHA256 != "" || evidence.CurrentPolicyBase64 != "" || evidence.NextPolicySize != 0 || evidence.NextPolicySHA256 != "" || evidence.NextPolicyBase64 != "" || evidence.PolicyRotated || len(evidence.OperationSigningKeyIDs) != 0 || len(evidence.ReplacementSigningKeyIDs) != 0 || evidence.PreviousGeneration != "" || evidence.PreviousEnvelopeSHA256 != "" || evidence.PreviousEvidenceSHA256 != "" || evidence.PreviousPlanSHA256 != ""
+}
+
+func decodeTrustStoreUpdateEvidence(evidence TrustStoreGenerationEvidence) ([]byte, []byte, []byte, TrustMetadataPolicy, TrustMetadataPolicy, error) {
+	if evidence.Purpose != trustStoreUpdateGenerationPurpose || evidence.PreviousSequence == 0 || evidence.PreviousGeneration == "" {
+		return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, errors.New("signed FFU trust update evidence is incomplete")
+	}
+	for _, pair := range []struct{ value, field string }{
+		{evidence.UpdatePlanSHA256, "update_plan_sha256"},
+		{evidence.OperationSHA256, "operation_sha256"},
+		{evidence.CurrentPolicySHA256, "current_policy_sha256"},
+		{evidence.NextPolicySHA256, "next_policy_sha256"},
+		{evidence.PreviousEnvelopeSHA256, "previous_envelope_sha256"},
+		{evidence.PreviousEvidenceSHA256, "previous_evidence_sha256"},
+		{evidence.PreviousPlanSHA256, "previous_plan_sha256"},
+	} {
+		if _, err := canonicalSHA256Fingerprint(pair.value, pair.field); err != nil {
+			return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, err
+		}
+	}
+	previous := TrustStoreActiveRecord{
+		Schema:         trustStoreSchema,
+		Purpose:        trustStoreActivePurpose,
+		Generation:     evidence.PreviousGeneration,
+		Sequence:       evidence.PreviousSequence,
+		BundleSHA256:   evidence.PreviousBundleSHA256,
+		EnvelopeSHA256: evidence.PreviousEnvelopeSHA256,
+		EvidenceSHA256: evidence.PreviousEvidenceSHA256,
+		PlanSHA256:     evidence.PreviousPlanSHA256,
+	}
+	if err := validateTrustStoreActiveRecord(previous); err != nil {
+		return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, fmt.Errorf("signed FFU trust update previous active evidence: %w", err)
+	}
+	if previous.Sequence >= evidence.Sequence {
+		return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, errors.New("signed FFU trust update previous sequence must be below the new generation")
+	}
+	operationData, err := decodeCanonicalTrustStoreEvidenceBytes(evidence.OperationBase64, evidence.OperationSize, maxTrustUpdateBytes, evidence.OperationSHA256, "signed FFU trust update operation")
+	if err != nil {
+		return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, err
+	}
+	currentPolicyData, err := decodeCanonicalTrustStoreEvidenceBytes(evidence.CurrentPolicyBase64, evidence.CurrentPolicySize, maxTrustUpdateBytes, evidence.CurrentPolicySHA256, "signed FFU trust update current policy")
+	if err != nil {
+		return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, err
+	}
+	nextPolicyData, err := decodeCanonicalTrustStoreEvidenceBytes(evidence.NextPolicyBase64, evidence.NextPolicySize, maxTrustUpdateBytes, evidence.NextPolicySHA256, "signed FFU trust update replacement policy")
+	if err != nil {
+		return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, err
+	}
+	currentPolicy, currentVerified, err := decodeCanonicalTrustStorePolicy(currentPolicyData, "signed FFU trust update current policy")
+	if err != nil {
+		return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, err
+	}
+	nextPolicy, nextVerified, err := decodeCanonicalTrustStorePolicy(nextPolicyData, "signed FFU trust update replacement policy")
+	if err != nil {
+		return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, err
+	}
+	rotated := currentVerified.version != nextVerified.version || currentVerified.sha256 != nextVerified.sha256 || currentVerified.threshold != nextVerified.threshold
+	if evidence.PolicyRotated != rotated {
+		return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, errors.New("signed FFU trust update policy-rotation evidence is inconsistent")
+	}
+	if evidence.KeySetVersion != nextVerified.version || evidence.KeySetSHA256 != nextVerified.sha256 || evidence.Threshold != nextVerified.threshold {
+		return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, errors.New("signed FFU trust update replacement policy does not match candidate authentication evidence")
+	}
+	if err := validateTrustStoreKeyIDs(evidence.OperationSigningKeyIDs, currentVerified.threshold, "operation signer evidence"); err != nil {
+		return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, err
+	}
+	if rotated {
+		if err := validateTrustStoreKeyIDs(evidence.ReplacementSigningKeyIDs, nextVerified.threshold, "replacement signer evidence"); err != nil {
+			return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, err
+		}
+	} else if len(evidence.ReplacementSigningKeyIDs) != 0 {
+		return nil, nil, nil, TrustMetadataPolicy{}, TrustMetadataPolicy{}, errors.New("unchanged signed FFU trust update policy must not carry replacement signer evidence")
+	}
+	return operationData, currentPolicyData, nextPolicyData, currentPolicy, nextPolicy, nil
+}
+
+func decodeCanonicalTrustStoreEvidenceBytes(encoded string, expectedSize uint64, maximum int, expectedSHA256, label string) ([]byte, error) {
+	if encoded == "" || expectedSize == 0 || expectedSize > uint64(maximum) {
+		return nil, fmt.Errorf("%s size is invalid", label)
+	}
+	decoded, err := base64.StdEncoding.Strict().DecodeString(encoded)
+	if err != nil || uint64(len(decoded)) != expectedSize {
+		return nil, fmt.Errorf("decode %s", label)
+	}
+	if base64.StdEncoding.EncodeToString(decoded) != encoded {
+		return nil, fmt.Errorf("%s must use canonical padded base64", label)
+	}
+	digest := sha256.Sum256(decoded)
+	if hex.EncodeToString(digest[:]) != expectedSHA256 {
+		return nil, fmt.Errorf("%s SHA-256 does not match embedded bytes", label)
+	}
+	return decoded, nil
+}
+
+func decodeCanonicalTrustStorePolicy(data []byte, label string) (TrustMetadataPolicy, verifiedTrustMetadataPolicy, error) {
+	var policy TrustMetadataPolicy
+	if _, err := decodeCanonicalTrustStoreJSON(data, &policy, label); err != nil {
+		return TrustMetadataPolicy{}, verifiedTrustMetadataPolicy{}, err
+	}
+	verified, err := verifyTrustMetadataPolicy(policy)
+	if err != nil {
+		return TrustMetadataPolicy{}, verifiedTrustMetadataPolicy{}, fmt.Errorf("validate %s: %w", label, err)
+	}
+	return policy, verified, nil
+}
+
+func validateTrustStoreKeyIDs(keyIDs []string, minimum int, label string) error {
+	if minimum <= 0 || len(keyIDs) < minimum || !sort.StringsAreSorted(keyIDs) {
+		return fmt.Errorf("FFU trust-store %s is incomplete or unsorted", label)
 	}
 	previous := ""
-	for _, keyID := range evidence.SigningKeyIDs {
+	for _, keyID := range keyIDs {
 		if !canonicalTrustMetadataKeyID(keyID) || keyID == previous {
-			return TrustStoreGenerationEvidence{}, errors.New("FFU trust-store signing-key evidence contains an invalid or duplicate key id")
+			return fmt.Errorf("FFU trust-store %s contains an invalid or duplicate key id", label)
 		}
 		previous = keyID
 	}
-	return evidence, nil
+	return nil
 }
 
 func readTrustStoreActive(root *os.File) (trustStoreActiveSnapshot, error) {

@@ -150,6 +150,17 @@ type verifiedTrustUpdateOperation struct {
 	rotated        bool
 }
 
+type trustBundleUpdatePlanningState struct {
+	plan              TrustBundleUpdatePlan
+	active            trustStoreActiveSnapshot
+	currentPlan       TrustBundlePlan
+	publicationTime   time.Time
+	candidatePlan     *TrustBundlePlan
+	verifiedOperation verifiedTrustUpdateOperation
+	currentVerified   verifiedTrustMetadataPolicy
+	nextVerified      verifiedTrustMetadataPolicy
+}
+
 // PlanAuthenticatedTrustBundleOperation authenticates and describes one
 // offline publish or withdrawal operation. Current durable state is reproduced
 // at its authenticated publication time so an expired active bundle can still
@@ -208,22 +219,49 @@ func PlanAuthenticatedTrustBundleOperation(
 		return TrustBundleUpdatePlan{}, err
 	}
 
-	active, currentPlan, publicationTime, err := loadTrustUpdateCurrentState(ctx, rootFile, generations, currentPolicy)
+	state, err := planAuthenticatedTrustBundleOperationOpen(
+		ctx, resolved, rootFile, rootIdentity, generations, generationsIdentity,
+		operationData, currentPolicy, nextPolicy, currentVerified, nextVerified,
+		candidateBundle, candidateMetadata, evaluationTime,
+	)
 	if err != nil {
 		return TrustBundleUpdatePlan{}, err
 	}
+	return state.plan, nil
+}
+
+func planAuthenticatedTrustBundleOperationOpen(
+	ctx context.Context,
+	resolved string,
+	rootFile *os.File,
+	rootIdentity trustStoreFileIdentity,
+	generations *os.File,
+	generationsIdentity trustStoreFileIdentity,
+	operationData []byte,
+	currentPolicy TrustMetadataPolicy,
+	nextPolicy TrustMetadataPolicy,
+	currentVerified verifiedTrustMetadataPolicy,
+	nextVerified verifiedTrustMetadataPolicy,
+	candidateBundle []byte,
+	candidateMetadata []byte,
+	evaluationTime time.Time,
+) (trustBundleUpdatePlanningState, error) {
+	active, currentPlan, publicationTime, err := loadTrustUpdateCurrentState(ctx, rootFile, generations, currentPolicy)
+	if err != nil {
+		return trustBundleUpdatePlanningState{}, err
+	}
 	if !active.exists {
-		return TrustBundleUpdatePlan{}, os.ErrNotExist
+		return trustBundleUpdatePlanningState{}, os.ErrNotExist
 	}
 	if err := requireInactiveAuthenticatedTrustPlan(currentPlan); err != nil {
-		return TrustBundleUpdatePlan{}, err
+		return trustBundleUpdatePlanningState{}, err
 	}
 	if currentPlan.Authentication == nil || currentPlan.Authentication.KeySetVersion != currentVerified.version || currentPlan.Authentication.KeySetSHA256 != currentVerified.sha256 || currentPlan.Authentication.Threshold != currentVerified.threshold {
-		return TrustBundleUpdatePlan{}, errors.New("current FFU trust update policy does not match durable authentication evidence")
+		return trustBundleUpdatePlanningState{}, errors.New("current FFU trust update policy does not match durable authentication evidence")
 	}
 	verifiedOperation, err := verifyTrustUpdateOperation(operationData, active.record, currentPlan, publicationTime, currentVerified, nextVerified, candidateBundle, candidateMetadata, evaluationTime)
 	if err != nil {
-		return TrustBundleUpdatePlan{}, err
+		return trustBundleUpdatePlanningState{}, err
 	}
 
 	var candidatePlan *TrustBundlePlan
@@ -236,39 +274,76 @@ func PlanAuthenticatedTrustBundleOperation(
 			evaluationTime,
 		)
 		if err != nil {
-			return TrustBundleUpdatePlan{}, fmt.Errorf("authenticate FFU trust update candidate: %w", err)
+			return trustBundleUpdatePlanningState{}, fmt.Errorf("authenticate FFU trust update candidate: %w", err)
 		}
 		if err := requireInactiveAuthenticatedTrustPlan(plan); err != nil {
-			return TrustBundleUpdatePlan{}, err
+			return trustBundleUpdatePlanningState{}, err
 		}
 		if plan.Sequence != verifiedOperation.document.Sequence {
-			return TrustBundleUpdatePlan{}, errors.New("FFU trust update operation sequence does not match candidate bundle sequence")
+			return trustBundleUpdatePlanningState{}, errors.New("FFU trust update operation sequence does not match candidate bundle sequence")
 		}
 		currentGenerated, err := parseCanonicalTrustMetadataTime(currentPlan.GeneratedAt, "current.generated_at")
 		if err != nil {
-			return TrustBundleUpdatePlan{}, err
+			return trustBundleUpdatePlanningState{}, err
 		}
 		candidateGenerated, err := parseCanonicalTrustMetadataTime(plan.GeneratedAt, "candidate.generated_at")
 		if err != nil {
-			return TrustBundleUpdatePlan{}, err
+			return trustBundleUpdatePlanningState{}, err
 		}
 		if candidateGenerated.Before(currentGenerated) {
-			return TrustBundleUpdatePlan{}, errors.New("FFU trust update candidate bundle generation time precedes current bundle")
+			return trustBundleUpdatePlanningState{}, errors.New("FFU trust update candidate bundle generation time precedes current bundle")
 		}
 		currentMetadataGenerated, err := parseCanonicalTrustMetadataTime(currentPlan.Authentication.GeneratedAt, "current.authentication.generated_at")
 		if err != nil {
-			return TrustBundleUpdatePlan{}, err
+			return trustBundleUpdatePlanningState{}, err
 		}
 		candidateMetadataGenerated, err := parseCanonicalTrustMetadataTime(plan.Authentication.GeneratedAt, "candidate.authentication.generated_at")
 		if err != nil {
-			return TrustBundleUpdatePlan{}, err
+			return trustBundleUpdatePlanningState{}, err
 		}
 		if candidateMetadataGenerated.Before(currentMetadataGenerated) {
-			return TrustBundleUpdatePlan{}, errors.New("FFU trust update candidate metadata generation time precedes current metadata")
+			return trustBundleUpdatePlanningState{}, errors.New("FFU trust update candidate metadata generation time precedes current metadata")
 		}
 		candidatePlan = &plan
 	}
 
+	plan := buildTrustBundleUpdatePlan(
+		active.record, currentPlan, publicationTime, verifiedOperation,
+		currentVerified, nextVerified, candidatePlan, operationData, evaluationTime,
+	)
+
+	if err := ensureTrustStoreDirectoryEntryIdentity(rootFile, trustStoreGenerationsName, generationsIdentity); err != nil {
+		return trustBundleUpdatePlanningState{}, err
+	}
+	if err := ensureTrustStoreRootIdentity(resolved, rootFile, rootIdentity); err != nil {
+		return trustBundleUpdatePlanningState{}, err
+	}
+	if err := verifyTrustStoreActiveSnapshot(rootFile, active); err != nil {
+		return trustBundleUpdatePlanningState{}, err
+	}
+	return trustBundleUpdatePlanningState{
+		plan:              plan,
+		active:            active,
+		currentPlan:       currentPlan,
+		publicationTime:   publicationTime,
+		candidatePlan:     candidatePlan,
+		verifiedOperation: verifiedOperation,
+		currentVerified:   currentVerified,
+		nextVerified:      nextVerified,
+	}, nil
+}
+
+func buildTrustBundleUpdatePlan(
+	active TrustStoreActiveRecord,
+	currentPlan TrustBundlePlan,
+	publicationTime time.Time,
+	verifiedOperation verifiedTrustUpdateOperation,
+	currentVerified verifiedTrustMetadataPolicy,
+	nextVerified verifiedTrustMetadataPolicy,
+	candidatePlan *TrustBundlePlan,
+	operationData []byte,
+	evaluationTime time.Time,
+) TrustBundleUpdatePlan {
 	added, removed, replaced, addedDistrust, removedDistrust, emergency := trustUpdateDelta(currentPlan, candidatePlan)
 	operationPayloadDigest := sha256.Sum256(verifiedOperation.canonical)
 	operationEnvelopeDigest := sha256.Sum256(operationData)
@@ -282,12 +357,12 @@ func PlanAuthenticatedTrustBundleOperation(
 		GeneratedAt:                  verifiedOperation.document.GeneratedAt,
 		ExpiresAt:                    verifiedOperation.document.ExpiresAt,
 		EvaluationTime:               evaluationTime.UTC().Format(time.RFC3339),
-		CurrentGeneration:            active.record.Generation,
-		CurrentSequence:              active.record.Sequence,
-		CurrentBundleSHA256:          active.record.BundleSHA256,
-		CurrentEnvelopeSHA256:        active.record.EnvelopeSHA256,
-		CurrentEvidenceSHA256:        active.record.EvidenceSHA256,
-		CurrentPublicationPlanSHA256: active.record.PlanSHA256,
+		CurrentGeneration:            active.Generation,
+		CurrentSequence:              active.Sequence,
+		CurrentBundleSHA256:          active.BundleSHA256,
+		CurrentEnvelopeSHA256:        active.EnvelopeSHA256,
+		CurrentEvidenceSHA256:        active.EvidenceSHA256,
+		CurrentPublicationPlanSHA256: active.PlanSHA256,
 		CurrentReproducedPlanSHA256:  currentPlan.PlanSHA256,
 		CurrentPublicationTime:       publicationTime.UTC().Format(time.RFC3339),
 		CurrentBundleExpiresAt:       currentPlan.ExpiresAt,
@@ -342,17 +417,7 @@ func PlanAuthenticatedTrustBundleOperation(
 		plan.CandidateAuthentication = cloneTrustBundleAuthentication(candidatePlan.Authentication)
 	}
 	plan.PlanSHA256 = trustBundleUpdatePlanDigest(plan)
-
-	if err := ensureTrustStoreDirectoryEntryIdentity(rootFile, trustStoreGenerationsName, generationsIdentity); err != nil {
-		return TrustBundleUpdatePlan{}, err
-	}
-	if err := ensureTrustStoreRootIdentity(resolved, rootFile, rootIdentity); err != nil {
-		return TrustBundleUpdatePlan{}, err
-	}
-	if err := verifyTrustStoreActiveSnapshot(rootFile, active); err != nil {
-		return TrustBundleUpdatePlan{}, err
-	}
-	return plan, nil
+	return plan
 }
 
 func loadTrustUpdateCurrentState(ctx context.Context, root, generations *os.File, policy TrustMetadataPolicy) (trustStoreActiveSnapshot, TrustBundlePlan, time.Time, error) {
