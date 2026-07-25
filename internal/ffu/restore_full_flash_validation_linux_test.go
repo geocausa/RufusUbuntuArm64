@@ -5,8 +5,7 @@ package ffu
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
-	""crypto/x509""
+	"crypto/x509"
 	"encoding/binary"
 	"errors"
 	"strconv"
@@ -187,5 +186,3 @@ func fullFlashNoValidationFixture(data []byte) []byte {
 	binary.LittleEndian.PutUint32(result[storeOffset+220:storeOffset+224], 0)
 	return result
 }
-
-var _ ed25519.PrivateKey
