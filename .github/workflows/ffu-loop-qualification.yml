@@ -5,6 +5,8 @@ on:
     paths:
       - '.github/workflows/ffu-loop-qualification.yml'
       - 'internal/ffu/**'
+      - 'internal/device/**'
+      - 'internal/safety/**'
       - 'cmd/rufus-linux/ffu_linux.go'
       - 'cmd/rufus-linux/ffu_linux_test.go'
       - 'cmd/rufus-linux/main.go'
@@ -15,6 +17,8 @@ on:
     paths:
       - '.github/workflows/ffu-loop-qualification.yml'
       - 'internal/ffu/**'
+      - 'internal/device/**'
+      - 'internal/safety/**'
       - 'cmd/rufus-linux/ffu_linux.go'
       - 'cmd/rufus-linux/ffu_linux_test.go'
       - 'cmd/rufus-linux/main.go'
