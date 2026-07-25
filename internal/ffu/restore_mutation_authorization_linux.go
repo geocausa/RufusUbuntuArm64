@@ -70,6 +70,7 @@ type FullFlashMutationAuthorization struct {
 	confirmation *FullFlashDestructiveConfirmation
 	writeOrder   FullFlashWriteOrderPlan
 	evidence     FullFlashMutationAuthorizationEvidence
+	consumed     bool
 	seal         *fullFlashMutationAuthorizationSeal
 }
 
@@ -243,6 +244,9 @@ func (authorization *FullFlashMutationAuthorization) Check() error {
 }
 
 func (authorization *FullFlashMutationAuthorization) validateLocked() error {
+	if authorization.consumed {
+		return errors.New("FFU mutation authorization has already been consumed")
+	}
 	if authorization.seal != issuedFullFlashMutationAuthorizationSeal || authorization.confirmation == nil {
 		return errors.New("invalid FFU mutation-authorization capability")
 	}
