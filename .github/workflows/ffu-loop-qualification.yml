@@ -10,6 +10,9 @@ on:
       - 'cmd/rufus-linux/ffu_linux.go'
       - 'cmd/rufus-linux/ffu_linux_test.go'
       - 'cmd/rufus-linux/main.go'
+      - 'gui/rufusarm64.py'
+      - 'gui/rufusarm64_logic.py'
+      - 'gui/test_logic.py'
       - 'go.mod'
       - 'go.sum'
   push:
@@ -22,6 +25,9 @@ on:
       - 'cmd/rufus-linux/ffu_linux.go'
       - 'cmd/rufus-linux/ffu_linux_test.go'
       - 'cmd/rufus-linux/main.go'
+      - 'gui/rufusarm64.py'
+      - 'gui/rufusarm64_logic.py'
+      - 'gui/test_logic.py'
       - 'go.mod'
       - 'go.sum'
   workflow_dispatch:
