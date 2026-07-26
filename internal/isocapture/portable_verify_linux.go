@@ -14,6 +14,11 @@ import (
 // of the source and destination filesystems, so only regular-file sizes are
 // part of the portable content model.
 func portableContentSHA256(inventory Inventory) (string, error) {
+	portable := portableInventory(inventory)
+	return inventoryDigest(portable, false)
+}
+
+func portableInventory(inventory Inventory) Inventory {
 	portable := inventory
 	portable.Entries = append([]Entry(nil), inventory.Entries...)
 	for index := range portable.Entries {
@@ -21,7 +26,45 @@ func portableContentSHA256(inventory Inventory) (string, error) {
 			portable.Entries[index].Size = 0
 		}
 	}
-	return inventoryDigest(portable, false)
+	return portable
+}
+
+func portableInventoryDifference(expected, actual Inventory) string {
+	expected = portableInventory(expected)
+	actual = portableInventory(actual)
+	if expected.Files != actual.Files || expected.Directories != actual.Directories || expected.TotalBytes != actual.TotalBytes {
+		return fmt.Sprintf(
+			"counts differ: source files=%d directories=%d bytes=%d; mounted files=%d directories=%d bytes=%d",
+			expected.Files,
+			expected.Directories,
+			expected.TotalBytes,
+			actual.Files,
+			actual.Directories,
+			actual.TotalBytes,
+		)
+	}
+	if len(expected.Entries) != len(actual.Entries) {
+		return fmt.Sprintf("entry counts differ: source=%d mounted=%d", len(expected.Entries), len(actual.Entries))
+	}
+	for index := range expected.Entries {
+		sourceEntry := expected.Entries[index]
+		mountedEntry := actual.Entries[index]
+		if sourceEntry.Path != mountedEntry.Path || sourceEntry.Kind != mountedEntry.Kind || sourceEntry.Size != mountedEntry.Size || sourceEntry.SHA256 != mountedEntry.SHA256 {
+			return fmt.Sprintf(
+				"entry %d differs: source path=%q type=%s size=%d sha256=%s; mounted path=%q type=%s size=%d sha256=%s",
+				index,
+				sourceEntry.Path,
+				sourceEntry.Kind,
+				sourceEntry.Size,
+				sourceEntry.SHA256,
+				mountedEntry.Path,
+				mountedEntry.Kind,
+				mountedEntry.Size,
+				mountedEntry.SHA256,
+			)
+		}
+	}
+	return "portable inventory fields differ"
 }
 
 // VerifyPortableImage independently mounts the private image as UDF and
@@ -29,13 +72,12 @@ func portableContentSHA256(inventory Inventory) (string, error) {
 // authenticated source. It deliberately excludes filesystem-specific directory
 // allocation sizes while retaining all of VerifyImage's descriptor, mount,
 // image-hash, and cleanup checks.
-func VerifyPortableImage(ctx context.Context, image *os.File, expectedContentSHA256, expectedImageSHA256 string, expectedImageBytes uint64, options ValidationOptions) (report ValidationReport, returnErr error) {
+func VerifyPortableImage(ctx context.Context, image *os.File, sourceInventory Inventory, expectedImageSHA256 string, expectedImageBytes uint64, options ValidationOptions) (report ValidationReport, returnErr error) {
 	report = ValidationReport{
-		Schema:                ValidationReportSchema,
-		Status:                CaptureFailed,
-		Filesystem:            "udf",
-		ExpectedContentSHA256: expectedContentSHA256,
-		ImageBytes:            expectedImageBytes,
+		Schema:     ValidationReportSchema,
+		Status:     CaptureFailed,
+		Filesystem: "udf",
+		ImageBytes: expectedImageBytes,
 	}
 	if ctx == nil {
 		return validationFailure(report, "invalid_context", errors.New("ISO validation context is nil"))
@@ -43,6 +85,11 @@ func VerifyPortableImage(ctx context.Context, image *os.File, expectedContentSHA
 	if image == nil {
 		return validationFailure(report, "invalid_image", errors.New("ISO validation requires an open image descriptor"))
 	}
+	expectedContentSHA256, err := portableContentSHA256(sourceInventory)
+	if err != nil {
+		return validationFailure(report, "invalid_content_digest", fmt.Errorf("compute portable source content digest: %w", err))
+	}
+	report.ExpectedContentSHA256 = expectedContentSHA256
 	if err := validateDigest(expectedContentSHA256); err != nil {
 		return validationFailure(report, "invalid_content_digest", fmt.Errorf("validate expected content digest: %w", err))
 	}
@@ -113,7 +160,12 @@ func VerifyPortableImage(ctx context.Context, image *os.File, expectedContentSHA
 	report.NoDev = true
 	report.NoExec = true
 	if mountedContentSHA256 != expectedContentSHA256 {
-		return validationFailure(report, "content_mismatch", fmt.Errorf("mounted UDF portable content digest %s does not match source digest %s", mountedContentSHA256, expectedContentSHA256))
+		return validationFailure(report, "content_mismatch", fmt.Errorf(
+			"mounted UDF portable content digest %s does not match source digest %s: %s",
+			mountedContentSHA256,
+			expectedContentSHA256,
+			portableInventoryDifference(sourceInventory, mountedInventory),
+		))
 	}
 
 	if err := session.Close(); err != nil {
