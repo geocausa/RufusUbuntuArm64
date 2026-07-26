@@ -46,8 +46,8 @@ VHDX requires a successful consistency check. QEMU does not provide that check
 for VHD, so the report records it as unsupported rather than claiming it ran.
 .PP
 The completed image is published atomically without replacement only after all
-required checks succeed. Existing destinations are never replaced. Incomplete
-output is removed after failure or cancellation.
+required checks succeed. Existing destination files are never replaced.
+Incomplete output is removed after failure or cancellation.
 .PP
 The destination must reside on a different physical disk from the selected
 source. Raw capture requires the source capacity. VHD and VHDX dry-run planning
