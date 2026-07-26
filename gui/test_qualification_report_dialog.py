@@ -20,7 +20,9 @@ class QualificationReportDialogStructureTests(unittest.TestCase):
         self.assertIn("self.report_payload = None", self.qualification_source)
         self.assertIn("self.save_report_button.set_sensitive", self.qualification_source)
         self.assertIn("self.report_payload is not None", self.qualification_source)
-        self.assertIn("self.report_payload = payload", self.qualification_source)
+        self.assertIn("transport_mismatch", self.qualification_source)
+        self.assertIn("None if transport_mismatch else payload", self.qualification_source)
+        self.assertIn("not transport_mismatch", self.qualification_source)
 
     def test_report_export_uses_new_file_and_identity_bound_helper(self):
         self.assertIn("Gtk.FileChooserAction.SAVE", self.qualification_source)
