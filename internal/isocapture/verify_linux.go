@@ -19,14 +19,14 @@ import (
 )
 
 const (
-	ValidationReportSchema = 1
-	udfSuperMagic    int64 = 0x15013346
-	statfsReadOnly  uint64 = 0x1
-	statfsNoSuid    uint64 = 0x2
-	statfsNoDev     uint64 = 0x4
-	statfsNoExec    uint64 = 0x8
-	validationImageFD      = 3
-	validationImagePath    = "/proc/self/fd/3"
+	ValidationReportSchema     = 1
+	udfSuperMagic       int64  = 0x15013346
+	statfsReadOnly      uint64 = 0x1
+	statfsNoSuid        uint64 = 0x2
+	statfsNoDev         uint64 = 0x4
+	statfsNoExec        uint64 = 0x8
+	validationImageFD          = 3
+	validationImagePath        = "/proc/self/fd/3"
 )
 
 type ValidationOptions struct {
@@ -35,22 +35,22 @@ type ValidationOptions struct {
 }
 
 type ValidationReport struct {
-	Schema              int           `json:"schema"`
-	Status              CaptureStatus `json:"status"`
-	Filesystem          string        `json:"filesystem"`
-	Files               uint64        `json:"files"`
-	Directories         uint64        `json:"directories"`
-	ContentBytes         uint64        `json:"content_bytes"`
-	ExpectedContentSHA256 string       `json:"expected_content_sha256"`
-	MountedContentSHA256 string        `json:"mounted_content_sha256"`
-	ImageBytes          uint64        `json:"image_bytes"`
-	ImageSHA256         string        `json:"image_sha256"`
-	ReadOnly            bool          `json:"read_only"`
-	NoSuid              bool          `json:"nosuid"`
-	NoDev               bool          `json:"nodev"`
-	NoExec              bool          `json:"noexec"`
-	FailureKind         string        `json:"failure_kind,omitempty"`
-	Failure             string        `json:"failure,omitempty"`
+	Schema                int           `json:"schema"`
+	Status                CaptureStatus `json:"status"`
+	Filesystem            string        `json:"filesystem"`
+	Files                 uint64        `json:"files"`
+	Directories           uint64        `json:"directories"`
+	ContentBytes          uint64        `json:"content_bytes"`
+	ExpectedContentSHA256 string        `json:"expected_content_sha256"`
+	MountedContentSHA256  string        `json:"mounted_content_sha256"`
+	ImageBytes            uint64        `json:"image_bytes"`
+	ImageSHA256           string        `json:"image_sha256"`
+	ReadOnly              bool          `json:"read_only"`
+	NoSuid                bool          `json:"nosuid"`
+	NoDev                 bool          `json:"nodev"`
+	NoExec                bool          `json:"noexec"`
+	FailureKind           string        `json:"failure_kind,omitempty"`
+	Failure               string        `json:"failure,omitempty"`
 }
 
 type udfMountSession struct {
@@ -83,11 +83,11 @@ var (
 // unmounts and rehashes the image. It performs no path publication.
 func VerifyImage(ctx context.Context, image *os.File, expectedContentSHA256, expectedImageSHA256 string, expectedImageBytes uint64, options ValidationOptions) (report ValidationReport, returnErr error) {
 	report = ValidationReport{
-		Schema:               ValidationReportSchema,
-		Status:               CaptureFailed,
-		Filesystem:           "udf",
+		Schema:                ValidationReportSchema,
+		Status:                CaptureFailed,
+		Filesystem:            "udf",
 		ExpectedContentSHA256: expectedContentSHA256,
-		ImageBytes:           expectedImageBytes,
+		ImageBytes:            expectedImageBytes,
 	}
 	if ctx == nil {
 		return validationFailure(report, "invalid_context", errors.New("ISO validation context is nil"))
@@ -148,20 +148,20 @@ func VerifyImage(ctx context.Context, image *os.File, expectedContentSHA256, exp
 	}
 
 	emitCapture(options.Progress, CaptureProgress{Phase: "validate_content", Message: "Inventorying the mounted UDF content."})
-	mounted, err := Scan(ctx, session.Root, limits)
+	mountedInventory, err := Scan(ctx, session.Root, limits)
 	if err != nil {
 		return validationContextFailure(report, "mounted_inventory", err)
 	}
-	report.Files = mounted.Files
-	report.Directories = mounted.Directories
-	report.ContentBytes = mounted.TotalBytes
-	report.MountedContentSHA256 = mounted.ContentSHA256
+	report.Files = mountedInventory.Files
+	report.Directories = mountedInventory.Directories
+	report.ContentBytes = mountedInventory.TotalBytes
+	report.MountedContentSHA256 = mountedInventory.ContentSHA256
 	report.ReadOnly = true
 	report.NoSuid = true
 	report.NoDev = true
 	report.NoExec = true
-	if mounted.ContentSHA256 != expectedContentSHA256 {
-		return validationFailure(report, "content_mismatch", fmt.Errorf("mounted UDF content digest %s does not match source digest %s", mounted.ContentSHA256, expectedContentSHA256))
+	if mountedInventory.ContentSHA256 != expectedContentSHA256 {
+		return validationFailure(report, "content_mismatch", fmt.Errorf("mounted UDF content digest %s does not match source digest %s", mountedInventory.ContentSHA256, expectedContentSHA256))
 	}
 
 	if err := session.Close(); err != nil {
@@ -181,7 +181,7 @@ func VerifyImage(ctx context.Context, image *os.File, expectedContentSHA256, exp
 	}
 	report.ImageSHA256 = afterDigest
 	report.Status = CapturePassed
-	emitCapture(options.Progress, CaptureProgress{Phase: "validate_content", Message: "Mounted UDF content matches the authenticated source inventory.", Done: mounted.TotalBytes, Total: mounted.TotalBytes})
+	emitCapture(options.Progress, CaptureProgress{Phase: "validate_content", Message: "Mounted UDF content matches the authenticated source inventory.", Done: mountedInventory.TotalBytes, Total: mountedInventory.TotalBytes})
 	return report, nil
 }
 
@@ -206,8 +206,11 @@ func openReadOnlyUDFMount(ctx context.Context, image *os.File) (*udfMountSession
 	workspaceName := filepath.Base(created)
 	workspace := filepath.Join(verificationWorkspaceRoot, workspaceName)
 	cleanupWorkspace := true
+	mounted := false
 	defer func() {
-		if cleanupWorkspace {
+		// Never recurse into a mount that could not be detached. Leaving the
+		// private root-owned workspace is safer and preserves failure evidence.
+		if cleanupWorkspace && !mounted {
 			_ = os.RemoveAll(workspace)
 		}
 	}()
@@ -222,10 +225,10 @@ func openReadOnlyUDFMount(ctx context.Context, image *os.File) (*udfMountSession
 	if err != nil {
 		return nil, fmt.Errorf("open UDF validation mountpoint: %w", err)
 	}
-	preMountID, err := descriptorMountID(preMount.Fd())
-	preMount.Close()
-	if err != nil {
-		return nil, fmt.Errorf("inspect UDF validation mountpoint: %w", err)
+	preMountID, mountIDErr := descriptorMountID(preMount.Fd())
+	closePreMountErr := preMount.Close()
+	if mountIDErr != nil || closePreMountErr != nil {
+		return nil, errors.Join(fmt.Errorf("inspect UDF validation mountpoint: %w", mountIDErr), closePreMountErr)
 	}
 
 	diagnostics := newBoundedDiagnostic(maxProviderDiagnostic)
@@ -251,9 +254,9 @@ func openReadOnlyUDFMount(ctx context.Context, image *os.File) (*udfMountSession
 	command.Stdout = diagnostics
 	command.Stderr = diagnostics
 	if err := runProcessGroup(ctx, command); err != nil {
-		return nil, providerError(fmt.Errorf("mount private ISO as UDF: %w", err), diagnostics)
+		return nil, mountProviderError(err, diagnostics)
 	}
-	mounted := true
+	mounted = true
 	cleanupMount := func() error {
 		if !mounted {
 			return nil
@@ -266,13 +269,13 @@ func openReadOnlyUDFMount(ctx context.Context, image *os.File) (*udfMountSession
 	}
 	root, err := os.OpenFile(mountpoint, os.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
-		_ = cleanupMount()
-		return nil, fmt.Errorf("open mounted UDF validation root: %w", err)
+		cleanupErr := cleanupMount()
+		return nil, errors.Join(fmt.Errorf("open mounted UDF validation root: %w", err), cleanupErr)
 	}
 	if err := requireVerifiedUDFMount(root, preMountID); err != nil {
-		root.Close()
-		_ = cleanupMount()
-		return nil, err
+		closeErr := root.Close()
+		cleanupErr := cleanupMount()
+		return nil, errors.Join(err, closeErr, cleanupErr)
 	}
 	cleanupWorkspace = false
 	return &udfMountSession{
@@ -287,6 +290,14 @@ func openReadOnlyUDFMount(ctx context.Context, image *os.File) (*udfMountSession
 			return errors.Join(closeErr, unmountErr)
 		},
 	}, nil
+}
+
+func mountProviderError(runErr error, diagnostics *boundedDiagnostic) error {
+	message := diagnostics.String()
+	if message == "" {
+		return fmt.Errorf("mount private ISO as UDF: %w", runErr)
+	}
+	return fmt.Errorf("mount private ISO as UDF: %w: %s", runErr, message)
 }
 
 func openSecureWorkspaceRoot(path string) (*os.File, error) {
