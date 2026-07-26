@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	ValidationReportSchema        = 1
-	udfSuperMagic          int64  = 0x15013346
+	ValidationReportSchema       = 1
+	udfSuperMagic          int64 = 0x15013346
 	statfsReadOnly         uint64 = 0x1
 	statfsNoSuid           uint64 = 0x2
 	statfsNoDev            uint64 = 0x4
@@ -234,6 +234,7 @@ func openReadOnlyUDFMount(ctx context.Context, image *os.File) (*udfMountSession
 	diagnostics := newBoundedDiagnostic(maxProviderDiagnostic)
 	command := exec.Command(
 		executable,
+		"--internal-only",
 		"--no-canonicalize",
 		"--no-mtab",
 		"-t", "udf",
@@ -247,6 +248,7 @@ func openReadOnlyUDFMount(ctx context.Context, image *os.File) (*udfMountSession
 		"HOME=/nonexistent",
 		"LC_ALL=C.UTF-8",
 		"LIBMOUNT_FSTAB=/dev/null",
+		"LIBMOUNT_FORCE_MOUNT2=always",
 		"PATH=/usr/sbin:/usr/bin:/sbin:/bin",
 		"TZ=UTC",
 	}
