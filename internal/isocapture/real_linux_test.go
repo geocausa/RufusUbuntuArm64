@@ -45,7 +45,7 @@ func TestRealGenISOImageUDFRoundTrip(t *testing.T) {
 		t.Fatalf("losetup returned unexpected device %q", loopDevice)
 	}
 	defer func() {
-		if output, err := exec.Command("losetup", "--detach", "--", loopDevice).CombinedOutput(); err != nil {
+		if output, err := exec.Command("losetup", "--detach", loopDevice).CombinedOutput(); err != nil {
 			t.Errorf("detach source loop device: %v: %s", err, strings.TrimSpace(string(output)))
 		}
 	}()
