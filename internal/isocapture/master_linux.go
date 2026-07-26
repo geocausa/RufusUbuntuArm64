@@ -16,11 +16,11 @@ import (
 )
 
 const (
-	CaptureReportSchema                       = 1
-	maxProviderDiagnostic                     = 64 * 1024
-	minimumMasteringReserve  uint64            = 64 * 1024 * 1024
-	perEntryMasteringReserve uint64            = 8 * 1024
-	maximumMasteringDepth                      = 8
+	CaptureReportSchema                        = 1
+	maxProviderDiagnostic                      = 64 * 1024
+	minimumMasteringReserve  uint64             = 64 * 1024 * 1024
+	perEntryMasteringReserve uint64             = 8 * 1024
+	maximumMasteringDepth                       = 8
 )
 
 type CaptureStatus string
@@ -126,14 +126,14 @@ func Master(ctx context.Context, sourceRoot, output *os.File, options MasterOpti
 
 	imageWriter := &boundedOutputWriter{output: output, maximum: outputLimit}
 	diagnostics := newBoundedDiagnostic(maxProviderDiagnostic)
-	command := exec.CommandContext(ctx, plan.Executable, plan.Arguments...)
+	command := exec.Command(plan.Executable, plan.Arguments...)
 	command.Dir = "/"
 	command.Env = append([]string(nil), plan.Environment...)
 	command.ExtraFiles = []*os.File{sourceRoot}
 	command.Stdout = imageWriter
 	command.Stderr = diagnostics
 	emitCapture(options.Progress, CaptureProgress{Phase: "master", Message: "Creating the private ISO9660/Joliet/UDF image.", Total: outputLimit})
-	runErr := command.Run()
+	runErr := runProcessGroup(ctx, command)
 	if err := ctx.Err(); err != nil {
 		return captureCancellation(report, contextCause(ctx, err))
 	}
