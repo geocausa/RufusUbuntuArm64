@@ -1,172 +1,52 @@
-name: Drive backup development diagnostics
+name: Drive backup package normalization
 
 on:
   pull_request:
     branches:
       - stage3/0.14.0
     paths:
-      - 'cmd/rufus-device-backup/**'
-      - 'internal/drivebackup/**'
-      - 'internal/trustedexec/**'
-      - 'gui/rufusarm64_device_qualify.py'
-      - 'gui/rufusarm64_drive_backup_formats.py'
-      - 'gui/test_device_backup.py'
-      - 'gui/test_device_backup_dialog.py'
-      - 'packaging/rufusarm64'
       - '.github/workflows/drivebackup-development-diagnostics.yml'
 
 permissions:
   contents: write
 
 jobs:
-  focused-tests:
+  normalize-package:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           persist-credentials: true
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
-        with:
-          go-version: '1.22.12'
-          cache: false
-      - name: Capture focused test output
+      - name: Keep one packaged format extension
         shell: bash
         run: |
-          set +e
-          go test ./internal/drivebackup ./internal/trustedexec ./cmd/rufus-device-backup > focused-tests.log 2>&1
-          status=$?
-          printf 'exit_status=%s\n' "$status" >> focused-tests.log
-          exit 0
-      - name: Capture graphical contract output
-        shell: bash
-        run: |
-          set +e
-          PYTHONPATH=gui python3 -m unittest gui.test_device_backup gui.test_device_backup_dialog > graphical-tests.log 2>&1
-          status=$?
-          printf 'exit_status=%s\n' "$status" >> graphical-tests.log
-          exit 0
-      - name: Require green Go contracts
-        if: always()
-        shell: bash
-        run: grep -Fxq 'exit_status=0' focused-tests.log
-      - name: Require green graphical contracts
-        if: always()
-        shell: bash
-        run: grep -Fxq 'exit_status=0' graphical-tests.log
-      - name: Upload focused diagnostics
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: drivebackup-focused-diagnostics
-          path: |
-            focused-tests.log
-            graphical-tests.log
-          if-no-files-found: error
-          retention-days: 1
-      - name: Normalize packaged format module
-        shell: bash
-        run: |
+          set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
           path = Path('scripts/build-deb.sh')
           text = path.read_text(encoding='utf-8')
-          anchor = '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_device_qualify_dialog.py" \\
-            "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_device_qualify_dialog.py"
-          '''
           block = '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_formats.py" \\
             "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_formats.py"
           '''
           while block + block in text:
               text = text.replace(block + block, block)
-          if text.count(block) == 0:
-              if text.count(anchor) != 1:
-                  raise SystemExit('package install anchor is missing or ambiguous')
-              text = text.replace(anchor, anchor + block, 1)
           if text.count(block) != 1:
               raise SystemExit('package format module install is missing or duplicated')
           path.write_text(text, encoding='utf-8')
           PY
-      - name: Capture permanent qemu loop qualification patch
-        shell: bash
-        run: |
-          set +e
-          python3 - <<'PY' > qemu-patch.log 2>&1
-          from pathlib import Path
-
-          path = Path('.github/workflows/ci.yml')
-          lines = path.read_text(encoding='utf-8').splitlines()
-          dependency = '            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs'
-          replacement = dependency + ' qemu-utils'
-          print(f'dependency_matches={sum(line == dependency for line in lines)}')
-          print(f'dependency_replacement_present={replacement in lines}')
-          if replacement not in lines:
-              matches = [index for index, line in enumerate(lines) if line == dependency]
-              if len(matches) != 1:
-                  raise SystemExit('CI dependency line is missing or ambiguous')
-              lines[matches[0]] = replacement
-          if not any('drivebackup-loop.test' in line for line in lines):
-              markers = [
-                  index
-                  for index, line in enumerate(lines)
-                  if line.strip().startswith('"${RUNNER_TEMP}/devicequal-loop.test"')
-              ]
-              print(f'loop_markers={markers}')
-              if len(markers) != 1:
-                  raise SystemExit('device qualification loop invocation is missing or ambiguous')
-              end = markers[0]
-              while end < len(lines) and lines[end].strip() != '-test.v':
-                  end += 1
-              print(f'loop_end={end} line={lines[end] if end < len(lines) else None!r}')
-              if end >= len(lines):
-                  raise SystemExit('device qualification loop command has no terminator')
-              slash = chr(92)
-              addition = [
-                  '            go test -c -o "${RUNNER_TEMP}/drivebackup-loop.test" ./internal/drivebackup',
-                  '            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" ' + slash,
-                  '              "${RUNNER_TEMP}/drivebackup-loop.test" ' + slash,
-                  "              -test.run '^(TestCaptureDeviceCapturesRealReadOnlyLoopDevice|TestCaptureDeviceExportsVerifiedContainersFromRealReadOnlyLoop)$' " + slash,
-                  '              -test.v',
-              ]
-              lines[end + 1:end + 1] = addition
-          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-          PY
-          status=$?
-          printf 'exit_status=%s\n' "$status" >> qemu-patch.log
-          cat qemu-patch.log
-          exit 0
-      - name: Upload qemu patch diagnostics
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: drivebackup-qemu-patch-diagnostics
-          path: qemu-patch.log
-          if-no-files-found: error
-          retention-days: 1
-      - name: Require successful qemu qualification patch
-        shell: bash
-        run: grep -Fxq 'exit_status=0' qemu-patch.log
-      - name: Remove unused staging workflow
-        shell: bash
-        run: rm -f .github/workflows/drivebackup-package-patch.yml
-      - name: Validate staged repository changes
-        shell: bash
-        run: |
           git diff --check
           test "$(grep -Fc 'gui/rufusarm64_drive_backup_formats.py' scripts/build-deb.sh)" -eq 1
-          grep -Fq 'drivebackup-loop.test' .github/workflows/ci.yml
-          grep -Fq 'qemu-utils' .github/workflows/ci.yml
-      - name: Commit staged repository changes
+      - name: Commit package normalization
         shell: bash
         run: |
+          set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -A
+          git add scripts/build-deb.sh
           if git diff --cached --quiet; then
             exit 0
           fi
-          git commit -m 'ci: qualify packaged VHD and VHDX backup'
-      - name: Push staged repository changes
-        shell: bash
-        run: git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          git commit -m 'packaging: normalize drive backup format module'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
