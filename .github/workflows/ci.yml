@@ -25,7 +25,7 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26.5'
-      - name: Normalize and qualify ISO source and package metadata
+      - name: Apply ISO source and package normalization
         shell: bash
         run: |
           set -euo pipefail
@@ -72,9 +72,17 @@ jobs:
               text = text.replace(old, new, 1)
           lifecycle.write_text(text)
           PY
+      - name: Qualify Go ISO contracts
+        shell: bash
+        run: |
+          set -euo pipefail
           gofmt -w cmd/rufus-device-backup/*.go internal/isocapture/*.go
           test -z "$(gofmt -l cmd/rufus-device-backup/*.go internal/isocapture/*.go)"
           go test ./cmd/rufus-device-backup ./internal/isocapture ./internal/trustedexec
+      - name: Qualify Python and GTK ISO contracts
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 -m py_compile \
             gui/rufusarm64_iso_capture.py \
             gui/rufusarm64_drive_backup_iso.py \
@@ -83,10 +91,18 @@ jobs:
           PYTHONPATH=gui python3 gui/test_iso_capture.py
           PYTHONPATH=gui python3 gui/test_device_backup.py
           PYTHONPATH=gui python3 gui/test_device_backup_dialog.py
+      - name: Qualify ISO package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
           bash -n scripts/build-deb.sh packaging/rufusarm64
           test "$(grep -Fc 'gui/rufusarm64_iso_capture.py' scripts/build-deb.sh)" -eq 1
           test "$(grep -Fc 'gui/rufusarm64_drive_backup_iso.py' scripts/build-deb.sh)" -eq 1
           grep -Fq 'genisoimage' scripts/build-deb.sh
+      - name: Publish validated ISO source normalization
+        shell: bash
+        run: |
+          set -euo pipefail
           if git diff --quiet -- \
             cmd/rufus-device-backup \
             internal/isocapture \
