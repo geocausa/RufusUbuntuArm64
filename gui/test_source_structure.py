@@ -118,10 +118,22 @@ class SourceStructureTests(unittest.TestCase):
             "rufusarm64_ffu_dialog.py": {
                 "FFUReviewDialog": {
                     "start_review": ("threading.Thread(",),
-                    "_run_review": ("subprocess.run(", "timeout=300"),
+                    "_run_review": (
+                        "subprocess.Popen(",
+                        "start_new_session=True",
+                        "communicate_bounded(",
+                        "timeout=300",
+                        "strict_json_loads(",
+                    ),
                     "_finish_review": ("generation != self.generation", "self.closed"),
                     "start_restore": ("threading.Thread(", "build_ffu_restore_command"),
-                    "_run_restore": ("subprocess.Popen(", "start_new_session=True", "normalize_ffu_restore_output"),
+                    "_run_restore": (
+                        "subprocess.Popen(",
+                        "start_new_session=True",
+                        "communicate_bounded(",
+                        "strict_json_loads(",
+                        "normalize_ffu_restore_output",
+                    ),
                     "cancel_restore": ("os.killpg(", "signal.SIGTERM", "target state is not yet known"),
                     "_finish_restore": ("generation != self.generation", "self.closed", "possibly modified"),
                 },

@@ -13,6 +13,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import GLib, Gtk
 
+from rufusarm64_ffu_json import communicate_bounded, strict_json_loads
 from rufusarm64_ffu_restore_logic import (
     build_ffu_restore_command,
     ffu_restore_summary,
@@ -23,6 +24,12 @@ from rufusarm64_logic import (
     ffu_review_summary,
     normalize_ffu_review,
 )
+
+
+def _terminate_process_group(process, force=False):
+    if process is None or process.poll() is not None:
+        return
+    os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
 
 
 class FFUReviewDialog(Gtk.Dialog):
@@ -268,26 +275,31 @@ class FFUReviewDialog(Gtk.Dialog):
         ).start()
 
     def _run_review(self, command, generation):
+        process = None
         payload = None
         failure = ""
         try:
-            completed = subprocess.run(
+            process = subprocess.Popen(
                 command,
-                check=False,
-                text=True,
-                capture_output=True,
-                timeout=300,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
             )
-            if completed.stdout.strip():
-                payload = json.loads(completed.stdout)
+            stdout, stderr = communicate_bounded(
+                process,
+                timeout=300,
+                terminate=lambda force: _terminate_process_group(process, force),
+            )
+            if stdout.strip():
+                payload = strict_json_loads(stdout)
                 normalize_ffu_review(payload)
-            if completed.returncode != 0:
-                failure = completed.stderr.strip() or completed.stdout.strip() or "FFU review failed."
+            if process.returncode != 0:
+                failure = stderr.strip() or stdout.strip() or "FFU review failed."
             elif payload is None:
                 failure = "The FFU reviewer returned no evidence."
         except subprocess.TimeoutExpired:
             failure = "The authenticated FFU review exceeded the five-minute safety limit."
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
+        except (OSError, ValueError) as exc:
             failure = str(exc)
         GLib.idle_add(self._finish_review, generation, payload, failure)
 
@@ -368,22 +380,24 @@ class FFUReviewDialog(Gtk.Dialog):
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
                 start_new_session=True,
             )
             self.process = process
             if self.cancel_requested and process.poll() is None:
                 try:
-                    os.killpg(process.pid, signal.SIGTERM)
+                    _terminate_process_group(process)
                 except (ProcessLookupError, PermissionError, OSError):
                     pass
-            stdout, stderr = process.communicate()
+            stdout, stderr = communicate_bounded(
+                process,
+                terminate=lambda force: _terminate_process_group(process, force),
+            )
             return_code = process.returncode
             if stdout.strip():
                 try:
-                    payload = json.loads(stdout)
+                    payload = strict_json_loads(stdout)
                     normalized = normalize_ffu_restore_output(payload, expected_review)
-                except (ValueError, json.JSONDecodeError) as exc:
+                except ValueError as exc:
                     failure = str(exc)
                     uncertain = True
             if normalized is None:
@@ -391,7 +405,9 @@ class FFUReviewDialog(Gtk.Dialog):
                 uncertain = True
             elif stderr.strip():
                 failure = stderr.strip()
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
+            if process is not None and process.returncode is not None:
+                return_code = process.returncode
             failure = str(exc)
             uncertain = True
         finally:

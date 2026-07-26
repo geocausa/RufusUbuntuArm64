@@ -83,11 +83,14 @@ jobs:
           set -euo pipefail
           python3 -m py_compile \
             gui/rufusarm64_logic.py \
+            gui/rufusarm64_ffu_json.py \
+            gui/rufusarm64_ffu_dialog.py \
             gui/rufusarm64_ffu_restore_logic.py \
             gui/rufusarm64_ffu_physical_qualification.py \
             scripts/ffu-physical-qualification.py
           PYTHONPATH=gui python3 -m unittest \
             test_logic \
+            test_ffu_json \
             test_ffu_restore_logic \
             test_ffu_physical_qualification \
             test_source_structure
