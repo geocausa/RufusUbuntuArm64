@@ -73,6 +73,7 @@ wait "$child"
 }
 
 func TestRunProcessGroupRejectsInvalidInputs(t *testing.T) {
+	//lint:ignore SA1012 This test deliberately verifies nil-context rejection.
 	if err := runProcessGroup(nil, exec.Command("/bin/true")); err == nil || !strings.Contains(err.Error(), "context") {
 		t.Fatalf("nil context error = %v", err)
 	}

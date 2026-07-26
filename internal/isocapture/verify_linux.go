@@ -19,14 +19,14 @@ import (
 )
 
 const (
-	ValidationReportSchema     = 1
-	udfSuperMagic       int64  = 0x15013346
-	statfsReadOnly      uint64 = 0x1
-	statfsNoSuid        uint64 = 0x2
-	statfsNoDev         uint64 = 0x4
-	statfsNoExec        uint64 = 0x8
-	validationImageFD          = 3
-	validationImagePath        = "/proc/self/fd/3"
+	ValidationReportSchema        = 1
+	udfSuperMagic          int64  = 0x15013346
+	statfsReadOnly         uint64 = 0x1
+	statfsNoSuid           uint64 = 0x2
+	statfsNoDev            uint64 = 0x4
+	statfsNoExec           uint64 = 0x8
+	validationImageFD             = 3
+	validationImagePath           = "/proc/self/fd/3"
 )
 
 type ValidationOptions struct {

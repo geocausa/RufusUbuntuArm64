@@ -29,8 +29,8 @@ func TestRealGenISOImageUDFRoundTrip(t *testing.T) {
 	}
 	fixtures := map[string][]byte{
 		filepath.Join(sourcePath, "EFI", "BOOT", "BOOTAA64.EFI"): []byte("deterministic-arm64-efi-fixture"),
-		filepath.Join(sourcePath, "README.TXT"):                         []byte("snapshot-bound UDF capture\n"),
-		filepath.Join(sourcePath, "PAYLOAD.BIN"):                        makeSparseFixture(),
+		filepath.Join(sourcePath, "README.TXT"):                  []byte("snapshot-bound UDF capture\n"),
+		filepath.Join(sourcePath, "PAYLOAD.BIN"):                 makeSparseFixture(),
 	}
 	for path, content := range fixtures {
 		if err := os.WriteFile(path, content, 0o644); err != nil {

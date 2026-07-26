@@ -16,11 +16,11 @@ import (
 )
 
 const (
-	CaptureReportSchema                        = 1
-	maxProviderDiagnostic                      = 64 * 1024
-	minimumMasteringReserve  uint64             = 64 * 1024 * 1024
-	perEntryMasteringReserve uint64             = 8 * 1024
-	maximumMasteringDepth                       = 8
+	CaptureReportSchema             = 1
+	maxProviderDiagnostic           = 64 * 1024
+	minimumMasteringReserve  uint64 = 64 * 1024 * 1024
+	perEntryMasteringReserve uint64 = 8 * 1024
+	maximumMasteringDepth           = 8
 )
 
 type CaptureStatus string

@@ -34,13 +34,13 @@ const (
 // Limits bounds all descriptor traversal and hashing before any mastering tool
 // can run. Zero values select the reviewed defaults.
 type Limits struct {
-	MaxEntries       int
-	MaxDepth         int
-	MaxPathBytes     int
-	MaxPathLength    int
+	MaxEntries        int
+	MaxDepth          int
+	MaxPathBytes      int
+	MaxPathLength     int
 	MaxComponentBytes int
-	MaxFileBytes     uint64
-	MaxTotalBytes    uint64
+	MaxFileBytes      uint64
+	MaxTotalBytes     uint64
 }
 
 func DefaultLimits() Limits {
@@ -59,46 +59,46 @@ func DefaultLimits() Limits {
 // admitted; symlinks, hard links, devices, sockets, FIFOs and mount crossings
 // fail closed.
 type Entry struct {
-	Path       string    `json:"path"`
-	Kind       EntryKind `json:"kind"`
-	Size       uint64    `json:"size"`
-	Mode       uint32    `json:"mode"`
-	Device     uint64    `json:"device"`
-	Inode      uint64    `json:"inode"`
-	MTimeNS    int64     `json:"mtime_ns"`
-	CTimeNS    int64     `json:"ctime_ns"`
-	SHA256     string    `json:"sha256,omitempty"`
+	Path    string    `json:"path"`
+	Kind    EntryKind `json:"kind"`
+	Size    uint64    `json:"size"`
+	Mode    uint32    `json:"mode"`
+	Device  uint64    `json:"device"`
+	Inode   uint64    `json:"inode"`
+	MTimeNS int64     `json:"mtime_ns"`
+	CTimeNS int64     `json:"ctime_ns"`
+	SHA256  string    `json:"sha256,omitempty"`
 }
 
 // Inventory contains both an exact source-binding digest and a content digest.
 // The latter deliberately excludes inode and timestamp metadata so a mastered
 // image can be compared against the supported path/type/size/content model.
 type Inventory struct {
-	Schema         int     `json:"schema"`
-	Profile        string  `json:"profile"`
-	RootDevice     uint64  `json:"root_device"`
-	RootInode      uint64  `json:"root_inode"`
-	RootMountID    uint64  `json:"root_mount_id"`
-	Files          uint64  `json:"files"`
-	Directories    uint64  `json:"directories"`
-	TotalBytes     uint64  `json:"total_bytes"`
-	PathBytes      uint64  `json:"path_bytes"`
-	Entries        []Entry `json:"entries"`
-	BindingSHA256  string  `json:"binding_sha256"`
-	ContentSHA256  string  `json:"content_sha256"`
+	Schema        int     `json:"schema"`
+	Profile       string  `json:"profile"`
+	RootDevice    uint64  `json:"root_device"`
+	RootInode     uint64  `json:"root_inode"`
+	RootMountID   uint64  `json:"root_mount_id"`
+	Files         uint64  `json:"files"`
+	Directories   uint64  `json:"directories"`
+	TotalBytes    uint64  `json:"total_bytes"`
+	PathBytes     uint64  `json:"path_bytes"`
+	Entries       []Entry `json:"entries"`
+	BindingSHA256 string  `json:"binding_sha256"`
+	ContentSHA256 string  `json:"content_sha256"`
 }
 
 type scanner struct {
-	ctx          context.Context
-	limits       Limits
-	rootDevice   uint64
-	rootMountID  uint64
-	entries      []Entry
-	directories  map[fileIdentity]string
-	files        uint64
-	dirs         uint64
-	totalBytes   uint64
-	pathBytes    uint64
+	ctx         context.Context
+	limits      Limits
+	rootDevice  uint64
+	rootMountID uint64
+	entries     []Entry
+	directories map[fileIdentity]string
+	files       uint64
+	dirs        uint64
+	totalBytes  uint64
+	pathBytes   uint64
 }
 
 type fileIdentity struct {
@@ -147,16 +147,16 @@ func Scan(ctx context.Context, root *os.File, limits Limits) (Inventory, error) 
 	}
 	sort.Slice(scan.entries, func(i, j int) bool { return scan.entries[i].Path < scan.entries[j].Path })
 	inventory := Inventory{
-		Schema:        InventorySchema,
-		Profile:       ProfileISO9660JolietUDF,
-		RootDevice:    uint64(rootStat.Dev),
-		RootInode:     rootStat.Ino,
-		RootMountID:   rootMountID,
-		Files:         scan.files,
-		Directories:   scan.dirs,
-		TotalBytes:    scan.totalBytes,
-		PathBytes:     scan.pathBytes,
-		Entries:       scan.entries,
+		Schema:      InventorySchema,
+		Profile:     ProfileISO9660JolietUDF,
+		RootDevice:  uint64(rootStat.Dev),
+		RootInode:   rootStat.Ino,
+		RootMountID: rootMountID,
+		Files:       scan.files,
+		Directories: scan.dirs,
+		TotalBytes:  scan.totalBytes,
+		PathBytes:   scan.pathBytes,
+		Entries:     scan.entries,
 	}
 	inventory.BindingSHA256, err = inventoryDigest(inventory, true)
 	if err != nil {
@@ -508,16 +508,16 @@ func inventoryDigest(inventory Inventory, binding bool) (string, error) {
 		return marshalSHA256(payload)
 	}
 	payload := struct {
-		Schema       int     `json:"schema"`
-		Profile      string  `json:"profile"`
-		RootDevice   uint64  `json:"root_device"`
-		RootInode    uint64  `json:"root_inode"`
-		RootMountID  uint64  `json:"root_mount_id"`
-		Files        uint64  `json:"files"`
-		Directories  uint64  `json:"directories"`
-		TotalBytes   uint64  `json:"total_bytes"`
-		PathBytes    uint64  `json:"path_bytes"`
-		Entries      []Entry `json:"entries"`
+		Schema      int     `json:"schema"`
+		Profile     string  `json:"profile"`
+		RootDevice  uint64  `json:"root_device"`
+		RootInode   uint64  `json:"root_inode"`
+		RootMountID uint64  `json:"root_mount_id"`
+		Files       uint64  `json:"files"`
+		Directories uint64  `json:"directories"`
+		TotalBytes  uint64  `json:"total_bytes"`
+		PathBytes   uint64  `json:"path_bytes"`
+		Entries     []Entry `json:"entries"`
 	}{inventory.Schema, inventory.Profile, inventory.RootDevice, inventory.RootInode, inventory.RootMountID, inventory.Files, inventory.Directories, inventory.TotalBytes, inventory.PathBytes, inventory.Entries}
 	return marshalSHA256(payload)
 }
