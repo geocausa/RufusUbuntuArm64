@@ -181,7 +181,7 @@ Software checks never establish universal physical boot, persistence, whole-devi
 
 ## Build and test
 
-Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, the verified ARM64 WIM engine, and source-retained package-private boot assets.
+Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, `qemu-utils`, `genisoimage`, the verified ARM64 WIM engine, and source-retained package-private boot assets.
 
 ```bash
 ./scripts/test.sh
