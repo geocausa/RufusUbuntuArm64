@@ -29,9 +29,9 @@ func InspectDestination(outputPath, sourcePath string, required uint64) (Destina
 }
 
 // InspectDestinationForFormat validates a prospective output without opening
-// the source device. Container formats use qemu-img's fully-allocated measure as
-// the conservative free-space requirement and report the smaller minimum only
-// as informational evidence.
+// the source device. Container formats use an explicit conservative policy
+// reserve for free-space admission and report an independently measured sparse
+// minimum only when the output driver supplies one reliably.
 func InspectDestinationForFormat(ctx context.Context, outputPath, sourcePath string, sourceSize uint64, format Format) (DestinationInfo, error) {
 	if ctx == nil {
 		return DestinationInfo{}, errors.New("backup planning context is nil")
