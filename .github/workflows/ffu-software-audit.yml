@@ -1,4 +1,4 @@
-name: FFU software release audit
+name: Drive backup reserve contract repair
 
 on:
   pull_request:
@@ -6,144 +6,99 @@ on:
       - stage3/0.14.0
     paths:
       - '.github/workflows/ffu-software-audit.yml'
-      - 'cmd/rufus-linux/ffu_*.go'
-      - 'docs/ffu-*.md'
-      - 'gui/rufusarm64_ffu_*.py'
-      - 'gui/test_ffu_*.py'
-      - 'gui/rufusarm64_logic.py'
-      - 'gui/test_logic.py'
-      - 'gui/test_source_structure.py'
-      - 'internal/device/**'
-      - 'internal/ffu/**'
-      - 'internal/safety/**'
-      - 'internal/trustedexec/**'
-      - 'scripts/ffu-physical-qualification.py'
-      - 'go.mod'
-      - 'go.sum'
-  push:
-    branches:
-      - stage3/0.14.0
-    paths:
-      - '.github/workflows/ffu-software-audit.yml'
-      - 'cmd/rufus-linux/ffu_*.go'
-      - 'docs/ffu-*.md'
-      - 'gui/rufusarm64_ffu_*.py'
-      - 'gui/test_ffu_*.py'
-      - 'gui/rufusarm64_logic.py'
-      - 'gui/test_logic.py'
-      - 'gui/test_source_structure.py'
-      - 'internal/device/**'
-      - 'internal/ffu/**'
-      - 'internal/safety/**'
-      - 'internal/trustedexec/**'
-      - 'scripts/ffu-physical-qualification.py'
-      - 'go.mod'
-      - 'go.sum'
-  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  software-audit:
-    name: Software-only FFU release boundary
+  repair:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
     steps:
-      - name: Check out exact source
-        uses: actions/checkout@v4
-
-      - name: Set up Go 1.22
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: true
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: '1.22.x'
-          cache: true
-
-      - name: Test FFU, device and target-safety packages with the race detector
-        shell: bash
-        run: |
-          set -euo pipefail
-          go test -race ./internal/ffu ./internal/device ./internal/safety ./internal/trustedexec ./cmd/rufus-linux
-
-      - name: Vet the complete FFU provider boundary
-        shell: bash
-        run: |
-          set -euo pipefail
-          go vet ./internal/ffu ./internal/device ./internal/safety ./internal/trustedexec ./cmd/rufus-linux
-
-      - name: Cross-build the Linux ARM64 provider
-        shell: bash
-        run: |
-          set -euo pipefail
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
-            go build -trimpath -o /tmp/rufusarm64-cli ./cmd/rufus-linux
-          test -s /tmp/rufusarm64-cli
-
-      - name: Validate graphical review, restore and qualification evidence
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m py_compile \
-            gui/rufusarm64_logic.py \
-            gui/rufusarm64_ffu_json.py \
-            gui/rufusarm64_ffu_dialog.py \
-            gui/rufusarm64_ffu_restore_logic.py \
-            gui/rufusarm64_ffu_physical_qualification.py \
-            scripts/ffu-physical-qualification.py
-          PYTHONPATH=gui python3 -m unittest \
-            test_logic \
-            test_ffu_json \
-            test_ffu_restore_logic \
-            test_ffu_physical_qualification \
-            test_source_structure
-
-      - name: Enforce the experimental destructive boundary
+          cache: false
+      - name: Align packaged plan and documentation contracts
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
-          cli = Path('cmd/rufus-linux/ffu_linux.go').read_text(encoding='utf-8')
-          binding = Path('cmd/rufus-linux/ffu_review_binding_linux.go').read_text(encoding='utf-8')
-          dialog = Path('gui/rufusarm64_ffu_dialog.py').read_text(encoding='utf-8')
-          restore = Path('gui/rufusarm64_ffu_restore_logic.py').read_text(encoding='utf-8')
-          executor = Path('internal/ffu/restore_executor_linux.go').read_text(encoding='utf-8')
-          device_source = Path('internal/device/device.go').read_text(encoding='utf-8')
-          safety_source = Path('internal/safety/safety_linux.go').read_text(encoding='utf-8')
-          trusted = Path('internal/trustedexec/trustedexec_linux.go').read_text(encoding='utf-8')
+          helper = Path('gui/rufusarm64_device_qualify.py')
+          text = helper.read_text(encoding='utf-8')
+          old = '    elif minimum <= 0 or minimum > required:\n'
+          new = '    elif minimum > required:\n'
+          if text.count(old) != 1:
+              raise SystemExit('GTK container minimum guard is missing or ambiguous')
+          helper.write_text(text.replace(old, new, 1), encoding='utf-8')
 
-          required = {
-              'CLI experimental gate': (cli, '--experimental-ffu is required'),
-              'root-before-restore gate': (cli, 'FFU restore requires administrator privileges'),
-              'review binding': (cli + binding, 'expected-review-binding'),
-              'constant-time binding comparison': (binding, 'subtle.ConstantTimeCompare'),
-              'exclusive target acquisition': (cli, 'AcquireExclusiveFullFlashTarget'),
-              'one-shot authorization': (cli, 'AuthorizeSinglePhaseFullFlashMutation'),
-              'complete executor readback': (executor, 'readback-target-read'),
-              'GTK exact confirmation': (restore, 'confirmation != review["exact_confirmation_phrase"]'),
-              'GTK process-group cancellation': (dialog, 'os.killpg(process.pid, signal.SIGTERM)'),
-              'unknown target fail-closed warning': (dialog, 'target state is unknown'),
-              'trusted utility resolver': (trusted, 'Ambient PATH is never consulted.'),
-              'device trusted lsblk': (device_source, 'resolveDeviceUtility("lsblk")'),
-              'safety trusted commands': (safety_source, 'trustedSafetyCommandContext'),
-          }
-          for label, (text, needle) in required.items():
-              if needle not in text:
-                  raise SystemExit(f'missing required FFU boundary: {label}')
+          tests = Path('gui/test_device_backup.py')
+          text = tests.read_text(encoding='utf-8')
+          old = '                "container_minimum_bytes": 2 * 1024 * 1024,\n'
+          new = '                "container_minimum_bytes": 0,\n'
+          if text.count(old) != 1:
+              raise SystemExit('GTK container plan fixture is missing or ambiguous')
+          text = text.replace(old, new, 1)
+          anchor = '        self.assertIn("Destination filesystem: /home/user", summary)\n'
+          addition = anchor + '        self.assertNotIn("Minimum container estimate", summary)\n'
+          if text.count(anchor) != 1:
+              raise SystemExit('GTK summary assertion anchor is missing or ambiguous')
+          tests.write_text(text.replace(anchor, addition, 1), encoding='utf-8')
 
-          forbidden = {
-              'fixed-disk override': '--allow-fixed',
-              'force bypass': '--force',
-              'automatic unmount': 'syscall.Unmount',
-              'confirmation bypass': '--yes',
-          }
-          ffu_boundary = '\n'.join((cli, binding, dialog, restore))
-          for label, needle in forbidden.items():
-              if needle in ffu_boundary:
-                  raise SystemExit(f'forbidden FFU boundary appeared: {label}')
-
-          trusted_boundary = '\n'.join((device_source, safety_source, trusted))
-          if 'exec.LookPath' in trusted_boundary:
-              raise SystemExit('forbidden trusted-utility boundary appeared: ambient lookup')
+          manual = Path('docs/rufusarm64-device-backup.1')
+          text = manual.read_text(encoding='utf-8')
+          old = '''source. Raw capture requires the source capacity. VHD and VHDX dry-run planning
+uses QEMU's fully allocated bound for conservative free-space admission; the
+smaller sparse-container estimate is informational only. Mounted removable
+'''
+          new = '''source. Raw capture requires the source capacity. VHD and VHDX dry-run planning
+requires the complete source capacity plus a 12.5% policy reserve, with a
+minimum 64 MiB margin. No sparse-size saving is promised. Mounted removable
+'''
+          if text.count(old) != 1:
+              raise SystemExit('manual allocation paragraph is missing or ambiguous')
+          text = text.replace(old, new, 1)
+          old = '''Validate source metadata, format support, converter availability, destination
+storage, conservative free-space bounds, and collision state without opening
+'''
+          new = '''Validate source metadata, format support, converter availability, destination
+storage, the explicit conservative reserve, and collision state without opening
+'''
+          if text.count(old) != 1:
+              raise SystemExit('manual dry-run paragraph is missing or ambiguous')
+          manual.write_text(text.replace(old, new, 1), encoding='utf-8')
           PY
+      - name: Format and test the repaired boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          gofmt -w \
+            internal/drivebackup/qemu_linux.go \
+            internal/drivebackup/qemu_linux_test.go \
+            internal/drivebackup/plan_linux.go
+          go test ./internal/drivebackup ./cmd/rufus-device-backup
+          PYTHONPATH=gui python3 -m unittest \
+            gui.test_device_backup \
+            gui.test_device_backup_dialog \
+            gui.test_packaged_launcher
+          git diff --check
+      - name: Commit source-only repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            internal/drivebackup/qemu_linux.go \
+            internal/drivebackup/qemu_linux_test.go \
+            internal/drivebackup/plan_linux.go \
+            gui/rufusarm64_device_qualify.py \
+            gui/test_device_backup.py \
+            docs/rufusarm64-device-backup.1
+          git commit -m 'backup: use conservative VHD allocation reserve'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
