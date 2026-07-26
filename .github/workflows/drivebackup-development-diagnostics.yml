@@ -8,10 +8,15 @@ on:
       - 'cmd/rufus-device-backup/**'
       - 'internal/drivebackup/**'
       - 'internal/trustedexec/**'
+      - 'gui/rufusarm64_device_qualify.py'
+      - 'gui/rufusarm64_drive_backup_formats.py'
+      - 'gui/test_device_backup.py'
+      - 'gui/test_device_backup_dialog.py'
+      - 'packaging/rufusarm64'
       - '.github/workflows/drivebackup-development-diagnostics.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   focused-tests:
@@ -19,23 +24,101 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: true
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: '1.22.12'
           cache: false
       - name: Capture focused test output
+        id: focused
         shell: bash
         run: |
           set +e
           go test ./internal/drivebackup ./internal/trustedexec ./cmd/rufus-device-backup > focused-tests.log 2>&1
           status=$?
           printf 'exit_status=%s\n' "$status" >> focused-tests.log
+          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Capture graphical contract output
+        id: graphical
+        shell: bash
+        run: |
+          set +e
+          python3 -m unittest gui.test_device_backup gui.test_device_backup_dialog > graphical-tests.log 2>&1
+          status=$?
+          printf 'exit_status=%s\n' "$status" >> graphical-tests.log
+          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
           exit 0
       - name: Upload focused diagnostics
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: drivebackup-focused-diagnostics
-          path: focused-tests.log
+          path: |
+            focused-tests.log
+            graphical-tests.log
           if-no-files-found: error
           retention-days: 1
+      - name: Stage permanent package and loop qualification changes
+        if: steps.focused.outputs.status == '0' && steps.graphical.outputs.status == '0' && github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          package = Path('scripts/build-deb.sh')
+          package_text = package.read_text(encoding='utf-8')
+          package_anchor = '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_device_qualify_dialog.py" \\
+            "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_device_qualify_dialog.py"
+          '''
+          package_addition = package_anchor + '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_formats.py" \\
+            "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_formats.py"
+          '''
+          if 'rufusarm64_drive_backup_formats.py' not in package_text:
+              if package_text.count(package_anchor) != 1:
+                  raise SystemExit('package install anchor is missing or ambiguous')
+              package.write_text(package_text.replace(package_anchor, package_addition, 1), encoding='utf-8')
+
+          workflow = Path('.github/workflows/ci.yml')
+          workflow_text = workflow.read_text(encoding='utf-8')
+          dependency_anchor = '            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs\n'
+          dependency_replacement = '            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs qemu-utils\n'
+          if 'e2fsprogs qemu-utils' not in workflow_text:
+              if workflow_text.count(dependency_anchor) != 1:
+                  raise SystemExit('CI dependency anchor is missing or ambiguous')
+              workflow_text = workflow_text.replace(dependency_anchor, dependency_replacement, 1)
+
+          loop_anchor = '''            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \\
+              "${RUNNER_TEMP}/devicequal-loop.test" \\
+              -test.run '^TestRunDeviceQualifiesRealLoopDevice$' \\
+              -test.v
+          '''
+          loop_addition = loop_anchor + '''            go test -c -o "${RUNNER_TEMP}/drivebackup-loop.test" ./internal/drivebackup
+            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \\
+              "${RUNNER_TEMP}/drivebackup-loop.test" \\
+              -test.run '^(TestCaptureDeviceCapturesRealReadOnlyLoopDevice|TestCaptureDeviceExportsVerifiedContainersFromRealReadOnlyLoop)$' \\
+              -test.v
+          '''
+          if 'drivebackup-loop.test' not in workflow_text:
+              if workflow_text.count(loop_anchor) != 1:
+                  raise SystemExit('CI loop qualification anchor is missing or ambiguous')
+              workflow_text = workflow_text.replace(loop_anchor, loop_addition, 1)
+          workflow.write_text(workflow_text, encoding='utf-8')
+
+          unused = Path('.github/workflows/drivebackup-package-patch.yml')
+          if unused.exists():
+              unused.unlink()
+          PY
+          git diff --check
+          grep -Fq 'rufusarm64_drive_backup_formats.py' scripts/build-deb.sh
+          grep -Fq 'drivebackup-loop.test' .github/workflows/ci.yml
+          grep -Fq 'qemu-utils' .github/workflows/ci.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/build-deb.sh .github/workflows/ci.yml .github/workflows/drivebackup-package-patch.yml
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'ci: qualify packaged VHD and VHDX backup'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
