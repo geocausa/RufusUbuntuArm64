@@ -8,9 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
-	"strings"
 )
 
 const (
@@ -197,9 +197,11 @@ func validateQEMUJSONObject(data []byte) error {
 	if object == nil {
 		return errors.New("qemu output is not a JSON object")
 	}
-	if token, err := decoder.Token(); !errors.Is(err, os.ErrClosed) && err == nil {
-		return fmt.Errorf("qemu output contains trailing JSON token %v", token)
-	} else if err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "EOF") {
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("qemu output contains trailing JSON value %v", trailing)
+		}
 		return fmt.Errorf("qemu output has trailing data: %w", err)
 	}
 	return nil
