@@ -170,10 +170,14 @@ func CaptureFilesystem(ctx context.Context, sourceMount, outputPath string, opti
 		return filesystemFailure(report, "output_bound", errors.New("ISO mastering output violates the admitted destination bound"))
 	}
 
-	validationReport, err := VerifyImage(
+	portableSourceContentSHA256, err := portableContentSHA256(view.Inventory)
+	if err != nil {
+		return filesystemFailure(report, "validation_evidence", fmt.Errorf("compute portable source content digest: %w", err))
+	}
+	validationReport, err := VerifyPortableImage(
 		ctx,
 		temporary,
-		masterReport.SourceContentSHA256,
+		portableSourceContentSHA256,
 		masterReport.OutputSHA256,
 		masterReport.OutputBytes,
 		ValidationOptions{Limits: options.Limits, Progress: options.Progress},
@@ -181,7 +185,7 @@ func CaptureFilesystem(ctx context.Context, sourceMount, outputPath string, opti
 	if err != nil {
 		return filesystemContextFailure(report, "validate_image", err)
 	}
-	if validationReport.Status != CapturePassed || validationReport.MountedContentSHA256 != masterReport.SourceContentSHA256 || validationReport.ImageSHA256 != masterReport.OutputSHA256 {
+	if validationReport.Status != CapturePassed || validationReport.MountedContentSHA256 != portableSourceContentSHA256 || validationReport.ImageSHA256 != masterReport.OutputSHA256 {
 		return filesystemFailure(report, "validation_evidence", errors.New("independent UDF validation did not return matching passed evidence"))
 	}
 
