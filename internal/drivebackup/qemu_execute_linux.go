@@ -18,13 +18,6 @@ const (
 	qemuOutputDescriptorPath = "/proc/self/fd/4"
 )
 
-type ConsistencyState string
-
-const (
-	ConsistencyPassed      ConsistencyState = "passed"
-	ConsistencyUnsupported ConsistencyState = "unsupported"
-)
-
 // ConvertContainer converts a held raw source descriptor into an already-open
 // private output descriptor. qemu-img receives no source device or destination
 // pathname and cannot select alternate files.
