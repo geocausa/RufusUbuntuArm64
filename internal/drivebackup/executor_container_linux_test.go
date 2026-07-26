@@ -82,6 +82,10 @@ func TestCaptureDeviceExportsVerifiedContainersFromRealReadOnlyLoop(t *testing.T
 		t.Run(string(format), func(t *testing.T) {
 			destinationDir := t.TempDir()
 			destination := filepath.Join(destinationDir, "captured"+format.Extension())
+			measure, err := MeasureContainer(context.Background(), capacity, format)
+			if err != nil {
+				t.Fatal(err)
+			}
 			var phases = make(map[string]bool)
 			report, err := CaptureDevice(context.Background(), loopPath, destination, DeviceOptions{
 				ExpectedDeviceID: deviceID,
@@ -110,6 +114,9 @@ func TestCaptureDeviceExportsVerifiedContainersFromRealReadOnlyLoop(t *testing.T
 			}
 			if len(report.OutputSHA256) != 64 || report.OutputBytes == 0 || report.ContentComparison != ComparisonPassed {
 				t.Fatalf("incomplete output evidence: %+v", report)
+			}
+			if report.OutputBytes > measure.FullyAllocatedBytes {
+				t.Fatalf("container output bytes = %d, exceeds admitted bound %d", report.OutputBytes, measure.FullyAllocatedBytes)
 			}
 			if format == FormatVHD && report.Consistency != ConsistencyUnsupported {
 				t.Fatalf("VHD consistency=%q", report.Consistency)
