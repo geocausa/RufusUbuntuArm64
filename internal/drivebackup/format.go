@@ -16,6 +16,18 @@ const (
 	FormatVHDX Format = "vhdx"
 )
 
+type ComparisonState string
+
+type ConsistencyState string
+
+const (
+	ComparisonPassed ComparisonState = "passed"
+
+	ConsistencyPassed        ConsistencyState = "passed"
+	ConsistencyUnsupported   ConsistencyState = "unsupported"
+	ConsistencyNotApplicable ConsistencyState = "not_applicable"
+)
+
 func ParseFormat(value string) (Format, error) {
 	normalized := strings.ToLower(strings.TrimSpace(value))
 	if normalized == "" {
