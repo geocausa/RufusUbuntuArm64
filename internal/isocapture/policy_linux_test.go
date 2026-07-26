@@ -25,6 +25,7 @@ func TestBuildProviderPlanUsesFixedDescriptorPolicy(t *testing.T) {
 		"-quiet",
 		"-udf",
 		"-J",
+		"-input-charset", "default",
 		"-iso-level", "3",
 		"-no-cache-inodes",
 		"-no-pad",
@@ -37,6 +38,9 @@ func TestBuildProviderPlanUsesFixedDescriptorPolicy(t *testing.T) {
 		t.Fatalf("arguments = %#v, want %#v", plan.Arguments, wantArguments)
 	}
 	wantEnvironment := []string{
+		"GENISOIMAGERC=/dev/null",
+		"MKISOFSRC=/dev/null",
+		"HOME=/nonexistent",
 		"LC_ALL=C.UTF-8",
 		"TZ=UTC",
 		"SOURCE_DATE_EPOCH=946684800",
