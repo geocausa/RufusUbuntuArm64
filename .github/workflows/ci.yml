@@ -12,6 +12,106 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  normalize-iso-release:
+    name: Normalize ISO release integration
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/drive-backup-udf-iso'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/drive-backup-udf-iso
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - name: Normalize and qualify ISO source and package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          package = Path('scripts/build-deb.sh')
+          text = package.read_text()
+          anchor = '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_formats.py" \\\n            "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_formats.py"'''
+          addition = anchor + '''\n          install -Dm644 "${ROOT_DIR}/gui/rufusarm64_iso_capture.py" \\\n            "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_iso_capture.py"\n          install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_iso.py" \\\n            "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_iso.py"'''
+          if addition not in text:
+              if anchor not in text:
+                  raise SystemExit('backup module installation anchor not found')
+              text = text.replace(anchor, addition, 1)
+          text = text.replace(
+              'xz-utils, zstd, qemu-utils',
+              'xz-utils, zstd, qemu-utils, genisoimage',
+              1,
+          )
+          text = text.replace(
+              'creates verified x86 BIOS/Legacy FreeDOS 1.4 media, and captures verified\n images of removable drives.',
+              'creates verified x86 BIOS/Legacy FreeDOS 1.4 media, captures verified\n physical-drive images, and creates validated mounted-filesystem ISO/UDF remasters.',
+              1,
+          )
+          package.write_text(text)
+
+          contracts = Path('gui/rufusarm64_iso_capture.py')
+          text = contracts.read_text()
+          text = text.replace(
+              '''    if required <= 0:\n        raise ValueError("Filesystem ISO report contains an invalid destination bound.")''',
+              '''    if status == "passed" and required <= 0:\n        raise ValueError("Successful filesystem ISO report contains an invalid destination bound.")''',
+              1,
+          )
+          text = text.replace(
+              '''    if not isinstance(limitations, list) or set(limitations) != _REQUIRED_LIMITATIONS or len(limitations) != len(_REQUIRED_LIMITATIONS):''',
+              '''    if (\n        not isinstance(limitations, list)\n        or not all(isinstance(item, str) for item in limitations)\n        or set(limitations) != _REQUIRED_LIMITATIONS\n        or len(limitations) != len(_REQUIRED_LIMITATIONS)\n    ):''',
+              1,
+          )
+          contracts.write_text(text)
+
+          lifecycle = Path('gui/rufusarm64_drive_backup_iso.py')
+          text = lifecycle.read_text()
+          old = '''            if payload["source_bytes"] != source_bytes or payload["required_bytes"] != required_bytes:\n                raise ValueError("Filesystem ISO report does not match the reviewed plan.")'''
+          new = '''            if payload["status"] == "passed":\n                if payload["source_bytes"] != source_bytes or payload["required_bytes"] != required_bytes:\n                    raise ValueError("Successful filesystem ISO report does not match the reviewed plan.")\n            elif payload["source_bytes"] not in {0, source_bytes} or payload["required_bytes"] not in {0, required_bytes}:\n                raise ValueError("Filesystem ISO failure report contains impossible plan evidence.")'''
+          if new not in text:
+              if old not in text:
+                  raise SystemExit('ISO lifecycle report-plan anchor not found')
+              text = text.replace(old, new, 1)
+          lifecycle.write_text(text)
+          PY
+          gofmt -w cmd/rufus-device-backup/*.go internal/isocapture/*.go
+          test -z "$(gofmt -l cmd/rufus-device-backup/*.go internal/isocapture/*.go)"
+          go test ./cmd/rufus-device-backup ./internal/isocapture ./internal/trustedexec
+          python3 -m py_compile \
+            gui/rufusarm64_iso_capture.py \
+            gui/rufusarm64_drive_backup_iso.py \
+            gui/test_iso_capture.py \
+            gui/test_device_backup_dialog.py
+          PYTHONPATH=gui python3 gui/test_iso_capture.py
+          PYTHONPATH=gui python3 gui/test_device_backup.py
+          PYTHONPATH=gui python3 gui/test_device_backup_dialog.py
+          bash -n scripts/build-deb.sh packaging/rufusarm64
+          test "$(grep -Fc 'gui/rufusarm64_iso_capture.py' scripts/build-deb.sh)" -eq 1
+          test "$(grep -Fc 'gui/rufusarm64_drive_backup_iso.py' scripts/build-deb.sh)" -eq 1
+          grep -Fq 'genisoimage' scripts/build-deb.sh
+          if git diff --quiet -- \
+            cmd/rufus-device-backup \
+            internal/isocapture \
+            gui/rufusarm64_iso_capture.py \
+            gui/rufusarm64_drive_backup_iso.py \
+            scripts/build-deb.sh; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            cmd/rufus-device-backup \
+            internal/isocapture \
+            gui/rufusarm64_iso_capture.py \
+            gui/rufusarm64_drive_backup_iso.py \
+            scripts/build-deb.sh
+          git commit -m 'backup: normalize ISO release integration'
+          git push origin HEAD:feature/drive-backup-udf-iso
+
   go-minimum:
     name: Go 1.22 compatibility
     runs-on: ubuntu-24.04
