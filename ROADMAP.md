@@ -92,6 +92,15 @@
 - Windows multi-edition WIM/ESD/split-SWM capability and payload disclosure
 - Release-candidate package, rollback notes, and human real-machine checklist; publication remains gated on recorded hardware sanity
 
+## 0.14 — Stage 3 advanced imaging and recovery (completed)
+
+- Descriptor-bound raw, dynamic VHD, dynamic VHDX, and mounted-filesystem ISO/UDF drive backup
+- Experimental authenticated single-store-v1 FFU restore with strict trust, target, confirmation, write-order, and complete-verification gates
+- Reusable identity-bound USB qualification reports and bounded compressed-image preparation progress
+- El Torito UEFI extraction and opt-in Windows 11 setup Quality of Life policy
+- Privileged loop qualification, native ARM64 execution, Go 1.22 compatibility, static/vulnerability audit, and reproducible Debian packaging
+- Release-candidate notes and real-machine checklist; stable promotion remains gated on recorded physical observations and prerelease feedback
+
 ## 1.0 — supportable stable release
 
 - Signed release artifacts

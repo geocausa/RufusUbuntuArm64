@@ -2,7 +2,7 @@
 
 RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on ARM64 computers**, including Snapdragon X systems such as Surface Pro 11 X1E. It is a native Linux implementation inspired by Rufus; it is not a Wine wrapper and is not endorsed by the official Rufus project.
 
-**Version 0.13.0** is the Stage 2 practical-parity release candidate.
+**Version 0.14.0** is the Stage 3 advanced imaging and recovery release candidate.
 
 ## Highlights
 
@@ -17,7 +17,8 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 - Explicit post-operation actions to create another USB or restore the exact completed target for ordinary storage.
 - Threshold-signed and local-signed image-catalog verification, storage preflight, cancellation, SHA-256 installation, and resumable private partials.
 - Descriptor-safe UEFI, DBX, and SBAT analysis plus optional ARM64 boot-time media-integrity validation for supported persistent media.
-- A guarded **Save drive image…** workflow that captures a removable drive read-only into a new SHA-256-reported image without replacing existing files.
+- A guarded **Save drive image…** workflow supporting verified raw, dynamic VHD, dynamic VHDX, and mounted-filesystem ISO/UDF capture without replacing existing files.
+- An experimental authenticated FFU restore workflow for the supported single-store-v1 profile, with strict source evidence, target binding, complete readback, and explicit unsupported-profile refusal.
 - Keyboard mnemonics, safe visible shortcuts, assistive-technology metadata, selectable status text, and exportable diagnostics.
 - Whole-device, source-identity, target-identity, mount, system-disk, cancellation, filesystem, and post-copy verification safeguards.
 
@@ -26,8 +27,8 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 Verify the release-candidate checksum and install:
 
 ```bash
-sha256sum -c rufusarm64_0.13.0_arm64.deb.sha256
-sudo apt install ./rufusarm64_0.13.0_arm64.deb
+sha256sum -c rufusarm64_0.14.0_arm64.deb.sha256
+sudo apt install ./rufusarm64_0.14.0_arm64.deb
 ```
 
 The package upgrades older `rufusarm64` installations in place. One visible **RufusArm64** application entry is installed. Normal launch opens the composed writer; `rufusarm64 --persistence` remains available for the guarded persistent-media workflow.
@@ -140,7 +141,15 @@ The resulting media targets **x86-compatible processors using BIOS or UEFI Legac
 
 ## Save a drive image
 
-Select a removable drive and choose **Save drive image…**. RufusArm64 plans the destination without elevation, requires the exact `SAVE /dev/DEVICE TO /absolute/path/image.img` phrase, opens the source read-only through the package-owned helper, and atomically publishes only a complete synchronized SHA-256-accounted image. Existing files are never replaced and cancellation removes temporary output.
+Select a removable drive and choose **Save drive image…**. RufusArm64 plans the destination without elevation, opens the source read-only through the package-owned helper, and atomically publishes only complete synchronized output. Existing files are never replaced and cancellation removes temporary output.
+
+Raw backup preserves every reported source byte. Dynamic VHD and VHDX use a trusted descriptor-only `qemu-img` path and compare guest-visible bytes against the held source; VHDX also requires a successful non-repairing consistency check. Filesystem ISO/UDF capture remasters exactly one mounted filesystem through a private read-only bind view, then independently mounts the image as UDF and compares every admitted path, type, regular-file size, and file digest. ISO/UDF capture does not include partition tables, hidden sectors, unallocated space, additional filesystems, or a bootability guarantee.
+
+## Experimental FFU restore
+
+The FFU path is deliberately experimental and limited to the reviewed single-store-v1 full-flash profile. It verifies structural metadata, hash tables, catalog membership/signature chains, authorized publishers, complete source content, and a sealed target-bound plan before allowing the exact destructive confirmation. The helper then acquires the whole target exclusively, writes in the reviewed order, flushes, reads back, and verifies the complete restored content.
+
+Unsupported FFU profiles, missing or untrusted catalog evidence, source mutation, target substitution, ambiguous capacity, protected/system disks, and incomplete verification fail closed. FFU capture remains unimplemented, and no vendor-device boot or recovery claim is made.
 
 ## Keyboard and accessibility
 
@@ -168,7 +177,7 @@ Privileged helpers:
 - verify packaged boot assets, copied files, structures, and filesystems;
 - require fresh Polkit authorization and support protected cancellation.
 
-Software checks never establish universal physical boot, persistence, whole-device health, or Secure Boot compatibility. Complete the human checklist in `docs/hardware-checklist-0.13.0.md` before public release.
+Software checks never establish universal physical boot, persistence, whole-device health, or Secure Boot compatibility. Complete the human checklist in `docs/hardware-checklist-0.14.0.md` before public release.
 
 ## Build and test
 
@@ -181,7 +190,7 @@ Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, the ver
 The release-candidate package is produced at:
 
 ```text
-dist/rufusarm64_0.13.0_arm64.deb
+dist/rufusarm64_0.14.0_arm64.deb
 ```
 
 ## Command-line examples
@@ -201,15 +210,15 @@ rufusarm64-nonbootable-format --device /dev/sdX --expected-identity TOKEN --file
 
 See:
 
-- `docs/release-0.13.0.md` for release notes, boundaries, installation, and rollback;
-- `docs/hardware-checklist-0.13.0.md` for the mandatory real-machine GO/NO-GO record;
+- `docs/release-0.14.0.md` for release notes, boundaries, installation, and rollback;
+- `docs/hardware-checklist-0.14.0.md` for the mandatory real-machine GO/NO-GO record;
 - `docs/persistence-qualification.md` for exact persistence evidence;
 - `docs/freedos-user-guide.md` for the FreeDOS boundary.
 
 Rollback to the previous package with:
 
 ```bash
-sudo apt install --allow-downgrades ./rufusarm64_0.12.1_arm64.deb
+sudo apt install --allow-downgrades ./rufusarm64_0.13.0_arm64.deb
 ```
 
 Rollback does not repair USB media already written. Use the guarded restoration workflow only after selecting and confirming the exact removable target.
