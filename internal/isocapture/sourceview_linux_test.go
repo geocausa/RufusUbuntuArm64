@@ -11,6 +11,7 @@ import (
 )
 
 func TestOpenReadOnlySourceViewRejectsNilContext(t *testing.T) {
+	//lint:ignore SA1012 This test deliberately verifies that a nil context is rejected.
 	view, err := OpenReadOnlySourceView(nil, t.TempDir(), strings.Repeat("a", 64), Limits{})
 	if view != nil || err == nil || !strings.Contains(err.Error(), "context") {
 		t.Fatalf("view=%v error=%v", view, err)
