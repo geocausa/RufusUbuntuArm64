@@ -54,6 +54,16 @@ func newISOCaptureOptions(devicePath, sourceNode string, plan isocapture.Filesys
 	}
 }
 
+func validateISOPlanBindings(plan isocapture.FilesystemCapturePlan, expectedBinding, expectedContent string) error {
+	if expectedBinding != "" && plan.SourceBindingSHA256 != expectedBinding {
+		return fmt.Errorf("mounted ISO source binding changed: got %s, expected %s", plan.SourceBindingSHA256, expectedBinding)
+	}
+	if expectedContent != "" && plan.SourceContentSHA256 != expectedContent {
+		return fmt.Errorf("mounted ISO source content changed: got %s, expected %s", plan.SourceContentSHA256, expectedContent)
+	}
+	return nil
+}
+
 func runISO(args []string) error {
 	flags := flag.NewFlagSet("rufusarm64-device-backup", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
@@ -63,6 +73,8 @@ func runISO(args []string) error {
 	expectedIdentity := flags.String("expected-identity", "", "expected whole-device identity")
 	expectedSourceNode := flags.String("expected-source-node", "", "expected mounted filesystem device node")
 	expectedSourceMount := flags.String("expected-source-mount", "", "expected mounted filesystem path")
+	expectedSourceBinding := flags.String("expected-source-binding-sha256", "", "expected reviewed filesystem binding SHA-256")
+	expectedSourceContent := flags.String("expected-source-content-sha256", "", "expected reviewed filesystem content SHA-256")
 	volumeID := flags.String("volume-id", "", "uppercase ISO volume identifier")
 	yes := flags.Bool("yes", false, "skip interactive confirmation")
 	allowFixed := flags.Bool("allow-fixed", false, "allow a non-removable source disk")
@@ -91,8 +103,10 @@ func runISO(args []string) error {
 	identityArgument := strings.TrimSpace(*expectedIdentity)
 	nodeArgument := strings.TrimSpace(*expectedSourceNode)
 	mountArgument := strings.TrimSpace(*expectedSourceMount)
-	if *yes && (identityArgument == "" || nodeArgument == "" || mountArgument == "") {
-		return errors.New("ISO --yes requires --expected-identity, --expected-source-node, and --expected-source-mount")
+	bindingArgument := strings.ToLower(strings.TrimSpace(*expectedSourceBinding))
+	contentArgument := strings.ToLower(strings.TrimSpace(*expectedSourceContent))
+	if *yes && (identityArgument == "" || nodeArgument == "" || mountArgument == "" || bindingArgument == "" || contentArgument == "") {
+		return errors.New("ISO --yes requires --expected-identity, --expected-source-node, --expected-source-mount, --expected-source-binding-sha256, and --expected-source-content-sha256")
 	}
 	if *allowFixed && identityArgument == "" {
 		return errors.New("--allow-fixed requires --expected-identity")
@@ -104,7 +118,7 @@ func runISO(args []string) error {
 		return errors.New("--progress-json requires non-dry-run --json")
 	}
 	if strings.TrimSpace(os.Getenv("PKEXEC_UID")) != "" {
-		if *dryRun || !*yes || !*asJSON || identityArgument == "" || nodeArgument == "" || mountArgument == "" {
+		if *dryRun || !*yes || !*asJSON || identityArgument == "" || nodeArgument == "" || mountArgument == "" || bindingArgument == "" || contentArgument == "" {
 			return errors.New("graphical ISO capture requires --yes, --json, and all expected source bindings without --dry-run")
 		}
 		if *allowFixed {
@@ -143,6 +157,9 @@ func runISO(args []string) error {
 	}
 	plan, err := isocapture.InspectFilesystemCapture(context.Background(), sourceMount, *outputPath, resolved, *volumeID, isocapture.Limits{})
 	if err != nil {
+		return err
+	}
+	if err := validateISOPlanBindings(plan, bindingArgument, contentArgument); err != nil {
 		return err
 	}
 	planned := isoBackupPlan{
