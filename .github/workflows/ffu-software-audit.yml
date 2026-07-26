@@ -1,4 +1,4 @@
-name: Compressed preparation progress patch validation
+name: FFU software release audit
 
 on:
   pull_request:
@@ -6,64 +6,144 @@ on:
       - stage3/0.14.0
     paths:
       - '.github/workflows/ffu-software-audit.yml'
-      - 'scripts/compressed_progress_stage.py'
-      - 'internal/imaging/input_progress.go'
-      - 'internal/imaging/input_progress_test.go'
+      - 'cmd/rufus-linux/ffu_*.go'
+      - 'docs/ffu-*.md'
+      - 'gui/rufusarm64_ffu_*.py'
+      - 'gui/test_ffu_*.py'
+      - 'gui/rufusarm64_logic.py'
+      - 'gui/test_logic.py'
+      - 'gui/test_source_structure.py'
+      - 'internal/device/**'
+      - 'internal/ffu/**'
+      - 'internal/safety/**'
+      - 'internal/trustedexec/**'
+      - 'scripts/ffu-physical-qualification.py'
+      - 'go.mod'
+      - 'go.sum'
+  push:
+    branches:
+      - stage3/0.14.0
+    paths:
+      - '.github/workflows/ffu-software-audit.yml'
+      - 'cmd/rufus-linux/ffu_*.go'
+      - 'docs/ffu-*.md'
+      - 'gui/rufusarm64_ffu_*.py'
+      - 'gui/test_ffu_*.py'
+      - 'gui/rufusarm64_logic.py'
+      - 'gui/test_logic.py'
+      - 'gui/test_source_structure.py'
+      - 'internal/device/**'
+      - 'internal/ffu/**'
+      - 'internal/safety/**'
+      - 'internal/trustedexec/**'
+      - 'scripts/ffu-physical-qualification.py'
+      - 'go.mod'
+      - 'go.sum'
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  patch-and-validate:
-    if: ${{ github.head_ref == 'feature/compressed-preparation-progress' }}
+  software-audit:
+    name: Software-only FFU release boundary
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
-      - name: Check out exact feature branch
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Check out exact source
+        uses: actions/checkout@v4
+
+      - name: Set up Go 1.22
+        uses: actions/setup-go@v5
         with:
-          ref: feature/compressed-preparation-progress
-          fetch-depth: 0
-          show-progress: false
+          go-version: '1.22.x'
+          cache: true
 
-      - name: Apply exact source transformation
-        id: apply
-        continue-on-error: true
-        shell: bash
-        run: python3 scripts/compressed_progress_stage.py 2> /tmp/compressed-progress-stage.err
-
-      - name: Preserve transformation failure
-        if: ${{ steps.apply.outcome == 'failure' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: compressed-progress-stage-failure
-          path: /tmp/compressed-progress-stage.err
-          if-no-files-found: error
-
-      - name: Stop after transformation failure
-        if: ${{ steps.apply.outcome == 'failure' }}
-        shell: bash
-        run: |
-          cat /tmp/compressed-progress-stage.err
-          exit 1
-
-      - name: Format and validate focused boundary
+      - name: Test FFU, device and target-safety packages with the race detector
         shell: bash
         run: |
           set -euo pipefail
-          gofmt -w internal/imaging/input.go internal/imaging/input_progress.go internal/imaging/input_progress_test.go
-          go test -race ./internal/imaging ./cmd/rufus-linux
-          go vet ./internal/imaging ./cmd/rufus-linux
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o /tmp/rufusarm64-cli ./cmd/rufus-linux
+          go test -race ./internal/ffu ./internal/device ./internal/safety ./internal/trustedexec ./cmd/rufus-linux
+
+      - name: Vet the complete FFU provider boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          go vet ./internal/ffu ./internal/device ./internal/safety ./internal/trustedexec ./cmd/rufus-linux
+
+      - name: Cross-build the Linux ARM64 provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+            go build -trimpath -o /tmp/rufusarm64-cli ./cmd/rufus-linux
           test -s /tmp/rufusarm64-cli
 
-      - name: Commit validated production source
+      - name: Validate graphical review, restore and qualification evidence
         shell: bash
         run: |
           set -euo pipefail
-          rm scripts/compressed_progress_stage.py
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add internal/imaging scripts/compressed_progress_stage.py
-          git commit -m '[compressed-progress-patched] imaging: report bounded compressed preparation progress'
-          git push origin HEAD:feature/compressed-preparation-progress
+          python3 -m py_compile \
+            gui/rufusarm64_logic.py \
+            gui/rufusarm64_ffu_json.py \
+            gui/rufusarm64_ffu_dialog.py \
+            gui/rufusarm64_ffu_restore_logic.py \
+            gui/rufusarm64_ffu_physical_qualification.py \
+            scripts/ffu-physical-qualification.py
+          PYTHONPATH=gui python3 -m unittest \
+            test_logic \
+            test_ffu_json \
+            test_ffu_restore_logic \
+            test_ffu_physical_qualification \
+            test_source_structure
+
+      - name: Enforce the experimental destructive boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          cli = Path('cmd/rufus-linux/ffu_linux.go').read_text(encoding='utf-8')
+          binding = Path('cmd/rufus-linux/ffu_review_binding_linux.go').read_text(encoding='utf-8')
+          dialog = Path('gui/rufusarm64_ffu_dialog.py').read_text(encoding='utf-8')
+          restore = Path('gui/rufusarm64_ffu_restore_logic.py').read_text(encoding='utf-8')
+          executor = Path('internal/ffu/restore_executor_linux.go').read_text(encoding='utf-8')
+          device_source = Path('internal/device/device.go').read_text(encoding='utf-8')
+          safety_source = Path('internal/safety/safety_linux.go').read_text(encoding='utf-8')
+          trusted = Path('internal/trustedexec/trustedexec_linux.go').read_text(encoding='utf-8')
+
+          required = {
+              'CLI experimental gate': (cli, '--experimental-ffu is required'),
+              'root-before-restore gate': (cli, 'FFU restore requires administrator privileges'),
+              'review binding': (cli + binding, 'expected-review-binding'),
+              'constant-time binding comparison': (binding, 'subtle.ConstantTimeCompare'),
+              'exclusive target acquisition': (cli, 'AcquireExclusiveFullFlashTarget'),
+              'one-shot authorization': (cli, 'AuthorizeSinglePhaseFullFlashMutation'),
+              'complete executor readback': (executor, 'readback-target-read'),
+              'GTK exact confirmation': (restore, 'confirmation != review["exact_confirmation_phrase"]'),
+              'GTK process-group cancellation': (dialog, 'os.killpg(process.pid, signal.SIGTERM)'),
+              'unknown target fail-closed warning': (dialog, 'target state is unknown'),
+              'trusted utility resolver': (trusted, 'Ambient PATH is never consulted.'),
+              'device trusted lsblk': (device_source, 'resolveDeviceUtility("lsblk")'),
+              'safety trusted commands': (safety_source, 'trustedSafetyCommandContext'),
+          }
+          for label, (text, needle) in required.items():
+              if needle not in text:
+                  raise SystemExit(f'missing required FFU boundary: {label}')
+
+          forbidden = {
+              'fixed-disk override': '--allow-fixed',
+              'force bypass': '--force',
+              'automatic unmount': 'syscall.Unmount',
+              'confirmation bypass': '--yes',
+          }
+          ffu_boundary = '\n'.join((cli, binding, dialog, restore))
+          for label, needle in forbidden.items():
+              if needle in ffu_boundary:
+                  raise SystemExit(f'forbidden FFU boundary appeared: {label}')
+
+          trusted_boundary = '\n'.join((device_source, safety_source, trusted))
+          if 'exec.LookPath' in trusted_boundary:
+              raise SystemExit('forbidden trusted-utility boundary appeared: ambient lookup')
+          PY
