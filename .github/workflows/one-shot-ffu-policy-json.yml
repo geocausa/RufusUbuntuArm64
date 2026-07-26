@@ -1,0 +1,216 @@
+name: One-shot FFU policy JSON hardening
+
+on:
+  push:
+    branches:
+      - feature/ffu-reject-duplicate-policy-json
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[patched]') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: feature/ffu-reject-duplicate-policy-json
+          fetch-depth: 0
+
+      - name: Apply exact duplicate-member hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          provider = Path('cmd/rufus-linux/ffu_linux.go')
+          text = provider.read_text()
+          old = '''\tif err := sourcefile.Verify(file, identity); err != nil {
+          \t\treturn zero, "", sourcefile.Identity{}, err
+          \t}
+          \tdecoder := json.NewDecoder(bytes.NewReader(data))
+          '''
+          new = '''\tif err := sourcefile.Verify(file, identity); err != nil {
+          \t\treturn zero, "", sourcefile.Identity{}, err
+          \t}
+          \tif err := rejectDuplicateFFUCLIJSONMembers(data); err != nil {
+          \t\treturn zero, "", sourcefile.Identity{}, err
+          \t}
+          \tdecoder := json.NewDecoder(bytes.NewReader(data))
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('provider insertion point changed')
+          provider.write_text(text.replace(old, new))
+
+          tests = Path('cmd/rufus-linux/ffu_linux_test.go')
+          text = tests.read_text()
+          old = '''\tfor name, data := range map[string]string{
+          \t\t"unknown":  `{"version":1,"unknown":true}`,
+          \t\t"multiple": `{"version":1} {"version":2}`,
+          \t\t"empty":    ``,
+          \t} {
+          '''
+          new = '''\tfor name, data := range map[string]string{
+          \t\t"unknown":   `{"version":1,"unknown":true}`,
+          \t\t"duplicate": `{"version":1,"version":2}`,
+          \t\t"multiple":  `{"version":1} {"version":2}`,
+          \t\t"empty":     ``,
+          \t} {
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('policy test insertion point changed')
+          tests.write_text(text.replace(old, new))
+
+          Path('cmd/rufus-linux/ffu_strict_json_linux.go').write_text(r'''//go:build linux
+
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+)
+
+// rejectDuplicateFFUCLIJSONMembers rejects ambiguous JSON before the typed,
+// unknown-field-rejecting policy decoder runs. Object names are compared after
+// JSON unescaping, so alternate spellings cannot bypass duplicate detection.
+func rejectDuplicateFFUCLIJSONMembers(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := walkUniqueFFUCLIJSONValue(decoder); err != nil {
+		return fmt.Errorf("policy JSON is ambiguous or invalid: %w", err)
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("policy JSON contains multiple values")
+		}
+		return fmt.Errorf("policy JSON trailing data: %w", err)
+	}
+	return nil
+}
+
+func walkUniqueFFUCLIJSONValue(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delimiter, isDelimiter := token.(json.Delim)
+	if !isDelimiter {
+		return nil
+	}
+
+	switch delimiter {
+	case '{':
+		seen := make(map[string]struct{})
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return errors.New("object member name is not a string")
+			}
+			if _, exists := seen[key]; exists {
+				return fmt.Errorf("duplicate JSON member %q", key)
+			}
+			seen[key] = struct{}{}
+			if err := walkUniqueFFUCLIJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		closing, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		if closing != json.Delim('}') {
+			return errors.New("object did not end with a closing brace")
+		}
+		return nil
+	case '[':
+		for decoder.More() {
+			if err := walkUniqueFFUCLIJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		closing, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		if closing != json.Delim(']') {
+			return errors.New("array did not end with a closing bracket")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unexpected opening delimiter %q", delimiter)
+	}
+}
+''')
+
+          Path('cmd/rufus-linux/ffu_strict_json_linux_test.go').write_text(r'''//go:build linux
+
+package main
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestRejectDuplicateFFUCLIJSONMembers(t *testing.T) {
+	valid := []string{
+		`{"version":1}`,
+		`{"outer":{"version":1},"items":[{"version":2},{"version":3}]}`,
+		`{"ver\u0073ion":1,"other":2}`,
+	}
+	for _, data := range valid {
+		if err := rejectDuplicateFFUCLIJSONMembers([]byte(data)); err != nil {
+			t.Fatalf("valid JSON %s rejected: %v", data, err)
+		}
+	}
+
+	invalid := map[string]string{
+		"top level":       `{"version":1,"version":2}`,
+		"nested":          `{"outer":{"version":1,"version":2}}`,
+		"escaped alias":   `{"version":1,"ver\u0073ion":2}`,
+		"array object":    `[{"version":1,"version":2}]`,
+		"multiple values": `{"version":1} {"version":2}`,
+	}
+	for name, data := range invalid {
+		t.Run(name, func(t *testing.T) {
+			err := rejectDuplicateFFUCLIJSONMembers([]byte(data))
+			if err == nil {
+				t.Fatal("ambiguous JSON was accepted")
+			}
+			if name != "multiple values" && !strings.Contains(err.Error(), "duplicate JSON member") {
+				t.Fatalf("unexpected duplicate error: %v", err)
+			}
+		})
+	}
+}
+''')
+          PY
+
+          gofmt -w cmd/rufus-linux/ffu_linux.go cmd/rufus-linux/ffu_linux_test.go cmd/rufus-linux/ffu_strict_json_linux.go cmd/rufus-linux/ffu_strict_json_linux_test.go
+
+      - name: Run focused validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./cmd/rufus-linux
+          go test -race ./cmd/rufus-linux
+          go vet ./cmd/rufus-linux
+
+      - name: Commit validated source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add cmd/rufus-linux/ffu_linux.go cmd/rufus-linux/ffu_linux_test.go cmd/rufus-linux/ffu_strict_json_linux.go cmd/rufus-linux/ffu_strict_json_linux_test.go
+          git commit -m '[patched] FFU: reject duplicate policy JSON members'
+          git push origin HEAD:feature/ffu-reject-duplicate-policy-json
