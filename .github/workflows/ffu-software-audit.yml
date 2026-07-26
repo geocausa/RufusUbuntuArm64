@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/ffu-software-audit.yml'
       - 'scripts/trusted_utility_stage.py'
+      - 'scripts/trusted_utility_stage_fix.py'
       - 'internal/trustedexec/**'
       - 'internal/device/utility_linux.go'
       - 'internal/safety/utility_linux.go'
@@ -31,6 +32,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          python3 scripts/trusted_utility_stage_fix.py
           python3 scripts/trusted_utility_stage.py 2>&1 | tee /tmp/trusted-stage.log
 
       - name: Preserve transformation failure
@@ -62,9 +64,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm scripts/trusted_utility_stage.py
+          rm scripts/trusted_utility_stage.py scripts/trusted_utility_stage_fix.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add .github/workflows/ffu-software-audit.yml internal/device internal/safety internal/trustedexec scripts/trusted_utility_stage.py
+          git add .github/workflows/ffu-software-audit.yml internal/device internal/safety internal/trustedexec scripts/trusted_utility_stage.py scripts/trusted_utility_stage_fix.py
           git commit -m '[trusted-patched] safety: resolve privileged utilities explicitly'
           git push origin HEAD:feature/ffu-trusted-utilities
