@@ -125,6 +125,10 @@ class ISOCaptureContractsTest(unittest.TestCase):
             self.assertIn("/dev/sdz1", command)
             self.assertIn("--expected-source-mount", command)
             self.assertIn("/media/USB", command)
+            binding_index = command.index("--expected-source-binding-sha256")
+            content_index = command.index("--expected-source-content-sha256")
+            self.assertEqual(command[binding_index + 1], DIGEST_A)
+            self.assertEqual(command[content_index + 1], DIGEST_B)
             self.assertIn("--volume-id", command)
 
     def test_confirmation_binds_disk_node_mount_and_destination(self):
