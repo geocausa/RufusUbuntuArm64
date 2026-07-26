@@ -43,3 +43,5 @@ jobs:
           git add scripts/build-deb.sh
           git commit -m 'packaging: include drive backup format extension'
           git push origin HEAD:feature/drive-backup-vhd-formats
+
+# One-shot staging workflow. Remove before the PR leaves draft.
