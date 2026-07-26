@@ -115,7 +115,7 @@ class DeviceBackupLogicTests(unittest.TestCase):
                 "format": "vhdx",
                 "source_bytes": 8 * 1024 * 1024,
                 "required_bytes": 12 * 1024 * 1024,
-                "container_minimum_bytes": 2 * 1024 * 1024,
+                "container_minimum_bytes": 0,
                 "available_bytes": 32 * 1024 * 1024,
             },
         }
@@ -126,6 +126,7 @@ class DeviceBackupLogicTests(unittest.TestCase):
         self.assertIn("USB Test", summary)
         self.assertIn("VHDX image", summary)
         self.assertIn("Destination filesystem: /home/user", summary)
+        self.assertNotIn("Minimum container estimate", summary)
         with self.assertRaises(ValueError):
             normalize_plan({"device": {}, "identity": "abc", "destination": {}})
         with self.assertRaises(ValueError):

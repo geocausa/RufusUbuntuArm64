@@ -192,7 +192,7 @@ def backup_normalize_plan(payload):
     if format_name == "raw":
         if required != size or minimum != 0:
             raise ValueError("Raw backup plan contains invalid destination sizing.")
-    elif minimum <= 0 or minimum > required:
+    elif minimum > required:
         raise ValueError("Container backup plan contains invalid allocation bounds.")
     if available < required:
         raise ValueError("Backup plan reports insufficient destination space.")

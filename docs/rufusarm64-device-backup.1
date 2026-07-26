@@ -51,8 +51,8 @@ Incomplete output is removed after failure or cancellation.
 .PP
 The destination must reside on a different physical disk from the selected
 source. Raw capture requires the source capacity. VHD and VHDX dry-run planning
-uses QEMU's fully allocated bound for conservative free-space admission; the
-smaller sparse-container estimate is informational only. Mounted removable
+requires the complete source capacity plus a 12.5% policy reserve, with a
+minimum 64 MiB margin. No sparse-size saving is promised. Mounted removable
 filesystems are unmounted before capture unless
 .B --no-unmount
 is supplied.
@@ -94,7 +94,7 @@ or
 .TP
 .B --dry-run
 Validate source metadata, format support, converter availability, destination
-storage, conservative free-space bounds, and collision state without opening
+storage, the explicit conservative reserve, and collision state without opening
 the source device.
 .TP
 .B --json
