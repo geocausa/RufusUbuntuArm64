@@ -248,15 +248,16 @@ class DeviceQualificationDialog(Gtk.Dialog):
             self.status.set_text("USB qualification could not complete.")
             self.result.get_buffer().set_text(error)
             return False
-        self.report_payload = payload
-        self.save_report_button.set_sensitive(True)
+        transport_mismatch = returncode != 0 and payload.get("status") == "passed"
+        self.report_payload = None if transport_mismatch else payload
+        self.save_report_button.set_sensitive(not transport_mismatch)
         summary = report_summary(payload)
         self.status.set_text(summary)
         rendered = json.dumps(payload, indent=2, sort_keys=True)
         if error:
             rendered += "\n\nDiagnostics:\n" + error
         self.result.get_buffer().set_text(rendered)
-        if returncode != 0 and payload.get("status") == "passed":
+        if transport_mismatch:
             self.status.set_text("The report says passed, but the helper returned an error status. Treat this result as failed.")
         return False
 
