@@ -107,10 +107,14 @@ jobs:
                   raise SystemExit('CI dependency line is missing or ambiguous')
               lines[matches[0]] = replacement
           if not any('drivebackup-loop.test' in line for line in lines):
-              markers = [index for index, line in enumerate(lines) if '"${RUNNER_TEMP}/devicequal-loop.test"' in line]
+              markers = [
+                  index
+                  for index, line in enumerate(lines)
+                  if line.strip().startswith('"${RUNNER_TEMP}/devicequal-loop.test"')
+              ]
               print(f'loop_markers={markers}')
               if len(markers) != 1:
-                  raise SystemExit('device qualification loop command is missing or ambiguous')
+                  raise SystemExit('device qualification loop invocation is missing or ambiguous')
               end = markers[0]
               while end < len(lines) and lines[end].strip() != '-test.v':
                   end += 1
