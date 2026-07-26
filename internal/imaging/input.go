@@ -398,6 +398,16 @@ func PrepareInputWithOptions(ctx context.Context, path string, expected sourcefi
 	if streamingAuthentication {
 		preparationReader = io.TeeReader(src, streamingHash)
 	}
+	var containerProgress *compressedContainerProgressReader
+	preparationProgress := progress
+	if sequential {
+		containerProgress = newCompressedContainerProgressReader(preparationReader, uint64(expected.Size), progress)
+		preparationReader = containerProgress
+		// Expanded size is deliberately not guessed for streaming formats. The
+		// compressed-container channel supplies a trustworthy percentage, and the
+		// final expanded-byte event is emitted after authenticated materialization.
+		preparationProgress = nil
+	}
 
 	var rawDigest [sha256.Size]byte
 	rawDigestBound := false
@@ -409,21 +419,21 @@ func PrepareInputWithOptions(ctx context.Context, path string, expected sourcefi
 		rawDigest, err = prepareStream(ctx, preparationReader, rawPath, options.MaxPreparedSize, func(r io.Reader) (io.Reader, io.Closer, error) {
 			decoder, openErr := gzip.NewReader(r)
 			return decoder, decoder, openErr
-		}, progress)
+		}, preparationProgress)
 		rawDigestBound = err == nil
 	case InputBZIP2:
 		rawDigest, err = prepareStream(ctx, preparationReader, rawPath, options.MaxPreparedSize, func(r io.Reader) (io.Reader, io.Closer, error) {
 			return bzip2.NewReader(r), nil, nil
-		}, progress)
+		}, preparationProgress)
 		rawDigestBound = err == nil
 	case InputXZ:
-		rawDigest, err = prepareExternalDecompress(ctx, preparationReader, rawPath, "xz", []string{"--decompress", "--stdout"}, options.MaxPreparedSize, progress)
+		rawDigest, err = prepareExternalDecompress(ctx, preparationReader, rawPath, "xz", []string{"--decompress", "--stdout"}, options.MaxPreparedSize, preparationProgress)
 		rawDigestBound = err == nil
 	case InputLZMA:
-		rawDigest, err = prepareExternalDecompress(ctx, preparationReader, rawPath, "xz", []string{"--format=lzma", "--decompress", "--stdout"}, options.MaxPreparedSize, progress)
+		rawDigest, err = prepareExternalDecompress(ctx, preparationReader, rawPath, "xz", []string{"--format=lzma", "--decompress", "--stdout"}, options.MaxPreparedSize, preparationProgress)
 		rawDigestBound = err == nil
 	case InputZSTD:
-		rawDigest, err = prepareExternalDecompress(ctx, preparationReader, rawPath, "zstd", []string{"--decompress", "--stdout", "--quiet"}, options.MaxPreparedSize, progress)
+		rawDigest, err = prepareExternalDecompress(ctx, preparationReader, rawPath, "zstd", []string{"--decompress", "--stdout", "--quiet"}, options.MaxPreparedSize, preparationProgress)
 		rawDigestBound = err == nil
 	case InputVHD, InputVHDX, InputQCOW2, InputVMDK:
 		err = prepareVirtualDisk(ctx, src, rawPath, probe.Kind, options.MaxPreparedSize, progress)
@@ -460,6 +470,9 @@ func PrepareInputWithOptions(ctx context.Context, path string, expected sourcefi
 	}
 	if !containerDigestBound {
 		return cleanup(errors.New("image container authentication digest is unavailable"))
+	}
+	if containerProgress != nil {
+		containerProgress.Complete()
 	}
 
 	raw, err := os.Open(rawPath)
