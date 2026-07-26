@@ -250,10 +250,13 @@ def normalize_report(payload):
     if profile != _PROFILE or filesystem != "udf":
         raise ValueError("Filesystem ISO report contains an unsupported profile or filesystem.")
     source_device = str(value.get("source_device") or "").strip()
+    source_node = str(value.get("source_node") or "").strip()
     source_mount = str(value.get("source_mount") or "").strip()
     destination = str(value.get("destination") or "").strip()
-    if not source_device.startswith("/dev/") or not os.path.isabs(source_mount) or source_mount == "/":
-        raise ValueError("Filesystem ISO report contains invalid source details.")
+    if not source_device.startswith("/dev/") or not source_node.startswith("/dev/"):
+        raise ValueError("Filesystem ISO report contains invalid source-device details.")
+    if not os.path.isabs(source_mount) or source_mount == "/":
+        raise ValueError("Filesystem ISO report contains an invalid source mountpoint.")
     if not os.path.isabs(destination) or not destination.lower().endswith(".iso"):
         raise ValueError("Filesystem ISO report contains an invalid destination.")
     files = _nonnegative_integer(value.get("files"), "file count")
@@ -296,6 +299,7 @@ def normalize_report(payload):
             "profile": profile,
             "filesystem": filesystem,
             "source_device": source_device,
+            "source_node": source_node,
             "source_mount": source_mount,
             "destination": destination,
             "files": files,
