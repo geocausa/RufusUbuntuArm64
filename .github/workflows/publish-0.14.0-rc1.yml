@@ -20,94 +20,18 @@ env:
   RELEASE_VERSION: 0.14.0-rc1
   VERSION: 0.14.0~rc1
   RUFUS_ALLOW_NONRELEASE_VERSION: '1'
+  DEPENDENCY_RUN_ID: '30225537540'
+  WIM_ARTIFACT: rc1-wimlib-arm64-30225537540
+  WIM_ARTIFACT_DIGEST: sha256:64c6613d08fa812bc1adedd2838517d1c54f549ff8a7694d41e8b679c3576984
+  UEFI_ARTIFACT: rc1-uefi-md5sum-arm64-30225537540
+  UEFI_ARTIFACT_DIGEST: sha256:4e81647efc8b41e721b03fa7fabcba52616794dc60db6458d58b5b26afdc6117
 
 jobs:
-  wim-engine:
-    if: >-
-      github.repository == 'geocausa/RufusUbuntuArm64' &&
-      github.event.pull_request.head.ref == 'ops/publish-0.14.0-rc1'
-    name: Rebuild pinned ARM64 WIM engine
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          ref: 5d0f9ea97af8c055df2a9412b491b9888ec8f665
-          persist-credentials: false
-      - name: Verify exact release-candidate source
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "${PRODUCT_COMMIT}"
-          test "$(tr -d '\r\n' < VERSION)" = '0.14.0'
-      - name: Install WIM build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential autoconf automake libtool pkg-config git ca-certificates \
-            libxml2-dev zlib1g-dev liblzma-dev libbz2-dev liblz4-dev libzstd-dev
-      - name: Build and inspect the pinned ARM64 engine
-        run: ./scripts/build-wimlib-arm64.sh
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: rc1-wimlib-arm64-${{ github.run_id }}
-          path: |
-            vendor/wimlib/arm64/
-            vendor/wimlib/source/wimlib-1.14.5-source.tar.gz
-            vendor/wimlib/source/wimlib-1.14.5-source.tar.gz.sha256
-          if-no-files-found: error
-          retention-days: 14
-
-  uefi-md5sum-loader:
-    if: >-
-      github.repository == 'geocausa/RufusUbuntuArm64' &&
-      github.event.pull_request.head.ref == 'ops/publish-0.14.0-rc1'
-    name: Reproduce pinned ARM64 UEFI integrity loader
-    runs-on: ubuntu-24.04
-    timeout-minutes: 75
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          ref: 5d0f9ea97af8c055df2a9412b491b9888ec8f665
-          persist-credentials: false
-      - name: Verify exact release-candidate source
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "${PRODUCT_COMMIT}"
-          test "$(tr -d '\r\n' < VERSION)" = '0.14.0'
-      - name: Install pinned loader build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential git gzip nasm python3 python3-setuptools uuid-dev \
-            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu sbsigntool
-      - name: Build twice and require identical provenance
-        run: |
-          set -euo pipefail
-          bash scripts/build-uefi-md5sum-arm64.sh dist/uefi-md5sum-a
-          bash scripts/build-uefi-md5sum-arm64.sh dist/uefi-md5sum-b
-          for file in bootaa64.efi bootaa64.efi.sha256 provenance.json SOURCE-COMMITS.txt \
-            uefi-md5sum-v1.2-source.tar.gz uefi-md5sum-v1.2-source.tar.gz.sha256; do
-            cmp "dist/uefi-md5sum-a/${file}" "dist/uefi-md5sum-b/${file}"
-          done
-          printf '%s\n' \
-            'Two independent Ubuntu 24.04 builds produced byte-for-byte identical artifacts.' \
-            'The loader is unsigned and is not claimed Secure Boot compatible.' \
-            > dist/uefi-md5sum-a/REPRODUCIBILITY.txt
-          mkdir -p vendor/uefi-md5sum/arm64
-          cp -a dist/uefi-md5sum-a/. vendor/uefi-md5sum/arm64/
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: rc1-uefi-md5sum-arm64-${{ github.run_id }}
-          path: vendor/uefi-md5sum/arm64/
-          if-no-files-found: error
-          retention-days: 14
-
   publish:
     if: >-
       github.repository == 'geocausa/RufusUbuntuArm64' &&
       github.event.pull_request.head.ref == 'ops/publish-0.14.0-rc1'
     name: Build, verify, tag, and publish prerelease
-    needs: [wim-engine, uefi-md5sum-loader]
     runs-on: ubuntu-24.04
     timeout-minutes: 65
     env:
@@ -124,24 +48,49 @@ jobs:
           test "$(git rev-parse HEAD)" = "${PRODUCT_COMMIT}"
           test "$(tr -d '\r\n' < VERSION)" = '0.14.0'
           dpkg --validate-version "${VERSION}"
-          test "$(dpkg --compare-versions "${VERSION}" lt 0.14.0; echo $?)" = '0'
+          dpkg --compare-versions "${VERSION}" lt 0.14.0
+      - name: Authenticate prerequisite build jobs and artifact archives
+        run: |
+          set -euo pipefail
+          jobs_endpoint="repos/${GITHUB_REPOSITORY}/actions/runs/${DEPENDENCY_RUN_ID}/jobs?per_page=100"
+          test "$(gh api "${jobs_endpoint}" --jq '.jobs[] | select(.name == "Rebuild pinned ARM64 WIM engine") | .conclusion')" = 'success'
+          test "$(gh api "${jobs_endpoint}" --jq '.jobs[] | select(.name == "Reproduce pinned ARM64 UEFI integrity loader") | .conclusion')" = 'success'
+          artifacts_endpoint="repos/${GITHUB_REPOSITORY}/actions/runs/${DEPENDENCY_RUN_ID}/artifacts?per_page=100"
+          test "$(gh api "${artifacts_endpoint}" --jq ".artifacts[] | select(.name == \"${WIM_ARTIFACT}\") | .digest")" = "${WIM_ARTIFACT_DIGEST}"
+          test "$(gh api "${artifacts_endpoint}" --jq ".artifacts[] | select(.name == \"${UEFI_ARTIFACT}\") | .digest")" = "${UEFI_ARTIFACT_DIGEST}"
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26.5'
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: rc1-wimlib-arm64-${{ github.run_id }}
+          name: ${{ env.WIM_ARTIFACT }}
           path: vendor/wimlib
+          github-token: ${{ github.token }}
+          run-id: ${{ env.DEPENDENCY_RUN_ID }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: rc1-uefi-md5sum-arm64-${{ github.run_id }}
+          name: ${{ env.UEFI_ARTIFACT }}
           path: vendor/uefi-md5sum/arm64
+          github-token: ${{ github.token }}
+          run-id: ${{ env.DEPENDENCY_RUN_ID }}
+      - name: Verify downloaded prerequisite contents
+        run: |
+          set -euo pipefail
+          (
+            cd vendor/wimlib/source
+            sha256sum -c wimlib-1.14.5-source.tar.gz.sha256
+          )
+          (
+            cd vendor/uefi-md5sum/arm64
+            sha256sum -c bootaa64.efi.sha256
+            sha256sum -c uefi-md5sum-v1.2-source.tar.gz.sha256
+          )
       - name: Install package and validation tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs \
-            genisoimage qemu-utils
+            file genisoimage qemu-utils qemu-user-static
       - name: Run complete non-release test and package contract
         run: |
           set -euo pipefail
@@ -152,8 +101,8 @@ jobs:
         run: |
           set -euo pipefail
           set -o pipefail
-          ./scripts/reproducible-package.sh 2>&1 | tee dist/prerelease-logs/reproducible-package.log
-      - name: Verify package identity and build release assets
+          bash ./scripts/reproducible-package.sh 2>&1 | tee dist/prerelease-logs/reproducible-package.log
+      - name: Verify package identity and build deterministic release assets
         id: assets
         run: |
           set -euo pipefail
@@ -170,9 +119,13 @@ jobs:
           package_root="$(mktemp -d)"
           trap 'rm -rf "${package_root}"' EXIT
           dpkg-deb -x "${package}" "${package_root}"
-          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-helper" version)" = "${VERSION}"
-          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-device-qualify" version)" = "${VERSION}"
-          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-device-backup" version)" = "${VERSION}"
+          for binary in rufusarm64-helper rufusarm64-device-qualify rufusarm64-device-backup; do
+            file "${package_root}/usr/lib/rufusarm64/${binary}" | grep -F 'ARM aarch64'
+            test "$(qemu-aarch64-static "${package_root}/usr/lib/rufusarm64/${binary}" version)" = "${VERSION}"
+          done
+          runtime_loader="${package_root}/usr/lib/rufusarm64/bootaa64-uefi-md5sum.efi"
+          test "$(stat -c %s "${runtime_loader}")" -eq 40960
+          test "$(sha256sum "${runtime_loader}" | awk '{print $1}')" = '543615a8e97fed1cb5293bee7bdfe10f9feb6979f191b20ab32dafdcf097b502'
 
           source_name="RufusArm64-${RELEASE_VERSION}-source.tar.gz"
           git archive --format=tar --prefix="RufusArm64-${RELEASE_VERSION}/" "${PRODUCT_COMMIT}" | gzip -n > "dist/${source_name}"
@@ -195,8 +148,17 @@ jobs:
               'tag': os.environ['RELEASE_TAG'],
               'debian_version': os.environ['VERSION'],
               'product_commit': os.environ['PRODUCT_COMMIT'],
-              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
-              'workflow_run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'dependency_artifact_run_id': os.environ['DEPENDENCY_RUN_ID'],
+              'dependency_artifacts': {
+                  'wimlib': {
+                      'name': os.environ['WIM_ARTIFACT'],
+                      'archive_digest': os.environ['WIM_ARTIFACT_DIGEST'],
+                  },
+                  'uefi_md5sum': {
+                      'name': os.environ['UEFI_ARTIFACT'],
+                      'archive_digest': os.environ['UEFI_ARTIFACT_DIGEST'],
+                  },
+              },
               'package': f"rufusarm64_{os.environ['VERSION']}_arm64.deb",
               'package_sha256': package_sha,
               'source_archive': f"RufusArm64-{os.environ['RELEASE_VERSION']}-source.tar.gz",
@@ -248,7 +210,8 @@ jobs:
 
           - Source commit: \`${PRODUCT_COMMIT}\`
           - Debian package version: \`${VERSION}\` (sorts before stable \`0.14.0\`)
-          - Workflow evidence: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Publication workflow: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Authenticated prerequisite run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${DEPENDENCY_RUN_ID}
 
           ## Main candidate changes
 
@@ -271,12 +234,19 @@ jobs:
             "${{ steps.assets.outputs.evidence }}"
           )
           if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.prerelease')" = 'true'
+            release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.id')"
+            test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --jq '.prerelease')" = 'true'
             existing="$(mktemp -d)"
             trap 'rm -rf "${existing}"' EXIT
-            gh release download "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --dir "${existing}"
+            asset_names="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100" --jq '.[].name')"
             for asset in "${assets[@]}"; do
-              cmp "${asset}" "${existing}/$(basename "${asset}")"
+              name="$(basename "${asset}")"
+              if grep -Fxq "${name}" <<<"${asset_names}"; then
+                gh release download "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --pattern "${name}" --dir "${existing}"
+                cmp "${asset}" "${existing}/${name}"
+              else
+                gh release upload "${RELEASE_TAG}" "${asset}" --repo "${GITHUB_REPOSITORY}"
+              fi
             done
           else
             gh release create "${RELEASE_TAG}" "${assets[@]}" \
@@ -301,7 +271,8 @@ jobs:
           - Debian version: \`${VERSION}\`
           - Package SHA-256: \`${{ steps.assets.outputs.package_sha }}\`
           - Source SHA-256: \`${{ steps.assets.outputs.source_sha }}\`
-          - Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Publication run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Authenticated prerequisite run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${DEPENDENCY_RUN_ID}
 
           This operational branch is not merged into the release branch. Stable promotion remains separately gated by the 0.14.0 physical/prerelease checklist.
           EOF
