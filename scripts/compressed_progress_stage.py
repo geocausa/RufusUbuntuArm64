@@ -42,18 +42,51 @@ replace_once(
     "compressed progress reader integration",
 )
 
-source = path.read_text(encoding="utf-8")
-start = source.find("\tcase InputGZIP:")
-end = source.find("\tcase InputVHD, InputVHDX, InputQCOW2, InputVMDK:", start)
-if start < 0 or end < 0:
-    raise SystemExit("sequential compression switch boundary is missing")
-segment = source[start:end]
-if segment.count(", progress)") != 5:
-    raise SystemExit(
-        f"sequential compression progress calls: expected 5 anchors, found {segment.count(', progress)')}"
-    )
-segment = segment.replace(", progress)", ", preparationProgress)")
-path.write_text(source[:start] + segment + source[end:], encoding="utf-8")
+replace_once(
+    path,
+    '''\tcase InputGZIP:
+\t\trawDigest, err = prepareStream(ctx, preparationReader, rawPath, options.MaxPreparedSize, func(r io.Reader) (io.Reader, io.Closer, error) {
+\t\t\tdecoder, openErr := gzip.NewReader(r)
+\t\t\treturn decoder, decoder, openErr
+\t\t}, progress)
+''',
+    '''\tcase InputGZIP:
+\t\trawDigest, err = prepareStream(ctx, preparationReader, rawPath, options.MaxPreparedSize, func(r io.Reader) (io.Reader, io.Closer, error) {
+\t\t\tdecoder, openErr := gzip.NewReader(r)
+\t\t\treturn decoder, decoder, openErr
+\t\t}, preparationProgress)
+''',
+    "gzip preparation progress",
+)
+replace_once(
+    path,
+    '''\tcase InputBZIP2:
+\t\trawDigest, err = prepareStream(ctx, preparationReader, rawPath, options.MaxPreparedSize, func(r io.Reader) (io.Reader, io.Closer, error) {
+\t\t\treturn bzip2.NewReader(r), nil, nil
+\t\t}, progress)
+''',
+    '''\tcase InputBZIP2:
+\t\trawDigest, err = prepareStream(ctx, preparationReader, rawPath, options.MaxPreparedSize, func(r io.Reader) (io.Reader, io.Closer, error) {
+\t\t\treturn bzip2.NewReader(r), nil, nil
+\t\t}, preparationProgress)
+''',
+    "bzip2 preparation progress",
+)
+for label, old in (
+    (
+        "xz preparation progress",
+        '\t\trawDigest, err = prepareExternalDecompress(ctx, preparationReader, rawPath, "xz", []string{"--decompress", "--stdout"}, options.MaxPreparedSize, progress)',
+    ),
+    (
+        "lzma preparation progress",
+        '\t\trawDigest, err = prepareExternalDecompress(ctx, preparationReader, rawPath, "xz", []string{"--format=lzma", "--decompress", "--stdout"}, options.MaxPreparedSize, progress)',
+    ),
+    (
+        "zstd preparation progress",
+        '\t\trawDigest, err = prepareExternalDecompress(ctx, preparationReader, rawPath, "zstd", []string{"--decompress", "--stdout", "--quiet"}, options.MaxPreparedSize, progress)',
+    ),
+):
+    replace_once(path, old, old[:-len("progress)")] + "preparationProgress)", label)
 
 replace_once(
     path,
