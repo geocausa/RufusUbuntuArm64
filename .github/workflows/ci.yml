@@ -31,7 +31,6 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('scripts/build-deb.sh')
           lines = path.read_text().splitlines()
           first = 'install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_formats.py" \\'
@@ -42,13 +41,12 @@ jobs:
                   raise SystemExit('backup module installation line not found') from exc
               if index + 1 >= len(lines) or 'rufusarm64_drive_backup_formats.py' not in lines[index + 1]:
                   raise SystemExit('backup module destination line not found')
-              insertion = [
+              lines[index + 2:index + 2] = [
                   'install -Dm644 "${ROOT_DIR}/gui/rufusarm64_iso_capture.py" \\',
                   '  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_iso_capture.py"',
                   'install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_iso.py" \\',
                   '  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_iso.py"',
               ]
-              lines[index + 2:index + 2] = insertion
           text = '\n'.join(lines) + '\n'
           old_dep = 'xz-utils, zstd, qemu-utils'
           if 'genisoimage' not in text:
@@ -101,13 +99,18 @@ jobs:
               text = text.replace(old, new, 1)
           path.write_text(text)
           PY
-      - name: Qualify Go ISO contracts
+      - name: Normalize Go formatting
         shell: bash
         run: |
           set -euo pipefail
           gofmt -w cmd/rufus-device-backup/*.go internal/isocapture/*.go
           test -z "$(gofmt -l cmd/rufus-device-backup/*.go internal/isocapture/*.go)"
-          go test ./cmd/rufus-device-backup ./internal/isocapture ./internal/trustedexec
+      - name: Qualify ISO command contracts
+        run: go test ./cmd/rufus-device-backup
+      - name: Qualify ISO core contracts
+        run: go test ./internal/isocapture
+      - name: Qualify trusted resolver contracts
+        run: go test ./internal/trustedexec
       - name: Qualify Python and GTK ISO contracts
         shell: bash
         run: |
