@@ -1,0 +1,41 @@
+name: Drive backup development diagnostics
+
+on:
+  pull_request:
+    branches:
+      - stage3/0.14.0
+    paths:
+      - 'cmd/rufus-device-backup/**'
+      - 'internal/drivebackup/**'
+      - 'internal/trustedexec/**'
+      - '.github/workflows/drivebackup-development-diagnostics.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  focused-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.12'
+          cache: false
+      - name: Capture focused test output
+        shell: bash
+        run: |
+          set +e
+          go test ./internal/drivebackup ./internal/trustedexec ./cmd/rufus-device-backup > focused-tests.log 2>&1
+          status=$?
+          printf 'exit_status=%s\n' "$status" >> focused-tests.log
+          exit 0
+      - name: Upload focused diagnostics
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: drivebackup-focused-diagnostics
+          path: focused-tests.log
+          if-no-files-found: error
+          retention-days: 1
