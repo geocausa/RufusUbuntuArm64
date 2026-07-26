@@ -42,7 +42,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   software-audit:
@@ -52,6 +52,9 @@ jobs:
     steps:
       - name: Check out exact source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: true
 
       - name: Set up Go 1.22
         uses: actions/setup-go@v5
@@ -114,36 +117,57 @@ jobs:
           trusted = Path('internal/trustedexec/trustedexec_linux.go').read_text(encoding='utf-8')
 
           required = {
-              'CLI experimental gate': (cli, '--experimental-ffu is required'),
-              'root-before-restore gate': (cli, 'FFU restore requires administrator privileges'),
-              'review binding': (cli + binding, 'expected-review-binding'),
-              'constant-time binding comparison': (binding, 'subtle.ConstantTimeCompare'),
-              'exclusive target acquisition': (cli, 'AcquireExclusiveFullFlashTarget'),
-              'one-shot authorization': (cli, 'AuthorizeSinglePhaseFullFlashMutation'),
-              'complete executor readback': (executor, 'readback-target-read'),
-              'GTK exact confirmation': (restore, 'confirmation != review["exact_confirmation_phrase"]'),
-              'GTK process-group cancellation': (dialog, 'os.killpg(process.pid, signal.SIGTERM)'),
-              'unknown target fail-closed warning': (dialog, 'target state is unknown'),
-              'trusted utility resolver': (trusted, 'Ambient PATH is never consulted.'),
-              'device trusted lsblk': (device_source, 'resolveDeviceUtility("lsblk")'),
-              'safety trusted commands': (safety_source, 'trustedSafetyCommandContext'),
+            'CLI experimental gate': (cli, '--experimental-ffu is required'),
+            'root-before-restore gate': (cli, 'FFU restore requires administrator privileges'),
+            'review binding': (cli + binding, 'expected-review-binding'),
+            'constant-time binding comparison': (binding, 'subtle.ConstantTimeCompare'),
+            'exclusive target acquisition': (cli, 'AcquireExclusiveFullFlashTarget'),
+            'one-shot authorization': (cli, 'AuthorizeSinglePhaseFullFlashMutation'),
+            'complete executor readback': (executor, 'readback-target-read'),
+            'GTK exact confirmation': (restore, 'confirmation != review["exact_confirmation_phrase"]'),
+            'GTK process-group cancellation': (dialog, 'os.killpg(process.pid, signal.SIGTERM)'),
+            'unknown target fail-closed warning': (dialog, 'target state is unknown'),
+            'trusted utility resolver': (trusted, 'Ambient PATH is never consulted.'),
+            'device trusted lsblk': (device_source, 'resolveDeviceUtility("lsblk")'),
+            'safety trusted commands': (safety_source, 'trustedSafetyCommandContext'),
           }
           for label, (text, needle) in required.items():
-              if needle not in text:
-                  raise SystemExit(f'missing required FFU boundary: {label}')
+            if needle not in text:
+              raise SystemExit(f'missing required FFU boundary: {label}')
 
           forbidden = {
-              'fixed-disk override': '--allow-fixed',
-              'force bypass': '--force',
-              'automatic unmount': 'syscall.Unmount',
-              'confirmation bypass': '--yes',
+            'fixed-disk override': '--allow-fixed',
+            'force bypass': '--force',
+            'automatic unmount': 'syscall.Unmount',
+            'confirmation bypass': '--yes',
           }
           ffu_boundary = '\n'.join((cli, binding, dialog, restore))
           for label, needle in forbidden.items():
-              if needle in ffu_boundary:
-                  raise SystemExit(f'forbidden FFU boundary appeared: {label}')
+            if needle in ffu_boundary:
+              raise SystemExit(f'forbidden FFU boundary appeared: {label}')
 
           trusted_boundary = '\n'.join((device_source, safety_source, trusted))
           if 'exec.LookPath' in trusted_boundary:
-              raise SystemExit('forbidden trusted-utility boundary appeared: ambient lookup')
+            raise SystemExit('forbidden trusted-utility boundary appeared: ambient lookup')
           PY
+
+      - name: Format drive backup sources
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            internal/drivebackup/backup.go
+            internal/drivebackup/plan_linux.go
+            internal/drivebackup/qemu_execute_linux_test.go
+          )
+          gofmt -w "${files[@]}"
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add "${files[@]}"
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'style: format drive backup sources'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
