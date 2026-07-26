@@ -10,7 +10,7 @@
   "project": {
     "repository": "geocausa/RufusUbuntuArm64",
     "baseline": "stage3/0.14.0",
-    "baseline_commit": "bbfb53e25055c4ffca3d15df7586340c323e1ac6",
+    "baseline_commit": "1ac31bfc835a72ec35ff7cfc0ee5efa95126e8f1",
     "target_milestone": "1.0",
     "windows_to_go_policy": "deferred-maybe"
   },
@@ -91,8 +91,8 @@
     {
       "id": "bad-blocks-and-fake-capacity",
       "upstream_feature": "Perform bad-block checks, including fake flash-drive detection",
-      "status": "partial",
-      "notes": "Windows-media workflows provide a destructive write/read qualification option. Rufus-style multi-pattern passes, wraparound/fake-capacity detection, and reusable qualification reports remain planned.",
+      "status": "implemented",
+      "notes": "The dedicated Linux-native qualification workflow provides quick two-pattern sampling and full four-pattern complete-capacity verification using address-derived data, synchronized writes, sentinel-first readback, alias-owner matching for wrapped/fake capacity, cancellation evidence, and deterministic passed/failed/cancelled reports. GTK exports reusable private no-replace JSON evidence bound to the reviewed device path and identity token. Broad physical-media coverage remains ordinary qualification scope rather than a missing software path.",
       "upstream_sources": [
         "src/badblocks.c",
         "src/format.c"
