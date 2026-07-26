@@ -94,6 +94,7 @@ func TestRealGenISOImageUDFRoundTrip(t *testing.T) {
 	options := FilesystemCaptureOptions{
 		SourceDevicePath:      loopDevice,
 		SourceNode:            loopDevice,
+		ExpectedBindingSHA256: plan.SourceBindingSHA256,
 		ExpectedContentSHA256: plan.SourceContentSHA256,
 		VolumeID:              plan.VolumeID,
 	}
