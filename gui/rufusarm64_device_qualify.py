@@ -5,6 +5,8 @@ import os
 import re
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_BACKUP_FORMATS = {"raw", "vhd", "vhdx"}
+_BACKUP_PHASES = {"capture", "hash_source", "convert", "hash_output"}
 
 
 def build_dry_run_command(binary, device, identity, profile):
@@ -115,14 +117,16 @@ def _validate(binary, device, identity, profile):
 
 # Drive-image backup helpers live in this already-packaged pure module so the
 # installed launcher and the source-facing compatibility facade use one contract.
-def backup_build_dry_run_command(binary, device, identity, output):
-    _backup_validate(binary, device, identity, output)
+def backup_build_dry_run_command(binary, device, identity, output, format_name="raw"):
+    format_name = _backup_validate(binary, device, identity, output, format_name)
     return [
         binary,
         "--device",
         device,
         "--output",
         output,
+        "--format",
+        format_name,
         "--expected-identity",
         identity,
         "--dry-run",
@@ -130,10 +134,10 @@ def backup_build_dry_run_command(binary, device, identity, output):
     ]
 
 
-def backup_build_run_command(pkexec, binary, device, identity, output):
+def backup_build_run_command(pkexec, binary, device, identity, output, format_name="raw"):
     if not pkexec:
         raise ValueError("Administrator authentication helper is unavailable.")
-    _backup_validate(binary, device, identity, output)
+    format_name = _backup_validate(binary, device, identity, output, format_name)
     return [
         pkexec,
         binary,
@@ -141,6 +145,8 @@ def backup_build_run_command(pkexec, binary, device, identity, output):
         device,
         "--output",
         output,
+        "--format",
+        format_name,
         "--expected-identity",
         identity,
         "--yes",
@@ -167,6 +173,9 @@ def backup_normalize_plan(payload):
     path = str(device.get("path") or "").strip()
     output = str(destination.get("path") or "").strip()
     directory = str(destination.get("directory") or "").strip()
+    format_name = str(destination.get("format") or "").strip().lower()
+    if format_name not in _BACKUP_FORMATS:
+        raise ValueError("Backup plan contains an unsupported output format.")
     if not path.startswith("/dev/"):
         raise ValueError("Backup plan contains an invalid source path.")
     if not os.path.isabs(output) or not os.path.isabs(directory):
@@ -175,26 +184,43 @@ def backup_normalize_plan(payload):
         raise ValueError("Backup plan contains inconsistent destination details.")
     required = _nonnegative_integer(destination.get("required_bytes"), "required byte count")
     available = _nonnegative_integer(destination.get("available_bytes"), "available byte count")
+    source_bytes = _nonnegative_integer(destination.get("source_bytes"), "source byte count")
+    minimum = _nonnegative_integer(destination.get("container_minimum_bytes", 0), "container minimum byte count")
     size = _nonnegative_integer(device.get("size"), "source capacity")
-    if required <= 0 or size != required:
+    if required <= 0 or size <= 0 or source_bytes != size:
         raise ValueError("Backup plan reports an invalid source capacity.")
+    if format_name == "raw":
+        if required != size or minimum != 0:
+            raise ValueError("Raw backup plan contains invalid destination sizing.")
+    elif minimum <= 0 or minimum > required:
+        raise ValueError("Container backup plan contains invalid allocation bounds.")
     if available < required:
         raise ValueError("Backup plan reports insufficient destination space.")
     normalized_device = dict(device)
     normalized_device["path"] = path
     normalized_device["size"] = size
     normalized_destination = dict(destination)
-    normalized_destination["path"] = output
-    normalized_destination["directory"] = directory
-    normalized_destination["required_bytes"] = required
-    normalized_destination["available_bytes"] = available
+    normalized_destination.update(
+        {
+            "path": output,
+            "directory": directory,
+            "format": format_name,
+            "source_bytes": source_bytes,
+            "required_bytes": required,
+            "container_minimum_bytes": minimum,
+            "available_bytes": available,
+        }
+    )
     return {"device": normalized_device, "identity": identity, "destination": normalized_destination}
 
 
 def backup_normalize_progress(payload):
     value = _mapping(payload, "Backup progress record is invalid.")
-    if int(value.get("schema") or 0) != 1 or value.get("type") != "progress":
+    if int(value.get("schema") or 0) != 2 or value.get("type") != "progress":
         raise ValueError("Backup progress record uses an unsupported schema or type.")
+    phase = str(value.get("phase") or "").strip()
+    if phase not in _BACKUP_PHASES:
+        raise ValueError("Backup progress record contains an unsupported phase.")
     done = _nonnegative_integer(value.get("done"), "completed byte count")
     total = _nonnegative_integer(value.get("total"), "total byte count")
     elapsed_ms = _nonnegative_integer(value.get("elapsed_ms"), "elapsed time")
@@ -207,8 +233,9 @@ def backup_normalize_progress(payload):
     normalized = dict(value)
     normalized.update(
         {
-            "schema": 1,
+            "schema": 2,
             "type": "progress",
+            "phase": phase,
             "done": done,
             "total": total,
             "elapsed_ms": elapsed_ms,
@@ -221,26 +248,43 @@ def backup_normalize_progress(payload):
 
 def backup_normalize_report(payload):
     value = _mapping(payload, "Drive-image backup returned an invalid report.")
-    if int(value.get("schema") or 0) != 1:
+    if int(value.get("schema") or 0) != 2:
         raise ValueError("Drive-image backup report uses an unsupported schema.")
     status = str(value.get("status") or "").strip()
     if status not in {"passed", "failed", "cancelled"}:
         raise ValueError("Drive-image backup report has an invalid status.")
+    format_name = str(value.get("format") or "").strip().lower()
+    if format_name not in _BACKUP_FORMATS:
+        raise ValueError("Drive-image backup report contains an unsupported format.")
     planned = _nonnegative_integer(value.get("planned_bytes"), "planned byte count")
     completed = _nonnegative_integer(value.get("completed_bytes"), "completed byte count")
+    output_bytes = _nonnegative_integer(value.get("output_bytes", 0), "output byte count")
     if planned <= 0 or completed > planned:
         raise ValueError("Drive-image backup report contains invalid byte accounting.")
-    sha256 = str(value.get("sha256") or "").strip().lower()
-    if status == "passed":
-        if completed != planned or not _SHA256_RE.fullmatch(sha256):
-            raise ValueError("Successful backup report is incomplete or missing its SHA-256 digest.")
-    elif sha256:
-        raise ValueError("Failed or cancelled backup report must not claim a SHA-256 digest.")
+    legacy_hash = str(value.get("sha256") or "").strip().lower()
+    source_hash = str(value.get("source_sha256") or "").strip().lower()
+    output_hash = str(value.get("output_sha256") or "").strip().lower()
+    comparison = str(value.get("content_comparison") or "").strip()
+    consistency = str(value.get("consistency") or "").strip()
     failure = value.get("failure")
     if status == "passed":
-        if failure is not None:
-            raise ValueError("Successful backup report must not include a failure record.")
+        if completed != planned or failure is not None:
+            raise ValueError("Successful backup report is incomplete or includes a failure record.")
+        if not all(_SHA256_RE.fullmatch(item) for item in (legacy_hash, source_hash, output_hash)):
+            raise ValueError("Successful backup report is missing complete SHA-256 evidence.")
+        if legacy_hash != source_hash or output_bytes <= 0 or comparison != "passed":
+            raise ValueError("Successful backup report contains inconsistent verification evidence.")
+        if format_name == "raw":
+            if output_bytes != planned or output_hash != source_hash or consistency != "not_applicable":
+                raise ValueError("Successful raw backup report contains inconsistent evidence.")
+        elif format_name == "vhd":
+            if consistency != "unsupported":
+                raise ValueError("Successful VHD backup report contains invalid consistency evidence.")
+        elif consistency != "passed":
+            raise ValueError("Successful VHDX backup report is missing consistency evidence.")
     else:
+        if any((legacy_hash, source_hash, output_hash, output_bytes, comparison, consistency)):
+            raise ValueError("Failed or cancelled backup report must not claim completed verification evidence.")
         if not isinstance(failure, dict):
             raise ValueError("Failed or cancelled backup report is missing its failure record.")
         kind = str(failure.get("kind") or "").strip()
@@ -259,11 +303,17 @@ def backup_normalize_report(payload):
     normalized = dict(value)
     normalized.update(
         {
-            "schema": 1,
+            "schema": 2,
             "status": status,
+            "format": format_name,
             "planned_bytes": planned,
             "completed_bytes": completed,
-            "sha256": sha256,
+            "sha256": legacy_hash,
+            "source_sha256": source_hash,
+            "output_sha256": output_hash,
+            "output_bytes": output_bytes,
+            "content_comparison": comparison,
+            "consistency": consistency,
             "failure": failure,
         }
     )
@@ -287,11 +337,14 @@ def backup_plan_summary(plan):
     name = " ".join(
         part for part in (str(device.get("vendor") or "").strip(), str(device.get("model") or "").strip()) if part
     ) or str(device.get("path") or "selected drive")
+    minimum = ""
+    if destination["container_minimum_bytes"]:
+        minimum = f" Minimum container estimate: {_human_bytes(destination['container_minimum_bytes'])}; admission remains conservative."
     return (
         f"Source: {name} ({device['path']}), {_human_bytes(device['size'])}.\n"
-        f"Destination filesystem: {destination['directory']}; image: {destination['path']}.\n"
-        f"Required: {_human_bytes(destination['required_bytes'])}; available: "
-        f"{_human_bytes(destination['available_bytes'])}. The source will be opened read-only."
+        f"Destination filesystem: {destination['directory']}; {destination['format'].upper()} image: {destination['path']}.\n"
+        f"Conservative required: {_human_bytes(destination['required_bytes'])}; available: "
+        f"{_human_bytes(destination['available_bytes'])}.{minimum} The source will be opened read-only."
     )
 
 
@@ -300,8 +353,9 @@ def backup_progress_summary(progress):
     percent = value["done"] * 100.0 / value["total"]
     rate = _human_bytes(value["bytes_per_second"]) + "/s" if value["bytes_per_second"] else "measuring speed"
     eta = _human_duration(value["eta_seconds"]) if value["eta_seconds"] is not None else "estimating time"
+    phase = value["phase"].replace("_", " ").capitalize()
     return (
-        f"{percent:.1f}% — {_human_bytes(value['done'])} of {_human_bytes(value['total'])}; "
+        f"{phase}: {percent:.1f}% — {_human_bytes(value['done'])} of {_human_bytes(value['total'])}; "
         f"{rate}; {eta} remaining"
     )
 
@@ -310,7 +364,10 @@ def backup_report_summary(report, output):
     value = backup_normalize_report(report)
     completed = _human_bytes(value["completed_bytes"])
     if value["status"] == "passed":
-        return f"Drive image saved to {output} ({completed}); SHA-256 {value['sha256']}."
+        return (
+            f"{value['format'].upper()} drive image saved to {output} ({_human_bytes(value['output_bytes'])}); "
+            f"source SHA-256 {value['source_sha256']}; output SHA-256 {value['output_sha256']}."
+        )
     failure = value.get("failure") or {}
     message = str(failure.get("message") or "No detailed failure reason was returned.")
     if value["status"] == "cancelled":
@@ -318,7 +375,7 @@ def backup_report_summary(report, output):
     return f"Drive-image backup failed after {completed}. {message}"
 
 
-def _backup_validate(binary, device, identity, output):
+def _backup_validate(binary, device, identity, output, format_name):
     if not binary:
         raise ValueError("Drive-image backup utility is unavailable.")
     if not str(device or "").startswith("/dev/"):
@@ -330,6 +387,10 @@ def _backup_validate(binary, device, identity, output):
         raise ValueError("Choose an absolute destination path for the new image.")
     if os.path.lexists(output):
         raise ValueError("Choose a new destination path; existing files and symbolic links are never replaced.")
+    format_name = str(format_name or "").strip().lower()
+    if format_name not in _BACKUP_FORMATS:
+        raise ValueError("Drive-image format must be raw, vhd, or vhdx.")
+    return format_name
 
 
 def _mapping(value, message):
