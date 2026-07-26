@@ -44,6 +44,16 @@ func requestedISO(args []string) bool {
 	return false
 }
 
+func newISOCaptureOptions(devicePath, sourceNode string, plan isocapture.FilesystemCapturePlan, progress isocapture.CaptureProgressFunc) isocapture.FilesystemCaptureOptions {
+	return isocapture.FilesystemCaptureOptions{
+		SourceDevicePath:      devicePath,
+		SourceNode:            sourceNode,
+		ExpectedContentSHA256: plan.SourceContentSHA256,
+		VolumeID:              plan.VolumeID,
+		Progress:              progress,
+	}
+}
+
 func runISO(args []string) error {
 	flags := flag.NewFlagSet("rufusarm64-device-backup", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
@@ -195,10 +205,11 @@ func runISO(args []string) error {
 	currentPhase := ""
 	lastProgress := time.Time{}
 	var progressErr error
-	report, runErr := isocapture.CaptureFilesystem(ctx, sourceMount, plan.Destination, isocapture.FilesystemCaptureOptions{
-		SourceDevicePath: resolved,
-		VolumeID:         plan.VolumeID,
-		Progress: func(progress isocapture.CaptureProgress) {
+	report, runErr := isocapture.CaptureFilesystem(ctx, sourceMount, plan.Destination, newISOCaptureOptions(
+		resolved,
+		freshNode.Path,
+		plan,
+		func(progress isocapture.CaptureProgress) {
 			if progress.Phase != currentPhase {
 				currentPhase = progress.Phase
 				phaseStarted = time.Now()
@@ -223,7 +234,7 @@ func runISO(args []string) error {
 			}
 			printISOProgress(progress, elapsed)
 		},
-	})
+	))
 	if !*asJSON && !lastProgress.IsZero() {
 		fmt.Println()
 	}
