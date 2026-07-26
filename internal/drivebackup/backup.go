@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	ReportSchema      = 1
+	ReportSchema      = 2
 	defaultBufferSize = 4 * 1024 * 1024
 	maxBufferSize     = 64 * 1024 * 1024
 )
@@ -33,15 +33,22 @@ type Failure struct {
 }
 
 type Report struct {
-	Schema         int      `json:"schema"`
-	Status         Status   `json:"status"`
-	PlannedBytes   uint64   `json:"planned_bytes"`
-	CompletedBytes uint64   `json:"completed_bytes"`
-	SHA256         string   `json:"sha256,omitempty"`
-	Failure        *Failure `json:"failure,omitempty"`
+	Schema             int              `json:"schema"`
+	Status             Status           `json:"status"`
+	Format             Format           `json:"format"`
+	PlannedBytes       uint64           `json:"planned_bytes"`
+	CompletedBytes     uint64           `json:"completed_bytes"`
+	SHA256             string           `json:"sha256,omitempty"`
+	SourceSHA256       string           `json:"source_sha256,omitempty"`
+	OutputSHA256       string           `json:"output_sha256,omitempty"`
+	OutputBytes        uint64           `json:"output_bytes,omitempty"`
+	ContentComparison  ComparisonState  `json:"content_comparison,omitempty"`
+	Consistency        ConsistencyState `json:"consistency,omitempty"`
+	Failure            *Failure         `json:"failure,omitempty"`
 }
 
 type Progress struct {
+	Phase string `json:"phase,omitempty"`
 	Done  uint64 `json:"done"`
 	Total uint64 `json:"total"`
 }
@@ -175,8 +182,14 @@ func Copy(ctx context.Context, source io.ReaderAt, destination syncWriter, size 
 	if err := destination.Sync(); err != nil {
 		return fail(report, "sync_destination", offset, true, fmt.Errorf("sync backup destination: %w", err))
 	}
+	digest := hex.EncodeToString(hash.Sum(nil))
 	report.Status = StatusPassed
-	report.SHA256 = hex.EncodeToString(hash.Sum(nil))
+	report.SHA256 = digest
+	report.SourceSHA256 = digest
+	report.OutputSHA256 = digest
+	report.OutputBytes = offset
+	report.ContentComparison = ComparisonPassed
+	report.Consistency = ConsistencyNotApplicable
 	return report, nil
 }
 
@@ -203,7 +216,7 @@ func validateCopy(ctx context.Context, source io.ReaderAt, destination syncWrite
 }
 
 func validateCommon(ctx context.Context, source io.ReaderAt, size uint64, config Config) (Report, error) {
-	report := Report{Schema: ReportSchema, Status: StatusFailed, PlannedBytes: size}
+	report := Report{Schema: ReportSchema, Status: StatusFailed, Format: FormatRaw, PlannedBytes: size}
 	if ctx == nil {
 		return fail(report, "invalid_context", 0, false, errors.New("backup context is nil"))
 	}
@@ -226,15 +239,19 @@ func validateCommon(ctx context.Context, source io.ReaderAt, size uint64, config
 }
 
 func emit(progress ProgressFunc, done, total uint64) {
+	emitPhase(progress, "", done, total)
+}
+
+func emitPhase(progress ProgressFunc, phase string, done, total uint64) {
 	if progress != nil {
-		progress(Progress{Done: done, Total: total})
+		progress(Progress{Phase: phase, Done: done, Total: total})
 	}
 }
 
 func cancel(report Report, offset uint64, err error) (Report, error) {
 	report.Status = StatusCancelled
 	report.CompletedBytes = offset
-	report.SHA256 = ""
+	clearCompletedEvidence(&report)
 	offsetCopy := offset
 	report.Failure = &Failure{Kind: "cancelled", Message: err.Error(), ByteOffset: &offsetCopy}
 	return report, err
@@ -242,7 +259,7 @@ func cancel(report Report, offset uint64, err error) (Report, error) {
 
 func fail(report Report, kind string, offset uint64, includeOffset bool, err error) (Report, error) {
 	report.Status = StatusFailed
-	report.SHA256 = ""
+	clearCompletedEvidence(&report)
 	if offset > report.CompletedBytes {
 		report.CompletedBytes = offset
 	}
@@ -253,4 +270,13 @@ func fail(report Report, kind string, offset uint64, includeOffset bool, err err
 	}
 	report.Failure = failure
 	return report, err
+}
+
+func clearCompletedEvidence(report *Report) {
+	report.SHA256 = ""
+	report.SourceSHA256 = ""
+	report.OutputSHA256 = ""
+	report.OutputBytes = 0
+	report.ContentComparison = ""
+	report.Consistency = ""
 }
