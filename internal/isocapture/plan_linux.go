@@ -26,7 +26,7 @@ type FilesystemCapturePlan struct {
 	Profile             string   `json:"profile"`
 	Filesystem          string   `json:"filesystem"`
 	VolumeID            string   `json:"volume_id"`
-	Provider             string   `json:"provider"`
+	Provider            string   `json:"provider"`
 	SourceDevice        string   `json:"source_device"`
 	SourceMount         string   `json:"source_mount"`
 	Destination         string   `json:"destination"`

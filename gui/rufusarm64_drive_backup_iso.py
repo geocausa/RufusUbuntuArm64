@@ -224,8 +224,11 @@ def install_drive_backup_iso():
                 raise ValueError("Filesystem ISO report refers to a different source mountpoint.")
             if payload["destination"] != dialog.output_path:
                 raise ValueError("Filesystem ISO report refers to a different destination.")
-            if payload["source_bytes"] != source_bytes or payload["required_bytes"] != required_bytes:
-                raise ValueError("Filesystem ISO report does not match the reviewed plan.")
+            if payload["status"] == "passed":
+                if payload["source_bytes"] != source_bytes or payload["required_bytes"] != required_bytes:
+                    raise ValueError("Successful filesystem ISO report does not match the reviewed plan.")
+            elif payload["source_bytes"] not in {0, source_bytes} or payload["required_bytes"] not in {0, required_bytes}:
+                raise ValueError("Filesystem ISO failure report contains impossible plan evidence.")
             if (returncode == 0) != (payload["status"] == "passed"):
                 raise ValueError("Filesystem ISO report status does not match the helper exit status.")
             if payload["status"] == "passed":

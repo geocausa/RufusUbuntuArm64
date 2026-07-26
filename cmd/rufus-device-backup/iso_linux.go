@@ -25,11 +25,11 @@ import (
 )
 
 type isoBackupPlan struct {
-	Device      device.BlockDevice                `json:"device"`
-	Identity    string                            `json:"identity"`
-	Destination drivebackup.DestinationInfo       `json:"destination"`
+	Device      device.BlockDevice               `json:"device"`
+	Identity    string                           `json:"identity"`
+	Destination drivebackup.DestinationInfo      `json:"destination"`
 	Filesystem  isocapture.FilesystemCapturePlan `json:"filesystem_capture"`
-	SourceNode  string                            `json:"source_node"`
+	SourceNode  string                           `json:"source_node"`
 }
 
 func requestedISO(args []string) bool {

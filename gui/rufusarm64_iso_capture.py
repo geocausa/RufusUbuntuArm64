@@ -140,7 +140,12 @@ def normalize_plan(payload):
     binding = _digest(filesystem.get("source_binding_sha256"), "source binding")
     content = _digest(filesystem.get("source_content_sha256"), "source content")
     limitations = filesystem.get("limitations")
-    if not isinstance(limitations, list) or set(limitations) != _REQUIRED_LIMITATIONS or len(limitations) != len(_REQUIRED_LIMITATIONS):
+    if (
+        not isinstance(limitations, list)
+        or not all(isinstance(item, str) for item in limitations)
+        or set(limitations) != _REQUIRED_LIMITATIONS
+        or len(limitations) != len(_REQUIRED_LIMITATIONS)
+    ):
         raise ValueError("ISO filesystem plan is missing required limitations.")
     normalized_device = dict(device)
     normalized_device.update({"path": device_path, "size": device_size})
@@ -252,8 +257,8 @@ def normalize_report(payload):
     source_bytes = _nonnegative_integer(value.get("source_bytes"), "source byte count")
     required = _nonnegative_integer(value.get("required_bytes"), "required byte count")
     output_bytes = _nonnegative_integer(value.get("output_bytes"), "output byte count")
-    if required <= 0:
-        raise ValueError("Filesystem ISO report contains an invalid destination bound.")
+    if status == "passed" and required <= 0:
+        raise ValueError("Successful filesystem ISO report contains an invalid destination bound.")
     binding = str(value.get("source_binding_sha256") or "").strip().lower()
     content = str(value.get("source_content_sha256") or "").strip().lower()
     output_hash = str(value.get("output_sha256") or "").strip().lower()

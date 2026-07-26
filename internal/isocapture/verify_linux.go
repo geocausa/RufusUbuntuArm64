@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	ValidationReportSchema       = 1
-	udfSuperMagic          int64 = 0x15013346
+	ValidationReportSchema        = 1
+	udfSuperMagic          int64  = 0x15013346
 	statfsReadOnly         uint64 = 0x1
 	statfsNoSuid           uint64 = 0x2
 	statfsNoDev            uint64 = 0x4

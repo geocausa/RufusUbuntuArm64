@@ -19,9 +19,9 @@ import (
 )
 
 const (
-	isoRenameNoReplace   = 1
-	isoRenameat2AMD64    = 316
-	isoRenameat2ARM64    = 276
+	isoRenameNoReplace = 1
+	isoRenameat2AMD64  = 316
+	isoRenameat2ARM64  = 276
 )
 
 type destinationPlan struct {
