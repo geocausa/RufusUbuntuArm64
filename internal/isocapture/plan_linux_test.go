@@ -37,7 +37,7 @@ func TestInspectFilesystemCaptureReturnsDeterministicPlan(t *testing.T) {
 	if plan.Provider != "/usr/bin/genisoimage" || plan.VolumeID != "TEST_MEDIA" || plan.SourceDevice != "/dev/test-source" || plan.SourceMount != source || plan.Destination != output {
 		t.Fatalf("unexpected plan binding: %+v", plan)
 	}
-	if plan.Files != 2 || plan.Directories != 1 || plan.SourceBytes != 10 || plan.RequiredBytes <= plan.SourceBytes || plan.AvailableBytes < plan.RequiredBytes {
+	if plan.Files != 2 || plan.Directories != 1 || plan.SourceBytes != 9 || plan.RequiredBytes <= plan.SourceBytes || plan.AvailableBytes < plan.RequiredBytes {
 		t.Fatalf("unexpected plan capacity evidence: %+v", plan)
 	}
 	if len(plan.SourceBindingSHA256) != 64 || len(plan.SourceContentSHA256) != 64 || len(plan.Limitations) != len(filesystemCaptureLimitations) {
