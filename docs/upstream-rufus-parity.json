@@ -10,7 +10,7 @@
   "project": {
     "repository": "geocausa/RufusUbuntuArm64",
     "baseline": "stage3/0.14.0",
-    "baseline_commit": "1ac31bfc835a72ec35ff7cfc0ee5efa95126e8f1",
+    "baseline_commit": "fe2602be0b33c7fa2dd8d53c687d5e33da8c5766",
     "target_milestone": "1.0",
     "windows_to_go_policy": "deferred-maybe"
   },
@@ -102,7 +102,7 @@
       "id": "drive-to-image",
       "upstream_feature": "Create DD/VHD, VHDX, FFU, and ISO images of an existing drive",
       "status": "partial",
-      "notes": "Identity-bound raw drive-image backup with progress, cancellation, SHA-256, atomic publication, and GTK integration is complete. Sparse VHD/VHDX export, UDF ISO capture, and FFU capture remain unimplemented Linux-native formats.",
+      "notes": "Identity-bound raw, dynamic VHD, and dynamic VHDX backup are implemented through descriptor-only trusted conversion, schema-2 source/output evidence, content comparison, VHDX consistency validation, conservative destination admission, atomic no-replace publication, CLI/GTK integration, real read-only loop qualification, native ARM64 packaged execution, and reproducible Debian packaging. Snapshot-bound UDF ISO capture and FFU capture remain unimplemented Linux-native formats.",
       "upstream_sources": [
         "src/vhd.c"
       ]
