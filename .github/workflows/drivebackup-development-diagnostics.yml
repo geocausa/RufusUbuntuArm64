@@ -112,11 +112,12 @@ jobs:
                   end += 1
               if end >= len(lines):
                   raise SystemExit('device qualification loop command has no terminator')
+              slash = chr(92)
               addition = [
                   '            go test -c -o "${RUNNER_TEMP}/drivebackup-loop.test" ./internal/drivebackup',
-                  '            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \\',
-                  '              "${RUNNER_TEMP}/drivebackup-loop.test" \\',
-                  "              -test.run '^(TestCaptureDeviceCapturesRealReadOnlyLoopDevice|TestCaptureDeviceExportsVerifiedContainersFromRealReadOnlyLoop)$' \\",
+                  '            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" ' + slash,
+                  '              "${RUNNER_TEMP}/drivebackup-loop.test" ' + slash,
+                  "              -test.run '^(TestCaptureDeviceCapturesRealReadOnlyLoopDevice|TestCaptureDeviceExportsVerifiedContainersFromRealReadOnlyLoop)$' " + slash,
                   '              -test.v',
               ]
               lines[end + 1:end + 1] = addition
