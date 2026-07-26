@@ -125,6 +125,46 @@ install -Dm755 "${ROOT_DIR}/gui/rufusarm64_persistence.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_persistence.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_persistence_logic.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_persistence_logic.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_ffu_restore_logic.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_ffu_restore_logic.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_ffu_dialog.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_ffu_dialog.py"
+
+# Fail the package build when any installed RufusArm64 Python module imports a
+# project-local module that the package forgot to include. Parse source without
+# importing GTK so this guard is deterministic on every build host.
+python3 - "${PACKAGE_DIR}/usr/lib/rufusarm64" <<'PYPACKAGEIMPORTS'
+import ast
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+pending = [root / "rufusarm64.py"]
+seen = set()
+while pending:
+    path = pending.pop()
+    if path in seen:
+        continue
+    if not path.is_file():
+        raise SystemExit(f"packaged GUI dependency is missing: {path.name}")
+    seen.add(path)
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    modules = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            modules.append(node.module)
+    for module in modules:
+        top_level = module.split(".", 1)[0]
+        if top_level.startswith("rufusarm64_"):
+            dependency = root / f"{top_level}.py"
+            if not dependency.is_file():
+                raise SystemExit(
+                    f"{path.name} imports missing packaged module {dependency.name}"
+                )
+            pending.append(dependency)
+PYPACKAGEIMPORTS
 
 # Include the verified package-private ARM64 WIM engine. It is deliberately
 # built without FUSE or NTFS-3G support and may depend only on the standard C
