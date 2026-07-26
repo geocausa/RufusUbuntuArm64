@@ -28,7 +28,25 @@ jobs:
           show-progress: false
 
       - name: Apply exact source transformation
-        run: python3 scripts/qualification_report_stage.py
+        id: apply
+        continue-on-error: true
+        shell: bash
+        run: python3 scripts/qualification_report_stage.py 2> /tmp/qualification-report-stage.err
+
+      - name: Preserve transformation failure
+        if: ${{ steps.apply.outcome == 'failure' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qualification-report-stage-failure
+          path: /tmp/qualification-report-stage.err
+          if-no-files-found: error
+
+      - name: Stop after transformation failure
+        if: ${{ steps.apply.outcome == 'failure' }}
+        shell: bash
+        run: |
+          cat /tmp/qualification-report-stage.err
+          exit 1
 
       - name: Validate report, dialog and package contracts
         shell: bash
