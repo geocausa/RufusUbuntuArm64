@@ -37,11 +37,17 @@ func TestRealGenISOImageUDFRoundTrip(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	source, err := os.Open(sourcePath)
+
+	ctx := context.Background()
+	view, err := OpenReadOnlySourceView(ctx, sourcePath, Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer source.Close()
+	t.Cleanup(func() {
+		if err := view.Close(); err != nil {
+			t.Errorf("close read-only source view: %v", err)
+		}
+	})
 	output, err := os.CreateTemp(t.TempDir(), "private-*.iso")
 	if err != nil {
 		t.Fatal(err)
@@ -51,15 +57,18 @@ func TestRealGenISOImageUDFRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	capture, err := Master(context.Background(), source, output, MasterOptions{VolumeID: "RUFUS_TEST"})
+	capture, err := Master(ctx, view.Root, output, MasterOptions{VolumeID: "RUFUS_TEST"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if capture.Status != CapturePassed || !capture.SourceStable || capture.OutputBytes == 0 || capture.OutputBytes > capture.MaximumOutputBytes {
 		t.Fatalf("unexpected mastering evidence: %+v", capture)
 	}
+	if capture.SourceContentSHA256 != view.Inventory.ContentSHA256 {
+		t.Fatalf("mastered source digest %s differs from read-only view %s", capture.SourceContentSHA256, view.Inventory.ContentSHA256)
+	}
 	validation, err := VerifyImage(
-		context.Background(),
+		ctx,
 		output,
 		capture.SourceContentSHA256,
 		capture.OutputSHA256,
