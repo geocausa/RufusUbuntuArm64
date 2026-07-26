@@ -222,6 +222,8 @@ def install_drive_backup_iso():
                 raise RuntimeError("Filesystem ISO capture did not return its final report.")
             if payload["source_device"] != dialog.device:
                 raise ValueError("Filesystem ISO report refers to a different source disk.")
+            if payload["source_node"] != plan["source_node"]:
+                raise ValueError("Filesystem ISO report refers to a different mounted source node.")
             if payload["source_mount"] != plan["filesystem_capture"]["source_mount"]:
                 raise ValueError("Filesystem ISO report refers to a different source mountpoint.")
             if payload["destination"] != dialog.output_path:
@@ -229,6 +231,8 @@ def install_drive_backup_iso():
             if payload["status"] == "passed":
                 if payload["source_bytes"] != source_bytes or payload["required_bytes"] != required_bytes:
                     raise ValueError("Successful filesystem ISO report does not match the reviewed plan.")
+                if payload["source_content_sha256"] != plan["filesystem_capture"]["source_content_sha256"]:
+                    raise ValueError("Successful filesystem ISO report contains different source content.")
             elif payload["source_bytes"] not in {0, source_bytes} or payload["required_bytes"] not in {0, required_bytes}:
                 raise ValueError("Filesystem ISO failure report contains impossible plan evidence.")
             if (returncode == 0) != (payload["status"] == "passed"):
