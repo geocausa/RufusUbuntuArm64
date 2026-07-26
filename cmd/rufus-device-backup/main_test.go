@@ -21,6 +21,7 @@ func TestRunValidatesArgumentsBeforeDeviceAccess(t *testing.T) {
 		{name: "missing device", args: nil, want: "--device is required"},
 		{name: "missing output", args: []string{"--device", "/dev/does-not-exist"}, want: "--output is required"},
 		{name: "positional", args: []string{"--device", "/dev/does-not-exist", "--output", "/tmp/out.img", "extra"}, want: "positional arguments"},
+		{name: "invalid format", args: []string{"--device", "/dev/does-not-exist", "--output", "/tmp/out.img", "--format", "qcow2"}, want: "format must be raw, vhd, or vhdx"},
 		{name: "yes without identity", args: []string{"--device", "/dev/does-not-exist", "--output", "/tmp/out.img", "--yes"}, want: "--yes requires --expected-identity"},
 		{name: "fixed without identity", args: []string{"--device", "/dev/does-not-exist", "--output", "/tmp/out.img", "--allow-fixed"}, want: "--allow-fixed requires --expected-identity"},
 		{name: "json run without yes", args: []string{"--device", "/dev/does-not-exist", "--output", "/tmp/out.img", "--json", "--expected-identity", "token"}, want: "non-dry-run --json requires --yes"},
@@ -121,7 +122,7 @@ func TestWriteJSONProgressFailureCancelsCapture(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	err := writeJSONProgressOrCancel(
 		failingProgressWriter{},
-		drivebackup.Progress{Done: 1, Total: 2},
+		drivebackup.Progress{Phase: "convert", Done: 1, Total: 2},
 		time.Second,
 		cancel,
 	)
@@ -136,8 +137,8 @@ func TestWriteJSONProgressFailureCancelsCapture(t *testing.T) {
 }
 
 func TestMakeProgressEvent(t *testing.T) {
-	event := makeProgressEvent(drivebackup.Progress{Done: 512, Total: 1024}, 2*time.Second)
-	if event.Schema != 1 || event.Type != "progress" {
+	event := makeProgressEvent(drivebackup.Progress{Phase: "convert", Done: 512, Total: 1024}, 2*time.Second)
+	if event.Schema != 2 || event.Type != "progress" || event.Phase != "convert" {
 		t.Fatalf("unexpected progress envelope: %#v", event)
 	}
 	if event.Done != 512 || event.Total != 1024 || event.ElapsedMS != 2000 {
@@ -151,6 +152,9 @@ func TestMakeProgressEvent(t *testing.T) {
 	}
 
 	complete := makeProgressEvent(drivebackup.Progress{Done: 1024, Total: 1024}, time.Second)
+	if complete.Phase != "capture" {
+		t.Fatalf("raw progress phase=%q", complete.Phase)
+	}
 	if complete.ETASeconds != nil {
 		t.Fatalf("completed progress must omit ETA: %#v", complete)
 	}
