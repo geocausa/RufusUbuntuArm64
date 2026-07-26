@@ -95,29 +95,32 @@ jobs:
           from pathlib import Path
 
           path = Path('.github/workflows/ci.yml')
-          text = path.read_text(encoding='utf-8')
-          dependency = '            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs\n'
-          replacement = '            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs qemu-utils\n'
-          if 'e2fsprogs qemu-utils' not in text:
-              if text.count(dependency) != 1:
-                  raise SystemExit('CI dependency anchor is missing or ambiguous')
-              text = text.replace(dependency, replacement, 1)
-          anchor = '''            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \\
-              "${RUNNER_TEMP}/devicequal-loop.test" \\
-              -test.run '^TestRunDeviceQualifiesRealLoopDevice$' \\
-              -test.v
-          '''
-          addition = anchor + '''            go test -c -o "${RUNNER_TEMP}/drivebackup-loop.test" ./internal/drivebackup
-            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \\
-              "${RUNNER_TEMP}/drivebackup-loop.test" \\
-              -test.run '^(TestCaptureDeviceCapturesRealReadOnlyLoopDevice|TestCaptureDeviceExportsVerifiedContainersFromRealReadOnlyLoop)$' \\
-              -test.v
-          '''
-          if 'drivebackup-loop.test' not in text:
-              if text.count(anchor) != 1:
-                  raise SystemExit('CI loop qualification anchor is missing or ambiguous')
-              text = text.replace(anchor, addition, 1)
-          path.write_text(text, encoding='utf-8')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          dependency = '            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs'
+          replacement = dependency + ' qemu-utils'
+          if replacement not in lines:
+              matches = [index for index, line in enumerate(lines) if line == dependency]
+              if len(matches) != 1:
+                  raise SystemExit('CI dependency line is missing or ambiguous')
+              lines[matches[0]] = replacement
+          if not any('drivebackup-loop.test' in line for line in lines):
+              markers = [index for index, line in enumerate(lines) if '"${RUNNER_TEMP}/devicequal-loop.test"' in line]
+              if len(markers) != 1:
+                  raise SystemExit('device qualification loop command is missing or ambiguous')
+              end = markers[0]
+              while end < len(lines) and lines[end].strip() != '-test.v':
+                  end += 1
+              if end >= len(lines):
+                  raise SystemExit('device qualification loop command has no terminator')
+              addition = [
+                  '            go test -c -o "${RUNNER_TEMP}/drivebackup-loop.test" ./internal/drivebackup',
+                  '            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \\',
+                  '              "${RUNNER_TEMP}/drivebackup-loop.test" \\',
+                  "              -test.run '^(TestCaptureDeviceCapturesRealReadOnlyLoopDevice|TestCaptureDeviceExportsVerifiedContainersFromRealReadOnlyLoop)$' \\",
+                  '              -test.v',
+              ]
+              lines[end + 1:end + 1] = addition
+          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
           PY
       - name: Remove unused staging workflow
         shell: bash
