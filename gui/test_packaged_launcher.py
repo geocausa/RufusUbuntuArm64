@@ -19,6 +19,7 @@ class PackagedLauncherTests(unittest.TestCase):
         payload = match.group(1)
 
         pin_calls = []
+        install_calls = []
         fake_gi = types.ModuleType("gi")
         fake_gi.require_version = lambda namespace, version: pin_calls.append((namespace, version))
 
@@ -27,8 +28,14 @@ class PackagedLauncherTests(unittest.TestCase):
         original_gi = sys.modules.get("gi")
 
         def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "rufusarm64_drive_backup_formats":
+                self.assertEqual(pin_calls, [("Gtk", "3.0")])
+                module = types.ModuleType(name)
+                module.install_drive_backup_formats = lambda: install_calls.append(True)
+                return module
             if name == "rufusarm64_integrated":
                 self.assertEqual(pin_calls, [("Gtk", "3.0")])
+                self.assertEqual(install_calls, [True])
                 module = types.ModuleType(name)
                 module.run_rufusarm64 = lambda argv: 0
                 return module
@@ -42,6 +49,7 @@ class PackagedLauncherTests(unittest.TestCase):
                 exec(compile(payload, str(LAUNCHER), "exec"), {})
             self.assertEqual(stopped.exception.code, 0)
             self.assertEqual(pin_calls, [("Gtk", "3.0")])
+            self.assertEqual(install_calls, [True])
         finally:
             builtins.__import__ = original_import
             sys.argv = original_argv
