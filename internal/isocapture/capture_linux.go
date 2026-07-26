@@ -19,11 +19,12 @@ const (
 )
 
 // FilesystemCaptureOptions binds the filesystem remaster to the selected whole
-// source disk, exact mounted node, reviewed content digest, and one fixed UDF
-// bridge policy.
+// source disk, exact mounted node, reviewed binding/content digests, and one
+// fixed UDF bridge policy.
 type FilesystemCaptureOptions struct {
 	SourceDevicePath      string
 	SourceNode            string
+	ExpectedBindingSHA256 string
 	ExpectedContentSHA256 string
 	VolumeID              string
 	Limits                Limits
@@ -82,6 +83,10 @@ func CaptureFilesystem(ctx context.Context, sourceMount, outputPath string, opti
 	if !strings.HasPrefix(strings.TrimSpace(options.SourceNode), "/dev/") {
 		return filesystemFailure(report, "invalid_source_node", errors.New("ISO capture requires the exact mounted source-device node"))
 	}
+	expectedBinding := strings.TrimSpace(options.ExpectedBindingSHA256)
+	if err := validateDigest(expectedBinding); err != nil {
+		return filesystemFailure(report, "invalid_source_binding_digest", fmt.Errorf("validate reviewed source binding digest: %w", err))
+	}
 	expectedContent := strings.TrimSpace(options.ExpectedContentSHA256)
 	if err := validateDigest(expectedContent); err != nil {
 		return filesystemFailure(report, "invalid_source_digest", fmt.Errorf("validate reviewed source content digest: %w", err))
@@ -91,7 +96,7 @@ func CaptureFilesystem(ctx context.Context, sourceMount, outputPath string, opti
 	}
 
 	emitCapture(options.Progress, CaptureProgress{Phase: "source_view", Message: "Creating and authenticating the private read-only source view."})
-	view, err := OpenReadOnlySourceView(ctx, sourceMount, options.Limits)
+	view, err := OpenReadOnlySourceView(ctx, sourceMount, expectedBinding, options.Limits)
 	if err != nil {
 		return filesystemContextFailure(report, "source_view", err)
 	}
