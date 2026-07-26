@@ -26,15 +26,19 @@ func TestCaptureCopiesExactBytesAndHashes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Status != StatusPassed || report.Schema != ReportSchema {
+	if report.Status != StatusPassed || report.Schema != ReportSchema || report.Format != FormatRaw {
 		t.Fatalf("unexpected report: %+v", report)
 	}
-	if report.CompletedBytes != uint64(len(data)) || report.PlannedBytes != uint64(len(data)) {
+	if report.CompletedBytes != uint64(len(data)) || report.PlannedBytes != uint64(len(data)) || report.OutputBytes != uint64(len(data)) {
 		t.Fatalf("unexpected byte accounting: %+v", report)
 	}
 	expectedHash := sha256.Sum256(data)
-	if report.SHA256 != hex.EncodeToString(expectedHash[:]) {
-		t.Fatalf("sha256 = %q, want %x", report.SHA256, expectedHash)
+	digest := hex.EncodeToString(expectedHash[:])
+	if report.SHA256 != digest || report.SourceSHA256 != digest || report.OutputSHA256 != digest {
+		t.Fatalf("raw evidence hashes differ: %+v want %s", report, digest)
+	}
+	if report.ContentComparison != ComparisonPassed || report.Consistency != ConsistencyNotApplicable {
+		t.Fatalf("raw verification evidence=%+v", report)
 	}
 	written, err := os.ReadFile(output)
 	if err != nil {
@@ -55,7 +59,7 @@ func TestCaptureCopiesExactBytesAndHashes(t *testing.T) {
 	}
 	last := uint64(0)
 	for _, value := range progress {
-		if value.Total != uint64(len(data)) || value.Done < last || value.Done > value.Total {
+		if value.Phase != "" || value.Total != uint64(len(data)) || value.Done < last || value.Done > value.Total {
 			t.Fatalf("invalid progress sequence: %+v", progress)
 		}
 		last = value.Done
@@ -135,6 +139,9 @@ func TestCaptureCancellationRemovesIncompleteDestination(t *testing.T) {
 	if report.CompletedBytes != 4 || report.Failure == nil || report.Failure.ByteOffset == nil || *report.Failure.ByteOffset != 4 {
 		t.Fatalf("unexpected cancellation report: %+v", report)
 	}
+	if report.SHA256 != "" || report.SourceSHA256 != "" || report.OutputSHA256 != "" || report.OutputBytes != 0 {
+		t.Fatalf("cancelled report exposed completed evidence: %+v", report)
+	}
 	if _, statErr := os.Lstat(output); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("cancelled destination remains: %v", statErr)
 	}
@@ -169,7 +176,7 @@ func TestCopyClassifiesDestinationFailures(t *testing.T) {
 			if err == nil || report.Status != StatusFailed || report.Failure == nil || report.Failure.Kind != test.kind {
 				t.Fatalf("unexpected result: report=%+v err=%v", report, err)
 			}
-			if report.SHA256 != "" {
+			if report.SHA256 != "" || report.SourceSHA256 != "" || report.OutputSHA256 != "" {
 				t.Fatalf("failed report exposed a completed hash: %+v", report)
 			}
 		})
@@ -206,6 +213,7 @@ func TestReportJSONIsStable(t *testing.T) {
 	report := Report{
 		Schema:         ReportSchema,
 		Status:         StatusFailed,
+		Format:         FormatRaw,
 		PlannedBytes:   10,
 		CompletedBytes: 0,
 		Failure: &Failure{
@@ -218,7 +226,7 @@ func TestReportJSONIsStable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"schema":1,"status":"failed","planned_bytes":10,"completed_bytes":0,"failure":{"kind":"source_read","message":"read failed","byte_offset":0}}`
+	want := `{"schema":2,"status":"failed","format":"raw","planned_bytes":10,"completed_bytes":0,"failure":{"kind":"source_read","message":"read failed","byte_offset":0}}`
 	want = string(bytes.ReplaceAll([]byte(want), []byte{'\\'}, nil))
 	if string(payload) != want {
 		t.Fatalf("json = %s, want %s", payload, want)

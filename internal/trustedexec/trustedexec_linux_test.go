@@ -24,6 +24,21 @@ func TestResolveAtAcceptsTrustedExecutable(t *testing.T) {
 	}
 }
 
+func TestResolveAtAcceptsTrustedQEMUImg(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "qemu-img")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := resolveAt("qemu-img", []string{root}, uint32(os.Getuid()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != path {
+		t.Fatalf("got %s want %s", got, path)
+	}
+}
+
 func TestResolveAtRejectsUnsafeInputs(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "lsblk")
