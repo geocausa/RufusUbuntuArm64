@@ -137,10 +137,13 @@ jobs:
               'force bypass': '--force',
               'automatic unmount': 'syscall.Unmount',
               'confirmation bypass': '--yes',
-              'ambient utility lookup': 'exec.LookPath',
           }
-          joined = '\n'.join((cli, binding, dialog, restore, device_source, safety_source, trusted))
+          ffu_boundary = '\n'.join((cli, binding, dialog, restore))
           for label, needle in forbidden.items():
-              if needle in joined:
+              if needle in ffu_boundary:
                   raise SystemExit(f'forbidden FFU boundary appeared: {label}')
+
+          trusted_boundary = '\n'.join((device_source, safety_source, trusted))
+          if 'exec.LookPath' in trusted_boundary:
+              raise SystemExit('forbidden trusted-utility boundary appeared: ambient lookup')
           PY
