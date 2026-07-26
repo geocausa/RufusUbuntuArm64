@@ -57,10 +57,12 @@ replace_once(
 )
 replace_once(
     dialog,
-    '''        self.cancel_button.set_sensitive(self.running)
+    '''        self.run_button.set_sensitive(False if self.running else bool(self.plan) and self.confirmation.get_text().strip() == f"ERASE {self.device}")
+        self.cancel_button.set_sensitive(self.running)
         self.close_button.set_sensitive(not self.running)
 ''',
-    '''        self.cancel_button.set_sensitive(self.running)
+    '''        self.run_button.set_sensitive(False if self.running else bool(self.plan) and self.confirmation.get_text().strip() == f"ERASE {self.device}")
+        self.cancel_button.set_sensitive(self.running)
         self.save_report_button.set_sensitive(not self.running and self.report_payload is not None)
         self.close_button.set_sensitive(not self.running)
 ''',
