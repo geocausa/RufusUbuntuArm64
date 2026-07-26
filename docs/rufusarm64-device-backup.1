@@ -93,10 +93,11 @@ accepted. Provider output is bounded and written directly to an owner-only
 same-directory temporary file.
 .PP
 After mastering, the source view is inventoried again. The private image is
-mounted independently as UDF with read-only safety flags, every supported path,
-type, size, and content digest is compared, the image is unmounted and rehashed,
-and the source is checked once more. Only matching evidence may proceed to
-publication.
+mounted independently as UDF with read-only safety flags. Every supported path,
+type, regular-file size, and file-content digest is compared. Filesystem-specific
+directory allocation sizes are deliberately excluded. The image is then
+unmounted and rehashed, and the source is checked once more. Only matching
+evidence may proceed to publication.
 .PP
 Every completed image is published atomically without replacement only after
 all required checks succeed. Existing destination files are never replaced.
@@ -174,8 +175,10 @@ the reviewed live inventory.
 .TP
 .BI --expected-source-content-sha256 " DIGEST"
 For non-interactive ISO capture, require the exact supported-content SHA-256
-from the dry-run plan. This binds every admitted path, type, size and file
-content digest across administrator authentication.
+from the dry-run plan. This authenticates every admitted path, type,
+regular-file size, file-content digest, and the reviewed source's directory
+metadata across administrator authentication. Cross-filesystem UDF comparison
+excludes directory allocation sizes because they are filesystem-specific.
 .TP
 .BI --volume-id " IDENTIFIER"
 Select the ISO volume identifier. Only 1 to 32 uppercase ASCII letters, digits,
