@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-var qemuProgressPattern = regexp.MustCompile(`([0-9]{1,3}(\.[0-9]+)?)/100%`)
+var qemuProgressPattern = regexp.MustCompile(`(^|[^0-9.\-])([0-9]{1,3}(\.[0-9]+)?)/100%`)
 
 // qemuProgressWriter retains bounded diagnostics while translating qemu-img's
 // percentage stream into monotonic source-byte progress. It never emits 100%;
@@ -40,7 +40,7 @@ func (writer *qemuProgressWriter) Write(data []byte) (int, error) {
 	}
 	var event *Progress
 	for _, match := range matches {
-		percentage, err := strconv.ParseFloat(match[1], 64)
+		percentage, err := strconv.ParseFloat(match[2], 64)
 		if err != nil || percentage < 0 || percentage > 100 || writer.total == 0 {
 			continue
 		}
