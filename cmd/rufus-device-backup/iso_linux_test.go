@@ -30,18 +30,23 @@ func TestRequestedISO(t *testing.T) {
 }
 
 func TestNewISOCaptureOptionsBindsReviewedSource(t *testing.T) {
-	contentDigest := strings.Repeat("a", 64)
+	bindingDigest := strings.Repeat("a", 64)
+	contentDigest := strings.Repeat("b", 64)
 	progress := func(isocapture.CaptureProgress) {}
 	options := newISOCaptureOptions(
 		"/dev/sdz",
 		"/dev/sdz1",
-		isocapture.FilesystemCapturePlan{SourceContentSHA256: contentDigest, VolumeID: "RUFUS_TEST"},
+		isocapture.FilesystemCapturePlan{
+			SourceBindingSHA256: bindingDigest,
+			SourceContentSHA256: contentDigest,
+			VolumeID:            "RUFUS_TEST",
+		},
 		progress,
 	)
 	if options.SourceDevicePath != "/dev/sdz" || options.SourceNode != "/dev/sdz1" {
 		t.Fatalf("unexpected source binding: %+v", options)
 	}
-	if options.ExpectedContentSHA256 != contentDigest || options.VolumeID != "RUFUS_TEST" {
+	if options.ExpectedBindingSHA256 != bindingDigest || options.ExpectedContentSHA256 != contentDigest || options.VolumeID != "RUFUS_TEST" {
 		t.Fatalf("unexpected reviewed plan binding: %+v", options)
 	}
 	if options.Progress == nil {
