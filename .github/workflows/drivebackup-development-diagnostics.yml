@@ -31,24 +31,20 @@ jobs:
           go-version: '1.22.12'
           cache: false
       - name: Capture focused test output
-        id: focused
         shell: bash
         run: |
           set +e
           go test ./internal/drivebackup ./internal/trustedexec ./cmd/rufus-device-backup > focused-tests.log 2>&1
           status=$?
           printf 'exit_status=%s\n' "$status" >> focused-tests.log
-          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
           exit 0
       - name: Capture graphical contract output
-        id: graphical
         shell: bash
         run: |
           set +e
           python3 -m unittest gui.test_device_backup gui.test_device_backup_dialog > graphical-tests.log 2>&1
           status=$?
           printf 'exit_status=%s\n' "$status" >> graphical-tests.log
-          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
           exit 0
       - name: Upload focused diagnostics
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -60,10 +56,12 @@ jobs:
           if-no-files-found: error
           retention-days: 1
       - name: Stage permanent package and loop qualification changes
-        if: steps.focused.outputs.status == '0' && steps.graphical.outputs.status == '0'
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
+          grep -Fxq 'exit_status=0' focused-tests.log
+          grep -Fxq 'exit_status=0' graphical-tests.log
           python3 - <<'PY'
           from pathlib import Path
 
