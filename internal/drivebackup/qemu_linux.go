@@ -9,18 +9,23 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
+	"math"
 	"strconv"
 	"strings"
 
 	"github.com/geocausa/RufusArm64/internal/trustedexec"
 )
 
-const maxQEMUDiagnosticBytes = 64 * 1024
+const (
+	maxQEMUDiagnosticBytes = 64 * 1024
+	containerReserveFloor  = 64 * 1024 * 1024
+	containerReserveScale  = 8
+)
 
-// ContainerMeasure is the conservative destination-space bound returned by the
-// trusted qemu-img utility. FullyAllocatedBytes, not expected sparse savings, is
-// used for destination preflight.
+// ContainerMeasure is the destination-space policy used before a container
+// capture starts. FullyAllocatedBytes is the conservative admission bound.
+// RequiredBytes is an optional independently measured sparse minimum and is zero
+// when the selected output driver does not implement reliable measurement.
 type ContainerMeasure struct {
 	RequiredBytes       uint64 `json:"required_bytes"`
 	FullyAllocatedBytes uint64 `json:"fully_allocated_bytes"`
@@ -30,9 +35,11 @@ var resolveQEMUImg = func() (string, error) {
 	return trustedexec.Resolve("qemu-img")
 }
 
-// MeasureContainer asks qemu-img for a guaranteed capacity bound using only the
-// selected source capacity. It does not open the source device and is therefore
-// safe for dry-run planning.
+// MeasureContainer validates the fixed converter policy and returns an explicit
+// conservative allocation bound without opening the source device. Ubuntu's
+// qemu-img VPC and VHDX output drivers do not implement `qemu-img measure`, so
+// planning reserves the complete logical source plus 12.5%, with a minimum
+// 64 MiB metadata margin. This is an admission policy, not a sparse-size promise.
 func MeasureContainer(ctx context.Context, sourceSize uint64, format Format) (ContainerMeasure, error) {
 	if ctx == nil {
 		return ContainerMeasure{}, errors.New("container measurement context is nil")
@@ -46,41 +53,32 @@ func MeasureContainer(ctx context.Context, sourceSize uint64, format Format) (Co
 	if err := ctx.Err(); err != nil {
 		return ContainerMeasure{}, err
 	}
-	qemuFormat, err := format.QEMUFormat()
-	if err != nil {
+	if _, err := format.QEMUFormat(); err != nil {
 		return ContainerMeasure{}, err
 	}
-	options, err := format.QEMUOptions()
-	if err != nil {
+	if _, err := format.QEMUOptions(); err != nil {
 		return ContainerMeasure{}, err
 	}
-	executable, err := resolveQEMUImg()
-	if err != nil {
+	if _, err := resolveQEMUImg(); err != nil {
 		return ContainerMeasure{}, fmt.Errorf("resolve trusted qemu-img: %w", err)
 	}
-	args := []string{
-		"measure",
-		"--output=json",
-		"-O", qemuFormat,
-		"-o", options,
-		"--size", strconv.FormatUint(sourceSize, 10),
+
+	reserve := sourceSize / containerReserveScale
+	if sourceSize%containerReserveScale != 0 {
+		reserve++
 	}
-	stdout := newBoundedCommandBuffer(maxQEMUDiagnosticBytes)
-	stderr := newBoundedCommandBuffer(maxQEMUDiagnosticBytes)
-	command := exec.CommandContext(ctx, executable, args...)
-	command.Stdout = stdout
-	command.Stderr = stderr
-	runErr := command.Run()
-	if err := boundedCommandResult("measure backup container", stdout, stderr, runErr); err != nil {
-		return ContainerMeasure{}, err
+	if reserve < containerReserveFloor {
+		reserve = containerReserveFloor
 	}
-	measure, err := parseContainerMeasure(stdout.Bytes())
-	if err != nil {
-		return ContainerMeasure{}, fmt.Errorf("parse qemu-img measure output: %w", err)
+	if sourceSize > math.MaxUint64-reserve {
+		return ContainerMeasure{}, errors.New("container allocation bound overflows the supported byte range")
 	}
-	return measure, nil
+	return ContainerMeasure{FullyAllocatedBytes: sourceSize + reserve}, nil
 }
 
+// parseContainerMeasure retains strict parsing for output drivers that may gain
+// reliable qemu-img measurement support later. VHD and VHDX planning does not
+// currently consume this parser because those Ubuntu QEMU drivers reject measure.
 func parseContainerMeasure(data []byte) (ContainerMeasure, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
