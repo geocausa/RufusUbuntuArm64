@@ -76,6 +76,7 @@ def passed_report(output="/tmp/capture.iso"):
         "filesystem": "udf",
         "volume_id": "RUFUS_TEST",
         "source_device": "/dev/sdz",
+        "source_node": "/dev/sdz1",
         "source_mount": "/media/USB",
         "destination": output,
         "files": 2,
@@ -194,6 +195,7 @@ class ISOCaptureContractsTest(unittest.TestCase):
     def test_success_report_requires_complete_publication_evidence(self):
         value = normalize_report(passed_report())
         self.assertEqual(value["format"], "iso")
+        self.assertEqual(value["source_node"], "/dev/sdz1")
         self.assertEqual(value["planned_bytes"], 4096)
         self.assertEqual(value["output_bytes"], 1024 * 1024)
         self.assertIn("No physical-disk", report_summary(value, "/tmp/capture.iso"))
@@ -203,6 +205,10 @@ class ISOCaptureContractsTest(unittest.TestCase):
             with self.subTest(key=key):
                 with self.assertRaises(ValueError):
                     normalize_report(payload)
+        payload = passed_report()
+        payload["source_node"] = "missing"
+        with self.assertRaises(ValueError):
+            normalize_report(payload)
         payload = passed_report()
         payload["output_sha256"] = "bad"
         with self.assertRaises(ValueError):
