@@ -25,9 +25,21 @@ jobs:
         with:
           ref: feature/ffu-trusted-utilities
           fetch-depth: 0
+          show-progress: false
 
       - name: Apply exact source transformation
-        run: python3 scripts/trusted_utility_stage.py
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 scripts/trusted_utility_stage.py 2>&1 | tee /tmp/trusted-stage.log
+
+      - name: Preserve transformation failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: trusted-utility-stage-failure
+          path: /tmp/trusted-stage.log
+          if-no-files-found: error
 
       - name: Format and validate focused boundary
         shell: bash
