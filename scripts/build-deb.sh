@@ -109,6 +109,8 @@ install -Dm644 "${ROOT_DIR}/gui/rufusarm64_checksums.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_checksums.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_device_qualify.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_device_qualify.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_qualification_report.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_qualification_report.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_device_qualify_dialog.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_device_qualify_dialog.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable.py" \
