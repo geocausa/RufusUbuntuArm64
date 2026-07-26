@@ -5,8 +5,7 @@ package drivebackup
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
+	"math"
 	"strings"
 	"testing"
 )
@@ -34,43 +33,50 @@ func TestParseContainerMeasureStrict(t *testing.T) {
 	}
 }
 
-func TestMeasureContainerUsesFixedTrustedArguments(t *testing.T) {
-	directory := t.TempDir()
-	arguments := filepath.Join(directory, "arguments")
-	script := filepath.Join(directory, "qemu-img")
-	body := `#!/bin/sh
-set -eu
-printf '%s\n' "$@" > "$TEST_ARGUMENTS"
-printf '{"required":1048576,"fully-allocated":2097152,"bitmaps":0}\n'
-`
-	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
-		t.Fatal(err)
-	}
+func TestMeasureContainerUsesTrustedConservativePolicy(t *testing.T) {
 	previous := resolveQEMUImg
-	resolveQEMUImg = func() (string, error) { return script, nil }
+	calls := 0
+	resolveQEMUImg = func() (string, error) {
+		calls++
+		return "/usr/bin/qemu-img", nil
+	}
 	t.Cleanup(func() { resolveQEMUImg = previous })
-	t.Setenv("TEST_ARGUMENTS", arguments)
 
-	measure, err := MeasureContainer(context.Background(), 8*1024*1024, FormatVHDX)
-	if err != nil {
-		t.Fatal(err)
+	for _, test := range []struct {
+		name       string
+		sourceSize uint64
+		want       uint64
+	}{
+		{
+			name:       "minimum reserve",
+			sourceSize: 8 * 1024 * 1024,
+			want:       72 * 1024 * 1024,
+		},
+		{
+			name:       "scaled reserve",
+			sourceSize: 1024 * 1024 * 1024,
+			want:       1152 * 1024 * 1024,
+		},
+		{
+			name:       "rounded scaled reserve",
+			sourceSize: 512*1024*1024 + 1,
+			want:       576*1024*1024 + 2,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for _, format := range []Format{FormatVHD, FormatVHDX} {
+				measure, err := MeasureContainer(context.Background(), test.sourceSize, format)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if measure.RequiredBytes != 0 || measure.FullyAllocatedBytes != test.want {
+					t.Fatalf("format=%s measure=%+v want fully allocated %d", format, measure, test.want)
+				}
+			}
+		})
 	}
-	if measure.RequiredBytes != 1048576 || measure.FullyAllocatedBytes != 2097152 {
-		t.Fatalf("measure=%+v", measure)
-	}
-	data, err := os.ReadFile(arguments)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := strings.Split(strings.TrimSpace(string(data)), "\n")
-	want := []string{"measure", "--output=json", "-O", "vhdx", "-o", "subformat=dynamic,block_state_zero=on", "--size", "8388608"}
-	if len(got) != len(want) {
-		t.Fatalf("arguments=%q want=%q", got, want)
-	}
-	for index := range want {
-		if got[index] != want[index] {
-			t.Fatalf("argument %d=%q want %q; all=%q", index, got[index], want[index], got)
-		}
+	if calls != 6 {
+		t.Fatalf("trusted resolver calls=%d want 6", calls)
 	}
 }
 
@@ -88,6 +94,11 @@ func TestMeasureContainerFailsClosed(t *testing.T) {
 	cancel()
 	if _, err := MeasureContainer(cancelled, 1, FormatVHD); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled measurement error=%v", err)
+	}
+
+	resolveQEMUImg = func() (string, error) { return "/usr/bin/qemu-img", nil }
+	if _, err := MeasureContainer(context.Background(), math.MaxUint64, FormatVHDX); err == nil || !strings.Contains(err.Error(), "overflows") {
+		t.Fatalf("overflow error=%v", err)
 	}
 }
 
