@@ -46,6 +46,11 @@ jobs:
           status=$?
           printf 'exit_status=%s\n' "$status" >> graphical-tests.log
           exit 0
+      - name: Require green focused contracts
+        shell: bash
+        run: |
+          grep -Fxq 'exit_status=0' focused-tests.log
+          grep -Fxq 'exit_status=0' graphical-tests.log
       - name: Upload focused diagnostics
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -55,67 +60,74 @@ jobs:
             graphical-tests.log
           if-no-files-found: error
           retention-days: 1
-      - name: Stage permanent package and loop qualification changes
-        if: always()
+      - name: Normalize packaged format module
         shell: bash
         run: |
-          set -euo pipefail
-          grep -Fxq 'exit_status=0' focused-tests.log
-          grep -Fxq 'exit_status=0' graphical-tests.log
           python3 - <<'PY'
           from pathlib import Path
 
-          package = Path('scripts/build-deb.sh')
-          package_text = package.read_text(encoding='utf-8')
-          package_anchor = '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_device_qualify_dialog.py" \\
+          path = Path('scripts/build-deb.sh')
+          text = path.read_text(encoding='utf-8')
+          anchor = '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_device_qualify_dialog.py" \\
             "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_device_qualify_dialog.py"
           '''
-          module_block = '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_formats.py" \\
+          block = '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_formats.py" \\
             "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_formats.py"
           '''
-          package_text = package_text.replace(module_block + module_block, module_block)
-          if package_text.count(module_block) == 0:
-              if package_text.count(package_anchor) != 1:
+          while block + block in text:
+              text = text.replace(block + block, block)
+          if text.count(block) == 0:
+              if text.count(anchor) != 1:
                   raise SystemExit('package install anchor is missing or ambiguous')
-              package_text = package_text.replace(package_anchor, package_anchor + module_block, 1)
-          if package_text.count(module_block) != 1:
+              text = text.replace(anchor, anchor + block, 1)
+          if text.count(block) != 1:
               raise SystemExit('package format module install is missing or duplicated')
-          package.write_text(package_text, encoding='utf-8')
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Add permanent qemu loop qualification
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
 
-          workflow = Path('.github/workflows/ci.yml')
-          workflow_text = workflow.read_text(encoding='utf-8')
-          dependency_anchor = '            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs\n'
-          dependency_replacement = '            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs qemu-utils\n'
-          if 'e2fsprogs qemu-utils' not in workflow_text:
-              if workflow_text.count(dependency_anchor) != 1:
+          path = Path('.github/workflows/ci.yml')
+          text = path.read_text(encoding='utf-8')
+          dependency = '            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs\n'
+          replacement = '            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs qemu-utils\n'
+          if 'e2fsprogs qemu-utils' not in text:
+              if text.count(dependency) != 1:
                   raise SystemExit('CI dependency anchor is missing or ambiguous')
-              workflow_text = workflow_text.replace(dependency_anchor, dependency_replacement, 1)
-
-          loop_anchor = '''            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \\
+              text = text.replace(dependency, replacement, 1)
+          anchor = '''            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \\
               "${RUNNER_TEMP}/devicequal-loop.test" \\
               -test.run '^TestRunDeviceQualifiesRealLoopDevice$' \\
               -test.v
           '''
-          loop_addition = loop_anchor + '''            go test -c -o "${RUNNER_TEMP}/drivebackup-loop.test" ./internal/drivebackup
+          addition = anchor + '''            go test -c -o "${RUNNER_TEMP}/drivebackup-loop.test" ./internal/drivebackup
             sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \\
               "${RUNNER_TEMP}/drivebackup-loop.test" \\
               -test.run '^(TestCaptureDeviceCapturesRealReadOnlyLoopDevice|TestCaptureDeviceExportsVerifiedContainersFromRealReadOnlyLoop)$' \\
               -test.v
           '''
-          if 'drivebackup-loop.test' not in workflow_text:
-              if workflow_text.count(loop_anchor) != 1:
+          if 'drivebackup-loop.test' not in text:
+              if text.count(anchor) != 1:
                   raise SystemExit('CI loop qualification anchor is missing or ambiguous')
-              workflow_text = workflow_text.replace(loop_anchor, loop_addition, 1)
-          workflow.write_text(workflow_text, encoding='utf-8')
-
-          unused = Path('.github/workflows/drivebackup-package-patch.yml')
-          if unused.exists():
-              unused.unlink()
+              text = text.replace(anchor, addition, 1)
+          path.write_text(text, encoding='utf-8')
           PY
+      - name: Remove unused staging workflow
+        shell: bash
+        run: rm -f .github/workflows/drivebackup-package-patch.yml
+      - name: Validate staged repository changes
+        shell: bash
+        run: |
           git diff --check
           test "$(grep -Fc 'gui/rufusarm64_drive_backup_formats.py' scripts/build-deb.sh)" -eq 1
           grep -Fq 'drivebackup-loop.test' .github/workflows/ci.yml
           grep -Fq 'qemu-utils' .github/workflows/ci.yml
+      - name: Commit staged repository changes
+        shell: bash
+        run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
@@ -123,4 +135,7 @@ jobs:
             exit 0
           fi
           git commit -m 'ci: qualify packaged VHD and VHDX backup'
+      - name: Push staged repository changes
+        shell: bash
+        run: |
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
