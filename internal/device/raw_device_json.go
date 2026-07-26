@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 )
 
 // UnmarshalJSON preserves lsblk numeric tokens as decimal strings instead of
@@ -33,13 +34,12 @@ func (out *rawDevice) UnmarshalJSON(data []byte) error {
 	}
 
 	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
 	var wire wireDevice
 	if err := decoder.Decode(&wire); err != nil {
 		return err
 	}
 	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, json.EOF) {
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		if err == nil {
 			return errors.New("lsblk device contains multiple JSON values")
 		}
