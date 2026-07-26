@@ -16,6 +16,7 @@ on:
       - 'internal/device/**'
       - 'internal/ffu/**'
       - 'internal/safety/**'
+      - 'internal/trustedexec/**'
       - 'scripts/ffu-physical-qualification.py'
       - 'go.mod'
       - 'go.sum'
@@ -34,6 +35,7 @@ on:
       - 'internal/device/**'
       - 'internal/ffu/**'
       - 'internal/safety/**'
+      - 'internal/trustedexec/**'
       - 'scripts/ffu-physical-qualification.py'
       - 'go.mod'
       - 'go.sum'
@@ -61,13 +63,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          go test -race ./internal/ffu ./internal/device ./internal/safety ./cmd/rufus-linux
+          go test -race ./internal/ffu ./internal/device ./internal/safety ./internal/trustedexec ./cmd/rufus-linux
 
       - name: Vet the complete FFU provider boundary
         shell: bash
         run: |
           set -euo pipefail
-          go vet ./internal/ffu ./internal/device ./internal/safety ./cmd/rufus-linux
+          go vet ./internal/ffu ./internal/device ./internal/safety ./internal/trustedexec ./cmd/rufus-linux
 
       - name: Cross-build the Linux ARM64 provider
         shell: bash
@@ -107,6 +109,9 @@ jobs:
           dialog = Path('gui/rufusarm64_ffu_dialog.py').read_text(encoding='utf-8')
           restore = Path('gui/rufusarm64_ffu_restore_logic.py').read_text(encoding='utf-8')
           executor = Path('internal/ffu/restore_executor_linux.go').read_text(encoding='utf-8')
+          device_source = Path('internal/device/device.go').read_text(encoding='utf-8')
+          safety_source = Path('internal/safety/safety_linux.go').read_text(encoding='utf-8')
+          trusted = Path('internal/trustedexec/trustedexec_linux.go').read_text(encoding='utf-8')
 
           required = {
               'CLI experimental gate': (cli, '--experimental-ffu is required'),
@@ -119,6 +124,9 @@ jobs:
               'GTK exact confirmation': (restore, 'confirmation != review["exact_confirmation_phrase"]'),
               'GTK process-group cancellation': (dialog, 'os.killpg(process.pid, signal.SIGTERM)'),
               'unknown target fail-closed warning': (dialog, 'target state is unknown'),
+              'trusted utility resolver': (trusted, 'Ambient PATH is never consulted.'),
+              'device trusted lsblk': (device_source, 'resolveDeviceUtility("lsblk")'),
+              'safety trusted commands': (safety_source, 'trustedSafetyCommandContext'),
           }
           for label, (text, needle) in required.items():
               if needle not in text:
@@ -130,8 +138,12 @@ jobs:
               'automatic unmount': 'syscall.Unmount',
               'confirmation bypass': '--yes',
           }
-          joined = '\n'.join((cli, binding, dialog, restore))
+          ffu_boundary = '\n'.join((cli, binding, dialog, restore))
           for label, needle in forbidden.items():
-              if needle in joined:
+              if needle in ffu_boundary:
                   raise SystemExit(f'forbidden FFU boundary appeared: {label}')
+
+          trusted_boundary = '\n'.join((device_source, safety_source, trusted))
+          if 'exec.LookPath' in trusted_boundary:
+              raise SystemExit('forbidden trusted-utility boundary appeared: ambient lookup')
           PY

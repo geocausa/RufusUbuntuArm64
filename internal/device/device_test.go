@@ -1,7 +1,9 @@
 package device
 
 import (
+	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -78,11 +80,11 @@ cat <<'JSON'
 {"blockdevices":[{"name":"sda","path":"/dev/sda","type":"disk","size":16000000000,"model":"Flash","vendor":"Acme","tran":"usb","rm":0,"ro":0,"hotplug":1,"mountpoints":[null],"pkname":null,"maj:min":"8:0","serial":"SER123","wwn":"WWN123","log-sec":512,"phy-sec":4096}]}
 JSON
 `
-	path := fakeBin + "/lsblk"
+	path := filepath.Join(fakeBin, "lsblk")
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useDeviceUtility(t, "lsblk", path)
 	devices, err := List()
 	if err != nil {
 		t.Fatal(err)
@@ -109,7 +111,8 @@ cat <<'JSON'
 {"blockdevices":[{"name":"testusb","path":"/dev/testusb","type":"disk","size":16000000000,"model":"Flash","vendor":"Acme","tran":"usb","rm":0,"ro":0,"hotplug":1,"mountpoints":[null],"pkname":null,"maj:min":"8:0","serial":"","wwn":""}]}
 JSON
 `
-	if err := os.WriteFile(fakeBin+"/lsblk", []byte(script), 0o755); err != nil {
+	path := filepath.Join(fakeBin, "lsblk")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	sysRoot := t.TempDir()
@@ -122,7 +125,7 @@ JSON
 	oldRoot := sysClassBlockRoot
 	sysClassBlockRoot = sysRoot
 	t.Cleanup(func() { sysClassBlockRoot = oldRoot })
-	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useDeviceUtility(t, "lsblk", path)
 	devices, err := List()
 	if err != nil {
 		t.Fatal(err)
@@ -135,4 +138,16 @@ JSON
 	if IdentityToken(devices[0]) == original {
 		t.Fatal("identity did not change with kernel disk sequence")
 	}
+}
+
+func useDeviceUtility(t *testing.T, expectedName, path string) {
+	t.Helper()
+	previous := resolveDeviceUtility
+	resolveDeviceUtility = func(name string) (string, error) {
+		if name != expectedName {
+			return "", errors.New("unexpected utility request: " + name)
+		}
+		return path, nil
+	}
+	t.Cleanup(func() { resolveDeviceUtility = previous })
 }

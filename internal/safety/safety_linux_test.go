@@ -4,6 +4,7 @@ package safety
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,7 +52,10 @@ func TestBackingDisksForPathHandlesBtrfsSubvolumeAndStack(t *testing.T) {
 	fakeBin := t.TempDir()
 	writeFake(t, filepath.Join(fakeBin, "findmnt"), "#!/bin/sh\nprintf '/dev/mapper/cryptroot[/@]\\n'\n")
 	writeFake(t, filepath.Join(fakeBin, "lsblk"), "#!/bin/sh\nprintf 'cryptroot crypt\\nnvme0n1p3 part\\nnvme0n1 disk\\n'\n")
-	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useSafetyUtilities(t, map[string]string{
+		"findmnt": filepath.Join(fakeBin, "findmnt"),
+		"lsblk":   filepath.Join(fakeBin, "lsblk"),
+	})
 	disks, err := BackingDisksForPath("/")
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +70,7 @@ func TestUnmountDescendantsUsesDeepestMountFirst(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "umount.log")
 	t.Setenv("RUFUS_TEST_LOG", logPath)
 	writeFake(t, filepath.Join(fakeBin, "umount"), "#!/bin/sh\nprintf '%s\\n' \"$2\" >> \"$RUFUS_TEST_LOG\"\n")
-	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useSafetyUtilities(t, map[string]string{"umount": filepath.Join(fakeBin, "umount")})
 	dev := device.BlockDevice{Path: "/dev/sda", Type: "disk", Children: []device.BlockDevice{
 		{Path: "/dev/sda1", Type: "part", Mountpoints: []string{"/media/usb", "/media/usb/nested"}},
 	}}
@@ -84,12 +88,48 @@ func TestUnmountDescendantsUsesDeepestMountFirst(t *testing.T) {
 }
 
 func TestEnsureNoMountedDescendantsFailsClosed(t *testing.T) {
-	fakeBin := t.TempDir()
-	jsonOutput := `{"blockdevices":[{"name":"sda","path":"/dev/sda","type":"disk","size":1000,"model":"","vendor":"","tran":"usb","rm":0,"ro":0,"hotplug":1,"mountpoints":[null],"pkname":null,"maj:min":"8:0","serial":"","wwn":"","children":[{"name":"sda1","path":"/dev/sda1","type":"part","size":900,"model":"","vendor":"","tran":"","rm":0,"ro":0,"hotplug":0,"mountpoints":["/media/usb"],"pkname":"sda","maj:min":"8:1","serial":"","wwn":""}]}]}`
-	writeFake(t, filepath.Join(fakeBin, "lsblk"), "#!/bin/sh\nprintf '%s\\n' '"+jsonOutput+"'\n")
-	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useSafetyDeviceFinder(t, func(path string) (device.BlockDevice, error) {
+		return device.BlockDevice{
+			Path:      path,
+			Type:      "disk",
+			Size:      1000,
+			Transport: "usb",
+			Children: []device.BlockDevice{{
+				Path: "/dev/sda1", Type: "part", Size: 900, Mountpoints: []string{"/media/usb"},
+			}},
+		}, nil
+	})
 	if err := EnsureNoMountedDescendants("/dev/sda"); err == nil || !strings.Contains(err.Error(), "mounted again") {
 		t.Fatalf("expected mounted-target refusal, got %v", err)
+	}
+}
+
+func useSafetyUtilities(t *testing.T, paths map[string]string) {
+	t.Helper()
+	previous := resolveSafetyUtility
+	resolveSafetyUtility = func(name string) (string, error) {
+		path, ok := paths[name]
+		if !ok {
+			return "", errors.New("unexpected utility request: " + name)
+		}
+		return path, nil
+	}
+	t.Cleanup(func() { resolveSafetyUtility = previous })
+}
+
+func useSafetyDeviceFinder(t *testing.T, finder func(string) (device.BlockDevice, error)) {
+	t.Helper()
+	previous := findSafetyDevice
+	findSafetyDevice = finder
+	t.Cleanup(func() { findSafetyDevice = previous })
+}
+
+func TestUtilityResolutionFailureIsFailClosed(t *testing.T) {
+	previous := resolveSafetyUtility
+	resolveSafetyUtility = func(string) (string, error) { return "", errors.New("unsafe utility") }
+	t.Cleanup(func() { resolveSafetyUtility = previous })
+	if err := FlushBuffers(context.Background(), "/dev/sda"); err == nil || !strings.Contains(err.Error(), "unsafe utility") {
+		t.Fatalf("utility resolution failure was not propagated: %v", err)
 	}
 }
 
