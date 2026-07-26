@@ -15,6 +15,7 @@ var allowedUtilities = map[string]struct{}{
 	"blockdev": {},
 	"findmnt":  {},
 	"lsblk":    {},
+	"qemu-img": {},
 	"umount":   {},
 	"wipefs":   {},
 }
