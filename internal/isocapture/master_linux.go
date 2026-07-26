@@ -16,11 +16,11 @@ import (
 )
 
 const (
-	CaptureReportSchema      = 1
-	maxProviderDiagnostic    = 64 * 1024
-	minimumMasteringReserve  = 64 * 1024 * 1024
-	perEntryMasteringReserve = 8 * 1024
-	maximumMasteringDepth    = 8
+	CaptureReportSchema                       = 1
+	maxProviderDiagnostic                     = 64 * 1024
+	minimumMasteringReserve  uint64            = 64 * 1024 * 1024
+	perEntryMasteringReserve uint64            = 8 * 1024
+	maximumMasteringDepth                      = 8
 )
 
 type CaptureStatus string
@@ -101,7 +101,7 @@ func Master(ctx context.Context, sourceRoot, output *os.File, options MasterOpti
 		return captureFailure(report, "invalid_output", err)
 	}
 
-	emitCapture(options.Progress, CaptureProgress{Phase: "inventory_source", Message: "Inventoried and hashed the source tree before mastering."})
+	emitCapture(options.Progress, CaptureProgress{Phase: "inventory_source", Message: "Inventorying and hashing the source tree before mastering."})
 	before, err := Scan(ctx, sourceRoot, limits)
 	if err != nil {
 		return captureContextFailure(report, "source_inventory", err)
@@ -150,7 +150,7 @@ func Master(ctx context.Context, sourceRoot, output *os.File, options MasterOpti
 		return captureFailure(report, "sync_output", fmt.Errorf("sync mastered ISO image: %w", err))
 	}
 
-	emitCapture(options.Progress, CaptureProgress{Phase: "revalidate_source", Message: "Reinventoried the source tree after mastering."})
+	emitCapture(options.Progress, CaptureProgress{Phase: "revalidate_source", Message: "Reinventorying the source tree after mastering."})
 	after, err := Scan(ctx, sourceRoot, limits)
 	if err != nil {
 		return captureContextFailure(report, "source_revalidation", err)
@@ -183,7 +183,7 @@ func Master(ctx context.Context, sourceRoot, output *os.File, options MasterOpti
 	report.OutputBytes = hashedBytes
 	report.OutputSHA256 = digest
 	report.Status = CapturePassed
-	emitCapture(options.Progress, CaptureProgress{Phase: "master", Message: "Private ISO image mastered and hashed.", Done: hashedBytes, Total: outputLimit})
+	emitCapture(options.Progress, CaptureProgress{Phase: "master", Message: "Private ISO image mastered and hashed.", Done: hashedBytes, Total: hashedBytes})
 	return report, nil
 }
 
