@@ -27,7 +27,25 @@ jobs:
           show-progress: false
 
       - name: Apply exact source transformation
-        run: python3 scripts/compressed_progress_stage.py
+        id: apply
+        continue-on-error: true
+        shell: bash
+        run: python3 scripts/compressed_progress_stage.py 2> /tmp/compressed-progress-stage.err
+
+      - name: Preserve transformation failure
+        if: ${{ steps.apply.outcome == 'failure' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: compressed-progress-stage-failure
+          path: /tmp/compressed-progress-stage.err
+          if-no-files-found: error
+
+      - name: Stop after transformation failure
+        if: ${{ steps.apply.outcome == 'failure' }}
+        shell: bash
+        run: |
+          cat /tmp/compressed-progress-stage.err
+          exit 1
 
       - name: Format and validate focused boundary
         shell: bash
