@@ -113,6 +113,8 @@ install -Dm644 "${ROOT_DIR}/gui/rufusarm64_qualification_report.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_qualification_report.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_device_qualify_dialog.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_device_qualify_dialog.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_formats.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_formats.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_nonbootable.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable_dialog.py" \
