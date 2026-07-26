@@ -11,7 +11,7 @@ import (
 )
 
 func TestOpenReadOnlySourceViewRejectsNilContext(t *testing.T) {
-	view, err := OpenReadOnlySourceView(nil, t.TempDir(), Limits{})
+	view, err := OpenReadOnlySourceView(nil, t.TempDir(), strings.Repeat("a", 64), Limits{})
 	if view != nil || err == nil || !strings.Contains(err.Error(), "context") {
 		t.Fatalf("view=%v error=%v", view, err)
 	}
@@ -21,9 +21,23 @@ func TestOpenReadOnlySourceViewRequiresRoot(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("non-root contract is exercised by normal CI users")
 	}
-	view, err := OpenReadOnlySourceView(context.Background(), t.TempDir(), Limits{})
+	view, err := OpenReadOnlySourceView(context.Background(), t.TempDir(), strings.Repeat("a", 64), Limits{})
 	if view != nil || err == nil || !strings.Contains(err.Error(), "root privileges") {
 		t.Fatalf("view=%v error=%v", view, err)
+	}
+}
+
+func TestRequireExpectedSourceBinding(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	inventory := Inventory{BindingSHA256: digest}
+	if err := requireExpectedSourceBinding(inventory, digest); err != nil {
+		t.Fatal(err)
+	}
+	if err := requireExpectedSourceBinding(inventory, strings.Repeat("b", 64)); err == nil || !strings.Contains(err.Error(), "does not match reviewed plan") {
+		t.Fatalf("unexpected mismatch error: %v", err)
+	}
+	if err := requireExpectedSourceBinding(inventory, "bad"); err == nil || !strings.Contains(err.Error(), "digest") {
+		t.Fatalf("unexpected malformed digest error: %v", err)
 	}
 }
 
