@@ -22,12 +22,12 @@ const (
 // source disk, exact mounted node, reviewed content digest, and one fixed UDF
 // bridge policy.
 type FilesystemCaptureOptions struct {
-	SourceDevicePath    string
-	SourceNode          string
+	SourceDevicePath      string
+	SourceNode            string
 	ExpectedContentSHA256 string
-	VolumeID            string
-	Limits              Limits
-	Progress            CaptureProgressFunc
+	VolumeID              string
+	Limits                Limits
+	Progress              CaptureProgressFunc
 }
 
 // FilesystemCaptureReport is the complete evidence required before an ISO file
