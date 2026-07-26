@@ -50,7 +50,12 @@ func (r *compressedContainerProgressReader) Read(data []byte) (int, error) {
 	}
 	r.done = next
 	now := time.Now()
-	emit := now.Sub(r.lastEmit) >= compressedContainerProgressInterval || (r.total > 0 && r.done == r.total)
+	emit := now.Sub(r.lastEmit) >= compressedContainerProgressInterval
+	// Even when the decoder consumes every byte, 100% is reserved for Complete,
+	// after the caller has verified the pinned identity and source hold.
+	if r.total > 0 && r.done == r.total {
+		emit = false
+	}
 	var event PrepareProgress
 	if emit {
 		r.lastEmit = now

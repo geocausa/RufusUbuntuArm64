@@ -3,6 +3,7 @@ package imaging
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"path/filepath"
 	"testing"
@@ -19,9 +20,14 @@ func TestCompressedContainerProgressReaderReportsBoundedMonotonicProgress(t *tes
 	if _, err := io.Copy(io.Discard, reader); err != nil {
 		t.Fatal(err)
 	}
+	for i, event := range events {
+		if event.Done == event.Total {
+			t.Fatalf("event %d reported unauthenticated completion: %#v", i, event)
+		}
+	}
 	reader.Complete()
 	if len(events) < 2 {
-		t.Fatalf("progress events=%d, want at least initial and final reports", len(events))
+		t.Fatalf("progress events=%d, want at least initial and authenticated final reports", len(events))
 	}
 	var previous uint64
 	for i, event := range events {
@@ -52,10 +58,21 @@ func TestCompressedContainerProgressCompletesAfterAuthenticatedTrailingBytes(t *
 	if _, err := reader.Read(buffer); err != nil {
 		t.Fatal(err)
 	}
+	if len(events) == 0 || events[len(events)-1].Done >= events[len(events)-1].Total {
+		t.Fatalf("pre-authentication event=%#v", events)
+	}
 	reader.Complete()
 	last := events[len(events)-1]
 	if last.Done != uint64(len(data)) || last.Total != uint64(len(data)) {
 		t.Fatalf("completion event=%#v", last)
+	}
+}
+
+func TestCompressedContainerProgressRejectsIdentityBoundOverrun(t *testing.T) {
+	reader := newCompressedContainerProgressReader(bytes.NewReader([]byte("too-large")), 4, nil)
+	buffer := make([]byte, 16)
+	if _, err := reader.Read(buffer); err == nil {
+		t.Fatal("reader accepted bytes beyond the identity-bound total")
 	}
 }
 
@@ -101,5 +118,31 @@ func TestSequentialCompressedPreparationReportsContainerAndExpandedTotals(t *tes
 	}
 	if err := opened.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSequentialCompressedPreparationHonorsCancellation(t *testing.T) {
+	raw := bytes.Repeat([]byte{0x5a, 0xa5}, 4*1024*1024)
+	path := filepath.Join(t.TempDir(), "cancel.img.gz")
+	writeGZIP(t, path, raw)
+	resolved, identity := inspectIdentity(t, path)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cancelledFromProgress := false
+	prepared, err := PrepareInput(ctx, resolved, identity, func(event PrepareProgress) {
+		if !cancelledFromProgress && event.Stage == "prepare_container" && event.Done > 0 {
+			cancelledFromProgress = true
+			cancel()
+		}
+	})
+	if prepared != nil {
+		prepared.Close()
+		t.Fatal("cancelled preparation returned a prepared image")
+	}
+	if !cancelledFromProgress {
+		t.Fatal("compressed container progress did not begin before cancellation")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled preparation error=%v", err)
 	}
 }
