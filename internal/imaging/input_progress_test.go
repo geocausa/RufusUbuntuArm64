@@ -95,7 +95,11 @@ func TestSequentialCompressedPreparationReportsContainerAndExpandedTotals(t *tes
 	if expandedFinal == nil {
 		t.Fatalf("missing completed expanded-image progress in %#v", events)
 	}
-	if err := sourcefile.VerifyPath(prepared.Path, prepared.Identity); err != nil {
+	opened, err := sourcefile.OpenRegular(prepared.Path, prepared.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := opened.Close(); err != nil {
 		t.Fatal(err)
 	}
 }
