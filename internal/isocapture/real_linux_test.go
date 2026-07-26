@@ -4,9 +4,12 @@ package isocapture
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -38,51 +41,57 @@ func TestRealGenISOImageUDFRoundTrip(t *testing.T) {
 		}
 	}
 
-	ctx := context.Background()
-	view, err := OpenReadOnlySourceView(ctx, sourcePath, Limits{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := view.Close(); err != nil {
-			t.Errorf("close read-only source view: %v", err)
-		}
+	outputPath := filepath.Join(t.TempDir(), "rufus-test.iso")
+	report, err := CaptureFilesystem(context.Background(), sourcePath, outputPath, FilesystemCaptureOptions{
+		SourceDevicePath: "/dev/rufus-test-source",
+		VolumeID:         "RUFUS_TEST",
 	})
-	output, err := os.CreateTemp(t.TempDir(), "private-*.iso")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer output.Close()
-	if err := output.Chmod(0o600); err != nil {
+	if report.Status != CapturePassed || !report.SourceStable || !report.UDFValidated || !report.Published {
+		t.Fatalf("unexpected filesystem capture evidence: %+v", report)
+	}
+	if report.ContentComparison != ContentComparisonPassed || report.OutputBytes == 0 || report.OutputBytes > report.RequiredBytes {
+		t.Fatalf("invalid output evidence: %+v", report)
+	}
+	info, err := os.Lstat(outputPath)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !info.Mode().IsRegular() || uint64(info.Size()) != report.OutputBytes {
+		t.Fatalf("published ISO metadata differs: info=%+v report=%+v", info, report)
+	}
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(data)
+	if hex.EncodeToString(digest[:]) != report.OutputSHA256 {
+		t.Fatalf("published ISO digest differs from report: %x != %s", digest, report.OutputSHA256)
 	}
 
-	capture, err := Master(ctx, view.Root, output, MasterOptions{VolumeID: "RUFUS_TEST"})
+	second, err := CaptureFilesystem(context.Background(), sourcePath, outputPath, FilesystemCaptureOptions{
+		SourceDevicePath: "/dev/rufus-test-source",
+		VolumeID:         "RUFUS_TEST",
+	})
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("second capture report=%+v error=%v", second, err)
+	}
+	after, err := os.ReadFile(outputPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if capture.Status != CapturePassed || !capture.SourceStable || capture.OutputBytes == 0 || capture.OutputBytes > capture.MaximumOutputBytes {
-		t.Fatalf("unexpected mastering evidence: %+v", capture)
+	afterDigest := sha256.Sum256(after)
+	if afterDigest != digest {
+		t.Fatal("failed second capture modified the published ISO")
 	}
-	if capture.SourceContentSHA256 != view.Inventory.ContentSHA256 {
-		t.Fatalf("mastered source digest %s differs from read-only view %s", capture.SourceContentSHA256, view.Inventory.ContentSHA256)
-	}
-	validation, err := VerifyImage(
-		ctx,
-		output,
-		capture.SourceContentSHA256,
-		capture.OutputSHA256,
-		capture.OutputBytes,
-		ValidationOptions{},
-	)
+	partials, err := filepath.Glob(filepath.Join(filepath.Dir(outputPath), ".rufus-test.iso.rufusarm64-partial-*"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if validation.Status != CapturePassed || validation.MountedContentSHA256 != capture.SourceContentSHA256 || validation.ImageSHA256 != capture.OutputSHA256 {
-		t.Fatalf("unexpected validation evidence: capture=%+v validation=%+v", capture, validation)
-	}
-	if validation.Files != capture.Files || validation.Directories != capture.Directories || validation.ContentBytes != capture.SourceBytes {
-		t.Fatalf("mounted inventory differs: capture=%+v validation=%+v", capture, validation)
+	if len(partials) != 0 {
+		t.Fatalf("partial ISO files survived: %v", partials)
 	}
 }
 
