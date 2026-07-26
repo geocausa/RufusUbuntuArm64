@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.0 — 2026-07-26
+
+- Added descriptor-bound drive backup in raw, dynamic VHD, dynamic VHDX, and mounted-filesystem ISO/UDF formats, with exact source identity, conservative destination admission, cancellation, hashing, independent content comparison, and atomic no-replace publication.
+- Added a guarded experimental single-store-v1 FFU restore path with strict descriptor planning, authenticated catalog/integrity evidence, publisher authorization, target-bound destructive confirmation, exclusive acquisition, ordered writes, complete content verification, and explicit unsupported-profile refusal.
+- Added GTK integration for FFU review/restore, physical-qualification evidence, drive-backup format selection, filesystem ISO/UDF capture, and reusable identity-bound USB qualification report export.
+- Added bounded, authenticated progress for compressed image preparation and fixed completion so 100% is reported only after the complete container has passed source identity and digest verification.
+- Added bounded read-only El Torito UEFI extraction and strengthened Windows 11 setup Quality of Life selection without broadening automatic or unsupported media paths.
+- Added real privileged loop qualification for raw/VHD/VHDX/ISO-UDF backup and FFU software paths, native ARM64 execution, Go 1.22 compatibility, static/vulnerability checks, and byte-for-byte reproducible Debian packaging on the exact release candidate.
+- Kept FFU restore experimental, FFU capture unimplemented, Windows To Go deferred, the production acquisition channel disabled, the package-owned UEFI integrity loader unsigned, and universal physical boot, Secure Boot, media-health, and vendor-device compatibility explicitly unclaimed.
+
 ## 0.13.0 — 2026-07-20
 
 - Added a guarded **Restore / format…** workflow for GPT or MBR data-only media using FAT32, exFAT, NTFS, or ext4, with identity-bound planning, exact FORMAT confirmation, cancellation, filesystem checks, and conservative incomplete-media reporting.
