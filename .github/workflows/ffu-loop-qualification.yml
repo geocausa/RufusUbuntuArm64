@@ -62,7 +62,13 @@ jobs:
           go-version: '1.22.x'
           cache: true
       - name: Validate physical qualification evidence contracts
-        run: PYTHONPATH=gui python3 -m unittest test_ffu_physical_qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            gui/rufusarm64_ffu_physical_qualification.py \
+            scripts/ffu-physical-qualification.py
+          PYTHONPATH=gui python3 -m unittest test_ffu_physical_qualification
       - name: Execute authenticated FFU transaction on an exclusive loop target
         shell: bash
         run: |
