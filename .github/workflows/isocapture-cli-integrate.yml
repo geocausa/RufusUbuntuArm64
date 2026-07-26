@@ -1,0 +1,59 @@
+name: ISO capture CLI integration
+
+on:
+  push:
+    branches:
+      - 'feature/drive-backup-udf-iso'
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/drive-backup-udf-iso
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - name: Attach isolated ISO command path
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('cmd/rufus-device-backup/main.go')
+          text = path.read_text()
+          anchor = '''\t}\n\n\tflags := flag.NewFlagSet("rufusarm64-device-backup", flag.ContinueOnError)'''
+          replacement = '''\t}\n\n\tif requestedISO(args) {\n\t\treturn runISO(args)\n\t}\n\n\tflags := flag.NewFlagSet("rufusarm64-device-backup", flag.ContinueOnError)'''
+          if replacement not in text:
+              if anchor not in text:
+                  raise SystemExit('run dispatcher anchor not found')
+              text = text.replace(anchor, replacement, 1)
+          text = text.replace(
+              '[--format raw|vhd|vhdx]',
+              '[--format raw|vhd|vhdx|iso]',
+              1,
+          )
+          old = '''trusted qemu-img utility and verified against the held source descriptor. Use\nrufusarm64-cli list --json to obtain the path and identity.'''
+          new = '''trusted qemu-img utility and verified against the held source descriptor. ISO\nremasters exactly one mounted filesystem through a private read-only view and does\nnot capture partition tables, hidden sectors, boot records, or unallocated space.\nUse rufusarm64-cli list --json to obtain the path and identity.'''
+          if old not in text and new not in text:
+              raise SystemExit('usage wording anchor not found')
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+          gofmt -w cmd/rufus-device-backup/main.go cmd/rufus-device-backup/iso_linux.go internal/isocapture/*.go
+          test -z "$(gofmt -l cmd/rufus-device-backup/*.go internal/isocapture/*.go)"
+          go test ./cmd/rufus-device-backup ./internal/isocapture ./internal/trustedexec
+          if git diff --quiet -- cmd/rufus-device-backup/main.go cmd/rufus-device-backup/iso_linux.go internal/isocapture; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add cmd/rufus-device-backup/main.go cmd/rufus-device-backup/iso_linux.go internal/isocapture
+          git commit -m 'backup: integrate verified ISO capture path'
+          git push origin HEAD:feature/drive-backup-udf-iso
