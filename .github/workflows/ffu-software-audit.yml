@@ -42,7 +42,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   software-audit:
@@ -52,9 +52,6 @@ jobs:
     steps:
       - name: Check out exact source
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          persist-credentials: true
 
       - name: Set up Go 1.22
         uses: actions/setup-go@v5
@@ -150,31 +147,3 @@ jobs:
           if 'exec.LookPath' in trusted_boundary:
               raise SystemExit('forbidden trusted-utility boundary appeared: ambient lookup')
           PY
-
-      - name: Apply and qualify the drive backup reserve repair
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/stage-drivebackup-reserve-contract.py
-          gofmt -w \
-            internal/drivebackup/qemu_linux.go \
-            internal/drivebackup/qemu_linux_test.go \
-            internal/drivebackup/plan_linux.go
-          go test ./internal/drivebackup ./cmd/rufus-device-backup
-          PYTHONPATH=gui python3 -m unittest \
-            gui.test_device_backup \
-            gui.test_device_backup_dialog \
-            gui.test_packaged_launcher
-          git diff --check
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add \
-            internal/drivebackup/qemu_linux.go \
-            internal/drivebackup/qemu_linux_test.go \
-            internal/drivebackup/plan_linux.go \
-            gui/rufusarm64_device_qualify.py \
-            gui/test_device_backup.py \
-            docs/rufusarm64-device-backup.1
-          git rm scripts/stage-drivebackup-reserve-contract.py
-          git commit -m 'backup: use conservative VHD allocation reserve'
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
