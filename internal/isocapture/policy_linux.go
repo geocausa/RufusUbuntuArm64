@@ -14,7 +14,7 @@ import (
 const (
 	ProfileISO9660JolietUDF = "iso9660-joliet-udf"
 	ProviderSourceFD        = 3
-	providerSourcePath      = "/proc/self/fd/3"
+	providerSourcePath      = "/proc/self/fd/3/."
 	defaultVolumeID         = "RUFUSARM64"
 	fixedSourceDateEpoch    = int64(946684800) // 2000-01-01T00:00:00Z
 )
@@ -38,7 +38,8 @@ var resolveGenISOImage = func() (string, error) {
 // BuildProviderPlan validates the one supported bridge profile and returns an
 // invocation with no caller-controlled mastering options, graft points, boot
 // images, excludes, output pathname, symlink-following policy, or startup
-// configuration file.
+// configuration file. The trailing dot makes the descriptor path resolve as a
+// directory input without asking genisoimage to follow arbitrary source links.
 func BuildProviderPlan(profile, volumeID string) (ProviderPlan, error) {
 	if profile != ProfileISO9660JolietUDF {
 		return ProviderPlan{}, fmt.Errorf("unsupported ISO capture profile %q", profile)
