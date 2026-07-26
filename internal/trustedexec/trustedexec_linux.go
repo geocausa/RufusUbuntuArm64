@@ -12,12 +12,14 @@ import (
 )
 
 var allowedUtilities = map[string]struct{}{
-	"blockdev": {},
-	"findmnt":  {},
-	"lsblk":    {},
-	"qemu-img": {},
-	"umount":   {},
-	"wipefs":   {},
+	"blockdev":    {},
+	"findmnt":     {},
+	"genisoimage": {},
+	"lsblk":       {},
+	"mount":       {},
+	"qemu-img":    {},
+	"umount":      {},
+	"wipefs":      {},
 }
 
 var systemUtilityRoots = []string{"/usr/bin", "/usr/sbin", "/bin", "/sbin"}

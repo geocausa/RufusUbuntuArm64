@@ -59,6 +59,10 @@ func run(args []string) error {
 		}
 	}
 
+	if requestedISO(args) {
+		return runISO(args)
+	}
+
 	flags := flag.NewFlagSet("rufusarm64-device-backup", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	devicePath := flags.String("device", "", "whole source disk")
@@ -304,17 +308,20 @@ func revalidateSource(path, identity string, allowFixed bool) (device.BlockDevic
 }
 
 func usage() {
-	fmt.Printf(`RufusArm64 drive-image backup utility %s
+	fmt.Printf(`RufusArm64 drive-image and filesystem-remaster utility %s
 
 Usage:
   sudo rufusarm64-device-backup --device /dev/DEVICE --output /path/drive.img [--format raw|vhd|vhdx]
-  rufusarm64-device-backup --device /dev/DEVICE --output /path/drive.vhdx --format vhdx --dry-run [--json]
+  sudo rufusarm64-device-backup --device /dev/DEVICE --output /path/filesystem.iso --format iso
+  rufusarm64-device-backup --device /dev/DEVICE --output /path/filesystem.iso --format iso --dry-run [--json]
 
-The source is opened read-only. Mounted removable filesystems are unmounted to
-capture a coherent image. The destination must not exist and must be stored on a
-different disk. VHD and VHDX are dynamic sparse containers created through a
-trusted qemu-img utility and verified against the held source descriptor. Use
-rufusarm64-cli list --json to obtain the path and identity.
+Raw, VHD, and VHDX open the whole source disk read-only; mounted removable
+filesystems are normally unmounted for coherence. ISO remasters exactly one
+mounted filesystem through a private read-only view and does not capture
+partition tables, hidden sectors, boot records, or unallocated space. A
+successful filesystem capture does not claim bootability. Every destination
+must be new, stored on a different disk, independently verified, and published
+without replacement. Use rufusarm64-cli list --json to obtain device identity.
 `, version)
 }
 

@@ -115,6 +115,10 @@ install -Dm644 "${ROOT_DIR}/gui/rufusarm64_device_qualify_dialog.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_device_qualify_dialog.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_formats.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_formats.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_iso_capture.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_iso_capture.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_iso.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_iso.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_nonbootable.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable_dialog.py" \
@@ -379,13 +383,13 @@ Priority: optional
 Architecture: ${ARCH}
 Maintainer: geocausa <noreply@github.com>
 Installed-Size: ${INSTALLED_SIZE}
-Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, mount, fdisk, dosfstools, exfatprogs, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils
+Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, mount, fdisk, dosfstools, exfatprogs, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils, genisoimage
 Homepage: https://github.com/geocausa/RufusUbuntuArm64
 Description: Bootable USB creator for Ubuntu ARM64
  A graphical utility that writes Linux ISOHybrid/raw images, creates verified
  persistent Ubuntu/Debian live media, creates Windows installation USB media,
- creates verified x86 BIOS/Legacy FreeDOS 1.4 media, and captures verified
- images of removable drives. It supports GPT or MBR,
+ creates verified x86 BIOS/Legacy FreeDOS 1.4 media, captures verified
+ physical-drive images, and creates validated mounted-filesystem ISO/UDF remasters. It supports GPT or MBR,
  UEFI or x86-family BIOS/CSM, FAT32 or NTFS, compressed or virtual-disk inputs,
  Secure Boot DBX checks, verified boot assets, WIM splitting, and optional drivers.
 CONTROL
