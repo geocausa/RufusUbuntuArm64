@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  push:
   pull_request:
 
 permissions:
@@ -11,130 +12,254 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  normalize-iso-release:
-    name: Normalize ISO release integration
-    permissions:
-      contents: write
+  go-minimum:
+    name: Go 1.22 compatibility
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: feature/drive-backup-udf-iso
-          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.22.x'
+      - name: Compile and test the declared minimum Go version
+        run: go test ./...
+
+  wim-engine:
+    name: Build bundled WIM engine
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Install WIM build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool pkg-config git ca-certificates \
+            libxml2-dev zlib1g-dev liblzma-dev libbz2-dev liblz4-dev libzstd-dev
+      - name: Build and inspect the pinned ARM64 engine
+        run: ./scripts/build-wimlib-arm64.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: wimlib-arm64
+          path: |
+            vendor/wimlib/arm64/
+            vendor/wimlib/source/wimlib-1.14.5-source.tar.gz
+            vendor/wimlib/source/wimlib-1.14.5-source.tar.gz.sha256
+          if-no-files-found: error
+
+  uefi-md5sum-loader:
+    name: Reproduce ARM64 uefi-md5sum loader
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Install pinned loader build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git gzip nasm python3 python3-setuptools uuid-dev \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu sbsigntool
+      - name: Build twice and require identical provenance
+        run: |
+          bash scripts/build-uefi-md5sum-arm64.sh dist/uefi-md5sum-a
+          bash scripts/build-uefi-md5sum-arm64.sh dist/uefi-md5sum-b
+          for file in bootaa64.efi bootaa64.efi.sha256 provenance.json SOURCE-COMMITS.txt \
+            uefi-md5sum-v1.2-source.tar.gz uefi-md5sum-v1.2-source.tar.gz.sha256; do
+            cmp "dist/uefi-md5sum-a/${file}" "dist/uefi-md5sum-b/${file}"
+          done
+          printf '%s\n' \
+            'Two independent Ubuntu 24.04 builds produced byte-for-byte identical artifacts.' \
+            'The loader is unsigned and is not claimed Secure Boot compatible.' \
+            > dist/uefi-md5sum-a/REPRODUCIBILITY.txt
+          mkdir -p vendor/uefi-md5sum/arm64
+          cp -a dist/uefi-md5sum-a/. vendor/uefi-md5sum/arm64/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: uefi-md5sum-arm64
+          path: vendor/uefi-md5sum/arm64/
+          if-no-files-found: error
+
+  test-and-package:
+    name: Audit and package
+    needs: [go-minimum, wim-engine, uefi-md5sum-loader]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26.5'
-      - name: Normalize ISO package metadata
-        shell: bash
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: wimlib-arm64
+          path: vendor/wimlib
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: uefi-md5sum-arm64
+          path: vendor/uefi-md5sum/arm64
+      - name: Install audit validators
         run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('scripts/build-deb.sh')
-          lines = path.read_text().splitlines()
-          first = 'install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_formats.py" \\'
-          if not any('gui/rufusarm64_iso_capture.py' in line for line in lines):
-              index = lines.index(first)
-              lines[index + 2:index + 2] = [
-                  'install -Dm644 "${ROOT_DIR}/gui/rufusarm64_iso_capture.py" \\',
-                  '  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_iso_capture.py"',
-                  'install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_iso.py" \\',
-                  '  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_iso.py"',
-              ]
-          text = '\n'.join(lines) + '\n'
-          if 'genisoimage' not in text:
-              text = text.replace('xz-utils, zstd, qemu-utils', 'xz-utils, zstd, qemu-utils, genisoimage', 1)
-          text = text.replace(
-              'creates verified x86 BIOS/Legacy FreeDOS 1.4 media, and captures verified\n images of removable drives.',
-              'creates verified x86 BIOS/Legacy FreeDOS 1.4 media, captures verified\n physical-drive images, and creates validated mounted-filesystem ISO/UDF remasters.',
-              1,
-          )
-          path.write_text(text)
-          PY
-      - name: Normalize ISO schema contracts
-        shell: bash
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs genisoimage qemu-utils
+          audit_bin="${RUNNER_TEMP}/rufusarm64-audit-tools"
+          mkdir -p "${audit_bin}"
+          GOBIN="${audit_bin}" go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          GOBIN="${audit_bin}" go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          GOBIN="${audit_bin}" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          echo "${audit_bin}" >> "${GITHUB_PATH}"
+      - name: Run pinned static, workflow, and vulnerability checks
+        run: bash ./scripts/static-audit.sh
+      - name: Exercise privileged loop-device invariants
+        env:
+          RUFUS_REAL_BLOCK_TEST: '1'
+          RUFUS_REAL_ISO_CAPTURE_TEST: '1'
         run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('gui/rufusarm64_iso_capture.py')
-          text = path.read_text()
-          text = text.replace(
-              '''    if required <= 0:\n        raise ValueError("Filesystem ISO report contains an invalid destination bound.")''',
-              '''    if status == "passed" and required <= 0:\n        raise ValueError("Successful filesystem ISO report contains an invalid destination bound.")''',
-              1,
-          )
-          text = text.replace(
-              '''    if not isinstance(limitations, list) or set(limitations) != _REQUIRED_LIMITATIONS or len(limitations) != len(_REQUIRED_LIMITATIONS):''',
-              '''    if (\n        not isinstance(limitations, list)\n        or not all(isinstance(item, str) for item in limitations)\n        or set(limitations) != _REQUIRED_LIMITATIONS\n        or len(limitations) != len(_REQUIRED_LIMITATIONS)\n    ):''',
-              1,
-          )
-          path.write_text(text)
-          PY
-      - name: Normalize ISO GTK lifecycle contracts
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('gui/rufusarm64_drive_backup_iso.py')
-          text = path.read_text()
-          text = text.replace(
-              '''            if payload["source_bytes"] != source_bytes or payload["required_bytes"] != required_bytes:\n                raise ValueError("Filesystem ISO report does not match the reviewed plan.")''',
-              '''            if payload["status"] == "passed":\n                if payload["source_bytes"] != source_bytes or payload["required_bytes"] != required_bytes:\n                    raise ValueError("Successful filesystem ISO report does not match the reviewed plan.")\n            elif payload["source_bytes"] not in {0, source_bytes} or payload["required_bytes"] not in {0, required_bytes}:\n                raise ValueError("Filesystem ISO failure report contains impossible plan evidence.")''',
-              1,
-          )
-          path.write_text(text)
-          PY
-      - name: Normalize Go formatting
-        shell: bash
-        run: |
-          set -euo pipefail
-          gofmt -w cmd/rufus-device-backup/*.go internal/isocapture/*.go
-          test -z "$(gofmt -l cmd/rufus-device-backup/*.go internal/isocapture/*.go)"
-      - name: Qualify ISO command contracts
-        shell: bash
-        run: |
-          mkdir -p dist/iso-normalize
+          mkdir -p dist/audit-logs
           set -o pipefail
-          go test -v ./cmd/rufus-device-backup 2>&1 | tee dist/iso-normalize/command.log
-      - name: Upload focused ISO command diagnostics
+          {
+            sudo modprobe loop || true
+            go test -c -o "${RUNNER_TEMP}/safety-loop.test" ./internal/safety
+            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
+              "${RUNNER_TEMP}/safety-loop.test" \
+              -test.run '^TestOpenReopenableDeviceSupportsFilesystemToolsOnLoop$' \
+              -test.v
+            go test -c -o "${RUNNER_TEMP}/devicequal-loop.test" ./internal/devicequal
+            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
+              "${RUNNER_TEMP}/devicequal-loop.test" \
+              -test.run '^TestRunDeviceQualifiesRealLoopDevice$' \
+              -test.v
+            go test -c -o "${RUNNER_TEMP}/drivebackup-loop.test" ./internal/drivebackup
+            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
+              "${RUNNER_TEMP}/drivebackup-loop.test" \
+              -test.run '^(TestCaptureDeviceCapturesRealReadOnlyLoopDevice|TestCaptureDeviceExportsVerifiedContainersFromRealReadOnlyLoop)$' \
+              -test.v
+            go test -c -o "${RUNNER_TEMP}/isocapture-loop.test" ./internal/isocapture
+            sudo env RUFUS_REAL_ISO_CAPTURE_TEST="${RUFUS_REAL_ISO_CAPTURE_TEST}" \
+              "${RUNNER_TEMP}/isocapture-loop.test" \
+              -test.run '^TestRealGenISOImageUDFRoundTrip$' \
+              -test.v
+          } 2>&1 | tee dist/audit-logs/privileged-loop-device.log
+      - name: Resolve traceable build version
+        id: version
+        if: success()
+        run: |
+          project_version="$(tr -d '\r\n' < VERSION)"
+          version="${project_version}"
+          allow_nonrelease=0
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            pr_number="$(python3 -c 'import json,os; print(json.load(open(os.environ["GITHUB_EVENT_PATH"]))["number"])')"
+            head_sha="$(python3 -c 'import json,os; print(json.load(open(os.environ["GITHUB_EVENT_PATH"]))["pull_request"]["head"]["sha"])')"
+            version="${project_version}+pr${pr_number}.${head_sha:0:8}"
+            allow_nonrelease=1
+          fi
+          dpkg --validate-version "${version}"
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+          echo "RUFUS_ALLOW_NONRELEASE_VERSION=${allow_nonrelease}" >> "$GITHUB_ENV"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+      - name: Full test, audit, and ARM64 package pass
+        if: success()
+        run: |
+          mkdir -p dist/audit-logs
+          set -o pipefail
+          ./scripts/test.sh 2>&1 | tee dist/audit-logs/test-and-package.log
+      - name: Confirm reproducible Debian package
+        if: success()
+        run: |
+          set -o pipefail
+          bash ./scripts/reproducible-package.sh 2>&1 | tee dist/audit-logs/reproducible-package.log
+      - name: Upload complete audit logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: iso-command-${{ github.run_id }}
-          path: dist/iso-normalize/command.log
+          name: audit-logs-${{ github.run_id }}-x86-64
+          path: dist/audit-logs/
+          if-no-files-found: warn
+      - name: Upload ARM64 package
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rufusarm64-${{ steps.version.outputs.version }}-ubuntu-arm64
+          path: |
+            dist/rufusarm64_${{ steps.version.outputs.version }}_arm64.deb
+            dist/rufusarm64_${{ steps.version.outputs.version }}_arm64.deb.sha256
           if-no-files-found: error
-      - name: Qualify ISO core contracts
-        run: go test ./internal/isocapture
-      - name: Qualify trusted resolver contracts
-        run: go test ./internal/trustedexec
-      - name: Qualify Python and GTK ISO contracts
-        shell: bash
+
+  native-arm64-smoke:
+    name: Native ARM64 execution
+    needs: [go-minimum, wim-engine, uefi-md5sum-loader]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: wimlib-arm64
+          path: vendor/wimlib
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: uefi-md5sum-arm64
+          path: vendor/uefi-md5sum/arm64
+      - name: Resolve traceable build version
+        id: version
         run: |
-          set -euo pipefail
-          python3 -m py_compile gui/rufusarm64_iso_capture.py gui/rufusarm64_drive_backup_iso.py gui/test_iso_capture.py gui/test_device_backup_dialog.py
-          PYTHONPATH=gui python3 gui/test_iso_capture.py
-          PYTHONPATH=gui python3 gui/test_device_backup.py
-          PYTHONPATH=gui python3 gui/test_device_backup_dialog.py
-      - name: Qualify ISO package metadata
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash -n scripts/build-deb.sh packaging/rufusarm64
-          test "$(grep -Fc 'gui/rufusarm64_iso_capture.py' scripts/build-deb.sh)" -eq 1
-          test "$(grep -Fc 'gui/rufusarm64_drive_backup_iso.py' scripts/build-deb.sh)" -eq 1
-          grep -Fq 'genisoimage' scripts/build-deb.sh
-      - name: Publish validated ISO source normalization
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git diff --quiet -- cmd/rufus-device-backup internal/isocapture gui/rufusarm64_iso_capture.py gui/rufusarm64_drive_backup_iso.py scripts/build-deb.sh; then
-            exit 0
+          project_version="$(tr -d '\r\n' < VERSION)"
+          version="${project_version}"
+          allow_nonrelease=0
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            pr_number="$(python3 -c 'import json,os; print(json.load(open(os.environ["GITHUB_EVENT_PATH"]))["number"])')"
+            head_sha="$(python3 -c 'import json,os; print(json.load(open(os.environ["GITHUB_EVENT_PATH"]))["pull_request"]["head"]["sha"])')"
+            version="${project_version}+pr${pr_number}.${head_sha:0:8}"
+            allow_nonrelease=1
           fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add cmd/rufus-device-backup internal/isocapture gui/rufusarm64_iso_capture.py gui/rufusarm64_drive_backup_iso.py scripts/build-deb.sh
-          git commit -m 'backup: normalize ISO release integration'
-          git push origin HEAD:feature/drive-backup-udf-iso
+          dpkg --validate-version "${version}"
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+          echo "RUFUS_ALLOW_NONRELEASE_VERSION=${allow_nonrelease}" >> "$GITHUB_ENV"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+      - name: Run the complete suite natively on ARM64
+        run: |
+          mkdir -p dist/audit-logs
+          set -o pipefail
+          ./scripts/test.sh 2>&1 | tee dist/audit-logs/native-arm64.log
+      - name: Execute packaged ARM64 binaries
+        if: success()
+        run: |
+          package_root="$(mktemp -d)"
+          trap 'rm -rf "${package_root}"' EXIT
+          dpkg-deb -x "dist/rufusarm64_${VERSION}_arm64.deb" "${package_root}"
+          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-helper" version)" = "${VERSION}"
+          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-persistence-helper" --help 2>&1 || true)" != ""
+          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-device-qualify" version)" = "${VERSION}"
+          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-device-backup" version)" = "${VERSION}"
+          runtime_loader="${package_root}/usr/lib/rufusarm64/bootaa64-uefi-md5sum.efi"
+          test "$(stat -c %s "${runtime_loader}")" -eq 40960
+          test "$(sha256sum "${runtime_loader}" | awk '{print $1}')" = "543615a8e97fed1cb5293bee7bdfe10f9feb6979f191b20ab32dafdcf097b502"
+          integrity_root="$(mktemp -d)"
+          mkdir -p "${integrity_root}/EFI/BOOT"
+          printf 'packaged arm64 loader' > "${integrity_root}/EFI/BOOT/BOOTAA64.EFI"
+          "${package_root}/usr/lib/rufusarm64/rufusarm64-helper" uefi integrity manifest \
+            --directory "${integrity_root}" > "${integrity_root}/md5sum.txt"
+          "${package_root}/usr/lib/rufusarm64/rufusarm64-helper" uefi integrity verify \
+            --directory "${integrity_root}" --json >/dev/null
+          rm -rf "${integrity_root}"
+          "${package_root}/usr/lib/rufusarm64/wimlib-imagex" --version
+      - name: Upload native ARM64 logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: audit-logs-${{ github.run_id }}-arm64
+          path: dist/audit-logs/
+          if-no-files-found: warn
