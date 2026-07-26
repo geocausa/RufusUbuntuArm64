@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - feature/ffu-reject-duplicate-policy-json
+  pull_request:
+    branches:
+      - stage3/0.14.0
 
 permissions:
   contents: write
@@ -211,6 +214,7 @@ func TestRejectDuplicateFFUCLIJSONMembers(t *testing.T) {
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/one-shot-ffu-policy-json.yml
           git add cmd/rufus-linux/ffu_linux.go cmd/rufus-linux/ffu_linux_test.go cmd/rufus-linux/ffu_strict_json_linux.go cmd/rufus-linux/ffu_strict_json_linux_test.go
           git commit -m '[patched] FFU: reject duplicate policy JSON members'
           git push origin HEAD:feature/ffu-reject-duplicate-policy-json
