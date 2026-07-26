@@ -43,6 +43,46 @@ jobs:
           text = text.replace(old, new, 1)
           main.write_text(text)
 
+          for filename in ('internal/isocapture/sourceview_linux.go', 'internal/isocapture/verify_linux.go'):
+              path = Path(filename)
+              text = path.read_text()
+              text = text.replace(
+                  '''exec.Command(\n\t\tmountExecutable,\n\t\t"--no-canonicalize",''',
+                  '''exec.Command(\n\t\tmountExecutable,\n\t\t"--internal-only",\n\t\t"--no-canonicalize",''',
+              )
+              text = text.replace(
+                  '''exec.Command(\n\t\texecutable,\n\t\t"--no-canonicalize",''',
+                  '''exec.Command(\n\t\texecutable,\n\t\t"--internal-only",\n\t\t"--no-canonicalize",''',
+              )
+              path.write_text(text)
+
+          sourceview = Path('internal/isocapture/sourceview_linux.go')
+          text = sourceview.read_text()
+          env_anchor = '''\t\t"LIBMOUNT_FSTAB=/dev/null",\n\t\t"PATH=/usr/sbin:/usr/bin:/sbin:/bin",'''
+          env_replacement = '''\t\t"LIBMOUNT_FSTAB=/dev/null",\n\t\t"LIBMOUNT_FORCE_MOUNT2=always",\n\t\t"PATH=/usr/sbin:/usr/bin:/sbin:/bin",'''
+          if env_replacement not in text:
+              if env_anchor not in text:
+                  raise SystemExit('source mount environment anchor not found')
+              text = text.replace(env_anchor, env_replacement, 1)
+          sourceview.write_text(text)
+
+          verify = Path('internal/isocapture/verify_linux.go')
+          text = verify.read_text()
+          if env_replacement not in text:
+              if env_anchor not in text:
+                  raise SystemExit('validation mount environment anchor not found')
+              text = text.replace(env_anchor, env_replacement, 1)
+          verify.write_text(text)
+
+          contract = Path('gui/rufusarm64_iso_capture.py')
+          text = contract.read_text()
+          text = text.replace(
+              '''    if required <= 0:\n        raise ValueError("Filesystem ISO report contains an invalid destination bound.")''',
+              '''    if status == "passed" and required <= 0:\n        raise ValueError("Successful filesystem ISO report contains an invalid destination bound.")''',
+              1,
+          )
+          contract.write_text(text)
+
           package = Path('scripts/build-deb.sh')
           text = package.read_text()
           anchor = '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_formats.py" \\\n  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_formats.py"'''
@@ -51,11 +91,7 @@ jobs:
               if anchor not in text:
                   raise SystemExit('backup module installation anchor not found')
               text = text.replace(anchor, addition, 1)
-          text = text.replace(
-              'xz-utils, zstd, qemu-utils',
-              'xz-utils, zstd, qemu-utils, genisoimage',
-              1,
-          )
+          text = text.replace('xz-utils, zstd, qemu-utils', 'xz-utils, zstd, qemu-utils, genisoimage', 1)
           text = text.replace(
               'creates verified x86 BIOS/Legacy FreeDOS 1.4 media, and captures verified\n images of removable drives.',
               'creates verified x86 BIOS/Legacy FreeDOS 1.4 media, captures verified\n physical-drive images, and creates validated mounted-filesystem ISO/UDF remasters.',
@@ -79,6 +115,7 @@ jobs:
             cmd/rufus-device-backup/main.go \
             cmd/rufus-device-backup/iso_linux.go \
             internal/isocapture \
+            gui/rufusarm64_iso_capture.py \
             scripts/build-deb.sh; then
             exit 0
           fi
@@ -88,6 +125,7 @@ jobs:
             cmd/rufus-device-backup/main.go \
             cmd/rufus-device-backup/iso_linux.go \
             internal/isocapture \
+            gui/rufusarm64_iso_capture.py \
             scripts/build-deb.sh
           git commit -m 'backup: integrate verified ISO capture path'
           git push origin HEAD:feature/drive-backup-udf-iso
