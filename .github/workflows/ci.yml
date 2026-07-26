@@ -109,7 +109,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs
+            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs qemu-utils
           audit_bin="${RUNNER_TEMP}/rufusarm64-audit-tools"
           mkdir -p "${audit_bin}"
           GOBIN="${audit_bin}" go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
@@ -135,6 +135,11 @@ jobs:
             sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
               "${RUNNER_TEMP}/devicequal-loop.test" \
               -test.run '^TestRunDeviceQualifiesRealLoopDevice$' \
+              -test.v
+            go test -c -o "${RUNNER_TEMP}/drivebackup-loop.test" ./internal/drivebackup
+            sudo env RUFUS_REAL_BLOCK_TEST="${RUFUS_REAL_BLOCK_TEST}" \
+              "${RUNNER_TEMP}/drivebackup-loop.test" \
+              -test.run '^(TestCaptureDeviceCapturesRealReadOnlyLoopDevice|TestCaptureDeviceExportsVerifiedContainersFromRealReadOnlyLoop)$' \
               -test.v
           } 2>&1 | tee dist/audit-logs/privileged-loop-device.log
       - name: Resolve traceable build version
