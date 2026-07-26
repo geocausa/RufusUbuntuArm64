@@ -28,10 +28,11 @@ type SourceView struct {
 	closeErr  error
 }
 
-// OpenReadOnlySourceView authenticates a real source directory, inventories it,
-// then creates a root-only bind mount with read-only, nosuid, nodev and noexec
-// flags. The mounted view must preserve the exact supported content inventory.
-func OpenReadOnlySourceView(ctx context.Context, sourcePath string, limits Limits) (*SourceView, error) {
+// OpenReadOnlySourceView authenticates a real source directory against the
+// reviewed live binding, inventories it, then creates a root-only bind mount
+// with read-only, nosuid, nodev and noexec flags. The mounted view must preserve
+// the exact supported content inventory.
+func OpenReadOnlySourceView(ctx context.Context, sourcePath, expectedBindingSHA256 string, limits Limits) (*SourceView, error) {
 	if ctx == nil {
 		return nil, errors.New("ISO source-view context is nil")
 	}
@@ -75,6 +76,9 @@ func OpenReadOnlySourceView(ctx context.Context, sourcePath string, limits Limit
 	before, err := Scan(ctx, original, limits)
 	if err != nil {
 		return nil, fmt.Errorf("inventory ISO source before creating the read-only view: %w", err)
+	}
+	if err := requireExpectedSourceBinding(before, expectedBindingSHA256); err != nil {
+		return nil, err
 	}
 
 	mountExecutable, err := resolveMountUtility()
@@ -231,6 +235,16 @@ func configureMountCommand(command *exec.Cmd, diagnostics *boundedDiagnostic) {
 	}
 	command.Stdout = diagnostics
 	command.Stderr = diagnostics
+}
+
+func requireExpectedSourceBinding(inventory Inventory, expected string) error {
+	if err := validateDigest(expected); err != nil {
+		return fmt.Errorf("validate expected ISO source binding digest: %w", err)
+	}
+	if inventory.BindingSHA256 != expected {
+		return fmt.Errorf("live ISO source binding digest %s does not match reviewed plan %s", inventory.BindingSHA256, expected)
+	}
+	return nil
 }
 
 func requireReadOnlySourceMount(root *os.File) error {
