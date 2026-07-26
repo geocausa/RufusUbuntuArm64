@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-var qemuProgressPattern = regexp.MustCompile(`([0-9]{1,3}(?:\.[0-9]+)?)/100%`)
+var qemuProgressPattern = regexp.MustCompile(`([0-9]{1,3}(\.[0-9]+)?)/100%`)
 
 // qemuProgressWriter retains bounded diagnostics while translating qemu-img's
 // percentage stream into monotonic source-byte progress. It never emits 100%;
