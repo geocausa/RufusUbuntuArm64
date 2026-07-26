@@ -1,0 +1,64 @@
+name: ISO capture source normalization
+
+on:
+  push:
+    branches:
+      - 'feature/drive-backup-udf-iso'
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: feature/drive-backup-udf-iso
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - name: Normalize and qualify source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('internal/isocapture/command_linux_test.go')
+          text = path.read_text()
+          needle = '\tif err := runProcessGroup(nil, exec.Command("/bin/true"));'
+          directive = '\t//lint:ignore SA1012 This test deliberately verifies nil-context rejection.\n'
+          if directive + needle not in text:
+              if needle not in text:
+                  raise SystemExit('nil-context test line not found')
+              text = text.replace(needle, directive + needle, 1)
+              path.write_text(text)
+          PY
+          gofmt -w \
+            internal/isocapture/command_linux_test.go \
+            internal/isocapture/inventory_linux.go \
+            internal/isocapture/master_linux.go \
+            internal/isocapture/real_linux_test.go \
+            internal/isocapture/verify_linux.go
+          test -z "$(gofmt -l internal/isocapture/*.go)"
+          go test ./internal/isocapture ./internal/trustedexec
+          if git diff --quiet -- \
+            internal/isocapture/command_linux_test.go \
+            internal/isocapture/inventory_linux.go \
+            internal/isocapture/master_linux.go \
+            internal/isocapture/real_linux_test.go \
+            internal/isocapture/verify_linux.go; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            internal/isocapture/command_linux_test.go \
+            internal/isocapture/inventory_linux.go \
+            internal/isocapture/master_linux.go \
+            internal/isocapture/real_linux_test.go \
+            internal/isocapture/verify_linux.go
+          git commit -m 'isocapture: normalize source contracts'
+          git push origin HEAD:feature/drive-backup-udf-iso
