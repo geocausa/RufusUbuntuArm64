@@ -62,13 +62,14 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o /tmp/rufusarm64-cli ./cmd/rufus-linux
           test -s /tmp/rufusarm64-cli
 
-      - name: Commit validated final source
+      - name: Commit validated production source
         shell: bash
         run: |
           set -euo pipefail
+          git checkout HEAD -- .github/workflows/ffu-software-audit.yml
           rm scripts/trusted_utility_stage.py scripts/trusted_utility_stage_fix.py scripts/trusted_utility_stage_fix2.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add .github/workflows/ffu-software-audit.yml internal/device internal/safety internal/trustedexec scripts/trusted_utility_stage.py scripts/trusted_utility_stage_fix.py scripts/trusted_utility_stage_fix2.py
+          git add internal/device internal/safety internal/trustedexec scripts/trusted_utility_stage.py scripts/trusted_utility_stage_fix.py scripts/trusted_utility_stage_fix2.py
           git commit -m '[trusted-patched] safety: resolve privileged utilities explicitly'
           git push origin HEAD:feature/ffu-trusted-utilities
