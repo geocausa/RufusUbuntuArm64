@@ -89,7 +89,7 @@ func TestDescriptorCommandsPropagateCancellation(t *testing.T) {
 }
 
 func TestValidateQEMUJSONObject(t *testing.T) {
-	for _, valid := range []string{`{}`, `{"check-errors":0}` } {
+	for _, valid := range []string{`{}`, `{"check-errors":0}`} {
 		if err := validateQEMUJSONObject([]byte(valid)); err != nil {
 			t.Fatalf("valid object %s: %v", valid, err)
 		}

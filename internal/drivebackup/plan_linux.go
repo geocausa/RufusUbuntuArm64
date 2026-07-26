@@ -14,13 +14,13 @@ import (
 // DestinationInfo is the stable, read-only output of destination planning.
 // CaptureDevice repeats every check immediately before opening the source.
 type DestinationInfo struct {
-	Path                   string `json:"path"`
-	Directory              string `json:"directory"`
-	Format                 Format `json:"format"`
-	SourceBytes            uint64 `json:"source_bytes"`
-	RequiredBytes          uint64 `json:"required_bytes"`
-	ContainerMinimumBytes  uint64 `json:"container_minimum_bytes,omitempty"`
-	AvailableBytes         uint64 `json:"available_bytes"`
+	Path                  string `json:"path"`
+	Directory             string `json:"directory"`
+	Format                Format `json:"format"`
+	SourceBytes           uint64 `json:"source_bytes"`
+	RequiredBytes         uint64 `json:"required_bytes"`
+	ContainerMinimumBytes uint64 `json:"container_minimum_bytes,omitempty"`
+	AvailableBytes        uint64 `json:"available_bytes"`
 }
 
 // InspectDestination preserves the raw-backup planning API.

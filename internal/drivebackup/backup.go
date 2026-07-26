@@ -33,18 +33,18 @@ type Failure struct {
 }
 
 type Report struct {
-	Schema             int              `json:"schema"`
-	Status             Status           `json:"status"`
-	Format             Format           `json:"format"`
-	PlannedBytes       uint64           `json:"planned_bytes"`
-	CompletedBytes     uint64           `json:"completed_bytes"`
-	SHA256             string           `json:"sha256,omitempty"`
-	SourceSHA256       string           `json:"source_sha256,omitempty"`
-	OutputSHA256       string           `json:"output_sha256,omitempty"`
-	OutputBytes        uint64           `json:"output_bytes,omitempty"`
-	ContentComparison  ComparisonState  `json:"content_comparison,omitempty"`
-	Consistency        ConsistencyState `json:"consistency,omitempty"`
-	Failure            *Failure         `json:"failure,omitempty"`
+	Schema            int              `json:"schema"`
+	Status            Status           `json:"status"`
+	Format            Format           `json:"format"`
+	PlannedBytes      uint64           `json:"planned_bytes"`
+	CompletedBytes    uint64           `json:"completed_bytes"`
+	SHA256            string           `json:"sha256,omitempty"`
+	SourceSHA256      string           `json:"source_sha256,omitempty"`
+	OutputSHA256      string           `json:"output_sha256,omitempty"`
+	OutputBytes       uint64           `json:"output_bytes,omitempty"`
+	ContentComparison ComparisonState  `json:"content_comparison,omitempty"`
+	Consistency       ConsistencyState `json:"consistency,omitempty"`
+	Failure           *Failure         `json:"failure,omitempty"`
 }
 
 type Progress struct {
