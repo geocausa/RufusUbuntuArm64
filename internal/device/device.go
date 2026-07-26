@@ -74,8 +74,12 @@ var sysClassBlockRoot = "/sys/class/block"
 func List() ([]BlockDevice, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	lsblkPath, err := resolveDeviceUtility("lsblk")
+	if err != nil {
+		return nil, fmt.Errorf("resolve trusted lsblk: %w", err)
+	}
 	cmd := exec.CommandContext(ctx,
-		"lsblk", "--json", "--bytes", "--output",
+		lsblkPath, "--json", "--bytes", "--output",
 		"NAME,PATH,TYPE,SIZE,MODEL,VENDOR,TRAN,RM,RO,HOTPLUG,MOUNTPOINTS,PKNAME,MAJ:MIN,SERIAL,WWN,LOG-SEC,PHY-SEC",
 	)
 	var stdout, stderr bytes.Buffer

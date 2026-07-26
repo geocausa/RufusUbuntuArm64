@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -161,7 +160,7 @@ func ValidateTarget(path string, dev device.BlockDevice, allowFixed bool) error 
 // RevalidateTarget refreshes lsblk metadata immediately before a destructive
 // action. It detects hot-unplug/replug and /dev name reuse.
 func RevalidateTarget(path, expectedIdentity string, allowFixed bool) (device.BlockDevice, uint64, error) {
-	dev, err := device.Find(path)
+	dev, err := findSafetyDevice(path)
 	if err != nil {
 		return device.BlockDevice{}, 0, err
 	}
@@ -184,7 +183,7 @@ func RevalidateTarget(path, expectedIdentity string, allowFixed bool) (device.Bl
 // still resolve to the same kernel block device and pass the complete target
 // policy, while the writer independently verifies its held descriptor.
 func RevalidateOpenBoundTarget(path string, expectedKernelID uint64, allowFixed bool) (device.BlockDevice, uint64, error) {
-	dev, err := device.Find(path)
+	dev, err := findSafetyDevice(path)
 	if err != nil {
 		return device.BlockDevice{}, 0, err
 	}
@@ -332,7 +331,11 @@ func UnmountDescendants(dev device.BlockDevice) error {
 	})
 	for _, mountpoint := range mountpoints {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		cmd := exec.CommandContext(ctx, "umount", "--", mountpoint)
+		cmd, commandErr := trustedSafetyCommandContext(ctx, "umount", "--", mountpoint)
+		if commandErr != nil {
+			cancel()
+			return fmt.Errorf("unmount %s: %w", mountpoint, commandErr)
+		}
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		err := cmd.Run()
@@ -348,7 +351,7 @@ func UnmountDescendants(dev device.BlockDevice) error {
 }
 
 func EnsureNoMountedDescendants(path string) error {
-	dev, err := device.Find(path)
+	dev, err := findSafetyDevice(path)
 	if err != nil {
 		return err
 	}
@@ -389,7 +392,10 @@ func RereadPartitionTable(path string) error {
 }
 
 func runCommand(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd, err := trustedSafetyCommandContext(ctx, name, args...)
+	if err != nil {
+		return err
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -401,7 +407,10 @@ func runCommand(ctx context.Context, name string, args ...string) error {
 func commandOutput(name string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd, err := trustedSafetyCommandContext(ctx, name, args...)
+	if err != nil {
+		return "", err
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
