@@ -7,8 +7,6 @@ import stat
 import subprocess
 import threading
 
-from gi.repository import GLib
-
 import rufusarm64_drive_backup_formats as formats
 from rufusarm64_iso_capture import (
     build_dry_run_command,
@@ -21,6 +19,8 @@ from rufusarm64_iso_capture import (
     progress_summary,
     report_summary,
 )
+
+GLib = formats.GLib
 
 _ISO_PHASE_STATUS = {
     "source_view": "Creating and authenticating a private read-only view of the mounted filesystem.",
@@ -198,8 +198,10 @@ def install_drive_backup_iso():
                     phase = progress["phase"]
                     if progress["done"] < last_by_phase.get(phase, 0):
                         raise ValueError("Filesystem ISO progress moved backwards within a phase.")
-                    if phase == "master" and progress["total"] not in {0, required_bytes}:
-                        raise ValueError("Filesystem ISO mastering progress violated the admitted bound.")
+                    if phase == "master":
+                        total = progress["total"]
+                        if total > required_bytes or (total not in {0, required_bytes} and progress["done"] != total):
+                            raise ValueError("Filesystem ISO mastering progress violated the admitted bound.")
                     if phase == "validate_content" and progress["total"] > source_bytes:
                         raise ValueError("Filesystem ISO validation progress exceeded the reviewed content size.")
                     if progress["total"] > required_bytes and phase not in {"validate_content"}:
