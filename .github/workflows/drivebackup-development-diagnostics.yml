@@ -88,16 +88,19 @@ jobs:
               raise SystemExit('package format module install is missing or duplicated')
           path.write_text(text, encoding='utf-8')
           PY
-      - name: Add permanent qemu loop qualification
+      - name: Capture permanent qemu loop qualification patch
         shell: bash
         run: |
-          python3 - <<'PY'
+          set +e
+          python3 - <<'PY' > qemu-patch.log 2>&1
           from pathlib import Path
 
           path = Path('.github/workflows/ci.yml')
           lines = path.read_text(encoding='utf-8').splitlines()
           dependency = '            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs'
           replacement = dependency + ' qemu-utils'
+          print(f'dependency_matches={sum(line == dependency for line in lines)}')
+          print(f'dependency_replacement_present={replacement in lines}')
           if replacement not in lines:
               matches = [index for index, line in enumerate(lines) if line == dependency]
               if len(matches) != 1:
@@ -105,11 +108,13 @@ jobs:
               lines[matches[0]] = replacement
           if not any('drivebackup-loop.test' in line for line in lines):
               markers = [index for index, line in enumerate(lines) if '"${RUNNER_TEMP}/devicequal-loop.test"' in line]
+              print(f'loop_markers={markers}')
               if len(markers) != 1:
                   raise SystemExit('device qualification loop command is missing or ambiguous')
               end = markers[0]
               while end < len(lines) and lines[end].strip() != '-test.v':
                   end += 1
+              print(f'loop_end={end} line={lines[end] if end < len(lines) else None!r}')
               if end >= len(lines):
                   raise SystemExit('device qualification loop command has no terminator')
               slash = chr(92)
@@ -123,6 +128,21 @@ jobs:
               lines[end + 1:end + 1] = addition
           path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
           PY
+          status=$?
+          printf 'exit_status=%s\n' "$status" >> qemu-patch.log
+          cat qemu-patch.log
+          exit 0
+      - name: Upload qemu patch diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: drivebackup-qemu-patch-diagnostics
+          path: qemu-patch.log
+          if-no-files-found: error
+          retention-days: 1
+      - name: Require successful qemu qualification patch
+        shell: bash
+        run: grep -Fxq 'exit_status=0' qemu-patch.log
       - name: Remove unused staging workflow
         shell: bash
         run: rm -f .github/workflows/drivebackup-package-patch.yml
