@@ -1,0 +1,342 @@
+name: Apply 0.14.0 release contract
+
+on:
+  push:
+    branches:
+      - release/0.14.0-candidate
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.repository == 'geocausa/RufusUbuntuArm64'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 2
+      - name: Apply synchronized release metadata
+        env:
+          EXPECTED_BASE: c03e40b2089c5d9bbdc145ae848f371983e795b6
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "${EXPECTED_BASE}" || {
+            echo "Release applicator parent is not the reviewed post-#342 Stage 3 commit" >&2
+            exit 1
+          }
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import pathlib
+          import re
+
+          root = pathlib.Path('.')
+          version = '0.14.0'
+          release_date = '2026-07-26'
+          display_date = '26 July 2026'
+          product_baseline = 'c03e40b2089c5d9bbdc145ae848f371983e795b6'
+
+          def read(path: str) -> str:
+              return (root / path).read_text(encoding='utf-8')
+
+          def write(path: str, text: str) -> None:
+              (root / path).write_text(text, encoding='utf-8')
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              if text.count(old) != 1:
+                  raise SystemExit(f'{label}: expected one occurrence, found {text.count(old)}')
+              return text.replace(old, new, 1)
+
+          write('VERSION', version + '\n')
+
+          changelog = read('CHANGELOG.md')
+          entry = '''## 0.14.0 — 2026-07-26
+
+          - Added descriptor-bound drive backup in raw, dynamic VHD, dynamic VHDX, and mounted-filesystem ISO/UDF formats, with exact source identity, conservative destination admission, cancellation, hashing, independent content comparison, and atomic no-replace publication.
+          - Added a guarded experimental single-store-v1 FFU restore path with strict descriptor planning, authenticated catalog/integrity evidence, publisher authorization, target-bound destructive confirmation, exclusive acquisition, ordered writes, complete content verification, and explicit unsupported-profile refusal.
+          - Added GTK integration for FFU review/restore, physical-qualification evidence, drive-backup format selection, filesystem ISO/UDF capture, and reusable identity-bound USB qualification report export.
+          - Added bounded, authenticated progress for compressed image preparation and fixed completion so 100% is reported only after the complete container has passed source identity and digest verification.
+          - Added bounded read-only El Torito UEFI extraction and strengthened Windows 11 setup Quality of Life selection without broadening automatic or unsupported media paths.
+          - Added real privileged loop qualification for raw/VHD/VHDX/ISO-UDF backup and FFU software paths, native ARM64 execution, Go 1.22 compatibility, static/vulnerability checks, and byte-for-byte reproducible Debian packaging on the exact release candidate.
+          - Kept FFU restore experimental, FFU capture unimplemented, Windows To Go deferred, the production acquisition channel disabled, the package-owned UEFI integrity loader unsigned, and universal physical boot, Secure Boot, media-health, and vendor-device compatibility explicitly unclaimed.
+
+          '''
+          changelog = replace_once(changelog, '# Changelog\n\n', '# Changelog\n\n' + entry, 'CHANGELOG insertion')
+          write('CHANGELOG.md', changelog)
+
+          readme = read('README.md')
+          readme = replace_once(
+              readme,
+              '**Version 0.13.0** is the Stage 2 practical-parity release candidate.',
+              '**Version 0.14.0** is the Stage 3 advanced imaging and recovery release candidate.',
+              'README version line',
+          )
+          readme = replace_once(
+              readme,
+              '- A guarded **Save drive image…** workflow that captures a removable drive read-only into a new SHA-256-reported image without replacing existing files.',
+              '- A guarded **Save drive image…** workflow supporting verified raw, dynamic VHD, dynamic VHDX, and mounted-filesystem ISO/UDF capture without replacing existing files.\n- An experimental authenticated FFU restore workflow for the supported single-store-v1 profile, with strict source evidence, target binding, complete readback, and explicit unsupported-profile refusal.',
+              'README backup highlight',
+          )
+          readme = replace_once(readme, 'rufusarm64_0.13.0_arm64.deb.sha256', 'rufusarm64_0.14.0_arm64.deb.sha256', 'README checksum package')
+          readme = replace_once(readme, 'sudo apt install ./rufusarm64_0.13.0_arm64.deb', 'sudo apt install ./rufusarm64_0.14.0_arm64.deb', 'README install package')
+          readme = replace_once(
+              readme,
+              'Select a removable drive and choose **Save drive image…**. RufusArm64 plans the destination without elevation, requires the exact `SAVE /dev/DEVICE TO /absolute/path/image.img` phrase, opens the source read-only through the package-owned helper, and atomically publishes only a complete synchronized SHA-256-accounted image. Existing files are never replaced and cancellation removes temporary output.\n\n## Keyboard and accessibility',
+              '''Select a removable drive and choose **Save drive image…**. RufusArm64 plans the destination without elevation, opens the source read-only through the package-owned helper, and atomically publishes only complete synchronized output. Existing files are never replaced and cancellation removes temporary output.
+
+Raw backup preserves every reported source byte. Dynamic VHD and VHDX use a trusted descriptor-only `qemu-img` path and compare guest-visible bytes against the held source; VHDX also requires a successful non-repairing consistency check. Filesystem ISO/UDF capture remasters exactly one mounted filesystem through a private read-only bind view, then independently mounts the image as UDF and compares every admitted path, type, regular-file size, and file digest. ISO/UDF capture does not include partition tables, hidden sectors, unallocated space, additional filesystems, or a bootability guarantee.
+
+## Experimental FFU restore
+
+The FFU path is deliberately experimental and limited to the reviewed single-store-v1 full-flash profile. It verifies structural metadata, hash tables, catalog membership/signature chains, authorized publishers, complete source content, and a sealed target-bound plan before allowing the exact destructive confirmation. The helper then acquires the whole target exclusively, writes in the reviewed order, flushes, reads back, and verifies the complete restored content.
+
+Unsupported FFU profiles, missing or untrusted catalog evidence, source mutation, target substitution, ambiguous capacity, protected/system disks, and incomplete verification fail closed. FFU capture remains unimplemented, and no vendor-device boot or recovery claim is made.
+
+## Keyboard and accessibility''',
+              'README backup and FFU sections',
+          )
+          readme = replace_once(readme, 'docs/hardware-checklist-0.13.0.md', 'docs/hardware-checklist-0.14.0.md', 'README safety checklist')
+          readme = replace_once(readme, 'dist/rufusarm64_0.13.0_arm64.deb', 'dist/rufusarm64_0.14.0_arm64.deb', 'README build artifact')
+          readme = replace_once(readme, '`docs/release-0.13.0.md`', '`docs/release-0.14.0.md`', 'README release notes link')
+          readme = replace_once(readme, '`docs/hardware-checklist-0.13.0.md`', '`docs/hardware-checklist-0.14.0.md`', 'README evidence checklist link')
+          readme = replace_once(readme, 'sudo apt install --allow-downgrades ./rufusarm64_0.12.1_arm64.deb', 'sudo apt install --allow-downgrades ./rufusarm64_0.13.0_arm64.deb', 'README rollback package')
+          write('README.md', readme)
+
+          roadmap = read('ROADMAP.md')
+          tranche = '''## 0.14 — Stage 3 advanced imaging and recovery (completed)
+
+          - Descriptor-bound raw, dynamic VHD, dynamic VHDX, and mounted-filesystem ISO/UDF drive backup
+          - Experimental authenticated single-store-v1 FFU restore with strict trust, target, confirmation, write-order, and complete-verification gates
+          - Reusable identity-bound USB qualification reports and bounded compressed-image preparation progress
+          - El Torito UEFI extraction and opt-in Windows 11 setup Quality of Life policy
+          - Privileged loop qualification, native ARM64 execution, Go 1.22 compatibility, static/vulnerability audit, and reproducible Debian packaging
+          - Release-candidate notes and real-machine checklist; stable promotion remains gated on recorded physical observations and prerelease feedback
+
+          '''
+          roadmap = replace_once(roadmap, '## 1.0 — supportable stable release', tranche + '## 1.0 — supportable stable release', 'ROADMAP 0.14 tranche')
+          write('ROADMAP.md', roadmap)
+
+          metainfo = read('packaging/io.github.geocausa.RufusArm64.metainfo.xml')
+          release_xml = '''    <release version="0.14.0" date="2026-07-26">
+              <description>
+                <p>Adds verified raw/VHD/VHDX/ISO-UDF drive backup, experimental authenticated FFU restore, reusable qualification evidence, bounded compressed preparation, and complete native ARM64/reproducible-package qualification.</p>
+              </description>
+            </release>
+          '''
+          metainfo = replace_once(metainfo, '  <releases>\n', '  <releases>\n' + release_xml, 'AppStream release')
+          write('packaging/io.github.geocausa.RufusArm64.metainfo.xml', metainfo)
+
+          updated_manpages = 0
+          for path in sorted((root / 'docs').glob('*.1')):
+              text = path.read_text(encoding='utf-8')
+              lines = text.splitlines(keepends=True)
+              if not lines or 'RufusArm64 0.13.0' not in lines[0]:
+                  continue
+              line = re.sub(r'"[0-9]{1,2} [A-Za-z]+ 2026" "RufusArm64 0\.13\.0"', f'"{display_date}" "RufusArm64 {version}"', lines[0], count=1)
+              if line == lines[0]:
+                  raise SystemExit(f'could not update manual header: {path}')
+              lines[0] = line
+              path.write_text(''.join(lines), encoding='utf-8')
+              updated_manpages += 1
+          if updated_manpages < 5:
+              raise SystemExit(f'updated only {updated_manpages} manual pages')
+
+          parity_path = root / 'docs/upstream-rufus-parity.json'
+          parity = json.loads(parity_path.read_text(encoding='utf-8'))
+          parity['generated_on'] = release_date
+          parity['project']['baseline_commit'] = product_baseline
+          drive = next(item for item in parity['features'] if item['id'] == 'drive-to-image')
+          drive['status'] = 'partial'
+          drive['notes'] = (
+              'Identity-bound raw, dynamic VHD, dynamic VHDX, and mounted-filesystem ISO/UDF backup are implemented through descriptor-only trusted providers, reviewed source binding/content evidence, content comparison, conservative destination admission, atomic no-replace publication, CLI/GTK integration, privileged loop qualification, native ARM64 execution, and reproducible Debian packaging. ISO/UDF capture remasters one mounted filesystem and does not claim whole-disk or bootable capture. FFU capture remains unimplemented.'
+          )
+          parity_path.write_text(json.dumps(parity, indent=2) + '\n', encoding='utf-8')
+
+          release_notes = '''# RufusArm64 0.14.0
+
+          ## Highlights
+
+          RufusArm64 0.14.0 is the Stage 3 advanced imaging and recovery release candidate for Ubuntu ARM64.
+
+          - **Save drive image…** now supports four deliberately separate outputs: byte-exact raw, dynamic VHD, dynamic VHDX, and mounted-filesystem ISO/UDF.
+          - Raw/VHD/VHDX capture retains exact whole-device identity and capacity. VHD/VHDX use a trusted descriptor-only converter and compare guest-visible content against the held source; VHDX additionally requires a successful consistency check.
+          - ISO/UDF capture authenticates one mounted filesystem, creates a private read-only `ro,nosuid,nodev,noexec` source view, masters with fixed policy, independently mounts the private image as UDF, compares every supported path/type/regular-file-size/content digest, rehashes it, and publishes without replacement.
+          - A guarded **experimental FFU restore** path supports the reviewed single-store-v1 profile with structural validation, authenticated hash/catalog evidence, publisher authorization, source leases, target-bound plans, exact confirmation, exclusive target acquisition, ordered writes, and complete readback verification.
+          - USB qualification results can be exported as private identity-bound JSON evidence without replacing existing files.
+          - Compressed-image preparation reports bounded container progress and reserves 100% for the point at which complete source authentication has succeeded.
+          - Read-only El Torito UEFI extraction and the opt-in Rufus 4.15 Windows 11 setup Quality of Life policy extend compatibility work without enabling unsafe automatic paths.
+
+          Existing ordinary Linux/Windows writing, persistence, FreeDOS, data-only formatting, acquisition, checksums, UEFI/DBX/SBAT analysis, cancellation, identity, and verification paths remain available.
+
+          ## Prerelease purpose and physical testing
+
+          Physical hardware testing remains required before 0.14.0 is promoted from prerelease to stable. The candidate checklist is `docs/hardware-checklist-0.14.0.md`.
+
+          The prerelease is intended to collect bounded observations for:
+
+          - installing and launching the ARM64 Debian package;
+          - raw, VHD, VHDX, and ISO/UDF capture from representative removable media;
+          - opening produced containers/images with independent tools;
+          - cancellation and existing-destination refusal;
+          - experimental FFU dry-run/refusal behavior and, only with disposable supported media, complete restore/readback;
+          - existing Ubuntu ARM64, Windows ARM64, persistence, FreeDOS, data-formatting, and USB qualification regressions.
+
+          A software pass is not a universal hardware, firmware, controller, flash-health, FFU-device, or bootability certification.
+
+          ## Drive-backup boundaries
+
+          Raw capture is a byte-for-byte whole-device image. Dynamic VHD and VHDX preserve the exact reported source capacity inside sparse containers, but no particular sparse-size saving is promised.
+
+          Filesystem ISO/UDF capture is not a whole-disk image. It captures exactly one admitted mounted filesystem and excludes partition tables, boot records, hidden sectors, unallocated space, other filesystems, unsupported names/types, symlinks, hard links, and mount crossings. Successful content verification does not establish bootability.
+
+          Existing destination paths are never replaced. A failed or cancelled operation removes private temporary output unless an unmount failure requires preserving a root-owned workspace as evidence.
+
+          ## Experimental FFU boundary
+
+          FFU restoration remains experimental and intentionally narrow. Only the reviewed single-store-v1 full-flash profile is accepted. The source must satisfy the complete structural, hash-table, catalog-member, signature-chain, publisher-authorization, trust-metadata, content, and target-bound plan policy before destructive authorization can be sealed.
+
+          Unsupported profiles, missing trust material, unrecognized publishers, source mutation, target substitution, capacity mismatch, protected mounts, system disks, ambiguous device identities, and incomplete verification fail closed. FFU capture is not implemented. No Surface, OEM recovery, firmware boot, or cross-vendor deployment claim is made.
+
+          ## Safety and support boundaries
+
+          Every ordinary write, persistence creation, restore/format, FreeDOS creation, qualification, or FFU restore can destroy all accessible data on the selected target. Confirm the device path, model, capacity, source identity, target identity, and generated phrase before authentication.
+
+          The package-owned ARM64 `uefi-md5sum` loader remains unsigned. **Secure Boot compatibility is not established** for that optional persistent-media wrapper.
+
+          The production built-in acquisition channel remains disabled until reviewed public mirrors, offline root-key operations, and a signed catalogue are provisioned. No private signing key is included in the repository, CI, package, or release artifacts.
+
+          Windows To Go remains deferred. FFU capture, encrypted persistence, arbitrary bootloader replacement, unsupported FFU profiles, and universal physical boot or media-health claims remain outside this release.
+
+          ## Verification and release construction
+
+          The exact candidate must pass Go 1.22 compatibility, race/shuffle/unit coverage, vet, static analysis, vulnerability checks, native ARM64 execution, packaged-binary execution, privileged raw/VHD/VHDX/ISO-UDF qualification, FFU software audit, formatter and FreeDOS qualification, Lintian/AppStream/desktop validation, WIM/UEFI reproduction, and byte-for-byte Debian package reproducibility.
+
+          The canonical stable tag workflow will publish:
+
+          - `rufusarm64_0.14.0_arm64.deb`;
+          - `rufusarm64_0.14.0_arm64.deb.sha256`;
+          - the corresponding RufusArm64 source archive;
+          - the pinned wimlib source archive;
+          - the pinned uefi-md5sum source archive and checksum.
+
+          A separate, explicitly marked prerelease may use a Debian version that sorts before 0.14.0 so the stable package remains a normal upgrade.
+
+          ## Install and rollback
+
+          Verify the package checksum:
+
+          ```bash
+          sha256sum -c rufusarm64_0.14.0_arm64.deb.sha256
+          ```
+
+          Install or upgrade:
+
+          ```bash
+          sudo apt install ./rufusarm64_0.14.0_arm64.deb
+          ```
+
+          Existing settings are retained. The package upgrades earlier RufusArm64 installations in place.
+
+          To roll back to 0.13.0, keep its package and run:
+
+          ```bash
+          sudo apt install --allow-downgrades ./rufusarm64_0.13.0_arm64.deb
+          ```
+
+          To remove RufusArm64 while retaining normal user files:
+
+          ```bash
+          sudo apt remove rufusarm64
+          ```
+
+          Rollback does not repair USB or block devices already modified by a newer release.
+          '''
+          write('docs/release-0.14.0.md', re.sub(r'^          ', '', release_notes, flags=re.MULTILINE).lstrip())
+
+          hardware = '''# RufusArm64 0.14.0 hardware and prerelease checklist
+
+          This record gates promotion of the 0.14.0 candidate. Software CI evidence is necessary but is not a substitute for the physical observations below.
+
+          ## Candidate identity
+
+          - Candidate commit: to be recorded after the release-contract PR is merged.
+          - Prerelease tag: to be recorded after publication.
+          - Debian package filename and SHA-256: to be recorded after publication.
+          - Test host: Ubuntu ARM64.
+
+          ## Installation and desktop smoke test
+
+          - [ ] Verify the downloaded SHA-256 sidecar.
+          - [ ] Install or upgrade the prerelease package on an ARM64 machine.
+          - [ ] Launch RufusArm64 from the desktop and terminal.
+          - [ ] Confirm the displayed/package/helper version matches the prerelease package.
+          - [ ] Confirm the normal writer, persistence, Restore / format…, FreeDOS…, Check USB, Save drive image…, and experimental FFU entry points open without import or layout failure.
+
+          ## Drive backup
+
+          Use disposable or fully backed-up removable media and a destination on a different physical disk.
+
+          - [ ] Raw capture completes, reports the expected source identity/capacity and SHA-256, and an independent byte comparison matches.
+          - [ ] Dynamic VHD capture completes and independent tooling sees the expected virtual capacity/content.
+          - [ ] Dynamic VHDX capture completes, passes consistency validation, and independent tooling sees the expected virtual capacity/content.
+          - [ ] Filesystem ISO/UDF capture completes from one mounted representative filesystem and an independent UDF mount exposes matching files and hashes.
+          - [ ] Existing destination refusal is observed for every exercised format.
+          - [ ] Cancellation removes partial output and leaves no published success claim.
+          - [ ] ISO/UDF limitations are visible: no partition-table, hidden-sector, unallocated-space, extra-filesystem, or bootability claim.
+
+          ## Experimental FFU
+
+          - [ ] Unsupported, malformed, unsigned/untrusted, or wrong-profile FFU sources are refused before target mutation.
+          - [ ] Dry-run binds the exact source evidence, target path, target identity, and capacity.
+          - [ ] Exact destructive confirmation cannot be reused after source or target changes.
+          - [ ] If a disposable supported single-store-v1 image and target are available, complete restore, flush, readback, and final evidence pass.
+          - [ ] No vendor-device, OEM recovery, firmware boot, or broad FFU compatibility claim is recorded from software-only evidence.
+
+          ## Existing workflow regression
+
+          - [ ] Create and boot representative Ubuntu ARM64 media on the intended ARM64 host.
+          - [ ] Create Windows ARM64 installation media and reach the expected UEFI setup environment where practical.
+          - [ ] Create persistent Ubuntu/Debian media, save a harmless change, reboot, and confirm retention.
+          - [ ] Create and verify data-only storage media on at least one supported filesystem.
+          - [ ] Create FreeDOS media and confirm the final required-extent report; physical x86 BIOS/Legacy boot remains separately recorded if hardware is available.
+          - [ ] Run quick or full Check USB only on disposable media and export the identity-bound report.
+
+          ## Failure and safety observations
+
+          - [ ] System/root disks and protected mounts remain refused.
+          - [ ] Fixed disks remain absent from normal graphical selection.
+          - [ ] Destructive dialogs default to Cancel and show exact device/source identities.
+          - [ ] Cancelling before destructive authorization leaves the target unchanged.
+          - [ ] A failure after destructive work is reported conservatively and never as success.
+          - [ ] The unsigned UEFI integrity loader and Secure Boot limitation remain visible.
+
+          ## GO / NO-GO
+
+          - [ ] All exercised package, backup, FFU-boundary, and regression observations are recorded with exact hardware/media identities.
+          - [ ] Any untested item is explicitly marked untested rather than passed.
+          - [ ] Blocking defects are fixed on a new candidate and the affected observations repeated.
+          - [ ] GO decision for stable promotion is signed off with candidate commit, tag, package SHA-256, tester, date, and bounded claims.
+
+          Until that record is complete, 0.14.0 remains a prerelease candidate rather than a stable hardware-qualified release.
+          '''
+          write('docs/hardware-checklist-0.14.0.md', re.sub(r'^          ', '', hardware, flags=re.MULTILINE).lstrip())
+
+          applicator = root / '.github/workflows/release-0.14.0-applicator.yml'
+          applicator.unlink()
+          PY
+
+          python3 scripts/check-version-sync.py
+          python3 -m json.tool docs/upstream-rufus-parity.json >/dev/null
+          git diff --check
+          git status --short
+      - name: Commit clean release contract
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add CHANGELOG.md README.md ROADMAP.md VERSION docs packaging .github/workflows/release-0.14.0-applicator.yml
+          git commit -m "Release: prepare the 0.14.0 candidate contract"
+          git push origin HEAD:release/0.14.0-candidate
