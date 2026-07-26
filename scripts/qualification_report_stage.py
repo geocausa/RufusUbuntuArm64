@@ -106,10 +106,18 @@ replace_once(
 )
 replace_once(
     dialog,
-    '''    def cancel_run(self, *_):
+    '''        if returncode != 0 and payload.get("status") == "passed":
+            self.status.set_text("The report says passed, but the helper returned an error status. Treat this result as failed.")
+        return False
+
+    def cancel_run(self, *_):
         process = self.process
 ''',
-    '''    def save_report(self, *_):
+    '''        if returncode != 0 and payload.get("status") == "passed":
+            self.status.set_text("The report says passed, but the helper returned an error status. Treat this result as failed.")
+        return False
+
+    def save_report(self, *_):
         if self.running or self.report_payload is None:
             return
         chooser = Gtk.FileChooserDialog(
