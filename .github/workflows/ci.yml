@@ -25,52 +25,81 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26.5'
-      - name: Apply ISO source and package normalization
+      - name: Normalize ISO package metadata
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
-          package = Path('scripts/build-deb.sh')
-          text = package.read_text()
-          anchor = '''install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_formats.py" \\\n            "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_formats.py"'''
-          addition = anchor + '''\n          install -Dm644 "${ROOT_DIR}/gui/rufusarm64_iso_capture.py" \\\n            "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_iso_capture.py"\n          install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_iso.py" \\\n            "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_iso.py"'''
-          if addition not in text:
-              if anchor not in text:
-                  raise SystemExit('backup module installation anchor not found')
-              text = text.replace(anchor, addition, 1)
-          text = text.replace('xz-utils, zstd, qemu-utils', 'xz-utils, zstd, qemu-utils, genisoimage', 1)
-          text = text.replace(
-              'creates verified x86 BIOS/Legacy FreeDOS 1.4 media, and captures verified\n images of removable drives.',
-              'creates verified x86 BIOS/Legacy FreeDOS 1.4 media, captures verified\n physical-drive images, and creates validated mounted-filesystem ISO/UDF remasters.',
-              1,
-          )
-          package.write_text(text)
-
-          contracts = Path('gui/rufusarm64_iso_capture.py')
-          text = contracts.read_text()
-          text = text.replace(
-              '''    if required <= 0:\n        raise ValueError("Filesystem ISO report contains an invalid destination bound.")''',
-              '''    if status == "passed" and required <= 0:\n        raise ValueError("Successful filesystem ISO report contains an invalid destination bound.")''',
-              1,
-          )
-          text = text.replace(
-              '''    if not isinstance(limitations, list) or set(limitations) != _REQUIRED_LIMITATIONS or len(limitations) != len(_REQUIRED_LIMITATIONS):''',
-              '''    if (\n        not isinstance(limitations, list)\n        or not all(isinstance(item, str) for item in limitations)\n        or set(limitations) != _REQUIRED_LIMITATIONS\n        or len(limitations) != len(_REQUIRED_LIMITATIONS)\n    ):''',
-              1,
-          )
-          contracts.write_text(text)
-
-          lifecycle = Path('gui/rufusarm64_drive_backup_iso.py')
-          text = lifecycle.read_text()
+          path = Path('scripts/build-deb.sh')
+          lines = path.read_text().splitlines()
+          first = 'install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_formats.py" \\'
+          if not any('gui/rufusarm64_iso_capture.py' in line for line in lines):
+              try:
+                  index = lines.index(first)
+              except ValueError as exc:
+                  raise SystemExit('backup module installation line not found') from exc
+              if index + 1 >= len(lines) or 'rufusarm64_drive_backup_formats.py' not in lines[index + 1]:
+                  raise SystemExit('backup module destination line not found')
+              insertion = [
+                  'install -Dm644 "${ROOT_DIR}/gui/rufusarm64_iso_capture.py" \\',
+                  '  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_iso_capture.py"',
+                  'install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_iso.py" \\',
+                  '  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_iso.py"',
+              ]
+              lines[index + 2:index + 2] = insertion
+          text = '\n'.join(lines) + '\n'
+          old_dep = 'xz-utils, zstd, qemu-utils'
+          if 'genisoimage' not in text:
+              if old_dep not in text:
+                  raise SystemExit('package dependency anchor not found')
+              text = text.replace(old_dep, old_dep + ', genisoimage', 1)
+          old_description = 'creates verified x86 BIOS/Legacy FreeDOS 1.4 media, and captures verified\n images of removable drives.'
+          new_description = 'creates verified x86 BIOS/Legacy FreeDOS 1.4 media, captures verified\n physical-drive images, and creates validated mounted-filesystem ISO/UDF remasters.'
+          if new_description not in text:
+              if old_description not in text:
+                  raise SystemExit('package description anchor not found')
+              text = text.replace(old_description, new_description, 1)
+          path.write_text(text)
+          PY
+      - name: Normalize ISO schema contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('gui/rufusarm64_iso_capture.py')
+          text = path.read_text()
+          old = '''    if required <= 0:\n        raise ValueError("Filesystem ISO report contains an invalid destination bound.")'''
+          new = '''    if status == "passed" and required <= 0:\n        raise ValueError("Successful filesystem ISO report contains an invalid destination bound.")'''
+          if new not in text:
+              if old not in text:
+                  raise SystemExit('report destination-bound anchor not found')
+              text = text.replace(old, new, 1)
+          old = '''    if not isinstance(limitations, list) or set(limitations) != _REQUIRED_LIMITATIONS or len(limitations) != len(_REQUIRED_LIMITATIONS):'''
+          new = '''    if (\n        not isinstance(limitations, list)\n        or not all(isinstance(item, str) for item in limitations)\n        or set(limitations) != _REQUIRED_LIMITATIONS\n        or len(limitations) != len(_REQUIRED_LIMITATIONS)\n    ):'''
+          if new not in text:
+              if old not in text:
+                  raise SystemExit('plan limitation anchor not found')
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+      - name: Normalize ISO GTK lifecycle contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('gui/rufusarm64_drive_backup_iso.py')
+          text = path.read_text()
           old = '''            if payload["source_bytes"] != source_bytes or payload["required_bytes"] != required_bytes:\n                raise ValueError("Filesystem ISO report does not match the reviewed plan.")'''
           new = '''            if payload["status"] == "passed":\n                if payload["source_bytes"] != source_bytes or payload["required_bytes"] != required_bytes:\n                    raise ValueError("Successful filesystem ISO report does not match the reviewed plan.")\n            elif payload["source_bytes"] not in {0, source_bytes} or payload["required_bytes"] not in {0, required_bytes}:\n                raise ValueError("Filesystem ISO failure report contains impossible plan evidence.")'''
           if new not in text:
               if old not in text:
                   raise SystemExit('ISO lifecycle report-plan anchor not found')
               text = text.replace(old, new, 1)
-          lifecycle.write_text(text)
+          path.write_text(text)
           PY
       - name: Qualify Go ISO contracts
         shell: bash
