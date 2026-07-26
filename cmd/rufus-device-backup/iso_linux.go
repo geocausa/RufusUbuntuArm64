@@ -48,6 +48,7 @@ func newISOCaptureOptions(devicePath, sourceNode string, plan isocapture.Filesys
 	return isocapture.FilesystemCaptureOptions{
 		SourceDevicePath:      devicePath,
 		SourceNode:            sourceNode,
+		ExpectedBindingSHA256: plan.SourceBindingSHA256,
 		ExpectedContentSHA256: plan.SourceContentSHA256,
 		VolumeID:              plan.VolumeID,
 		Progress:              progress,
@@ -369,7 +370,7 @@ func printISOProgress(progress isocapture.CaptureProgress, elapsed time.Duration
 func printISOReport(report isocapture.FilesystemCaptureReport) {
 	fmt.Printf("Status: %s\n", report.Status)
 	fmt.Printf("Format: ISO9660/Joliet/UDF filesystem remaster\n")
-	fmt.Printf("Source filesystem: %s at %s\n", report.SourceDevice, report.SourceMount)
+	fmt.Printf("Source filesystem: %s at %s\n", report.SourceNode, report.SourceMount)
 	fmt.Printf("Supported content: %d files, %d directories, %s\n", report.Files, report.Directories, humanBytes(report.SourceBytes))
 	if report.SourceContentSHA256 != "" {
 		fmt.Printf("Source content SHA-256: %s\n", report.SourceContentSHA256)
