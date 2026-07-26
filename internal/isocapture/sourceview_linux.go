@@ -119,6 +119,7 @@ func OpenReadOnlySourceView(ctx context.Context, sourcePath string, limits Limit
 	diagnostics := newBoundedDiagnostic(maxProviderDiagnostic)
 	bindCommand := exec.Command(
 		mountExecutable,
+		"--internal-only",
 		"--no-canonicalize",
 		"--no-mtab",
 		"--bind",
@@ -154,6 +155,7 @@ func OpenReadOnlySourceView(ctx context.Context, sourcePath string, limits Limit
 	diagnostics = newBoundedDiagnostic(maxProviderDiagnostic)
 	remountCommand := exec.Command(
 		mountExecutable,
+		"--internal-only",
 		"--no-canonicalize",
 		"--no-mtab",
 		"-o",
@@ -223,6 +225,7 @@ func configureMountCommand(command *exec.Cmd, diagnostics *boundedDiagnostic) {
 		"HOME=/nonexistent",
 		"LC_ALL=C.UTF-8",
 		"LIBMOUNT_FSTAB=/dev/null",
+		"LIBMOUNT_FORCE_MOUNT2=always",
 		"PATH=/usr/sbin:/usr/bin:/sbin:/bin",
 		"TZ=UTC",
 	}
