@@ -1,46 +1,74 @@
-.TH RUFUSARM64-DEVICE-BACKUP 1 "20 July 2026" "RufusArm64 0.13.0" "User Commands"
+.TH RUFUSARM64-DEVICE-BACKUP 1 "26 July 2026" "RufusArm64 0.14.0" "User Commands"
 .SH NAME
-rufusarm64-device-backup \- save a verified image of a removable drive
+rufusarm64-device-backup \- save a verified raw, VHD, or VHDX image of a drive
 .SH SYNOPSIS
 .B rufusarm64-device-backup
 .B --device
 .I /dev/DEVICE
 .B --output
 .I /absolute/path/drive.img
+.RI [ --format " raw|vhd|vhdx" ]
 .RI [ options ]
 .br
 .B rufusarm64-device-backup
 .B --device
 .I /dev/DEVICE
 .B --output
-.I /absolute/path/drive.img
+.I /absolute/path/drive.vhdx
+.B --format vhdx
 .B --dry-run
 .RI [ --json ]
 .SH DESCRIPTION
 .B rufusarm64-device-backup
 captures the exact reported capacity of one explicitly selected whole block
-device into a newly created image file. The source is opened read-only, bound
-to its kernel identity and capacity, and revalidated before and after capture.
+device into a newly created image. The source is opened read-only and
+exclusively, bound to its kernel identity and capacity, and revalidated before
+and after every externally executed container phase.
 .PP
-The completed image is published atomically only after every byte is copied,
-SHA-256 is calculated, the file is synchronized, and source and destination
-identities are rechecked. Existing destination files are never replaced.
-Incomplete output is removed after failure or cancellation.
+The default
+.B raw
+format is a byte-for-byte image. The
+.B vhd
+and
+.B vhdx
+formats are dynamic sparse containers created by a trusted, root-owned
+.B qemu-img
+utility. The source and private output are passed to that utility only through
+inherited file descriptors. Backing files, compression, encryption, salvage,
+shared-write, fixed containers, and caller-supplied converter options are not
+accepted.
 .PP
-The destination must have enough available space and reside on a different
-physical disk from the selected source. Mounted removable filesystems are
-unmounted before capture unless
+Container capture hashes the held raw source, converts into an owner-only
+same-directory temporary file, compares guest-visible bytes against the held
+source, performs the supported non-repairing consistency check, hashes and
+synchronizes the container, and revalidates the source before publication.
+VHDX requires a successful consistency check. QEMU does not provide that check
+for VHD, so the report records it as unsupported rather than claiming it ran.
+.PP
+The completed image is published atomically without replacement only after all
+required checks succeed. Existing destinations are never replaced. Incomplete
+output is removed after failure or cancellation.
+.PP
+The destination must reside on a different physical disk from the selected
+source. Raw capture requires the source capacity. VHD and VHDX dry-run planning
+uses QEMU's fully allocated bound for conservative free-space admission; the
+smaller sparse-container estimate is informational only. Mounted removable
+filesystems are unmounted before capture unless
 .B --no-unmount
 is supplied.
 .SH GRAPHICAL WORKFLOW
 Select a removable drive and choose
 .BR "Save drive image…" .
-RufusArm64 first runs an unprivileged destination plan and displays the exact
-source, capacity, destination directory, required bytes, and available bytes.
+Choose Raw image, Dynamic VHD, or Dynamic VHDX before selecting a new
+destination. RufusArm64 runs an unprivileged plan and displays the exact source,
+format, capacity, destination directory, conservative required bytes, available
+bytes, and any informational container minimum.
+.PP
 Before authentication it requires the exact phrase
-.B SAVE /dev/DEVICE TO /absolute/path/drive.img .
-The dialog reports progress, throughput, ETA, cancellation, final SHA-256, and
-the published image path.
+.B SAVE /dev/DEVICE TO /absolute/path/drive.ext .
+The dialog reports separate capture, source-hash, conversion, and output-hash
+phases. A successful report includes source and output SHA-256 digests, output
+size, content-comparison status, consistency status, and the published path.
 .SH OPTIONS
 .TP
 .BI --device " /dev/DEVICE"
@@ -51,6 +79,11 @@ are refused.
 .BI --output " PATH"
 Absolute path for the new image file. The path must not already exist.
 .TP
+.BI --format " raw|vhd|vhdx"
+Select the output format. The default is
+.BR raw .
+VHD and VHDX are always dynamic sparse containers with fixed converter policy.
+.TP
 .BI --expected-identity " TOKEN"
 Require the exact identity token returned by
 .BR "rufusarm64-cli list --json" .
@@ -60,14 +93,16 @@ or
 .BR --allow-fixed .
 .TP
 .B --dry-run
-Validate source and destination storage without opening the source device.
+Validate source metadata, format support, converter availability, destination
+storage, conservative free-space bounds, and collision state without opening
+the source device.
 .TP
 .B --json
-Emit one deterministic JSON plan or report.
+Emit one deterministic schema-2 JSON plan or report.
 .TP
 .B --progress-json
-Emit bounded schema-1 progress records on standard error while retaining the
-final deterministic report on standard output.
+Emit bounded schema-2 phase-labelled progress records on standard error while
+retaining the final deterministic report on standard output.
 .TP
 .B --yes
 Skip terminal confirmation. Accepted only with an exact expected identity.
@@ -83,8 +118,10 @@ Refuse mounted filesystems instead of unmounting eligible removable mounts.
 Print the installed version.
 .SH SAFETY
 The source is never opened for writing, but coherent capture normally requires
-its filesystems to be unmounted. No final pathname appears before verified
-completion. Manually created image files remain user data after package removal.
+its filesystems to be unmounted. QEMU receives descriptor paths rather than the
+selected source or final destination pathname. No final pathname appears before
+verified completion. Manually created image files remain user data after package
+removal.
 .SH SEE ALSO
 .BR rufusarm64 (1),
 .BR rufusarm64-cli (1),
