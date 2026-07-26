@@ -1,0 +1,318 @@
+name: Publish RufusArm64 0.14.0-rc1 prerelease
+
+on:
+  pull_request:
+    branches:
+      - stage3/0.14.0
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: publish-rufusarm64-0.14.0-rc1
+  cancel-in-progress: false
+
+env:
+  PRODUCT_COMMIT: 5d0f9ea97af8c055df2a9412b491b9888ec8f665
+  OPS_BRANCH: ops/publish-0.14.0-rc1
+  RELEASE_TAG: 0.14.0-rc1
+  RELEASE_VERSION: 0.14.0-rc1
+  VERSION: 0.14.0~rc1
+  RUFUS_ALLOW_NONRELEASE_VERSION: '1'
+
+jobs:
+  wim-engine:
+    if: >-
+      github.repository == 'geocausa/RufusUbuntuArm64' &&
+      github.event.pull_request.head.ref == 'ops/publish-0.14.0-rc1'
+    name: Rebuild pinned ARM64 WIM engine
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: 5d0f9ea97af8c055df2a9412b491b9888ec8f665
+          persist-credentials: false
+      - name: Verify exact release-candidate source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${PRODUCT_COMMIT}"
+          test "$(tr -d '\r\n' < VERSION)" = '0.14.0'
+      - name: Install WIM build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool pkg-config git ca-certificates \
+            libxml2-dev zlib1g-dev liblzma-dev libbz2-dev liblz4-dev libzstd-dev
+      - name: Build and inspect the pinned ARM64 engine
+        run: ./scripts/build-wimlib-arm64.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rc1-wimlib-arm64-${{ github.run_id }}
+          path: |
+            vendor/wimlib/arm64/
+            vendor/wimlib/source/wimlib-1.14.5-source.tar.gz
+            vendor/wimlib/source/wimlib-1.14.5-source.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  uefi-md5sum-loader:
+    if: >-
+      github.repository == 'geocausa/RufusUbuntuArm64' &&
+      github.event.pull_request.head.ref == 'ops/publish-0.14.0-rc1'
+    name: Reproduce pinned ARM64 UEFI integrity loader
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: 5d0f9ea97af8c055df2a9412b491b9888ec8f665
+          persist-credentials: false
+      - name: Verify exact release-candidate source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${PRODUCT_COMMIT}"
+          test "$(tr -d '\r\n' < VERSION)" = '0.14.0'
+      - name: Install pinned loader build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git gzip nasm python3 python3-setuptools uuid-dev \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu sbsigntool
+      - name: Build twice and require identical provenance
+        run: |
+          set -euo pipefail
+          bash scripts/build-uefi-md5sum-arm64.sh dist/uefi-md5sum-a
+          bash scripts/build-uefi-md5sum-arm64.sh dist/uefi-md5sum-b
+          for file in bootaa64.efi bootaa64.efi.sha256 provenance.json SOURCE-COMMITS.txt \
+            uefi-md5sum-v1.2-source.tar.gz uefi-md5sum-v1.2-source.tar.gz.sha256; do
+            cmp "dist/uefi-md5sum-a/${file}" "dist/uefi-md5sum-b/${file}"
+          done
+          printf '%s\n' \
+            'Two independent Ubuntu 24.04 builds produced byte-for-byte identical artifacts.' \
+            'The loader is unsigned and is not claimed Secure Boot compatible.' \
+            > dist/uefi-md5sum-a/REPRODUCIBILITY.txt
+          mkdir -p vendor/uefi-md5sum/arm64
+          cp -a dist/uefi-md5sum-a/. vendor/uefi-md5sum/arm64/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rc1-uefi-md5sum-arm64-${{ github.run_id }}
+          path: vendor/uefi-md5sum/arm64/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    if: >-
+      github.repository == 'geocausa/RufusUbuntuArm64' &&
+      github.event.pull_request.head.ref == 'ops/publish-0.14.0-rc1'
+    name: Build, verify, tag, and publish prerelease
+    needs: [wim-engine, uefi-md5sum-loader]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: 5d0f9ea97af8c055df2a9412b491b9888ec8f665
+          fetch-depth: 1
+      - name: Verify exact release-candidate source and version policy
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${PRODUCT_COMMIT}"
+          test "$(tr -d '\r\n' < VERSION)" = '0.14.0'
+          dpkg --validate-version "${VERSION}"
+          test "$(dpkg --compare-versions "${VERSION}" lt 0.14.0; echo $?)" = '0'
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: rc1-wimlib-arm64-${{ github.run_id }}
+          path: vendor/wimlib
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: rc1-uefi-md5sum-arm64-${{ github.run_id }}
+          path: vendor/uefi-md5sum/arm64
+      - name: Install package and validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs \
+            genisoimage qemu-utils
+      - name: Run complete non-release test and package contract
+        run: |
+          set -euo pipefail
+          mkdir -p dist/prerelease-logs
+          set -o pipefail
+          ./scripts/test.sh 2>&1 | tee dist/prerelease-logs/test-and-package.log
+      - name: Confirm prerelease package reproducibility
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          ./scripts/reproducible-package.sh 2>&1 | tee dist/prerelease-logs/reproducible-package.log
+      - name: Verify package identity and build release assets
+        id: assets
+        run: |
+          set -euo pipefail
+          package="dist/rufusarm64_${VERSION}_arm64.deb"
+          checksum="${package}.sha256"
+          test -f "${package}"
+          test -f "${checksum}"
+          (
+            cd dist
+            sha256sum -c "$(basename "${checksum}")"
+          )
+          test "$(dpkg-deb -f "${package}" Version)" = "${VERSION}"
+          test "$(dpkg-deb -f "${package}" Architecture)" = 'arm64'
+          package_root="$(mktemp -d)"
+          trap 'rm -rf "${package_root}"' EXIT
+          dpkg-deb -x "${package}" "${package_root}"
+          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-helper" version)" = "${VERSION}"
+          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-device-qualify" version)" = "${VERSION}"
+          test "$("${package_root}/usr/lib/rufusarm64/rufusarm64-device-backup" version)" = "${VERSION}"
+
+          source_name="RufusArm64-${RELEASE_VERSION}-source.tar.gz"
+          git archive --format=tar --prefix="RufusArm64-${RELEASE_VERSION}/" "${PRODUCT_COMMIT}" | gzip -n > "dist/${source_name}"
+          (
+            cd dist
+            sha256sum "${source_name}" > "${source_name}.sha256"
+          )
+
+          package_sha="$(sha256sum "${package}" | awk '{print $1}')"
+          source_sha="$(sha256sum "dist/${source_name}" | awk '{print $1}')"
+          python3 - "dist/RELEASE-EVIDENCE-${RELEASE_VERSION}.json" "${package_sha}" "${source_sha}" <<'PY'
+          import json
+          import os
+          import sys
+
+          path, package_sha, source_sha = sys.argv[1:]
+          evidence = {
+              'schema': 1,
+              'release': os.environ['RELEASE_VERSION'],
+              'tag': os.environ['RELEASE_TAG'],
+              'debian_version': os.environ['VERSION'],
+              'product_commit': os.environ['PRODUCT_COMMIT'],
+              'workflow_run_id': os.environ['GITHUB_RUN_ID'],
+              'workflow_run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'package': f"rufusarm64_{os.environ['VERSION']}_arm64.deb",
+              'package_sha256': package_sha,
+              'source_archive': f"RufusArm64-{os.environ['RELEASE_VERSION']}-source.tar.gz",
+              'source_sha256': source_sha,
+              'prerelease': True,
+              'boundaries': {
+                  'ffu_restore': 'experimental-single-store-v1',
+                  'ffu_capture': 'unimplemented',
+                  'iso_udf_capture': 'one-mounted-filesystem-remaster-not-whole-disk-or-bootability-proof',
+                  'uefi_integrity_loader': 'unsigned-secure-boot-not-established',
+                  'physical_hardware_qualification': 'pending-checklist',
+              },
+          }
+          with open(path, 'w', encoding='utf-8') as handle:
+              json.dump(evidence, handle, indent=2, sort_keys=True)
+              handle.write('\n')
+          PY
+          python3 -m json.tool "dist/RELEASE-EVIDENCE-${RELEASE_VERSION}.json" >/dev/null
+          git diff --exit-code
+          echo "package=${package}" >> "${GITHUB_OUTPUT}"
+          echo "checksum=${checksum}" >> "${GITHUB_OUTPUT}"
+          echo "source=dist/${source_name}" >> "${GITHUB_OUTPUT}"
+          echo "source_checksum=dist/${source_name}.sha256" >> "${GITHUB_OUTPUT}"
+          echo "evidence=dist/RELEASE-EVIDENCE-${RELEASE_VERSION}.json" >> "${GITHUB_OUTPUT}"
+          echo "package_sha=${package_sha}" >> "${GITHUB_OUTPUT}"
+          echo "source_sha=${source_sha}" >> "${GITHUB_OUTPUT}"
+      - name: Create or authenticate the immutable prerelease tag
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            git fetch --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+            test "$(git rev-list -n1 "refs/tags/${RELEASE_TAG}")" = "${PRODUCT_COMMIT}"
+          else
+            git tag -a "${RELEASE_TAG}" "${PRODUCT_COMMIT}" \
+              -m "RufusArm64 ${RELEASE_VERSION} prerelease from ${PRODUCT_COMMIT}"
+            git push origin "refs/tags/${RELEASE_TAG}"
+          fi
+      - name: Publish or authenticate the GitHub prerelease
+        id: release
+        run: |
+          set -euo pipefail
+          notes="dist/RELEASE-NOTES-${RELEASE_VERSION}.md"
+          cat > "${notes}" <<EOF
+          # RufusArm64 ${RELEASE_VERSION}
+
+          This is the first public **0.14.0 prerelease candidate** for Ubuntu ARM64.
+
+          - Source commit: \`${PRODUCT_COMMIT}\`
+          - Debian package version: \`${VERSION}\` (sorts before stable \`0.14.0\`)
+          - Workflow evidence: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          ## Main candidate changes
+
+          - Verified raw, dynamic VHD, dynamic VHDX, and mounted-filesystem ISO/UDF drive backup.
+          - Experimental authenticated FFU restore for the narrowly supported single-store-v1 profile.
+          - Reusable identity-bound USB qualification reports, bounded compressed-image progress, El Torito UEFI extraction, and the opt-in Windows 11 setup Quality of Life policy.
+
+          ## Boundaries
+
+          FFU restore is experimental; FFU capture is not implemented. ISO/UDF capture remasters one admitted mounted filesystem and is neither a whole-disk image nor proof of bootability. The optional package-owned UEFI integrity loader is unsigned, so Secure Boot compatibility is not established. Physical hardware observations remain pending under \`docs/hardware-checklist-0.14.0.md\`; this prerelease does not claim universal device, firmware, controller, flash-health, boot, recovery, or vendor compatibility.
+
+          Verify the Debian package with its adjacent SHA-256 sidecar before installation.
+          EOF
+
+          assets=(
+            "${{ steps.assets.outputs.package }}"
+            "${{ steps.assets.outputs.checksum }}"
+            "${{ steps.assets.outputs.source }}"
+            "${{ steps.assets.outputs.source_checksum }}"
+            "${{ steps.assets.outputs.evidence }}"
+          )
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.prerelease')" = 'true'
+            existing="$(mktemp -d)"
+            trap 'rm -rf "${existing}"' EXIT
+            gh release download "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --dir "${existing}"
+            for asset in "${assets[@]}"; do
+              cmp "${asset}" "${existing}/$(basename "${asset}")"
+            done
+          else
+            gh release create "${RELEASE_TAG}" "${assets[@]}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --verify-tag \
+              --prerelease \
+              --title "RufusArm64 ${RELEASE_VERSION}" \
+              --notes-file "${notes}"
+          fi
+          release_url="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.html_url')"
+          test -n "${release_url}"
+          echo "url=${release_url}" >> "${GITHUB_OUTPUT}"
+      - name: Record publication and close the operational PR
+        run: |
+          set -euo pipefail
+          comment="$(mktemp)"
+          cat > "${comment}" <<EOF
+          Published the authenticated **RufusArm64 ${RELEASE_VERSION}** GitHub prerelease.
+
+          - Release: ${{ steps.release.outputs.url }}
+          - Exact product commit: \`${PRODUCT_COMMIT}\`
+          - Debian version: \`${VERSION}\`
+          - Package SHA-256: \`${{ steps.assets.outputs.package_sha }}\`
+          - Source SHA-256: \`${{ steps.assets.outputs.source_sha }}\`
+          - Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          This operational branch is not merged into the release branch. Stable promotion remains separately gated by the 0.14.0 physical/prerelease checklist.
+          EOF
+          gh pr comment "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --body-file "${comment}"
+          gh pr close "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}"
+          git push origin --delete "${OPS_BRANCH}"
+      - name: Upload operational logs on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rc1-publication-failure-${{ github.run_id }}
+          path: dist/prerelease-logs/
+          if-no-files-found: warn
+          retention-days: 14
