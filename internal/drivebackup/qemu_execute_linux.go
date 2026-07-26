@@ -183,12 +183,38 @@ func contextCommandError(ctx context.Context, operation string, stdout, stderr *
 func validateQEMUJSONObject(data []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
-	var object map[string]json.RawMessage
-	if err := decoder.Decode(&object); err != nil {
+	opening, err := decoder.Token()
+	if err != nil {
 		return err
 	}
-	if object == nil {
+	if delimiter, ok := opening.(json.Delim); !ok || delimiter != '{' {
 		return errors.New("qemu output is not a JSON object")
+	}
+	seen := make(map[string]struct{})
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		name, ok := token.(string)
+		if !ok {
+			return errors.New("qemu output contains a non-string member name")
+		}
+		if _, duplicate := seen[name]; duplicate {
+			return fmt.Errorf("qemu output contains duplicate member %q", name)
+		}
+		seen[name] = struct{}{}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return fmt.Errorf("decode qemu member %q: %w", name, err)
+		}
+	}
+	closing, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	if delimiter, ok := closing.(json.Delim); !ok || delimiter != '}' {
+		return errors.New("qemu output has an invalid closing token")
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
