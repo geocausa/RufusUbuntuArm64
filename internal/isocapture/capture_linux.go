@@ -19,12 +19,15 @@ const (
 )
 
 // FilesystemCaptureOptions binds the filesystem remaster to the selected whole
-// source disk and the one reviewed UDF bridge policy.
+// source disk, exact mounted node, reviewed content digest, and one fixed UDF
+// bridge policy.
 type FilesystemCaptureOptions struct {
-	SourceDevicePath string
-	VolumeID         string
-	Limits           Limits
-	Progress         CaptureProgressFunc
+	SourceDevicePath    string
+	SourceNode          string
+	ExpectedContentSHA256 string
+	VolumeID            string
+	Limits              Limits
+	Progress            CaptureProgressFunc
 }
 
 // FilesystemCaptureReport is the complete evidence required before an ISO file
@@ -37,6 +40,7 @@ type FilesystemCaptureReport struct {
 	Filesystem          string            `json:"filesystem"`
 	VolumeID            string            `json:"volume_id"`
 	SourceDevice        string            `json:"source_device"`
+	SourceNode          string            `json:"source_node"`
 	SourceMount         string            `json:"source_mount"`
 	Destination         string            `json:"destination"`
 	Files               uint64            `json:"files"`
@@ -65,6 +69,7 @@ func CaptureFilesystem(ctx context.Context, sourceMount, outputPath string, opti
 		Profile:      ProfileISO9660JolietUDF,
 		Filesystem:   "udf",
 		SourceDevice: options.SourceDevicePath,
+		SourceNode:   options.SourceNode,
 		SourceMount:  sourceMount,
 		Destination:  outputPath,
 	}
@@ -73,6 +78,13 @@ func CaptureFilesystem(ctx context.Context, sourceMount, outputPath string, opti
 	}
 	if strings.TrimSpace(options.SourceDevicePath) == "" {
 		return filesystemFailure(report, "invalid_source_device", errors.New("ISO capture requires the selected whole source-device path"))
+	}
+	if !strings.HasPrefix(strings.TrimSpace(options.SourceNode), "/dev/") {
+		return filesystemFailure(report, "invalid_source_node", errors.New("ISO capture requires the exact mounted source-device node"))
+	}
+	expectedContent := strings.TrimSpace(options.ExpectedContentSHA256)
+	if err := validateDigest(expectedContent); err != nil {
+		return filesystemFailure(report, "invalid_source_digest", fmt.Errorf("validate reviewed source content digest: %w", err))
 	}
 	if err := ctx.Err(); err != nil {
 		return filesystemCancellation(report, contextCause(ctx, err))
@@ -104,6 +116,9 @@ func CaptureFilesystem(ctx context.Context, sourceMount, outputPath string, opti
 	report.SourceBytes = view.Inventory.TotalBytes
 	report.SourceBindingSHA256 = view.Inventory.BindingSHA256
 	report.SourceContentSHA256 = view.Inventory.ContentSHA256
+	if view.Inventory.ContentSHA256 != expectedContent {
+		return filesystemFailure(report, "source_changed", fmt.Errorf("authenticated source content digest %s does not match reviewed plan %s", view.Inventory.ContentSHA256, expectedContent))
+	}
 
 	requiredBytes, err := masteringOutputLimit(view.Inventory.TotalBytes, uint64(len(view.Inventory.Entries)))
 	if err != nil {
