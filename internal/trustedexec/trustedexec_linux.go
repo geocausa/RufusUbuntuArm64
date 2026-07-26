@@ -16,6 +16,7 @@ var allowedUtilities = map[string]struct{}{
 	"findmnt":     {},
 	"genisoimage": {},
 	"lsblk":       {},
+	"mount":       {},
 	"qemu-img":    {},
 	"umount":      {},
 	"wipefs":      {},
