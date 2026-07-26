@@ -79,6 +79,11 @@ and
 .B noexec
 flags and requires its complete supported-content digest to match the plan.
 .PP
+For non-interactive and graphical ISO capture, the dry-run source binding and
+supported-content SHA-256 values are supplied to the privileged helper. The
+helper repeats the live inventory and refuses any binding or content difference
+before creating the private source view or destination temporary file.
+.PP
 A trusted, root-owned
 .B genisoimage
 provider receives only the held source descriptor and a fixed ISO9660 level-3,
@@ -162,6 +167,16 @@ node returned by the dry-run plan.
 For non-interactive ISO capture, require the exact mounted filesystem path
 returned by the dry-run plan.
 .TP
+.BI --expected-source-binding-sha256 " DIGEST"
+For non-interactive ISO capture, require the exact source-binding SHA-256 from
+the dry-run plan. This binds path, type, metadata, inode and mount evidence for
+the reviewed live inventory.
+.TP
+.BI --expected-source-content-sha256 " DIGEST"
+For non-interactive ISO capture, require the exact supported-content SHA-256
+from the dry-run plan. This binds every admitted path, type, size and file
+content digest across administrator authentication.
+.TP
 .BI --volume-id " IDENTIFIER"
 Select the ISO volume identifier. Only 1 to 32 uppercase ASCII letters, digits,
 and underscores are accepted. The default is
@@ -184,7 +199,8 @@ retaining the final deterministic report on standard output.
 .TP
 .B --yes
 Skip terminal confirmation. Whole-device formats require an expected identity.
-ISO additionally requires the expected source node and mountpoint.
+ISO additionally requires the expected source node, mountpoint, source-binding
+SHA-256, and supported-content SHA-256 from the dry-run plan.
 .TP
 .B --allow-fixed
 Permit a non-removable whole disk for a direct terminal invocation. Root-disk
