@@ -42,7 +42,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          python3 -m unittest gui.test_device_backup gui.test_device_backup_dialog > graphical-tests.log 2>&1
+          PYTHONPATH=gui python3 -m unittest gui.test_device_backup gui.test_device_backup_dialog > graphical-tests.log 2>&1
           status=$?
           printf 'exit_status=%s\n' "$status" >> graphical-tests.log
           exit 0
