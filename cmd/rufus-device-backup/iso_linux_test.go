@@ -49,6 +49,21 @@ func TestNewISOCaptureOptionsBindsReviewedSource(t *testing.T) {
 	}
 }
 
+func TestValidateISOPlanBindings(t *testing.T) {
+	binding := strings.Repeat("a", 64)
+	content := strings.Repeat("b", 64)
+	plan := isocapture.FilesystemCapturePlan{SourceBindingSHA256: binding, SourceContentSHA256: content}
+	if err := validateISOPlanBindings(plan, binding, content); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateISOPlanBindings(plan, strings.Repeat("c", 64), content); err == nil || !strings.Contains(err.Error(), "binding changed") {
+		t.Fatalf("unexpected binding mismatch error: %v", err)
+	}
+	if err := validateISOPlanBindings(plan, binding, strings.Repeat("d", 64)); err == nil || !strings.Contains(err.Error(), "content changed") {
+		t.Fatalf("unexpected content mismatch error: %v", err)
+	}
+}
+
 func TestRunISOValidatesArgumentsBeforeDeviceAccess(t *testing.T) {
 	for _, test := range []struct {
 		name string
