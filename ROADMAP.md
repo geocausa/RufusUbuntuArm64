@@ -107,7 +107,8 @@
 - Application-scoped System, Light, and Dark GTK appearance selection with persisted canonical settings
 - Complete main-window option and primary-action tooltips without replacing workflow-specific disclosures
 - Bounded GNU gettext runtime and deterministic primary-shell source catalog with safe English fallback and byte-stable machine contracts
-- Broader dialog/status localization, plural review, and translation-aware accessibility work selected from the pinned upstream audit
+- Static opening-state localization for guarded data-only formatting and FreeDOS creation without changing generated confirmations or operation paths
+- Broader secondary-dialog/status localization, plural review, completed language packs, and translation-aware accessibility work selected from the pinned upstream audit
 - Remaining portable filesystem and distribution work selected from the pinned upstream audit
 - No weakening of identity, confirmation, cancellation, synchronization, or verification gates
 
