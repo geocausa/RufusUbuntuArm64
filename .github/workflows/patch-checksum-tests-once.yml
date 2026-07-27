@@ -1,0 +1,95 @@
+name: Patch checksum localization tests once
+
+on:
+  push:
+    branches:
+      - feature/gettext-checksum-dialog
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+          ref: feature/gettext-checksum-dialog
+      - name: Add exact checksum widget and wrapper tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("gui/test_i18n.py")
+          text = path.read_text(encoding="utf-8")
+          replacements = {
+              '    def test_guarded_dialog_installer_wraps_only_loaded_classes_and_is_idempotent(self):\n':
+                  '    def test_secondary_dialog_installer_wraps_only_loaded_classes_and_is_idempotent(self):\n',
+              '        names = ("rufusarm64_nonbootable_dialog", "rufusarm64_freedos_dialog")\n':
+                  '        names = ("rufusarm64_checksums", "rufusarm64_nonbootable_dialog", "rufusarm64_freedos_dialog")\n',
+              '            for module_name, class_name in module.GUARDED_DIALOG_CLASSES:\n':
+                  '            for module_name, class_name in module.SECONDARY_DIALOG_CLASSES:\n',
+              '            module.install_guarded_dialog_localization()\n            module.install_guarded_dialog_localization()\n':
+                  '            module.install_secondary_dialog_localization()\n            module.install_secondary_dialog_localization()\n',
+              '            self.assertEqual([dialog.marker for dialog in dialogs], ["dialog-0", "dialog-1"])\n':
+                  '            self.assertEqual([dialog.marker for dialog in dialogs], ["dialog-0", "dialog-1", "dialog-2"])\n',
+          }
+          for source, replacement in replacements.items():
+              if text.count(source) != 1:
+                  raise SystemExit(f"checksum test anchor changed: {source!r}")
+              text = text.replace(source, replacement, 1)
+
+          anchor = '    def test_secondary_dialog_installer_wraps_only_loaded_classes_and_is_idempotent(self):\n'
+          method = '''    def test_checksum_dialog_static_shell_translates_and_preserves_selected_path(self):
+              module, _ = load_i18n_module()
+              translations = {
+                  "Image checksums": "Sommes de contrôle de l'image",
+                  "Calculate": "Calculer",
+                  "Copy report": "Copier le rapport",
+                  "Select Calculate to hash the exact image file.": "Sélectionnez Calculer pour hacher le fichier image exact.",
+                  "No checksums have been calculated.": "Aucune somme de contrôle n'a été calculée.",
+              }
+              with tempfile.TemporaryDirectory() as directory:
+                  locale_root = Path(directory)
+                  write_mo(locale_root / "zz" / "LC_MESSAGES" / "rufusarm64.mo", translations)
+                  translation = module.load_translation(str(locale_root), ["zz"])
+                  selected_path = Label("/tmp/selected-image.iso")
+                  calculate = Button("Calculate")
+                  copy = Button("Copy report")
+                  status = Label("Select Calculate to hash the exact image file.")
+                  report = TextView("No checksums have been calculated.")
+                  dialog = Window(
+                      title="Image checksums",
+                      children=[selected_path, calculate, copy, status, report],
+                  )
+
+                  self.assertFalse(module.translate_widget_tree(dialog, translation))
+                  self.assertEqual(dialog.title, translations["Image checksums"])
+                  self.assertEqual(calculate.label, "Calculer")
+                  self.assertEqual(copy.label, "Copier le rapport")
+                  self.assertEqual(status.text, translations["Select Calculate to hash the exact image file."])
+                  self.assertEqual(report.buffer.text, translations["No checksums have been calculated."])
+                  self.assertEqual(selected_path.text, "/tmp/selected-image.iso")
+
+          '''
+          if text.count(anchor) != 1:
+              raise SystemExit("secondary installer test insertion point changed")
+          text = text.replace(anchor, method + anchor, 1)
+
+          anchor = '        self.assertIn(\'msgid "Create non-bootable media"\', text)\n'
+          replacement = '        self.assertIn(\'msgid "Image checksums"\', text)\n' + anchor
+          if text.count(anchor) != 1:
+              raise SystemExit("checksum POT assertion anchor changed")
+          path.write_text(text.replace(anchor, replacement, 1), encoding="utf-8")
+          PY
+          python3 -m py_compile gui/test_i18n.py
+          git rm .github/workflows/patch-checksum-tests-once.yml
+          git add gui/test_i18n.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "test: pin read-only checksum dialog localization"
+          git push origin HEAD:feature/gettext-checksum-dialog
