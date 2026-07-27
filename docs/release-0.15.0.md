@@ -11,6 +11,7 @@ Status: Stage 4 development branch; not a published release.
 - Static opening-state localization for the guarded data-only formatter and FreeDOS dialogs, including titles, headings, controls, placeholders, progress text, and initial report text.
 - Static opening-state localization for the unprivileged read-only image checksum dialog while preserving the selected path, calculated digests, reports, and helper workflow.
 - Static opening-state localization for destructive USB qualification while preserving profile IDs, target identity, generated erase confirmation, plans, JSON evidence, and execution.
+- Static opening-state localization for read-only drive-image backup while preserving source/destination binding, generated SAVE confirmation, progress accounting, reports, publication, and process ownership.
 
 ## Appearance, tooltip, and localization contract
 

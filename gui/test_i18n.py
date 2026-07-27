@@ -403,7 +403,7 @@ class PrimaryLocalizationTests(unittest.TestCase):
                 deferred,
                 [(module.translate_widget_tree, (dialog,)) for dialog in dialogs],
             )
-            self.assertEqual([dialog.marker for dialog in dialogs], ["dialog-0", "dialog-1", "dialog-2", "dialog-3"])
+            self.assertEqual([dialog.marker for dialog in dialogs], ["dialog-0", "dialog-1", "dialog-2", "dialog-3", "dialog-4"])
         finally:
             for name, previous in saved.items():
                 if previous is None:
@@ -440,6 +440,7 @@ class PrimaryLocalizationTests(unittest.TestCase):
         self.assertIn('msgid "Keyboard: {shortcut}"', text)
         self.assertIn('msgid "Image checksums"', text)
         self.assertIn('msgid "Check USB drive"', text)
+        self.assertIn('msgid "Save drive image"', text)
         self.assertIn('msgid "Create non-bootable media"', text)
         self.assertIn('msgid "FreeDOS 1.4 — x86 BIOS/Legacy media"', text)
         self.assertIn('#: gui/rufusarm64_i18n.py', text)

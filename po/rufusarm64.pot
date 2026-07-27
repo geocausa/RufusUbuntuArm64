@@ -102,6 +102,10 @@ msgid "Cancel"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Cancel backup"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Cancel creation"
 msgstr ""
 
@@ -162,6 +166,18 @@ msgid "Choose System, Light, or Dark appearance for RufusArm64 and its dialogs."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Choose a destination file."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Choose a new .img path"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Choose a new destination path to calculate the read-only plan."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Choose an image and a removable USB drive. Raw, ISOHybrid, compressed, and common virtual-disk images are supported. Windows installation ISOs can use GPT or MBR layouts, FAT32/NTFS selection, WIM splitting, and UEFI:NTFS."
 msgstr ""
 
@@ -187,6 +203,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Choose the removable whole drive that will be erased only after confirmation."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Choose…"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -338,7 +358,15 @@ msgid "NTFS"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "New image file"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "No FreeDOS report is available yet."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "No backup report is available yet."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -490,7 +518,15 @@ msgid "Running the test will erase data in every selected test region. A full te
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Save a byte-for-byte image of the selected removable drive. The source is opened read-only, but its mounted filesystems may be unmounted briefly to obtain a coherent image. Create USB and Check USB are separate workflows."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Save a verified raw, dynamic VHD/VHDX, or one-filesystem ISO/UDF image of the selected drive."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Save drive image"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -566,6 +602,14 @@ msgid "The exact WRITE FREEDOS phrase appears after the read-only plan is valida
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "The exact confirmation phrase appears after planning."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "The final image path is created only after every planned byte has been copied, synchronized, SHA-256 hashed, and revalidated. Existing files and symbolic links are never replaced."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "This is a separate destructive USB qualification test. It overwrites every tested region and does not preserve files or partitions. The normal Create USB workflow is not changed."
 msgstr ""
 
@@ -579,6 +623,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Type the exact FORMAT phrase"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Type the exact SAVE phrase"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
