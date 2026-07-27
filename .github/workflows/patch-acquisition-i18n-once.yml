@@ -1,0 +1,353 @@
+name: Patch acquisition localization once
+
+on:
+  pull_request:
+    branches:
+      - stage4/0.15.0
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+          ref: feature/gettext-acquisition-dialog
+      - name: Add bounded verified-acquisition localization
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+
+          def replace_once(path, old, new, label):
+              text = path.read_text(encoding="utf-8")
+              if text.count(old) != 1:
+                  raise SystemExit(f"{label} changed")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          i18n = Path("gui/rufusarm64_i18n.py")
+          replace_once(
+              i18n,
+              '    ("rufusarm64", "WindowsOptionsDialog"),\n)',
+              '    ("rufusarm64", "WindowsOptionsDialog"),\n    ("rufusarm64", "AcquisitionDialog"),\n)',
+              "acquisition class registration",
+          )
+          additions = (
+              ('    N_("Advanced drive properties"),\n', '    N_("Advanced drive properties"),\n    N_("Advanced recovery: local signed catalog"),\n', "advanced recovery label"),
+              ('    N_("Authenticated trust store"),\n', '    N_("Authenticated trust store"),\n    N_("Built-in verified catalog"),\n', "built-in catalog frame"),
+              ('    N_("Calculate"),\n', '    N_("Calculate"),\n    N_("Catalog"),\n', "catalog label"),
+              ('    N_("Choose all three explicit trust inputs."),\n', '    N_("Choose all three explicit trust inputs."),\n    N_("Choose all three local trust files, then verify."),\n    N_("Choose catalog"),\n    N_("Choose download folder"),\n    N_("Choose public key"),\n    N_("Choose signature"),\n', "acquisition chooser text"),
+              ('    N_("Download the current architecture-specific Microsoft DBX update for local inspection."),\n', '    N_("Download"),\n    N_("Download a verified image"),\n    N_("Download folder"),\n    N_("Download the current architecture-specific Microsoft DBX update for local inspection."),\n', "acquisition title and controls"),
+              ('    N_("No review has been performed. The ordinary Create USB action remains disabled for FFU images."),\n', '    N_("No review has been performed. The ordinary Create USB action remains disabled for FFU images."),\n    N_("No verified image selected."),\n', "acquisition empty selection"),
+              ('    N_("Preparing…"),\n', '    N_("Preparing…"),\n    N_("Public key"),\n', "public key label"),
+              ('    N_("Raw is byte-for-byte. VHD and VHDX are dynamic sparse containers verified against the held source."),\n', '    N_("Raw is byte-for-byte. VHD and VHDX are dynamic sparse containers verified against the held source."),\n    N_("Refresh catalog"),\n', "refresh catalog control"),
+              ('    N_("Select Calculate to hash the exact image file."),\n', '    N_("Select Calculate to hash the exact image file."),\n    N_("Signature"),\n', "signature label"),
+              ('    N_("System keeps the desktop preference observed when RufusArm64 started. Light and Dark affect only RufusArm64 and its dialogs."),\n', '    N_("System keeps the desktop preference observed when RufusArm64 started. Light and Dark affect only RufusArm64 and its dialogs."),\n    N_("The built-in channel verifies threshold-signed root and catalog metadata, rejects version rollback, and checksum-verifies every image. No unsigned bypass is offered."),\n', "acquisition trust disclosure"),
+              ('    N_("Verify copied data after writing"),\n', '    N_("Verify copied data after writing"),\n    N_("Verify local catalog"),\n', "verify catalog control"),
+              ('    N_("Windows installation options"),\n', '    N_("Windows installation options"),\n    N_("Checking the package-owned trust channel…"),\n    N_("Use this only with catalog, detached-signature, and public-key files obtained through a separately trusted path."),\n', "acquisition opening statuses"),
+          )
+          for old, new, label in additions:
+              replace_once(i18n, old, new, label)
+          replace_once(
+              i18n,
+              '    elif isinstance(widget, Gtk.Label):\n',
+              '    elif isinstance(widget, Gtk.Frame):\n        source = widget.get_label()\n        if source:\n            translated = _translated(str(source), translation)\n            if translated != source:\n                widget.set_label(translated)\n                changed += 1\n    elif isinstance(widget, Gtk.FileChooserButton):\n        source = widget.get_title()\n        if source:\n            translated = _translated(str(source), translation)\n            if translated != source:\n                widget.set_title(translated)\n                changed += 1\n    elif isinstance(widget, Gtk.Label):\n',
+              "frame and chooser translation boundary",
+          )
+
+          tests = Path("gui/test_i18n.py")
+          replace_once(
+              tests,
+              'class Label(Widget):\n',
+              'class Frame(Container):\n    def __init__(self, label=None, children=None, **kwargs):\n        super().__init__(children=children, **kwargs)\n        self.label = label\n\n    def get_label(self):\n        return self.label\n\n    def set_label(self, value):\n        self.label = value\n\n\nclass FileChooserButton(Widget):\n    def __init__(self, title=None, filename=None, **kwargs):\n        super().__init__(**kwargs)\n        self.title = title\n        self.filename = filename\n\n    def get_title(self):\n        return self.title\n\n    def set_title(self, value):\n        self.title = value\n\n    def get_filename(self):\n        return self.filename\n\n\nclass Label(Widget):\n',
+              "fake frame and chooser classes",
+          )
+          replace_once(
+              tests,
+              '        HeaderBar=HeaderBar,\n        Label=Label,\n',
+              '        HeaderBar=HeaderBar,\n        Frame=Frame,\n        FileChooserButton=FileChooserButton,\n        Label=Label,\n',
+              "fake GTK frame and chooser registration",
+          )
+          replace_once(
+              tests,
+              '            self.assertEqual([dialog.marker for dialog in dialogs], ["dialog-0", "dialog-1", "dialog-2", "dialog-3", "dialog-4", "dialog-5", "dialog-6"])',
+              '            self.assertEqual([dialog.marker for dialog in dialogs], ["dialog-0", "dialog-1", "dialog-2", "dialog-3", "dialog-4", "dialog-5", "dialog-6", "dialog-7"])',
+              "secondary dialog marker count",
+          )
+          replace_once(
+              tests,
+              '        self.assertIn(\'msgid "Windows installation options"\', text)\n',
+              '        self.assertIn(\'msgid "Windows installation options"\', text)\n        self.assertIn(\'msgid "Download a verified image"\', text)\n        self.assertIn(\'msgid "Built-in verified catalog"\', text)\n',
+              "acquisition POT assertions",
+          )
+
+          tuple_anchor = '                ("rufusarm64", "WindowsOptionsDialog"),\n            ),'
+          tuple_replacement = '                ("rufusarm64", "WindowsOptionsDialog"),\n                ("rufusarm64", "AcquisitionDialog"),\n            ),'
+          for filename in (
+              "gui/test_checksum_dialog_i18n.py",
+              "gui/test_device_qualification_i18n.py",
+              "gui/test_ffu_dialog_i18n.py",
+          ):
+              replace_once(Path(filename), tuple_anchor, tuple_replacement, f"acquisition class set in {filename}")
+
+          windows_test = Path("gui/test_windows_options_dialog_i18n.py")
+          replace_once(
+              windows_test,
+              '        self.assertEqual(module.SECONDARY_DIALOG_CLASSES[-1], ("rufusarm64", "WindowsOptionsDialog"))\n        self.assertEqual(module.SECONDARY_DIALOG_CLASSES.count(("rufusarm64", "WindowsOptionsDialog")), 1)\n',
+              '        self.assertEqual(module.SECONDARY_DIALOG_CLASSES[-2], ("rufusarm64", "WindowsOptionsDialog"))\n        self.assertEqual(module.SECONDARY_DIALOG_CLASSES[-1], ("rufusarm64", "AcquisitionDialog"))\n        self.assertEqual(module.SECONDARY_DIALOG_CLASSES.count(("rufusarm64", "WindowsOptionsDialog")), 1)\n',
+              "Windows options registration expectation",
+          )
+
+          contract = Path("gui/test_guarded_dialog_i18n_contract.py")
+          replace_once(
+              contract,
+              '            \'("rufusarm64", "WindowsOptionsDialog")\',\n',
+              '            \'("rufusarm64", "WindowsOptionsDialog")\',\n            \'("rufusarm64", "AcquisitionDialog")\',\n',
+              "acquisition contract class marker",
+          )
+
+          acquisition_test = dedent('''
+              import ast
+              from pathlib import Path
+              import sys
+              import tempfile
+              import unittest
+
+
+              GUI_DIR = Path(__file__).resolve().parent
+              if str(GUI_DIR) not in sys.path:
+                  sys.path.insert(0, str(GUI_DIR))
+
+              from test_i18n import Button, Expander, FileChooserButton, Frame, Label, Window, load_i18n_module, write_mo
+
+
+              SOURCE = GUI_DIR / "rufusarm64.py"
+
+
+              class AcquisitionDialogLocalizationTests(unittest.TestCase):
+                  def test_real_catalog_translates_static_shell_and_preserves_trust_and_image_evidence(self):
+                      module, _ = load_i18n_module()
+                      intro_source = (
+                          "The built-in channel verifies threshold-signed root and catalog metadata, rejects version rollback, "
+                          "and checksum-verifies every image. No unsigned bypass is offered."
+                      )
+                      recovery_source = (
+                          "Use this only with catalog, detached-signature, and public-key files obtained through a separately trusted path."
+                      )
+                      translations = {
+                          "Download a verified image": "Télécharger une image vérifiée",
+                          "Cancel": "Annuler",
+                          "Download": "Télécharger",
+                          intro_source: "Le canal intégré vérifie les métadonnées signées et chaque image.",
+                          "Built-in verified catalog": "Catalogue vérifié intégré",
+                          "Refresh catalog": "Actualiser le catalogue",
+                          "Checking the package-owned trust channel…": "Vérification du canal de confiance du paquet…",
+                          "Advanced recovery: local signed catalog": "Récupération avancée : catalogue local signé",
+                          recovery_source: "Utilisez uniquement des fichiers obtenus par un chemin de confiance séparé.",
+                          "Catalog": "Catalogue",
+                          "Signature": "Signature",
+                          "Public key": "Clé publique",
+                          "Download folder": "Dossier de téléchargement",
+                          "Choose catalog": "Choisir le catalogue",
+                          "Choose signature": "Choisir la signature",
+                          "Choose public key": "Choisir la clé publique",
+                          "Choose download folder": "Choisir le dossier de téléchargement",
+                          "Verify local catalog": "Vérifier le catalogue local",
+                          "Choose all three local trust files, then verify.": "Choisissez les trois fichiers de confiance locaux, puis vérifiez.",
+                          "No verified image selected.": "Aucune image vérifiée sélectionnée.",
+                      }
+                      with tempfile.TemporaryDirectory() as directory:
+                          locale_root = Path(directory)
+                          write_mo(locale_root / "zz" / "LC_MESSAGES" / "rufusarm64.mo", translations)
+                          translation = module.load_translation(str(locale_root), ["zz"])
+
+                          cancel = Button("Cancel")
+                          download = Button("Download")
+                          intro = Label(intro_source)
+                          refresh = Button("Refresh catalog")
+                          channel_status = Label("Checking the package-owned trust channel…")
+                          frame = Frame("Built-in verified catalog", [refresh, channel_status])
+                          recovery = Expander("Advanced recovery: local signed catalog")
+                          recovery_note = Label(recovery_source)
+                          catalog_label = Label("Catalog")
+                          signature_label = Label("Signature")
+                          key_label = Label("Public key")
+                          output_label = Label("Download folder")
+                          catalog = FileChooserButton("Choose catalog", "/etc/rufusarm64/catalog.json")
+                          signature = FileChooserButton("Choose signature", "/etc/rufusarm64/catalog.sig")
+                          public_key = FileChooserButton("Choose public key", "/etc/rufusarm64/catalog.pub")
+                          output = FileChooserButton("Choose download folder", "/home/geoca/Downloads")
+                          verify = Button("Verify local catalog")
+                          catalog_status = Label("Choose all three local trust files, then verify.")
+                          image_detail = Label("No verified image selected.")
+                          dynamic_channel = Label("Root v8 expires 2027-01-01; catalog v42 from verified cache; signing key(s) 0123456789ab…")
+                          dynamic_image = Label("File: ubuntu-arm64.iso\\nSize: 5.2 GiB\\nSHA-256: deadbeef")
+                          provider_error = Label("Built-in catalog unavailable: threshold signature 2 of 3 was not met")
+                          dialog = Window(
+                              title="Download a verified image",
+                              children=[
+                                  cancel,
+                                  download,
+                                  intro,
+                                  frame,
+                                  recovery,
+                                  recovery_note,
+                                  catalog_label,
+                                  signature_label,
+                                  key_label,
+                                  output_label,
+                                  catalog,
+                                  signature,
+                                  public_key,
+                                  output,
+                                  verify,
+                                  catalog_status,
+                                  image_detail,
+                                  dynamic_channel,
+                                  dynamic_image,
+                                  provider_error,
+                              ],
+                          )
+
+                          self.assertFalse(module.translate_widget_tree(dialog, translation))
+                          self.assertEqual(dialog.title, translations["Download a verified image"])
+                          self.assertEqual(cancel.label, translations["Cancel"])
+                          self.assertEqual(download.label, translations["Download"])
+                          self.assertEqual(intro.text, translations[intro_source])
+                          self.assertEqual(frame.label, translations["Built-in verified catalog"])
+                          self.assertEqual(refresh.label, translations["Refresh catalog"])
+                          self.assertEqual(channel_status.text, translations["Checking the package-owned trust channel…"])
+                          self.assertEqual(recovery.label, translations["Advanced recovery: local signed catalog"])
+                          self.assertEqual(recovery_note.text, translations[recovery_source])
+                          self.assertEqual(catalog_label.text, translations["Catalog"])
+                          self.assertEqual(signature_label.text, translations["Signature"])
+                          self.assertEqual(key_label.text, translations["Public key"])
+                          self.assertEqual(output_label.text, translations["Download folder"])
+                          self.assertEqual(catalog.title, translations["Choose catalog"])
+                          self.assertEqual(signature.title, translations["Choose signature"])
+                          self.assertEqual(public_key.title, translations["Choose public key"])
+                          self.assertEqual(output.title, translations["Choose download folder"])
+                          self.assertEqual(verify.label, translations["Verify local catalog"])
+                          self.assertEqual(catalog_status.text, translations["Choose all three local trust files, then verify."])
+                          self.assertEqual(image_detail.text, translations["No verified image selected."])
+
+                          self.assertEqual(catalog.filename, "/etc/rufusarm64/catalog.json")
+                          self.assertEqual(signature.filename, "/etc/rufusarm64/catalog.sig")
+                          self.assertEqual(public_key.filename, "/etc/rufusarm64/catalog.pub")
+                          self.assertEqual(output.filename, "/home/geoca/Downloads")
+                          self.assertEqual(dynamic_channel.text, "Root v8 expires 2027-01-01; catalog v42 from verified cache; signing key(s) 0123456789ab…")
+                          self.assertEqual(dynamic_image.text, "File: ubuntu-arm64.iso\\nSize: 5.2 GiB\\nSHA-256: deadbeef")
+                          self.assertEqual(provider_error.text, "Built-in catalog unavailable: threshold signature 2 of 3 was not met")
+
+                  def test_exact_dialog_set_includes_acquisition_once(self):
+                      module, _ = load_i18n_module()
+                      self.assertEqual(module.SECONDARY_DIALOG_CLASSES[-1], ("rufusarm64", "AcquisitionDialog"))
+                      self.assertEqual(module.SECONDARY_DIALOG_CLASSES.count(("rufusarm64", "AcquisitionDialog")), 1)
+
+                  def test_source_preserves_catalog_trust_selection_resume_and_returned_values(self):
+                      source = SOURCE.read_text(encoding="utf-8")
+                      self.assertNotIn("rufusarm64_i18n", source)
+                      tree = ast.parse(source, filename=str(SOURCE))
+                      dialog_class = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "AcquisitionDialog")
+                      dialog_source = ast.get_source_segment(source, dialog_class) or ""
+                      for marker in (
+                          'self.mode = ""',
+                          'self.channel_metadata = {}',
+                          'build_acquisition_channel_list_command(helper_path(), ACQUISITION_CHANNEL_CONFIG)',
+                          'normalize_acquisition_channel(json.loads(stdout))',
+                          'build_acquisition_list_command(helper_path(), *selection)',
+                          'normalize_acquisition_images(json.loads(result.stdout))',
+                          'os.killpg(process.pid, signal.SIGTERM)',
+                          'self.image_combo.append(image["id"], acquisition_image_label(image))',
+                          'image_id = self.image_combo.get_active_id()',
+                          'image = next((item for item in self.images if item["id"] == image_id), None)',
+                          'f"SHA-256: {image[\'sha256\']}"',
+                          '"mode": self.mode',
+                          '"channel_config": ACQUISITION_CHANNEL_CONFIG',
+                          '"catalog": self.catalog.get_filename() or ""',
+                          '"signature": self.signature.get_filename() or ""',
+                          '"public_key": self.public_key.get_filename() or ""',
+                          '"output": self.output.get_filename() or ""',
+                          '"image": image',
+                      ):
+                          self.assertIn(marker, dialog_source)
+
+
+              if __name__ == "__main__":
+                  unittest.main()
+          ''').lstrip()
+          Path("gui/test_acquisition_dialog_i18n.py").write_text(acquisition_test, encoding="utf-8")
+
+          release = Path("docs/release-0.15.0.md")
+          replace_once(
+              release,
+              "- Static-shell localization for Windows Setup options while preserving capability gating, prior selections, regional values, generated answer-file semantics, and writer contracts.\n",
+              "- Static-shell localization for Windows Setup options while preserving capability gating, prior selections, regional values, generated answer-file semantics, and writer contracts.\n- Static opening-shell localization for verified image acquisition while preserving threshold trust, rollback protection, catalog/image evidence, resumable download state, and atomic publication.\n",
+              "acquisition release note",
+          )
+          replace_once(
+              release,
+              "- Generated `FORMAT ...`, `WRITE FREEDOS ...`, `SAVE ...`, and `RESTORE AUTHENTICATED FFU ...` confirmation phrases, comparison logic, selected values, media capability summaries/reasons, local usernames, locale/time-zone identifiers, generated answer-file values, machine-readable JSON, command flags, paths, identities, filesystem planner values, diagnostic/report schemas, and dynamic evidence remain byte-stable and untranslated.\n",
+              "- Generated `FORMAT ...`, `WRITE FREEDOS ...`, `SAVE ...`, and `RESTORE AUTHENTICATED FFU ...` confirmation phrases, comparison logic, selected values, media capability summaries/reasons, local usernames, locale/time-zone identifiers, generated answer-file values, acquisition channel/mode/image IDs, trust paths, metadata versions/expiry/key IDs, filenames, sizes, digests, resumable state, machine-readable JSON, command flags, paths, identities, filesystem planner values, diagnostic/report schemas, and dynamic evidence remain byte-stable and untranslated.\n",
+              "acquisition release safety note",
+          )
+
+          localization = Path("docs/localization.md")
+          replace_once(
+              localization,
+              "Windows Setup options translate only the reviewed static dialog shell. Media generation/family/architecture/edition details, capability summaries and refusal reasons, enabled states, previous selections, the local username and placeholder, locale/time-zone identifiers, option keys, and generated `autounattend.xml` values remain untranslated.\n",
+              "Windows Setup options translate only the reviewed static dialog shell. Media generation/family/architecture/edition details, capability summaries and refusal reasons, enabled states, previous selections, the local username and placeholder, locale/time-zone identifiers, option keys, and generated `autounattend.xml` values remain untranslated.\n\nVerified image acquisition translates only the static opening shell, including reviewed frame and chooser presentation. Channel/mode/image IDs, trust paths, metadata versions and expiry, signing-key IDs, image filename/size/SHA-256, selected image objects, provider commands/errors, elapsed status, rollback decisions, resumable partial state, checksum evidence, returned values, and atomic publication remain untranslated.\n",
+              "acquisition localization guide",
+          )
+
+          roadmap = Path("ROADMAP.md")
+          replace_once(
+              roadmap,
+              "- Static-shell localization for Windows Setup options without changing capability gating, previous choices, or answer-file values\n",
+              "- Static-shell localization for Windows Setup options without changing capability gating, previous choices, or answer-file values\n- Static opening-shell localization for verified image acquisition without changing trust metadata, image evidence, resume, or publication\n",
+              "acquisition roadmap note",
+          )
+
+          changelog = Path("CHANGELOG.md")
+          replace_once(
+              changelog,
+              "- Localized the static Windows Setup options shell while preserving capability gating, previous selections, usernames, locale/time-zone identifiers, generated answer-file semantics, and writer behavior byte-for-byte.\n",
+              "- Localized the static Windows Setup options shell while preserving capability gating, previous selections, usernames, locale/time-zone identifiers, generated answer-file semantics, and writer behavior byte-for-byte.\n- Localized the static verified-image acquisition shell while preserving threshold trust, rollback checks, channel and image IDs, trust paths, metadata and digest evidence, resumable state, provider commands, returned values, and atomic publication byte-for-byte.\n",
+              "acquisition changelog note",
+          )
+
+          parity = Path("docs/upstream-rufus-parity.json")
+          old = "A standard GNU gettext runtime, deterministic source-only POT, package closure, safe English fallback, and exact post-construction translation are implemented for the primary window plus static shells for guarded data-only formatting, FreeDOS creation, read-only image checksums, destructive USB qualification, read-only drive-image backup, authenticated experimental FFU review/restore, and Windows Setup options. Drive-backup format labels and Save-dialog chrome also use a presentation-only translation boundary. Canonical format IDs/extensions, generated confirmation values, comparison logic, profile IDs, trust inputs, source/destination paths, target identities, calculated digests, immutable review evidence, plans, byte/progress evidence, restore reports, media capability summaries/reasons, prior selections, local usernames, locale/time-zone identifiers, generated answer-file values, machine-readable JSON, flags, publication checks, dynamic status, diagnostics, cancellation evidence, and report schemas remain byte-stable. Broader secondary-dialog and dynamic status/diagnostic migration, plural review, completed language packs, and full translation-aware accessibility review remain planned."
+          new = "A standard GNU gettext runtime, deterministic source-only POT, package closure, safe English fallback, and exact post-construction translation are implemented for the primary window plus static shells for guarded data-only formatting, FreeDOS creation, read-only image checksums, destructive USB qualification, read-only drive-image backup, authenticated experimental FFU review/restore, Windows Setup options, and verified image acquisition. Drive-backup format labels and Save-dialog chrome also use a presentation-only translation boundary. Canonical format IDs/extensions, generated confirmation values, comparison logic, profile IDs, trust inputs, source/destination paths, target identities, calculated digests, immutable review evidence, plans, byte/progress evidence, restore reports, media capability summaries/reasons, prior selections, local usernames, locale/time-zone identifiers, generated answer-file values, acquisition channel/mode/image IDs, trust paths, metadata versions/expiry/key IDs, filenames, sizes, digests, resumable state, provider commands/errors, returned values, machine-readable JSON, flags, publication checks, dynamic status, diagnostics, cancellation evidence, and report schemas remain byte-stable. Broader secondary-dialog and dynamic status/diagnostic migration, plural review, completed language packs, and full translation-aware accessibility review remain planned."
+          replace_once(parity, old, new, "acquisition localization parity note")
+          PY
+          python3 scripts/update-pot.py
+          python3 -m py_compile gui/rufusarm64_i18n.py gui/test_i18n.py gui/test_acquisition_dialog_i18n.py
+          python3 -m unittest gui.test_acquisition_dialog_i18n gui.test_i18n gui.test_verified_acquisition_ui
+          python3 scripts/update-pot.py --check
+          git rm .github/workflows/patch-acquisition-i18n-once.yml
+          git add \
+            CHANGELOG.md \
+            ROADMAP.md \
+            docs/localization.md \
+            docs/release-0.15.0.md \
+            docs/upstream-rufus-parity.json \
+            gui/rufusarm64_i18n.py \
+            gui/test_acquisition_dialog_i18n.py \
+            gui/test_checksum_dialog_i18n.py \
+            gui/test_device_qualification_i18n.py \
+            gui/test_ffu_dialog_i18n.py \
+            gui/test_guarded_dialog_i18n_contract.py \
+            gui/test_i18n.py \
+            gui/test_windows_options_dialog_i18n.py \
+            po/rufusarm64.pot
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "i18n: translate the verified acquisition shell"
+          git push origin HEAD:feature/gettext-acquisition-dialog
