@@ -382,8 +382,13 @@ class PrimaryLocalizationTests(unittest.TestCase):
         saved = {name: sys.modules.get(name) for name in names}
         try:
             classes = []
+            fake_modules = {}
             for module_name, class_name in module.SECONDARY_DIALOG_CLASSES:
-                fake_module = types.ModuleType(module_name)
+                fake_module = fake_modules.get(module_name)
+                if fake_module is None:
+                    fake_module = types.ModuleType(module_name)
+                    fake_modules[module_name] = fake_module
+                    sys.modules[module_name] = fake_module
 
                 class Dialog(Window):
                     def __init__(self, marker):
@@ -392,7 +397,6 @@ class PrimaryLocalizationTests(unittest.TestCase):
 
                 Dialog.__name__ = class_name
                 setattr(fake_module, class_name, Dialog)
-                sys.modules[module_name] = fake_module
                 classes.append(Dialog)
 
             module.install_secondary_dialog_localization()
