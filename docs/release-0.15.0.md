@@ -6,15 +6,18 @@ Status: Stage 4 development branch; not a published release.
 
 - Guarded ext2 and ext3 data-only formatting through the existing GPT/MBR planner, exact identity binding, exact `FORMAT` confirmation, e2fsprogs creation, forced read-only `e2fsck -f -n`, exact filesystem/geometry/label readback, GTK integration, and real loop-device qualification.
 - Application-scoped GTK appearance selection with canonical **System**, **Light**, and **Dark** modes.
+- Complete main-window option and primary-action tooltips, applied after every composed integration while preserving more specific existing disclosures.
 
-## Appearance contract
+## Appearance and tooltip contract
 
 - **System** is the default and restores the GTK light/dark preference observed when RufusArm64 started.
 - **Light** and **Dark** affect only the current RufusArm64 process and its dialogs.
 - The canonical setting is stored in the existing owner-private settings JSON as `appearance: system|light|dark`.
 - Missing, malformed, and unknown values resolve to **System**.
 - The selector is exposed from the main header bar with tooltips and assistive-technology metadata.
-- Appearance changes do not alter device/image identities, destructive confirmation, privilege separation, cancellation, verification, synchronization, or reports.
+- Every main image, target, persistence, Windows-layout, diagnostics, appearance, and primary action control has a bounded purpose/safety tooltip.
+- Tooltip completion runs only after the complete composed window exists and never replaces a more specific tooltip supplied by an individual workflow.
+- Appearance and tooltip changes do not alter device/image identities, widget sensitivity, signal wiring, destructive confirmation, privilege separation, cancellation, verification, synchronization, or reports.
 
 ## Remaining Stage 4 scope
 
