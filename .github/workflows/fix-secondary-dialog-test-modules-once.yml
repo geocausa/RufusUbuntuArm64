@@ -29,38 +29,40 @@ jobs:
 
           path = Path("gui/test_i18n.py")
           text = path.read_text(encoding="utf-8")
-          old = '''            classes = []
-              for module_name, class_name in module.SECONDARY_DIALOG_CLASSES:
-                  fake_module = types.ModuleType(module_name)
-
-                  class Dialog(Window):
-                      def __init__(self, marker):
-                          super().__init__(title=marker)
-                          self.marker = marker
-
-                  Dialog.__name__ = class_name
-                  setattr(fake_module, class_name, Dialog)
-                  sys.modules[module_name] = fake_module
-                  classes.append(Dialog)
-          '''
-          new = '''            classes = []
-              fake_modules = {}
-              for module_name, class_name in module.SECONDARY_DIALOG_CLASSES:
-                  fake_module = fake_modules.get(module_name)
-                  if fake_module is None:
-                      fake_module = types.ModuleType(module_name)
-                      fake_modules[module_name] = fake_module
-                      sys.modules[module_name] = fake_module
-
-                  class Dialog(Window):
-                      def __init__(self, marker):
-                          super().__init__(title=marker)
-                          self.marker = marker
-
-                  Dialog.__name__ = class_name
-                  setattr(fake_module, class_name, Dialog)
-                  classes.append(Dialog)
-          '''
+          old = "\n".join((
+              "            classes = []",
+              "            for module_name, class_name in module.SECONDARY_DIALOG_CLASSES:",
+              "                fake_module = types.ModuleType(module_name)",
+              "",
+              "                class Dialog(Window):",
+              "                    def __init__(self, marker):",
+              "                        super().__init__(title=marker)",
+              "                        self.marker = marker",
+              "",
+              "                Dialog.__name__ = class_name",
+              "                setattr(fake_module, class_name, Dialog)",
+              "                sys.modules[module_name] = fake_module",
+              "                classes.append(Dialog)",
+          ))
+          new = "\n".join((
+              "            classes = []",
+              "            fake_modules = {}",
+              "            for module_name, class_name in module.SECONDARY_DIALOG_CLASSES:",
+              "                fake_module = fake_modules.get(module_name)",
+              "                if fake_module is None:",
+              "                    fake_module = types.ModuleType(module_name)",
+              "                    fake_modules[module_name] = fake_module",
+              "                    sys.modules[module_name] = fake_module",
+              "",
+              "                class Dialog(Window):",
+              "                    def __init__(self, marker):",
+              "                        super().__init__(title=marker)",
+              "                        self.marker = marker",
+              "",
+              "                Dialog.__name__ = class_name",
+              "                setattr(fake_module, class_name, Dialog)",
+              "                classes.append(Dialog)",
+          ))
           if text.count(old) != 1:
               raise SystemExit("secondary dialog fake-module test block changed")
           path.write_text(text.replace(old, new, 1), encoding="utf-8")
