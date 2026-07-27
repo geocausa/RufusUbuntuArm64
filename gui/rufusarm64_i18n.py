@@ -16,6 +16,7 @@ SECONDARY_DIALOG_CLASSES = (
     ("rufusarm64_nonbootable_dialog", "NonBootableFormatDialog"),
     ("rufusarm64_freedos_dialog", "FreeDOSFormatDialog"),
     ("rufusarm64", "WindowsOptionsDialog"),
+    ("rufusarm64", "AcquisitionDialog"),
 )
 
 
@@ -27,12 +28,14 @@ def N_(message):
 CATALOG_MESSAGES = (
     N_("About RufusArm64"),
     N_("Advanced drive properties"),
+    N_("Advanced recovery: local signed catalog"),
     N_("After a successful unmounted-target review, type the displayed phrase exactly. Administrator authentication then reruns every source, policy, trust-generation, target and geometry check before any write."),
     N_("After writing, read copied data back from the USB and compare it with authenticated source content."),
     N_("Appearance"),
     N_("Apply"),
     N_("Apply Rufus Quality of Life changes"),
     N_("Authenticated trust store"),
+    N_("Built-in verified catalog"),
     N_("Authenticate a supported FFU and review the exact removable target before experimental restoration."),
     N_("Authenticate and review"),
     N_("Automatic"),
@@ -43,6 +46,7 @@ CATALOG_MESSAGES = (
     N_("C_ancel"),
     N_("C_hecksums…"),
     N_("Calculate"),
+    N_("Catalog"),
     N_("Calculate MD5, SHA-1, SHA-256, and SHA-512 for the selected image in one read-only pass. The image is not mounted or modified, no USB device is opened, and administrator authentication is not used."),
     N_("Calculate image checksums"),
     N_("Calculate MD5, SHA-1, SHA-256, and SHA-512 for the selected image without modifying it."),
@@ -69,6 +73,11 @@ CATALOG_MESSAGES = (
     N_("Choose System, Light, or Dark appearance for RufusArm64 and its dialogs."),
     N_("Choose a destination file."),
     N_("Choose all three explicit trust inputs."),
+    N_("Choose all three local trust files, then verify."),
+    N_("Choose catalog"),
+    N_("Choose download folder"),
+    N_("Choose public key"),
+    N_("Choose signature"),
     N_("Choose a new .img path"),
     N_("Choose a new Dynamic VHD (.vhd) file"),
     N_("Choose a new Dynamic VHDX (.vhdx) file"),
@@ -104,6 +113,9 @@ CATALOG_MESSAGES = (
     N_("Details and diagnostics"),
     N_("Disable automatic BitLocker device-encryption provisioning"),
     N_("Does not decrypt an existing installation. It prevents automatic encryption during this new setup where supported."),
+    N_("Download"),
+    N_("Download a verified image"),
+    N_("Download folder"),
     N_("Download the current architecture-specific Microsoft DBX update for local inspection."),
     N_("Download unavailable"),
     N_("Download verified image"),
@@ -138,6 +150,7 @@ CATALOG_MESSAGES = (
     N_("No formatting report is available yet."),
     N_("No qualification report is available yet."),
     N_("No review has been performed. The ordinary Create USB action remains disabled for FFU images."),
+    N_("No verified image selected."),
     N_("No FreeDOS report is available yet."),
     N_("Non bootable — data-only media"),
     N_("Not started"),
@@ -163,10 +176,12 @@ CATALOG_MESSAGES = (
     N_("Prefer the light variant of the active GTK theme for RufusArm64."),
     N_("Preparing a read-only plan…"),
     N_("Preparing…"),
+    N_("Public key"),
     N_("Publisher policy"),
     N_("Quick format"),
     N_("Raw image (.img)"),
     N_("Raw is byte-for-byte. VHD and VHDX are dynamic sparse containers verified against the held source."),
+    N_("Refresh catalog"),
     N_("Refresh USB drives"),
     N_("Request safe cancellation of the active operation and wait for its final state and cleanup."),
     N_("Rescan connected removable whole drives without changing any device."),
@@ -195,6 +210,7 @@ CATALOG_MESSAGES = (
     N_("Saved-change space"),
     N_("Secure Boot DBX"),
     N_("Select Calculate to hash the exact image file."),
+    N_("Signature"),
     N_("Set the validated volume label used for the newly created Windows installation filesystem."),
     N_("Set Windows installation filesystem options without changing the source image."),
     N_("Show application and licence information. Shortcut F1."),
@@ -202,6 +218,7 @@ CATALOG_MESSAGES = (
     N_("System"),
     N_("Use this Ubuntu user's regional settings"),
     N_("System keeps the desktop preference observed when this application started. Light and Dark affect only RufusArm64 and its dialogs."),
+    N_("The built-in channel verifies threshold-signed root and catalog metadata, rejects version rollback, and checksum-verifies every image. No unsigned bypass is offered."),
     N_("Target system"),
     N_("Test profile"),
     N_("Technical diagnostic log"),
@@ -222,9 +239,12 @@ CATALOG_MESSAGES = (
     N_("Validate UEFI Media…"),
     N_("Validate UEFI media"),
     N_("Verify copied data after writing"),
+    N_("Verify local catalog"),
     N_("Volume label"),
     N_("Windows drivers"),
     N_("Windows installation options"),
+    N_("Checking the package-owned trust channel…"),
+    N_("Use this only with catalog, detached-signature, and public-key files obtained through a separately trusted path."),
     N_("Allows Windows setup to continue with a local account when supported by that Windows build."),
     N_("Useful for unsupported PCs. This normally is not needed on a Surface Pro 11 X1E."),
     N_("Zero-write and read back the complete new data partition before formatting; this is slow and destructive."),
@@ -351,6 +371,20 @@ def _translate_widget(widget, translation):
             translated = _translated(str(source), translation)
             if translated != source:
                 getattr(widget, setter_name)(translated)
+                changed += 1
+    elif isinstance(widget, Gtk.Frame):
+        source = widget.get_label()
+        if source:
+            translated = _translated(str(source), translation)
+            if translated != source:
+                widget.set_label(translated)
+                changed += 1
+    elif isinstance(widget, Gtk.FileChooserButton):
+        source = widget.get_title()
+        if source:
+            translated = _translated(str(source), translation)
+            if translated != source:
+                widget.set_title(translated)
                 changed += 1
     elif isinstance(widget, Gtk.Label):
         source = widget.get_text()

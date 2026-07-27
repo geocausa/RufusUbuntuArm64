@@ -135,7 +135,8 @@ class WindowsOptionsDialogLocalizationTests(unittest.TestCase):
 
     def test_exact_dialog_set_includes_windows_options_once(self):
         module, _ = load_i18n_module()
-        self.assertEqual(module.SECONDARY_DIALOG_CLASSES[-1], ("rufusarm64", "WindowsOptionsDialog"))
+        self.assertEqual(module.SECONDARY_DIALOG_CLASSES[-2], ("rufusarm64", "WindowsOptionsDialog"))
+        self.assertEqual(module.SECONDARY_DIALOG_CLASSES[-1], ("rufusarm64", "AcquisitionDialog"))
         self.assertEqual(module.SECONDARY_DIALOG_CLASSES.count(("rufusarm64", "WindowsOptionsDialog")), 1)
 
     def test_source_preserves_capability_previous_value_and_answer_file_contracts(self):

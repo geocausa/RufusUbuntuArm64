@@ -13,6 +13,7 @@
 - Extended exact static localization to authenticated experimental FFU review/restore while preserving trust inputs, source/target identity, generated restore confirmation, immutable evidence, privileged execution, cancellation, and complete verification byte-for-byte.
 - Localized drive-backup format labels and Save-dialog presentation while preserving canonical raw/VHD/VHDX/ISO identifiers, extensions, generated paths, confirmation, planning, publication, and verification byte-for-byte.
 - Localized the static Windows Setup options shell while preserving capability gating, previous selections, usernames, locale/time-zone identifiers, generated answer-file semantics, and writer behavior byte-for-byte.
+- Localized the static verified-image acquisition shell while preserving threshold trust, rollback checks, channel and image IDs, trust paths, metadata and digest evidence, resumable state, provider commands, returned values, and atomic publication byte-for-byte.
 
 ## 0.14.0 — 2026-07-26
 

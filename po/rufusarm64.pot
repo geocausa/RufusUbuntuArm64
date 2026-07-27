@@ -22,6 +22,10 @@ msgid "Advanced drive properties"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Advanced recovery: local signed catalog"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "After a successful unmounted-target review, type the displayed phrase exactly. Administrator authentication then reruns every source, policy, trust-generation, target and geometry check before any write."
 msgstr ""
 
@@ -75,6 +79,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Bootable USB creator for Linux ARM64"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Built-in verified catalog"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -146,6 +154,10 @@ msgid "Cancel test"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Catalog"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Change appearance"
 msgstr ""
 
@@ -175,6 +187,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Checking target identity, capacity, 512-byte sectors, FAT32 geometry, pinned payload, and platform warnings…"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Checking the package-owned trust channel…"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -226,11 +242,31 @@ msgid "Choose all three explicit trust inputs."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Choose all three local trust files, then verify."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Choose an image and a removable USB drive. Raw, ISOHybrid, compressed, and common virtual-disk images are supported. Windows installation ISOs can use GPT or MBR layouts, FAT32/NTFS selection, WIM splitting, and UEFI:NTFS."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Choose catalog"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Choose download folder"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Choose persistence capacity in GiB; zero requests the recommended available capacity."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Choose public key"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Choose signature"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -331,6 +367,18 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Does not decrypt an existing installation. It prevents automatic encryption during this new setup where supported."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Download"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Download a verified image"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Download folder"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -478,6 +526,10 @@ msgid "No review has been performed. The ordinary Create USB action remains disa
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "No verified image selected."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Non bootable — data-only media"
 msgstr ""
 
@@ -554,6 +606,10 @@ msgid "Preparing…"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Public key"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Publisher policy"
 msgstr ""
 
@@ -571,6 +627,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Refresh USB drives"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Refresh catalog"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -706,6 +766,10 @@ msgid "Shows the detected image type, selected write path, and bounded compatibi
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Signature"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Skip privacy prompts and reduce initial data collection/recommendations"
 msgstr ""
 
@@ -727,6 +791,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Test profile"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "The built-in channel verifies threshold-signed root and catalog metadata, rejects version rollback, and checksum-verifies every image. No unsigned bypass is offered."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -790,6 +858,10 @@ msgid "Use this Ubuntu user's regional settings"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Use this only with catalog, detached-signature, and public-key files obtained through a separately trusted path."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Useful for unsupported PCs. This normally is not needed on a Surface Pro 11 X1E."
 msgstr ""
 
@@ -803,6 +875,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Verify copied data after writing"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Verify local catalog"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py

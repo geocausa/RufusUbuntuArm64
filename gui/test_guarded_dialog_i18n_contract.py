@@ -21,6 +21,7 @@ class SecondaryDialogLocalizationContractTests(unittest.TestCase):
             '("rufusarm64_device_qualify_dialog", "DriveImageBackupDialog")',
             '("rufusarm64_ffu_dialog", "FFUReviewDialog")',
             '("rufusarm64", "WindowsOptionsDialog")',
+            '("rufusarm64", "AcquisitionDialog")',
             '("rufusarm64_nonbootable_dialog", "NonBootableFormatDialog")',
             '("rufusarm64_freedos_dialog", "FreeDOSFormatDialog")',
             "def install_secondary_dialog_localization():",
