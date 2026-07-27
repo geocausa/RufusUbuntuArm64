@@ -1,0 +1,40 @@
+name: Fix acquisition localization anchor once
+
+on:
+  pull_request:
+    branches:
+      - stage4/0.15.0
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+          ref: feature/gettext-acquisition-dialog
+      - name: Correct the exact startup-preference source anchor
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/patch-acquisition-i18n-once.yml')
+          text = path.read_text(encoding='utf-8')
+          old = 'System keeps the desktop preference observed when RufusArm64 started. Light and Dark affect only RufusArm64 and its dialogs.'
+          new = 'System keeps the desktop preference observed when this application started. Light and Dark affect only RufusArm64 and its dialogs.'
+          if text.count(old) != 1:
+              raise SystemExit('acquisition startup-preference workflow anchor changed')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          git rm .github/workflows/fix-acquisition-anchor-once.yml
+          git rm docs/acquisition-i18n-diagnostic.txt
+          git add .github/workflows/patch-acquisition-i18n-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "ci: correct acquisition localization source anchor"
+          git push origin HEAD:feature/gettext-acquisition-dialog
