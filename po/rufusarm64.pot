@@ -70,7 +70,31 @@ msgid "Calculate image checksums"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Calculating the exact FreeDOS plan without administrator access…"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Calculating the exact data-only plan without administrator access…"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Calculating the unprivileged FreeDOS plan…"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Calculating the unprivileged formatting plan…"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Cancel"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Cancel creation"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Cancel formatting"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -91,6 +115,14 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Check device for bad blocks (1 pass)"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Checking identity, capacity, sector size, layout, filesystem tools, and safety warnings…"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Checking target identity, capacity, 512-byte sectors, FAT32 geometry, pinned payload, and platform warnings…"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -146,6 +178,10 @@ msgid "Clear only the visible diagnostic log."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Close"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Cluster size"
 msgstr ""
 
@@ -174,6 +210,10 @@ msgid "Create deterministic FreeDOS 1.4 media for x86 BIOS or Legacy/CSM systems
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Create non-bootable media"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Dark"
 msgstr ""
 
@@ -198,6 +238,14 @@ msgid "Erase the selected drive and create one verified data-only filesystem wit
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Everything on the selected drive will be permanently erased. Cancelling after erasure may leave intentionally incomplete media that must be formatted again before use."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Everything on the selected drive will be permanently erased. The resulting media runs only on x86-compatible computers using BIOS or UEFI Legacy/CSM. It will not boot ARM64 or UEFI-only systems. Software verification cannot prove that a physical PC will boot it."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "FAT32"
 msgstr ""
 
@@ -211,6 +259,14 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "For supported Ubuntu or Debian live media, create separate saved-change storage that can survive reboot."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Format data-only media"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "FreeDOS 1.4 — x86 BIOS/Legacy media"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -250,6 +306,22 @@ msgid "NTFS"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "No FreeDOS report is available yet."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "No formatting report is available yet."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Non bootable — data-only media"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Not started"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Open read-only UEFI media validation. Shortcut Ctrl+U."
 msgstr ""
 
@@ -282,6 +354,10 @@ msgid "Operation status details"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Optional"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Optionally select a Microsoft DBX update used to reject revoked Windows EFI boot files."
 msgstr ""
 
@@ -303,6 +379,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Prefer the light variant of the active GTK theme for RufusArm64."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Preparing a read-only plan…"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -411,6 +491,30 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Technical diagnostic log"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "The exact FORMAT phrase appears after the read-only plan is validated."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "The exact WRITE FREEDOS phrase appears after the read-only plan is validated."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "This separate workflow erases the complete selected removable drive and constructs one deterministic FAT32 FreeDOS volume from checksum-pinned package payloads."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "This separate workflow erases the complete selected removable drive, creates one data partition, checks the new filesystem, and explicitly does not claim the result is bootable."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Type the exact FORMAT phrase"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Type the exact WRITE FREEDOS phrase"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
