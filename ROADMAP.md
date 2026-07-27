@@ -104,7 +104,8 @@
 ## 0.15 — Stage 4 filesystem and product parity (in progress)
 
 - Guarded ext2 and ext3 data-only formatting with real loop qualification
-- Remaining portable filesystem, appearance, localization, and distribution work selected from the pinned upstream audit
+- Application-scoped System, Light, and Dark GTK appearance selection with persisted canonical settings
+- Remaining portable filesystem, localization, and distribution work selected from the pinned upstream audit
 - No weakening of identity, confirmation, cancellation, synchronization, or verification gates
 
 ## 1.0 — supportable stable release

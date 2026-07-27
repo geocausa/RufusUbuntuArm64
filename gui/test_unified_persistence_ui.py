@@ -49,8 +49,10 @@ class UnifiedPersistenceUISourceTests(unittest.TestCase):
         desktop = pathlib.Path("packaging/io.github.geocausa.RufusArm64.desktop").read_text(encoding="utf-8")
         self.assertNotIn("rufusarm64_persistence.py", launcher)
         self.assertIn("run_rufusarm64", launcher)
-        self.assertIn("/usr/bin/python3 -I -c", launcher)
+        self.assertIn('exec /usr/bin/python3 -I - "$@"', launcher)
+        self.assertIn('gi.require_version("Gtk", "3.0")', launcher)
         self.assertIn('sys.path.insert(0, "/usr/lib/rufusarm64")', launcher)
+        self.assertIn("install_appearance(RufusWindow)", launcher)
         self.assertIn("Exec=rufusarm64\n", desktop)
         self.assertNotIn("Exec=rufusarm64 --persistence", desktop)
 

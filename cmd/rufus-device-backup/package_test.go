@@ -33,8 +33,10 @@ func TestBackupCommandPackageContract(t *testing.T) {
 		{
 			path: filepath.Join(root, "packaging", "rufusarm64"),
 			parts: []string{
-				`/usr/bin/python3 -I -c`,
+				`exec /usr/bin/python3 -I - "$@" <<'PYRUFUSARM64'`,
+				`gi.require_version("Gtk", "3.0")`,
 				`sys.path.insert(0, "/usr/lib/rufusarm64")`,
+				`install_appearance(RufusWindow)`,
 				`run_rufusarm64`,
 			},
 		},
