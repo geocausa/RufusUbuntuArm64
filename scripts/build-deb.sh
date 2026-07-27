@@ -129,6 +129,9 @@ install -Dm644 "${ROOT_DIR}/gui/rufusarm64_freedos_dialog.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_freedos_dialog.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_integrated.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_integrated.py"
+python3 "${ROOT_DIR}/scripts/update-pot.py" --check
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_i18n.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_i18n.py"
 install -Dm755 "${ROOT_DIR}/gui/rufusarm64_persistence.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_persistence.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_persistence_logic.py" \
@@ -340,6 +343,8 @@ install -Dm644 "${ROOT_DIR}/packaging/acquisition/channel.json" \
   "${PACKAGE_DIR}/usr/share/rufusarm64/acquisition/channel.json"
 install -Dm644 "${ROOT_DIR}/README.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/README.md"
+install -Dm644 "${ROOT_DIR}/po/rufusarm64.pot" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/rufusarm64.pot"
 install -Dm644 "${ROOT_DIR}/docs/acquisition-channel.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/acquisition-channel.md"
 install -Dm644 "${ROOT_DIR}/docs/acquisition-admin.md" \
