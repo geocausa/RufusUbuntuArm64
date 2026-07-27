@@ -43,6 +43,8 @@ The runtime translates reviewed static main-window headings, labels, primary act
 
 It also wraps the already-imported guarded data-only formatter and FreeDOS dialog classes centrally. After each original constructor has completed, one deferred exact-match pass covers the opening dialog title, heading, static explanatory and warning labels, control labels, entry placeholders, initial progress text, and initial empty-report text. The dialog modules themselves do not import localization code, so their operation and confirmation paths remain unchanged.
 
+The same centralized wrapper covers the read-only image checksum dialog's static opening shell. The selected image path, calculated digest values, generated report, helper errors, clipboard content, and dynamic running/completion status remain untranslated.
+
 ## Translator contract
 
 - Translate the meaning of the complete source message; do not add new behavior or promises.
