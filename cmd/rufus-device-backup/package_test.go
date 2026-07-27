@@ -37,6 +37,7 @@ func TestBackupCommandPackageContract(t *testing.T) {
 				`gi.require_version("Gtk", "3.0")`,
 				`sys.path.insert(0, "/usr/lib/rufusarm64")`,
 				`install_appearance(RufusWindow)`,
+				`install_main_control_tooltips(RufusWindow)`,
 				`run_rufusarm64`,
 			},
 		},
