@@ -105,6 +105,7 @@
 
 - Guarded ext2 and ext3 data-only formatting with real loop qualification
 - Application-scoped System, Light, and Dark GTK appearance selection with persisted canonical settings
+- Complete main-window option and primary-action tooltips without replacing workflow-specific disclosures
 - Remaining portable filesystem, localization, and distribution work selected from the pinned upstream audit
 - No weakening of identity, confirmation, cancellation, synchronization, or verification gates
 
