@@ -58,6 +58,18 @@ class Container(Widget):
         return list(self.children)
 
 
+class Window(Container):
+    def __init__(self, title=None, children=None, **kwargs):
+        super().__init__(children=children, **kwargs)
+        self.title = title
+
+    def get_title(self):
+        return self.title
+
+    def set_title(self, value):
+        self.title = value
+
+
 class HeaderBar(Container):
     def __init__(self, title=None, subtitle=None, **kwargs):
         super().__init__(**kwargs)
@@ -119,6 +131,53 @@ class Expander(Button):
     pass
 
 
+class Entry(Widget):
+    def __init__(self, placeholder=None, **kwargs):
+        super().__init__(**kwargs)
+        self.placeholder = placeholder
+
+    def get_placeholder_text(self):
+        return self.placeholder
+
+    def set_placeholder_text(self, value):
+        self.placeholder = value
+
+
+class ProgressBar(Widget):
+    def __init__(self, text=None, **kwargs):
+        super().__init__(**kwargs)
+        self.text = text
+
+    def get_text(self):
+        return self.text
+
+    def set_text(self, value):
+        self.text = value
+
+
+class TextBuffer:
+    def __init__(self, text=""):
+        self.text = text
+
+    def get_bounds(self):
+        return 0, len(self.text)
+
+    def get_text(self, _start, _end, _include_hidden):
+        return self.text
+
+    def set_text(self, value):
+        self.text = value
+
+
+class TextView(Widget):
+    def __init__(self, text="", **kwargs):
+        super().__init__(**kwargs)
+        self.buffer = TextBuffer(text)
+
+    def get_buffer(self):
+        return self.buffer
+
+
 def _strip_test_markup(value):
     start = value.find(">")
     end = value.rfind("<")
@@ -136,11 +195,15 @@ def load_i18n_module():
     )
     repository.Gtk = types.SimpleNamespace(
         Container=Container,
+        Window=Window,
         HeaderBar=HeaderBar,
         Label=Label,
         Button=Button,
         CheckButton=CheckButton,
         Expander=Expander,
+        Entry=Entry,
+        ProgressBar=ProgressBar,
+        TextView=TextView,
     )
     sys.modules["gi"] = fake_gi
     sys.modules["gi.repository"] = repository
@@ -260,19 +323,107 @@ class PrimaryLocalizationTests(unittest.TestCase):
             self.assertIs(window._rufusarm64_translation, translation)
             self.assertGreaterEqual(window._rufusarm64_translated_fields, 6)
 
+    def test_guarded_dialog_widget_types_translate_static_state_and_preserve_confirmation_data(self):
+        module, _ = load_i18n_module()
+        translations = {
+            "Create non-bootable media": "Créer un support non amorçable",
+            "Non bootable — data-only media": "Non amorçable — données uniquement",
+            "Optional": "Facultatif",
+            "Not started": "Non démarré",
+            "No formatting report is available yet.": "Aucun rapport de formatage n'est encore disponible.",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            locale_root = Path(directory)
+            write_mo(locale_root / "zz" / "LC_MESSAGES" / "rufusarm64.mo", translations)
+            translation = module.load_translation(str(locale_root), ["zz"])
+
+            heading = Label("Non bootable — data-only media", use_markup=True)
+            placeholder = Entry("Optional")
+            progress = ProgressBar("Not started")
+            report = TextView("No formatting report is available yet.")
+            exact_phrase = Label("FORMAT /dev/sdz GPT ext4")
+            absent_entry = Entry(None)
+            absent_progress = ProgressBar(None)
+            absent_report = TextView("")
+            dialog = Window(
+                title="Create non-bootable media",
+                children=[
+                    heading,
+                    placeholder,
+                    progress,
+                    report,
+                    exact_phrase,
+                    absent_entry,
+                    absent_progress,
+                    absent_report,
+                ],
+            )
+
+            self.assertFalse(module.translate_widget_tree(dialog, translation))
+            self.assertEqual(dialog.title, translations["Create non-bootable media"])
+            self.assertEqual(heading.text, translations["Non bootable — data-only media"])
+            self.assertEqual(
+                heading.markup,
+                "<span size='large' weight='bold'>Non amorçable — données uniquement</span>",
+            )
+            self.assertEqual(placeholder.placeholder, "Facultatif")
+            self.assertEqual(progress.text, "Non démarré")
+            self.assertEqual(report.buffer.text, "Aucun rapport de formatage n'est encore disponible.")
+            self.assertEqual(exact_phrase.text, "FORMAT /dev/sdz GPT ext4")
+            self.assertIsNone(absent_entry.placeholder)
+            self.assertIsNone(absent_progress.text)
+            self.assertEqual(absent_report.buffer.text, "")
+            self.assertIs(dialog._rufusarm64_translation, translation)
+            self.assertGreaterEqual(dialog._rufusarm64_translated_fields, 5)
+
+    def test_guarded_dialog_installer_wraps_only_loaded_classes_and_is_idempotent(self):
+        module, deferred = load_i18n_module()
+        names = ("rufusarm64_nonbootable_dialog", "rufusarm64_freedos_dialog")
+        saved = {name: sys.modules.get(name) for name in names}
+        try:
+            classes = []
+            for module_name, class_name in module.GUARDED_DIALOG_CLASSES:
+                fake_module = types.ModuleType(module_name)
+
+                class Dialog(Window):
+                    def __init__(self, marker):
+                        super().__init__(title=marker)
+                        self.marker = marker
+
+                Dialog.__name__ = class_name
+                setattr(fake_module, class_name, Dialog)
+                sys.modules[module_name] = fake_module
+                classes.append(Dialog)
+
+            module.install_guarded_dialog_localization()
+            module.install_guarded_dialog_localization()
+            dialogs = [dialog_class(f"dialog-{index}") for index, dialog_class in enumerate(classes)]
+            self.assertTrue(all(dialog_class._localization_installed for dialog_class in classes))
+            self.assertEqual(
+                deferred,
+                [(module.translate_widget_tree, (dialog,)) for dialog in dialogs],
+            )
+            self.assertEqual([dialog.marker for dialog in dialogs], ["dialog-0", "dialog-1"])
+        finally:
+            for name, previous in saved.items():
+                if previous is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = previous
+
     def test_installer_is_idempotent_and_defers_until_composed_construction(self):
         module, deferred = load_i18n_module()
 
-        class Window(Container):
+        class ApplicationWindow(Container):
             def __init__(self, app):
                 super().__init__()
                 self.app = app
 
-        module.install_localization(Window)
-        module.install_localization(Window)
-        window = Window("application")
+        module.install_localization(ApplicationWindow)
+        module.install_localization(ApplicationWindow)
+        window = ApplicationWindow("application")
         self.assertEqual(window.app, "application")
-        self.assertTrue(Window._localization_installed)
+        self.assertTrue(ApplicationWindow._localization_installed)
         self.assertEqual(deferred, [(module.apply_primary_ui_translation, (window,))])
 
     def test_template_is_deterministic_and_excludes_machine_contracts(self):
@@ -287,9 +438,18 @@ class PrimaryLocalizationTests(unittest.TestCase):
         text = POT.read_text(encoding="utf-8")
         self.assertIn('msgid "Create USB"', text)
         self.assertIn('msgid "Keyboard: {shortcut}"', text)
+        self.assertIn('msgid "Create non-bootable media"', text)
+        self.assertIn('msgid "FreeDOS 1.4 — x86 BIOS/Legacy media"', text)
         self.assertIn('#: gui/rufusarm64_i18n.py', text)
         self.assertNotIn("POT-Creation-Date", text)
-        for forbidden in ("--expected-identity", "FORMAT /dev", 'msgid "device_path"', 'msgid "filesystem"'):
+        for forbidden in (
+            "--expected-identity",
+            "FORMAT /dev",
+            "WRITE FREEDOS /dev",
+            'msgid "device_path"',
+            'msgid "filesystem"',
+            'msgid "identity"',
+        ):
             self.assertNotIn(forbidden, text)
 
     def test_package_and_launcher_bind_the_runtime_template_and_safe_ordering(self):
