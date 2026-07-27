@@ -38,6 +38,10 @@ type FilesystemOptions struct {
 // check. The caller must have created and verified the partition table and must
 // keep the parent whole-disk safety lock for the entire call.
 func CreateFilesystem(ctx context.Context, partitionPath string, plan Plan, opts FilesystemOptions) (returnErr error) {
+	completed := false
+	defer func() {
+		emitFilesystemCompletion(completed, returnErr, opts.Event)
+	}()
 	if err := validateFilesystemPlan(plan); err != nil {
 		return err
 	}
@@ -56,14 +60,17 @@ func CreateFilesystem(ctx context.Context, partitionPath string, plan Plan, opts
 	if err != nil {
 		return fmt.Errorf("open persistence partition: %w", err)
 	}
-	defer partition.Close()
+	partitionLocked := false
+	defer func() {
+		returnErr = finishPersistenceFile(returnErr, partition, partitionLocked, "persistence partition")
+	}()
 	if err := verifyPersistencePartition(partition, partitionPath, plan, opts); err != nil {
 		return err
 	}
 	if err := syscall.Flock(int(partition.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		return fmt.Errorf("lock persistence partition: %w", err)
 	}
-	defer syscall.Flock(int(partition.Fd()), syscall.LOCK_UN) // best effort
+	partitionLocked = true
 
 	for _, program := range []string{"mkfs.ext4", "mount", "umount", "e2fsck"} {
 		if _, err := exec.LookPath(program); err != nil {
@@ -143,7 +150,7 @@ func CreateFilesystem(ctx context.Context, partitionPath string, plan Plan, opts
 	if err := partition.Sync(); err != nil {
 		return fmt.Errorf("sync persistence partition: %w", err)
 	}
-	emitFilesystem(opts.Event, "complete", "Persistence filesystem created and checked.")
+	completed = true
 	return nil
 }
 

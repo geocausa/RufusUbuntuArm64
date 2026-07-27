@@ -183,11 +183,7 @@ func WriteEvidence(path string, evidence Evidence) (string, error) {
 		return "", fmt.Errorf("qualification report directory: %w", err)
 	}
 	absolute = filepath.Join(parent, filepath.Base(absolute))
-	if err := writeAtomicNoFollow(absolute, data, 0o600); err != nil {
-		return "", err
-	}
-	checksum := []byte(fmt.Sprintf("%s  %s\n", hash, filepath.Base(absolute)))
-	if err := writeAtomicNoFollow(absolute+".sha256", checksum, 0o600); err != nil {
+	if err := writeRecordPair(absolute, data, hash); err != nil {
 		return "", err
 	}
 	return hash, nil

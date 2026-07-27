@@ -1,0 +1,102 @@
+.TH RUFUSARM64-NONBOOTABLE-FORMAT 1 "26 July 2026" "RufusArm64 0.14.0" "User Commands"
+.SH NAME
+rufusarm64-nonbootable-format \- erase and format a removable drive as data-only media
+.SH SYNOPSIS
+.B rufusarm64-nonbootable-format
+.B --device
+.I /dev/DEVICE
+.B --dry-run
+.RI [ options ]
+.br
+.B sudo rufusarm64-nonbootable-format
+.B --device
+.I /dev/DEVICE
+.RI [ options ]
+.SH DESCRIPTION
+.B rufusarm64-nonbootable-format
+is the dedicated identity-bound data-only formatter. It erases one explicitly
+selected whole block device, writes one GPT or MBR partition, creates FAT32,
+exFAT, NTFS, or ext4, and verifies the published partition table, kernel
+geometry, filesystem type, label, and read-only checker result. The result is
+not claimed bootable.
+.PP
+The unprivileged dry run resolves the current kernel device, checks the selected
+identity, exact capacity and logical sector size, validates the requested label,
+and calculates complete aligned geometry before authentication. Destructive
+execution reconstructs and revalidates the same canonical plan immediately
+before erasure.
+.SH LAYOUT
+Exactly one data partition is created with a 1 MiB aligned start and a 1 MiB
+reserved tail. GPT uses Microsoft basic-data for FAT32, exFAT, and NTFS and the
+Linux filesystem-data type for ext4. MBR uses type 0x0c for FAT32, 0x07 for
+exFAT/NTFS, and 0x83 for ext4. Geometry beyond the exact MBR address range is
+refused with instructions to use GPT.
+.SH OPTIONS
+.TP
+.BI --device " /dev/DEVICE"
+Select the exact whole target disk. Partitions, non-block paths, the running
+system disk, protected devices, and unsupported virtual targets are refused.
+.TP
+.BI --expected-identity " TOKEN"
+Require the current token from
+.BR "rufusarm64-cli list --json" .
+Mandatory with noninteractive or override-capable terminal modes.
+.TP
+.BI --scheme " gpt|mbr"
+Choose GPT or MBR. GPT is the default.
+.TP
+.BI --filesystem " fat32|exfat|ntfs|ext4"
+Choose the data filesystem. FAT32 is the default.
+.TP
+.BI --label " LABEL"
+Set a label under the selected filesystem's validated length and character
+contract.
+.TP
+.B --dry-run
+Print the complete non-destructive plan without opening the target for writing.
+.TP
+.B --json
+Emit one deterministic JSON plan or final report.
+.TP
+.B --yes
+Skip terminal confirmation. Accepted only with an exact expected identity.
+.TP
+.B --allow-fixed
+Permit an explicitly selected non-removable whole disk for direct terminal use.
+The graphical path does not expose this option and protected-device refusals
+remain active.
+.TP
+.B --no-unmount
+Refuse mounted descendants instead of guarded unmounting. The graphical path
+does not expose this option.
+.TP
+.BI --cancel-file " PATH"
+Use the owner-private graphical cancellation marker beneath `/run/user`.
+.TP
+.BR --version , " -v"
+Print the installed version.
+.SH CONFIRMATION
+Interactive terminal execution requires the exact generated phrase:
+.PP
+.nf
+FORMAT /dev/DEVICE AS FILESYSTEM USING SCHEME LABEL LABEL
+.fi
+.PP
+An empty label uses `WITHOUT A LABEL`. A mismatch stops before the target is
+opened for formatting.
+.SH FAILURE AND CANCELLATION
+Cancellation before erasure reports that the medium was unchanged. Once an
+erase command is invoked, cancellation or failure conservatively reports that
+the medium may have changed and is not reusable until a complete format
+succeeds. Do not remove the drive while an operation is active.
+.SH POLKIT BOUNDARY
+The installed graphical action
+.B io.github.geocausa.RufusArm64.format-data
+executes only the package-private formatter with noninteractive JSON, exact
+identity, owner-private cancellation, normal removable-media policy, and
+guarded unmounting. Fixed-disk and no-unmount overrides are terminal-only.
+.SH SEE ALSO
+.BR rufusarm64 (1),
+.BR rufusarm64-cli (1),
+.BR rufusarm64-device-backup (1),
+.BR rufusarm64-device-qualify (1)

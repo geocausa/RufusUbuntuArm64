@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "repository": "https://github.com/pbatard/rufus",
+  "commit": "6d8fbf98305ff37eb531c45cbd6ff44563c53917",
+  "source": {
+    "path": "src/format_fat32.c",
+    "git_blob_sha1": "fa75f16eecb194f0854eacd1ab4e76d0ae7aa602"
+  },
+  "initial_scope": {
+    "logical_sector_size": 512,
+    "partition_start_sector": 2048,
+    "reserved_tail_sectors": 2048,
+    "partition_type": "0x0c",
+    "active_partition": true,
+    "sectors_per_track": 63,
+    "heads": 255
+  },
+  "fat32": {
+    "base_reserved_sectors": 32,
+    "fat_count": 2,
+    "backup_boot_sector": 6,
+    "fsinfo_sector": 1,
+    "root_cluster": 2,
+    "data_alignment_sectors": 2048,
+    "minimum_cluster_count": 65536,
+    "maximum_cluster_count": 268435455,
+    "maximum_total_sectors_exclusive": 4294967295,
+    "media_descriptor": 248,
+    "cluster_size_bytes": [
+      {"partition_bytes_below": 67108864, "bytes": 512},
+      {"partition_bytes_below": 134217728, "bytes": 1024},
+      {"partition_bytes_below": 268435456, "bytes": 2048},
+      {"partition_bytes_below": 8589934592, "bytes": 4096},
+      {"partition_bytes_below": 17179869184, "bytes": 8192},
+      {"partition_bytes_below": 34359738368, "bytes": 16384},
+      {"partition_bytes_below": 2199023255552, "bytes": 32768}
+    ]
+  },
+  "interpretation": "Rufus computes FAT size from total sectors, two FATs and four-byte FAT32 entries; aligns the reserved-plus-FAT system area to 1 MiB; uses root cluster 2, FSInfo sector 1 and backup boot sector 6; and rejects fewer than 65536 clusters or a total sector count reaching 0xffffffff. The repository narrows the first FreeDOS checkpoint to 512-byte sectors, a 1 MiB MBR partition start and a 1 MiB tail reservation."
+}

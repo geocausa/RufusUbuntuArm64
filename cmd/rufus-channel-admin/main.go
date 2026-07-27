@@ -588,7 +588,7 @@ func writePublicationDirectory(path string, files map[string][]byte) error {
 	if err := directoryFile.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(temporary, absolute); err != nil {
+	if err := renameNoReplace(temporary, absolute); err != nil {
 		return err
 	}
 	cleanup = false
@@ -664,7 +664,7 @@ func readOperatorFile(path string, limit int) ([]byte, error) {
 	if limit <= 0 || limit > maxOperatorFileBytes {
 		limit = maxOperatorFileBytes
 	}
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
@@ -755,8 +755,14 @@ func writeAtomicOutput(path string, data []byte, force bool) error {
 			return err
 		}
 	}
-	if err := os.Rename(temporaryPath, absolute); err != nil {
-		return err
+	var publishErr error
+	if force {
+		publishErr = os.Rename(temporaryPath, absolute)
+	} else {
+		publishErr = renameNoReplace(temporaryPath, absolute)
+	}
+	if publishErr != nil {
+		return publishErr
 	}
 	cleanup = false
 	directoryFile, err := os.Open(directory)

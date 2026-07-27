@@ -1,0 +1,112 @@
+{
+  "archive": {
+    "name": "FD14-FullUSB.zip",
+    "sha256": "cd440cd165f5a8a184870cb615f525af182660c15f9bcf1e9d198ca19cedcaff"
+  },
+  "disk_image": {
+    "logical_sector_size": 512,
+    "member": "FD14FULL.img",
+    "partition_start_sector": 63
+  },
+  "distribution": "FreeDOS 1.4 FullUSB",
+  "files": {
+    "COMMAND.COM": {
+      "git_blob_sha1": "255525acc562e0411e3e5f000bc1ba788733056d",
+      "member": "BIN/COMMAND.COM",
+      "package": "freecom.zip",
+      "path": "internal/freedos/payload/COMMAND.COM",
+      "sha256": "077808379e896476f7f69d62e6c8989d8fc23e8ef58d1c8492db1ac106784107",
+      "size": 87772
+    },
+    "FREECOM.LSM": {
+      "git_blob_sha1": "9d3ff146e410c383030c03eee2ddd679f9a22e29",
+      "member": "APPINFO/FREECOM.LSM",
+      "package": "freecom.zip",
+      "path": "vendor/freedos/metadata/FREECOM.LSM",
+      "sha256": "0c370cb1cbbc41d775a478ce88baf2b01cca24c8a7311f4b1f4d094de2cd29d2",
+      "size": 585
+    },
+    "KERNEL-COPYING": {
+      "git_blob_sha1": "c478510e039a94aafa5f13cbac01dc6c31c3431e",
+      "member": "DOC/KERNEL/COPYING",
+      "package": "kernel.zip",
+      "path": "vendor/freedos/metadata/KERNEL-COPYING",
+      "sha256": "2ec21c4f10e9fc6bafbc619cf905424162a0b6443e482d599a6d0d7718e9ae58",
+      "size": 18330
+    },
+    "KERNEL.LSM": {
+      "git_blob_sha1": "bc7d1d7ee4530a4aa481b9ec3dc5752a6a8e5d9a",
+      "member": "APPINFO/KERNEL.LSM",
+      "package": "kernel.zip",
+      "path": "vendor/freedos/metadata/KERNEL.LSM",
+      "sha256": "fcf0314885a8a4d5f82ecea0a82e81cafbd017a43959ed1de5c7e14011b2351e",
+      "size": 970
+    },
+    "KERNEL.SYS": {
+      "derived_from": "KERNL386.SYS",
+      "force_lba_value": 1,
+      "git_blob_sha1": "6b524a99481f2286a5ddcb06c4fbccfe2bc5cfbd",
+      "path": "internal/freedos/payload/KERNEL.SYS",
+      "sha256": "57504a0d5e1d57a0407d995e77fcebb9627da2c0dbe0f1cbf7c5fa901d2efc6c",
+      "size": 46256
+    },
+    "KERNL386.SYS": {
+      "force_lba_value": 0,
+      "git_blob_sha1": "bfe7cdfe616dc71ded366bc57fa8c370a548faa6",
+      "member": "BIN/KERNL386.SYS",
+      "package": "kernel.zip",
+      "path": "internal/freedos/payload/KERNL386.SYS",
+      "sha256": "932c0c155701eddb7b902f7269a1b2ce31f5c82a6dc195172f2336d18a74e1fb",
+      "size": 46256
+    },
+    "freecom-sources.zip": {
+      "git_blob_sha1": "ae07a929c0ee7e29fd4e0a986186eddb4784d167",
+      "member": "SOURCE/FREECOM/SOURCES.ZIP",
+      "member_count": 825,
+      "package": "freecom.zip",
+      "path": "vendor/freedos/source/freecom-sources.zip",
+      "required_members": [
+        "license"
+      ],
+      "sha256": "beef029a2268cac4dd5b729a649ea4e23f30c9cfee1788c4bbd64b4d4ddb093b",
+      "size": 1236304
+    },
+    "kernel-sources.zip": {
+      "git_blob_sha1": "189e2d1e2264f1649c67e3e52cd00d3466c58a6a",
+      "member": "SOURCE/KERNEL/SOURCES.ZIP",
+      "member_count": 196,
+      "package": "kernel.zip",
+      "path": "vendor/freedos/source/kernel-sources.zip",
+      "required_members": [
+        "COPYING"
+      ],
+      "sha256": "fda372721899e6a9cabbfa6beed259be19dafd0fe16d90b8f4da1a9397fde574",
+      "size": 539853
+    }
+  },
+  "kernel_patch": {
+    "all_other_bytes_preserved": true,
+    "offset": 13,
+    "original_value": 0,
+    "patched_value": 1
+  },
+  "packages": {
+    "freecom.zip": {
+      "image_path": "PACKAGES/BASE/FREECOM.ZIP",
+      "sha256": "2529cf15c2ee7d7030ed99a6a88df2cf5eef87b9fe10f1c0fb643c38ea6aaa8e",
+      "size": 2037468
+    },
+    "kernel.zip": {
+      "image_path": "PACKAGES/BASE/KERNEL.ZIP",
+      "sha256": "38ce3c63e399c8f18ab6230d8988a5d1a1aa9be4e109d15c6f4842b5e8fe61e6",
+      "size": 772721
+    }
+  },
+  "schema": 1,
+  "scope": "provenance and ordinary-file validation only; no device operation is authorized",
+  "upstream": {
+    "freecom_source_commit": "04fc21a9f6792abe9048598e8f2d048b4f6cd0e5",
+    "kernel_source_commit": "d6791add2043c9d7b584d840a8ffaf8829fd2bdc",
+    "rufus_commit": "6d8fbf98305ff37eb531c45cbd6ff44563c53917"
+  }
+}

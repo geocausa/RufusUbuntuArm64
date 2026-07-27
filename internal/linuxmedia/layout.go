@@ -88,7 +88,10 @@ func PlanPersistentLayout(targetSize, sectorSize, copiedBytes, requestedPersiste
 	if copiedBytes > ^uint64(0)-margin {
 		return PersistentLayout{}, errors.New("linux media size overflows the boot partition calculation")
 	}
-	bootSize := alignLayout(copiedBytes+margin, layoutAlignment)
+	bootSize, err := alignLayoutChecked(copiedBytes+margin, layoutAlignment)
+	if err != nil {
+		return PersistentLayout{}, fmt.Errorf("align writable boot partition size: %w", err)
+	}
 	if bootSize < minimumBootBytes {
 		bootSize = minimumBootBytes
 	}

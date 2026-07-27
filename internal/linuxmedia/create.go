@@ -69,6 +69,10 @@ type PersistentCreateResult struct {
 // intentionally not called by the graphical writer. The caller must have
 // already applied whole-disk policy, confirmation, and identity selection.
 func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts PersistentCreateOptions, emit PersistentEventFunc) (result PersistentCreateResult, returnErr error) {
+	completed := false
+	defer func() {
+		emitPersistentCompletion(completed, returnErr, emit)
+	}()
 	if opts.ExpectedSource == (sourcefile.Identity{}) {
 		return result, errors.New("persistent Linux creation requires an identity-bound source image")
 	}
@@ -76,10 +80,44 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 	if err != nil {
 		return result, err
 	}
-	defer isoFile.Close()
+	defer func() {
+		returnErr = finishPersistentFile(returnErr, isoFile, false, "selected Linux image")
+	}()
 	stableISOPath := fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), isoFile.Fd())
+	targetChanged := false
 
-	sourceDigest, err := hashPersistentSource(ctx, isoFile, opts.ExpectedSource, emit, "hash_source", "Hashing the selected Linux image…")
+	sourceLease, leaseErr := sourcefile.AcquireReadLease(ctx, isoFile, opts.ExpectedSource)
+	switch {
+	case leaseErr == nil:
+		ctx = sourceLease.Context()
+		sendPersistent(emit, PersistentEvent{Stage: "source_hold", Message: "Holding the selected Linux image read-only with a Linux kernel lease; one complete SHA-256 pass will authenticate the held bytes."})
+		defer func() {
+			heldErr := sourceLease.Check()
+			if errors.Is(heldErr, sourcefile.ErrReadLeaseBroken) {
+				message := "the selected Linux image was opened for writing while media preparation was in progress; nothing was erased"
+				if targetChanged {
+					message = "the selected Linux image was opened for writing while USB creation was in progress; the USB is incomplete and must be recreated"
+				}
+				heldErr = fmt.Errorf("%s: %w", message, heldErr)
+			}
+			closeErr := sourceLease.Close()
+			if heldErr != nil || closeErr != nil {
+				completed = false
+			}
+			returnErr = errors.Join(returnErr, heldErr, closeErr)
+		}()
+	case errors.Is(leaseErr, sourcefile.ErrReadLeaseUnavailable), errors.Is(leaseErr, sourcefile.ErrReadLeaseConflict):
+		sourceLease = nil
+		sendPersistent(emit, PersistentEvent{Stage: "source_hold", Message: fmt.Sprintf("Kernel source hold unavailable (%v); using conservative three-pass SHA-256 source verification.", leaseErr)})
+	default:
+		return result, fmt.Errorf("hold selected Linux image stable: %w", leaseErr)
+	}
+
+	initialHashMessage := "Hashing the selected Linux image once under the kernel source hold…"
+	if sourceLease == nil {
+		initialHashMessage = "Hashing the selected Linux image (conservative pass 1 of 3)…"
+	}
+	sourceDigest, err := hashPersistentSource(ctx, isoFile, opts.ExpectedSource, emit, "hash_source", initialHashMessage)
 	if err != nil {
 		return result, fmt.Errorf("hash selected Linux image: %w", err)
 	}
@@ -97,14 +135,17 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 	if err != nil {
 		return result, fmt.Errorf("open target for persistent Linux creation: %w", err)
 	}
-	defer target.Close()
+	targetLocked := false
+	defer func() {
+		returnErr = finishPersistentFile(returnErr, target, targetLocked, "persistent Linux target")
+	}()
 	if err := safety.VerifyOpenDevice(target, opts.ExpectedDeviceID, opts.TargetSize); err != nil {
 		return result, err
 	}
 	if err := syscall.Flock(int(target.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		return result, fmt.Errorf("another writer appears to be using %s: %w", devicePath, err)
 	}
-	defer syscall.Flock(int(target.Fd()), syscall.LOCK_UN) // best effort
+	targetLocked = true
 	stableTargetPath := fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), target.Fd())
 	targetInfo, err := target.Stat()
 	if err != nil {
@@ -230,14 +271,25 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 	}
 	result = PersistentCreateResult{Layout: layout, Detection: detection, Manifest: manifest}
 
-	preDestructiveDigest, err := hashPersistentSource(ctx, isoFile, opts.ExpectedSource, emit, "verify_source", "Rechecking the Linux image before erasing the USB…")
-	if err != nil {
-		return result, err
-	}
-	if !bytes.Equal(sourceDigest[:], preDestructiveDigest[:]) {
-		return result, errors.New("the selected Linux image changed during inspection; nothing was erased")
+	if sourceLease != nil {
+		if err := sourceLease.Check(); err != nil {
+			return result, fmt.Errorf("confirm held Linux image before erasing the USB: %w", err)
+		}
+	} else {
+		preDestructiveDigest, err := hashPersistentSource(ctx, isoFile, opts.ExpectedSource, emit, "verify_source", "Rechecking the Linux image before erasing the USB (conservative pass 2 of 3)…")
+		if err != nil {
+			return result, err
+		}
+		if !bytes.Equal(sourceDigest[:], preDestructiveDigest[:]) {
+			return result, errors.New("the selected Linux image changed during inspection; nothing was erased")
+		}
 	}
 	checkTarget := func() error {
+		if sourceLease != nil {
+			if err := sourceLease.Check(); err != nil {
+				return err
+			}
+		}
 		if err := sourcefile.VerifyPinned(isoFile, opts.ExpectedSource); err != nil {
 			return err
 		}
@@ -252,6 +304,7 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 		}
 	}
 
+	targetChanged = true
 	sendPersistent(emit, PersistentEvent{Stage: "partition", Message: "Creating a fresh GPT layout for writable Linux boot files and persistence…"})
 	if err := runPersistent(ctx, emit, "wipefs", "--all", "--force", "--", stableTargetPath); err != nil {
 		return result, err
@@ -288,10 +341,7 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 		return result, fmt.Errorf("identity-bind writable boot partition: %w", err)
 	}
 	defer func() {
-		_ = syscall.Flock(int(bootFile.Fd()), syscall.LOCK_UN)
-		if err := bootFile.Close(); err != nil {
-			returnErr = errors.Join(returnErr, fmt.Errorf("close writable boot partition: %w", err))
-		}
+		returnErr = finishPersistentFile(returnErr, bootFile, true, "writable boot partition")
 	}()
 	bootFDPath := "/proc/self/fd/3"
 	sendPersistent(emit, PersistentEvent{Stage: "format", Message: fmt.Sprintf("Formatting the writable UEFI boot partition as FAT32 (%s)…", label)})
@@ -451,12 +501,18 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 		return result, err
 	}
 
-	postDigest, err := hashPersistentSource(ctx, isoFile, opts.ExpectedSource, emit, "verify_source", "Checking that the Linux image stayed unchanged…")
-	if err != nil {
-		return result, err
-	}
-	if !bytes.Equal(sourceDigest[:], postDigest[:]) {
-		return result, errors.New("the selected Linux image changed while the USB was being created; recreate the USB")
+	if sourceLease != nil {
+		if err := sourceLease.Check(); err != nil {
+			return result, fmt.Errorf("confirm held Linux image after copying: %w", err)
+		}
+	} else {
+		postDigest, err := hashPersistentSource(ctx, isoFile, opts.ExpectedSource, emit, "verify_source", "Checking that the Linux image stayed unchanged (conservative pass 3 of 3)…")
+		if err != nil {
+			return result, err
+		}
+		if !bytes.Equal(sourceDigest[:], postDigest[:]) {
+			return result, errors.New("the selected Linux image changed while the USB was being created; recreate the USB")
+		}
 	}
 	if err := checkTarget(); err != nil {
 		return result, err
@@ -470,7 +526,7 @@ func CreatePersistent(ctx context.Context, isoPath, devicePath string, opts Pers
 		}
 		mountedISO = false
 	}
-	sendPersistent(emit, PersistentEvent{Stage: "complete", Message: "Experimental persistent Linux USB created and verified."})
+	completed = true
 	return result, nil
 }
 

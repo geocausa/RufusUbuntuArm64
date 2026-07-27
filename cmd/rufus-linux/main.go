@@ -35,6 +35,16 @@ var version = "development"
 
 const defaultAcquisitionChannelConfig = "/usr/share/rufusarm64/acquisition/channel.json"
 
+const (
+	defaultWriteVerify            = false
+	defaultWindowsPartitionScheme = "auto"
+	defaultWindowsTargetSystem    = "auto"
+	defaultWindowsFilesystem      = "auto"
+	defaultWindowsClusterSize     = "auto"
+	defaultWindowsFullFormat      = false
+	defaultWindowsBadBlockCheck   = false
+)
+
 type jsonEvent struct {
 	Event   string  `json:"event"`
 	Stage   string  `json:"stage,omitempty"`
@@ -93,6 +103,8 @@ func run(args []string) error {
 		return runWindows(args[1:])
 	case "qualify":
 		return runQualify(args[1:])
+	case "ffu":
+		return runFFU(args[1:])
 	case "version", "--version", "-v":
 		fmt.Println(version)
 		return nil
@@ -132,6 +144,8 @@ Usage:
   sudo rufusarm64-cli windows analyze --image FILE --expected-source-identity ID [--json]
   sudo rufusarm64-cli qualify start --record FILE --output FILE [--state-dir DIR] [--json]
   sudo rufusarm64-cli qualify verify --record FILE --output FILE [--state-dir DIR] [--json]
+  rufusarm64-cli ffu review --experimental-ffu --image IMAGE.ffu --device /dev/sdX --expected-identity TOKEN --target-size BYTES --logical-sector-size BYTES --physical-sector-size BYTES --trust-store DIR --trust-metadata-policy FILE --publisher-policy FILE [--json]
+  sudo rufusarm64-cli ffu restore --experimental-ffu --image IMAGE.ffu --device /dev/sdX --expected-identity TOKEN --target-size BYTES --logical-sector-size BYTES --physical-sector-size BYTES --trust-store DIR --trust-metadata-policy FILE --publisher-policy FILE --confirm PHRASE [--json]
 
 Acquisition catalogs are accepted only after detached Ed25519 signature, expiry, URL, size, filename, and SHA-256 validation.
 The built-in channel additionally enforces threshold root/catalog signatures, key rotation, version rollback protection, and owner-only atomic trust state.
@@ -238,8 +252,8 @@ func runInspect(args []string) error {
 			modeErr = selectionErr
 			if selectionErr == nil && selected == "windows" {
 				result.Mode = "windows"
-				result.PartitionScheme = "GPT"
-				result.TargetSystem = "UEFI"
+				result.PartitionScheme = "Automatic (image-derived)"
+				result.TargetSystem = "Automatic (image-derived)"
 				result.FileSystem = "Automatic (FAT32 preferred)"
 				result.WindowsOptions = true
 				result.Description = probe.Description + "; Windows installation media will be fully expanded and validated before the USB is erased"
@@ -271,8 +285,8 @@ func runInspect(args []string) error {
 			result.Description = err.Error()
 		case mode == "windows":
 			result.Mode = "windows"
-			result.PartitionScheme = "GPT"
-			result.TargetSystem = "UEFI"
+			result.PartitionScheme = "Automatic (image-derived)"
+			result.TargetSystem = "Automatic (image-derived)"
 			result.FileSystem = "Automatic (FAT32 preferred)"
 			result.WindowsOptions = true
 			result.Description = "Standard Windows UEFI installation media"
@@ -317,7 +331,7 @@ func runWrite(args []string) error {
 	imagePath := fs.String("image", "", "image or ISO file")
 	devicePath := fs.String("device", "", "whole target disk")
 	mode := fs.String("mode", "auto", "auto, raw, windows, or linux-persistent")
-	verify := fs.Bool("verify", false, "verify data after writing")
+	verify := fs.Bool("verify", defaultWriteVerify, "verify data after writing")
 	yes := fs.Bool("yes", false, "skip interactive confirmation")
 	allowFixed := fs.Bool("allow-fixed", false, "allow a non-removable disk")
 	noUnmount := fs.Bool("no-unmount", false, "do not unmount mounted filesystems")
@@ -328,18 +342,19 @@ func runWrite(args []string) error {
 	cancelFile := fs.String("cancel-file", "", "per-user cancellation marker used by the graphical app")
 	allowForeignArchitecture := fs.Bool("allow-foreign-windows-architecture", false, "allow x86-64-only Windows media on an ARM64 host")
 	volumeLabel := fs.String("volume-label", "RUFUSARM64", "volume label for extracted Windows or experimental Linux boot media")
-	partitionScheme := fs.String("partition-scheme", "gpt", "Windows media partition scheme: gpt or mbr")
-	targetSystem := fs.String("target-system", "uefi", "Windows target system: uefi or bios")
-	filesystem := fs.String("filesystem", "auto", "Windows media filesystem: auto, fat32, or ntfs")
-	clusterSizeText := fs.String("cluster-size", "auto", "cluster size: auto, 4096, 8192, 16384, or 32768")
+	partitionScheme := fs.String("partition-scheme", defaultWindowsPartitionScheme, "Windows media partition scheme: auto, gpt, or mbr")
+	targetSystem := fs.String("target-system", defaultWindowsTargetSystem, "Windows target system: auto, uefi, or bios")
+	filesystem := fs.String("filesystem", defaultWindowsFilesystem, "Windows media filesystem: auto, fat32, or ntfs")
+	clusterSizeText := fs.String("cluster-size", defaultWindowsClusterSize, "cluster size: auto, 4096, 8192, 16384, or 32768")
 	driverFolder := fs.String("driver-folder", "", "optional folder of Windows .inf drivers to copy to the USB")
 	dbxFile := fs.String("dbx-file", "", "optional Secure Boot DBXUpdate.bin used to reject revoked EFI boot files")
-	fullFormat := fs.Bool("full-format", false, "zero the Windows partition before formatting")
-	badBlockCheck := fs.Bool("bad-block-check", false, "zero and read back the Windows partition before formatting")
+	fullFormat := fs.Bool("full-format", defaultWindowsFullFormat, "zero the Windows partition before formatting")
+	badBlockCheck := fs.Bool("bad-block-check", defaultWindowsBadBlockCheck, "zero and read back the Windows partition before formatting")
 	winBypassHardware := fs.Bool("win-bypass-hardware", false, "bypass Windows TPM, Secure Boot, and RAM checks")
 	winBypassOnline := fs.Bool("win-bypass-online-account", false, "remove Windows online-account requirement")
 	winLocalUser := fs.String("win-local-user", "", "create a local Windows administrator account")
 	winPrivacy := fs.Bool("win-reduce-data-collection", false, "reduce Windows setup data collection and recommendations")
+	winQualityOfLife := fs.Bool("win-quality-of-life", false, "remove bundled OneDrive setup, Outlook and Teams and apply Rufus Quality of Life policies")
 	winDisableBitLocker := fs.Bool("win-disable-bitlocker", false, "disable automatic Windows device encryption provisioning")
 	winLocale := fs.String("win-locale", "", "apply a Windows regional locale, such as en-GB")
 	winTimeZone := fs.String("win-timezone", "", "apply a Windows time-zone name")
@@ -460,20 +475,26 @@ func runWrite(args []string) error {
 		return fmt.Errorf("parse --persistence-size: %w", err)
 	}
 	scheme := strings.ToLower(strings.TrimSpace(*partitionScheme))
-	if scheme != "gpt" && scheme != "mbr" {
-		return errors.New("--partition-scheme must be gpt or mbr")
+	switch scheme {
+	case "", "auto":
+		scheme = "auto"
+	case "gpt", "mbr":
+	default:
+		return errors.New("--partition-scheme must be auto, gpt, or mbr")
 	}
 	targetSystemChoice := strings.ToLower(strings.TrimSpace(*targetSystem))
 	switch targetSystemChoice {
-	case "", "auto", "uefi":
+	case "", "auto":
+		targetSystemChoice = "auto"
+	case "uefi":
 		targetSystemChoice = "uefi"
 	case "bios", "legacy", "legacy-bios", "bios-csm":
 		targetSystemChoice = "bios"
 	default:
-		return errors.New("--target-system must be uefi or bios")
+		return errors.New("--target-system must be auto, uefi, or bios")
 	}
-	if targetSystemChoice == "bios" && scheme != "mbr" {
-		return errors.New("--target-system bios requires --partition-scheme mbr")
+	if targetSystemChoice == "bios" && scheme == "gpt" {
+		return errors.New("--target-system bios cannot be combined with --partition-scheme gpt")
 	}
 	filesystemChoice := strings.ToLower(strings.TrimSpace(*filesystem))
 	if filesystemChoice == "" {
@@ -487,11 +508,12 @@ func runWrite(args []string) error {
 		BypassOnlineAccount:  *winBypassOnline,
 		LocalAccount:         *winLocalUser,
 		ReduceDataCollection: *winPrivacy,
+		QualityOfLife:        *winQualityOfLife,
 		DisableBitLocker:     *winDisableBitLocker,
 		Locale:               *winLocale,
 		TimeZone:             *winTimeZone,
 	}
-	if selectedMode != "windows" && (winOptions.Enabled() || scheme != "gpt" || targetSystemChoice != "uefi" || filesystemChoice != "auto" || clusterSize != 0 || *driverFolder != "" || *dbxFile != "" || *fullFormat || *badBlockCheck) {
+	if selectedMode != "windows" && (winOptions.Enabled() || scheme != "auto" || targetSystemChoice != "auto" || filesystemChoice != "auto" || clusterSize != 0 || *driverFolder != "" || *dbxFile != "" || *fullFormat || *badBlockCheck) {
 		return errors.New("windows partition and setup options can only be used with a supported Windows installation ISO")
 	}
 	if selectedMode == "linux-persistent" {
@@ -504,8 +526,8 @@ func runWrite(args []string) error {
 		if *forceRaw || *allowForeignArchitecture {
 			return errors.New("raw-image and foreign-Windows architecture overrides are incompatible with Linux persistence")
 		}
-		if scheme != "gpt" || targetSystemChoice != "uefi" || filesystemChoice != "auto" || clusterSize != 0 {
-			return errors.New("experimental Linux persistence currently requires GPT, UEFI, and automatic filesystem settings")
+		if (scheme != "auto" && scheme != "gpt") || (targetSystemChoice != "auto" && targetSystemChoice != "uefi") || filesystemChoice != "auto" || clusterSize != 0 {
+			return errors.New("experimental Linux persistence currently requires automatic/GPT, automatic/UEFI, and automatic filesystem settings")
 		}
 	} else if *experimentalPersistence || persistenceSize != 0 {
 		return errors.New("--experimental-persistence and --persistence-size require --mode linux-persistent")
@@ -692,11 +714,15 @@ func runWrite(args []string) error {
 	// exclusively and clears stale signatures through that same descriptor.
 	out.event(jsonEvent{Event: "stage", Stage: "write", Message: "Writing the image…"})
 	var last time.Time
-	written, err := imaging.WriteOpenImage(ctx, rawSource, resolved, imaging.WriteOptions{
+	writeResult, err := imaging.WritePreparedOpenImageWithResult(ctx, prepared, rawSource, resolved, imaging.WriteOptions{
 		ExpectedDeviceID:     kernelDeviceID,
 		ExpectedSource:       sourceIdentity,
 		TargetSize:           dev.Size,
 		ClearStaleSignatures: true,
+		HoldSource:           prepared.Kind == imaging.InputPlain,
+		SourceHold: func(status imaging.SourceHoldStatus) {
+			out.event(jsonEvent{Event: "stage", Stage: "source_hold", Message: status.Message})
+		},
 		BeforeWrite: func(source *os.File) error {
 			return strictTargetCheck(source)
 		},
@@ -725,6 +751,7 @@ func runWrite(args []string) error {
 	if err != nil {
 		return err
 	}
+	written := writeResult.BytesWritten
 	out.event(jsonEvent{Event: "stage", Stage: "sync", Message: fmt.Sprintf("Wrote %s successfully.", humanBytes(written))})
 	if err := postWriteTargetCheck(rawSource); err != nil {
 		return err
@@ -736,7 +763,7 @@ func runWrite(args []string) error {
 	completionHash := ""
 	if *verify {
 		out.event(jsonEvent{Event: "stage", Stage: "verify", Message: "Verifying the USB from the physical device…"})
-		hash, err := imaging.VerifyOpenImageWithOptions(ctx, rawSource, resolved, imaging.VerifyOptions{ExpectedDeviceID: kernelDeviceID, ExpectedDeviceSize: dev.Size, ExpectedSource: sourceIdentity}, func(p imaging.Progress) {
+		hash, err := imaging.VerifyTargetDigestWithOptions(ctx, resolved, imaging.DigestVerifyOptions{ExpectedDeviceID: kernelDeviceID, ExpectedDeviceSize: dev.Size, ImageSize: writeResult.BytesWritten, ExpectedSHA256: writeResult.SHA256}, func(p imaging.Progress) {
 			if *jsonProgress {
 				out.event(jsonEvent{Event: "progress", Stage: "verify", Done: p.Done, Total: p.Total, Rate: p.BytesPerSec})
 			} else {
@@ -977,6 +1004,8 @@ func runWindowsAnalyze(args []string) error {
 		return encoder.Encode(result)
 	}
 	fmt.Printf("Windows %s %s (%s)\n", result.Capabilities.Generation, result.Capabilities.Family, result.Capabilities.Architecture)
+	fmt.Printf("  Boot capability: %s\n", result.BootArchitecture)
+	fmt.Printf("  Automatic layout: %s / %s\n", strings.ToUpper(result.DefaultPartitionScheme), strings.ToUpper(result.DefaultTargetSystem))
 	if !result.Capabilities.Recognized {
 		fmt.Printf("Setup options unavailable: %s\n", result.Capabilities.Reason)
 	}

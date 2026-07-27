@@ -34,7 +34,7 @@ type DeviceOptions struct {
 // same held descriptor. O_EXCL is the exclusivity boundary here; adding an
 // advisory flock to an O_RDWR|O_EXCL block-device descriptor is redundant and
 // is rejected by loop devices on Linux.
-func RunDevice(ctx context.Context, path string, options DeviceOptions) (Report, error) {
+func RunDevice(ctx context.Context, path string, options DeviceOptions) (report Report, returnErr error) {
 	if ctx == nil {
 		return Report{}, errors.New("device qualification context is nil")
 	}
@@ -55,7 +55,9 @@ func RunDevice(ctx context.Context, path string, options DeviceOptions) (Report,
 	if err != nil {
 		return Report{}, fmt.Errorf("open qualification target: %w", err)
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		report, returnErr = finishDeviceRun(report, returnErr, file.Close())
+	}()
 
 	if err := safety.VerifyOpenDevice(file, options.ExpectedDeviceID, options.ExpectedSize); err != nil {
 		return Report{}, err
@@ -76,15 +78,15 @@ func RunDevice(ctx context.Context, path string, options DeviceOptions) (Report,
 		expectedDeviceID: options.ExpectedDeviceID,
 		expectedSize:     options.ExpectedSize,
 	}
-	report, runErr := Run(ctx, backend, options.ExpectedSize, Config{
+	report, returnErr = Run(ctx, backend, options.ExpectedSize, Config{
 		Profile:    options.Profile,
 		RegionSize: options.RegionSize,
 		BufferSize: options.BufferSize,
 		Patterns:   options.Patterns,
 		Progress:   options.Progress,
 	})
-	if runErr != nil {
-		return report, runErr
+	if returnErr != nil {
+		return report, returnErr
 	}
 	if err := safety.VerifyOpenDevice(file, options.ExpectedDeviceID, options.ExpectedSize); err != nil {
 		return report, err

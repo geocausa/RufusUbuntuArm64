@@ -59,8 +59,17 @@ type Detection struct {
 }
 
 // Detect inspects a mounted or extracted live-media tree through fs.FS. Only a
-// bounded set of expected marker and boot-configuration paths is read.
+// bounded set of expected marker and boot-configuration paths is read. Linux
+// os.DirFS values are transparently upgraded to descriptor-safe, nonblocking
+// traversal so existing callers cannot block on media special files.
 func Detect(root fs.FS) (Detection, error) {
+	if detection, handled, err := detectPathBackedFS(root); handled {
+		return detection, err
+	}
+	return detect(root)
+}
+
+func detect(root fs.FS) (Detection, error) {
 	if root == nil {
 		return Detection{}, errors.New("media filesystem is nil")
 	}

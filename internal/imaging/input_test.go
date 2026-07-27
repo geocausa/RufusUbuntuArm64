@@ -6,7 +6,9 @@ import (
 	"compress/bzip2"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -79,6 +81,18 @@ func TestProbeAndPrepareGZIP(t *testing.T) {
 	defer prepared.Close()
 	if !bytes.Equal(readPrepared(t, prepared), raw) {
 		t.Fatal("prepared gzip content differs")
+	}
+	expectedRaw := sha256.Sum256(raw)
+	if !prepared.rawSHA256Bound || prepared.rawSHA256 != expectedRaw {
+		t.Fatalf("prepared raw digest was not bound: %x", prepared.rawSHA256)
+	}
+	containerData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedContainer := sha256.Sum256(containerData)
+	if prepared.SourceSHA256 != hex.EncodeToString(expectedContainer[:]) {
+		t.Fatalf("container digest=%q want=%x", prepared.SourceSHA256, expectedContainer)
 	}
 	info, err := InspectImage(prepared.Path)
 	if err != nil || !info.LooksLikeRawBootMedia() {
@@ -191,6 +205,45 @@ func TestPrepareXZAndZSTD(t *testing.T) {
 				t.Fatalf("prepared %s content differs", tc.name)
 			}
 		})
+	}
+}
+
+func TestPreparedDigestSkipsRedundantRawSnapshotRead(t *testing.T) {
+	raw := testRawImage()
+	path := filepath.Join(t.TempDir(), "disk.img.gz")
+	writeGZIP(t, path, raw)
+	resolved, identity := inspectIdentity(t, path)
+	prepared, err := PrepareInput(context.Background(), resolved, identity, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.Close()
+	source, err := sourcefile.OpenRegular(prepared.Path, prepared.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	target := filepath.Join(t.TempDir(), "target.img")
+	if err := os.WriteFile(target, make([]byte, len(raw)+4096), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var snapshotEvents int
+	result, err := WritePreparedOpenImageWithResult(context.Background(), prepared, source, target, WriteOptions{
+		ExpectedSource: prepared.Identity,
+		TargetSize:     uint64(len(raw) + 4096),
+		SnapshotProgress: func(Progress) {
+			snapshotEvents++
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshotEvents != 0 {
+		t.Fatalf("private prepared image was redundantly prehashed: %d progress events", snapshotEvents)
+	}
+	expected := sha256.Sum256(raw)
+	if result.SHA256 != hex.EncodeToString(expected[:]) || result.BytesWritten != uint64(len(raw)) {
+		t.Fatalf("prepared write result=%#v", result)
 	}
 }
 

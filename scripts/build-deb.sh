@@ -57,6 +57,14 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
   go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \
   -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-device-backup" \
   "${ROOT_DIR}/cmd/rufus-device-backup"
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+  go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \
+  -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-nonbootable-format" \
+  "${ROOT_DIR}/cmd/rufus-nonbootable-format"
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+  go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \
+  -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-freedos-format" \
+  "${ROOT_DIR}/cmd/rufus-freedos-format"
 
 install -Dm755 "${ROOT_DIR}/gui/rufusarm64.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64.py"
@@ -91,18 +99,82 @@ if grep -Fq "Open Persistent USB Creator" "${GUI_TARGET}"; then
   exit 1
 fi
 grep -Fq "Checksums…" "${GUI_TARGET}"
+grep -Fq 'Gtk.Button(label="Non bootable…")' "${ROOT_DIR}/gui/rufusarm64_nonbootable_dialog.py"
+grep -Fq 'install_nonbootable(RufusWindow)' "${ROOT_DIR}/gui/rufusarm64_integrated.py"
+grep -Fq 'Gtk.Button(label="FreeDOS…")' "${ROOT_DIR}/gui/rufusarm64_freedos_dialog.py"
+grep -Fq 'install_freedos(RufusWindow)' "${ROOT_DIR}/gui/rufusarm64_integrated.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_logic.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_logic.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_checksums.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_checksums.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_device_qualify.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_device_qualify.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_qualification_report.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_qualification_report.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_device_qualify_dialog.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_device_qualify_dialog.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_formats.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_formats.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_iso_capture.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_iso_capture.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_iso.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_iso.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_nonbootable.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable_dialog.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_nonbootable_dialog.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_freedos.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_freedos.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_freedos_dialog.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_freedos_dialog.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_integrated.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_integrated.py"
 install -Dm755 "${ROOT_DIR}/gui/rufusarm64_persistence.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_persistence.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_persistence_logic.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_persistence_logic.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_ffu_json.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_ffu_json.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_ffu_restore_logic.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_ffu_restore_logic.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_ffu_dialog.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_ffu_dialog.py"
+
+# Fail the package build when any installed RufusArm64 Python module imports a
+# project-local module that the package forgot to include. Parse source without
+# importing GTK so this guard is deterministic on every build host.
+python3 - "${PACKAGE_DIR}/usr/lib/rufusarm64" <<'PYPACKAGEIMPORTS'
+import ast
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+pending = [root / "rufusarm64.py"]
+seen = set()
+while pending:
+    path = pending.pop()
+    if path in seen:
+        continue
+    if not path.is_file():
+        raise SystemExit(f"packaged GUI dependency is missing: {path.name}")
+    seen.add(path)
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    modules = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            modules.append(node.module)
+    for module in modules:
+        top_level = module.split(".", 1)[0]
+        if top_level.startswith("rufusarm64_"):
+            dependency = root / f"{top_level}.py"
+            if not dependency.is_file():
+                raise SystemExit(
+                    f"{path.name} imports missing packaged module {dependency.name}"
+                )
+            pending.append(dependency)
+PYPACKAGEIMPORTS
 
 # Include the verified package-private ARM64 WIM engine. It is deliberately
 # built without FUSE or NTFS-3G support and may depend only on the standard C
@@ -214,13 +286,32 @@ for file in README-RUFUS-UEFI-NTFS.txt SHA256SUMS; do
 done
 
 # Ship the exact GPL ms-sys source fragments used to derive the embedded
-# Windows MBR/PBR byte arrays, plus the pin metadata and upstream hashes.
-for file in PINNED-UPSTREAM.txt UPSTREAM-SHA256SUMS br.c ntfs.c fat32.c \
-  mbr_win7.h br_ntfs_0x0.h br_ntfs_0x54.h br_fat32_0x0.h \
+# Windows and FreeDOS MBR/PBR byte arrays, plus the pin metadata and hashes.
+for file in PINNED-UPSTREAM.txt UPSTREAM-SHA256SUMS FREEDOS-BOOTASSETS.json \
+  br.c ntfs.c fat32.c mbr_win7.h mbr_rufus.h br_ntfs_0x0.h br_ntfs_0x54.h \
+  br_fat32_0x0.h br_fat32fd_0x52.h br_fat32fd_0x3f0.h \
   br_fat32pe_0x52.h br_fat32pe_0x3f0.h br_fat32pe_0x1800.h; do
   install -Dm644 "${ROOT_DIR}/vendor/ms-sys/${file}" \
     "${PACKAGE_DIR}/usr/share/doc/rufusarm64/ms-sys/${file}"
 done
+install -Dm644 "${ROOT_DIR}/scripts/extract-freedos-bootassets.py" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/ms-sys/extract-freedos-bootassets.py"
+
+# Ship the complete corresponding source and exact metadata for the installed
+# FreeDOS kernel and FreeCOM payload. The command never downloads at runtime.
+for file in freecom-sources.zip kernel-sources.zip; do
+  install -Dm644 "${ROOT_DIR}/vendor/freedos/source/${file}" \
+    "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos/source/${file}"
+done
+for file in FREECOM.LSM KERNEL.LSM KERNEL-COPYING; do
+  install -Dm644 "${ROOT_DIR}/vendor/freedos/metadata/${file}" \
+    "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos/metadata/${file}"
+done
+for file in PAYLOADS.json RELEASE-CONTRACT.json; do
+  install -Dm644 "${ROOT_DIR}/vendor/freedos/${file}" \
+    "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos/${file}"
+done
+
 install -Dm755 "${ROOT_DIR}/packaging/rufusarm64" \
   "${PACKAGE_DIR}/usr/bin/rufusarm64"
 install -Dm755 "${ROOT_DIR}/packaging/rufusarm64-persistence" \
@@ -231,6 +322,10 @@ ln -s ../lib/rufusarm64/rufusarm64-device-qualify \
   "${PACKAGE_DIR}/usr/bin/rufusarm64-device-qualify"
 ln -s ../lib/rufusarm64/rufusarm64-device-backup \
   "${PACKAGE_DIR}/usr/bin/rufusarm64-device-backup"
+ln -s ../lib/rufusarm64/rufusarm64-nonbootable-format \
+  "${PACKAGE_DIR}/usr/bin/rufusarm64-nonbootable-format"
+ln -s ../lib/rufusarm64/rufusarm64-freedos-format \
+  "${PACKAGE_DIR}/usr/bin/rufusarm64-freedos-format"
 install -Dm644 "${ROOT_DIR}/packaging/io.github.geocausa.RufusArm64.desktop" \
   "${PACKAGE_DIR}/usr/share/applications/io.github.geocausa.RufusArm64.desktop"
 install -Dm644 "${ROOT_DIR}/packaging/io.github.geocausa.RufusArm64.Persistence.desktop" \
@@ -253,6 +348,14 @@ install -Dm644 "${ROOT_DIR}/docs/persistence-user-guide.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/persistence-user-guide.md"
 install -Dm644 "${ROOT_DIR}/docs/persistence-qualification.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/persistence-qualification.md"
+install -Dm644 "${ROOT_DIR}/docs/freedos-feasibility.md" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-feasibility.md"
+install -Dm644 "${ROOT_DIR}/docs/freedos-release-maintenance.md" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-release-maintenance.md"
+install -Dm644 "${ROOT_DIR}/docs/freedos-linux-backend.md" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-linux-backend.md"
+install -Dm644 "${ROOT_DIR}/docs/freedos-user-guide.md" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-user-guide.md"
 install -Dm644 "${ROOT_DIR}/NOTICE" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/NOTICE"
 install -Dm644 "${ROOT_DIR}/LICENSE" \
@@ -262,7 +365,7 @@ install -Dm644 "${ROOT_DIR}/packaging/copyright" \
 install -Dm644 "${ROOT_DIR}/CHANGELOG.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/changelog"
 gzip -9n "${PACKAGE_DIR}/usr/share/doc/rufusarm64/changelog"
-for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify rufusarm64-device-backup; do
+for page in rufusarm64 rufusarm64-cli rufusarm64-persistence rufusarm64-device-qualify rufusarm64-device-backup rufusarm64-nonbootable-format rufusarm64-freedos-format; do
   install -Dm644 "${ROOT_DIR}/docs/${page}.1" \
     "${PACKAGE_DIR}/usr/share/man/man1/${page}.1"
   gzip -9n "${PACKAGE_DIR}/usr/share/man/man1/${page}.1"
@@ -280,12 +383,13 @@ Priority: optional
 Architecture: ${ARCH}
 Maintainer: geocausa <noreply@github.com>
 Installed-Size: ${INSTALLED_SIZE}
-Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, mount, dosfstools, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils
+Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, mount, fdisk, dosfstools, exfatprogs, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils, genisoimage
 Homepage: https://github.com/geocausa/RufusUbuntuArm64
 Description: Bootable USB creator for Ubuntu ARM64
  A graphical utility that writes Linux ISOHybrid/raw images, creates verified
  persistent Ubuntu/Debian live media, creates Windows installation USB media,
- and captures verified images of removable drives. It supports GPT or MBR,
+ creates verified x86 BIOS/Legacy FreeDOS 1.4 media, captures verified
+ physical-drive images, and creates validated mounted-filesystem ISO/UDF remasters. It supports GPT or MBR,
  UEFI or x86-family BIOS/CSM, FAT32 or NTFS, compressed or virtual-disk inputs,
  Secure Boot DBX checks, verified boot assets, WIM splitting, and optional drivers.
 CONTROL

@@ -1,6 +1,6 @@
-.TH RUFUSARM64 1 "19 July 2026" "RufusArm64 0.12.1" "User Commands"
+.TH RUFUSARM64 1 "26 July 2026" "RufusArm64 0.14.0" "User Commands"
 .SH NAME
-rufusarm64 \- graphical bootable USB creator for Ubuntu ARM64
+rufusarm64 \- graphical bootable USB creator and guarded data-media formatter for Ubuntu ARM64
 .SH SYNOPSIS
 .B rufusarm64
 .RI [ --persistence ]
@@ -10,16 +10,124 @@ opens the graphical RufusArm64 application. It creates raw Linux media and
 supported Windows installation USB media after explicit target confirmation
 and administrator authentication.
 .PP
+The
+.B Download...
+action opens the verified acquisition workflow. A package-enabled built-in
+channel uses threshold-signed root and catalogue metadata with expiry and
+rollback protection. The advanced recovery path accepts only a separately
+trusted local catalogue, detached signature, and public key. Downloads perform
+storage-space preflight, stream progress, can be cancelled, retain only an
+owner-private signed-identity partial for later resume, and install the final
+file only after its signed size and SHA-256 match. A failed or cancelled
+transfer never installs an unverified image. The upstream project package may
+ship with the built-in network channel disabled until public catalogue and
+mirror operations are provisioned; the local signed-catalogue path remains
+available.
+.PP
+Before Windows setup customizations are offered, RufusArm64 mounts the exact
+identity-bound ISO read-only and inspects the complete installation metadata.
+The options dialog reports the bounded edition count and names, whether the
+payload is WIM, ESD, or a validated split SWM sequence, and the split-part
+count. All editions must agree on Windows generation, client/server family,
+and architecture or customization is disabled. RufusArm64 does not select an
+edition automatically and ordinary media creation remains available without
+customizations when product metadata cannot be classified safely.
+.PP
 The ordinary Create USB action preserves supported Linux raw/ISOHybrid images
 byte-for-byte. Persistent-live creation is a separate guarded workflow.
+.PP
+For a plain recognized Linux raw or ISO image, RufusArm64 also performs a
+bounded read-only compatibility inspection before erasure. It distinguishes a
+hybrid disk layout from an optical-only ISO, validates El Torito BIOS and UEFI
+catalogue entries, and reports ISOLINUX, SYSLINUX, or GRUB fingerprints found
+in the referenced boot images. Optical-only media is disclosed as potentially
+dependent on firmware USB-CD emulation. The inspection never executes or
+mounts image content and does not claim that a physical computer will boot it.
+.PP
+The separate
+.B Restore / format...
+action erases the selected removable drive, removes any existing boot layout,
+and creates one verified data-only partition using GPT or MBR and FAT32,
+exFAT, NTFS, or ext4. RufusArm64 first runs an unprivileged dry-run, displays
+the exact device identity, geometry, filesystem, label, required tools, and
+warnings, and requires the generated FORMAT phrase before administrator
+authentication. The graphical path cannot enable fixed-disk override or bypass
+guarded unmounting.
+.PP
+Cancellation is reported precisely. A cancellation before erasure leaves the
+drive unchanged. Cancellation or failure after erasure may leave incomplete
+media that must be formatted again before use. A successful report confirms
+the partition geometry and filesystem readback but explicitly does not claim
+that the result is bootable.
+.PP
+After the main image writer finishes, RufusArm64 keeps the selected image and
+shows explicit next steps. The completed medium can be left unchanged, another
+copy can be created after choosing a different removable drive, or the exact
+operation target can be passed to Restore drive for storage. That restoration
+still performs a fresh identity-bound, unprivileged plan and requires the exact
+FORMAT phrase before any erase. Failed or cancelled writes are conservatively
+reported as potentially incomplete and are never reformatted automatically.
+.PP
+The separate
+.B FreeDOS...
+action erases the selected removable drive and creates deterministic FreeDOS
+1.4 media from the package's checksum-pinned kernel and FreeCOM payload. It
+plans without elevation, binds the refreshed device identity and capacity,
+requires 512-byte logical sectors, displays the exact MBR/FAT32 geometry,
+required write/readback byte totals, and platform warnings, and requires the
+generated
+.B WRITE FREEDOS 1.4 TO /dev/DEVICE FOR X86 BIOS LEGACY
+phrase before administrator authentication. The graphical path exposes no
+fixed-disk override or guarded-unmount bypass.
+.PP
+FreeDOS creation retains a nearly full-size FAT32 partition but writes and
+reads back only the required final MBR, FAT32 boot/FSInfo, FAT-table, root,
+payload, allocation-slack, and bounded head/tail clearing extents. Unallocated
+data clusters are not overwritten during this fast creation path. The separate
+.B Check USB
+workflow remains the exhaustive whole-device write/readback qualification.
+.PP
+FreeDOS media created by this action is limited to x86-compatible processors
+using BIOS or UEFI Legacy/CSM firmware. Required-extent structural readback and
+SHA-256 verification do not prove that a particular physical computer will
+boot the drive or that untouched free clusters are healthy.
+.SH KEYBOARD AND ACCESSIBILITY
+The main image and USB-drive labels are keyboard mnemonics. Primary actions
+also expose underlined mnemonics without bypassing their normal validation or
+confirmation dialogs. Additional shortcuts are:
+.TP
+.B Ctrl+R
+Refresh removable USB drives.
+.TP
+.B Ctrl+D
+Open verified image acquisition.
+.TP
+.B Ctrl+K
+Open image checksums.
+.TP
+.B Ctrl+U
+Open read-only UEFI media validation.
+.TP
+.B F1
+Open About and licence information.
+.PP
+Icon-only controls, image compatibility, progress, operation details,
+diagnostics, and post-operation actions have explicit assistive-technology
+names. Compatibility and progress-detail text can be selected and copied. No
+shortcut is bound directly to erasure or to cancellation of an active write;
+the existing final confirmation and safe cancellation controls remain in
+force.
 .SH OPTIONS
 .TP
 .B --persistence
 Open the guarded persistent Ubuntu/Debian live-USB creator directly.
 .SH SAFETY
-Every selected target is erased. Verify the device model, capacity, and path
-shown in the final confirmation dialog. A successful write or byte comparison
-does not prove that particular firmware will boot the media.
+Every selected target is erased logically. Verify the device model, capacity,
+and path shown in the final confirmation dialog. A successful required-extent
+write/readback or structural check does not prove unused media or particular
+firmware. Use Check USB for exhaustive whole-device qualification.
 .SH SEE ALSO
 .BR rufusarm64-cli (1),
+.BR rufusarm64-nonbootable-format (1),
+.BR rufusarm64-freedos-format (1),
 .BR rufusarm64-persistence (1)

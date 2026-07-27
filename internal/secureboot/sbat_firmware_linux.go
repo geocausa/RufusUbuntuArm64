@@ -91,7 +91,7 @@ func readFirmwareSBATVariable(root, name string, hook firmwareSBATReadHook) (*fi
 	if hook != nil {
 		hook("before-open", path)
 	}
-	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open firmware %s variable without following links: %w", name, err)
 	}

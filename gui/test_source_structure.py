@@ -62,6 +62,7 @@ class SourceStructureTests(unittest.TestCase):
     def test_worker_process_references_are_ownership_guarded(self):
         workers = {
             "rufusarm64.py": ("run_download", "run_persistence_plan", "run_writer"),
+            "rufusarm64_ffu_dialog.py": ("_run_restore",),
             "rufusarm64_persistence.py": ("run_analysis", "run_create"),
         }
         failures = []
@@ -114,6 +115,29 @@ class SourceStructureTests(unittest.TestCase):
                     "_finish_device_refresh": ("generation != self.device_generation", "self.closed"),
                 },
             },
+            "rufusarm64_ffu_dialog.py": {
+                "FFUReviewDialog": {
+                    "start_review": ("threading.Thread(",),
+                    "_run_review": (
+                        "subprocess.Popen(",
+                        "start_new_session=True",
+                        "communicate_bounded(",
+                        "timeout=300",
+                        "strict_json_loads(",
+                    ),
+                    "_finish_review": ("generation != self.generation", "self.closed"),
+                    "start_restore": ("threading.Thread(", "build_ffu_restore_command"),
+                    "_run_restore": (
+                        "subprocess.Popen(",
+                        "start_new_session=True",
+                        "communicate_bounded(",
+                        "strict_json_loads(",
+                        "normalize_ffu_restore_output",
+                    ),
+                    "cancel_restore": ("os.killpg(", "signal.SIGTERM", "target state is not yet known"),
+                    "_finish_restore": ("generation != self.generation", "self.closed", "possibly modified"),
+                },
+            },
             "rufusarm64_persistence.py": {
                 "Window": {
                     "refresh_devices": ("threading.Thread(",),
@@ -142,7 +166,7 @@ class SourceStructureTests(unittest.TestCase):
                     if not body:
                         failures.append(f"{filename}:{class_name}.{method_name} is missing")
                         continue
-                    if method_name in {"verify_catalog", "image_changed", "refresh_devices"} and "subprocess.run(" in body:
+                    if method_name in {"verify_catalog", "image_changed", "refresh_devices", "start_review", "start_restore"} and ("subprocess.run(" in body or "subprocess.Popen(" in body):
                         failures.append(f"{filename}:{class_name}.{method_name} blocks the GTK thread")
                     for fragment in required_fragments:
                         if fragment not in body:

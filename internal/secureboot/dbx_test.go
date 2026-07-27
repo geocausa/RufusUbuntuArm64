@@ -93,7 +93,8 @@ func TestArchitectureAndURL(t *testing.T) {
 		t.Fatalf("arch=%q err=%v", arch, err)
 	}
 	url, err := MicrosoftDBXURL("arm64")
-	if err != nil || url != "https://raw.githubusercontent.com/microsoft/secureboot_objects/main/PostSignedObjects/DBX/arm64/DBXUpdate.bin" {
+	expected := "https://raw.githubusercontent.com/microsoft/secureboot_objects/" + microsoftDBXRepositoryCommit + "/PostSignedObjects/DBX/arm64/DBXUpdate.bin"
+	if err != nil || url != expected {
 		t.Fatalf("url=%q err=%v", url, err)
 	}
 }

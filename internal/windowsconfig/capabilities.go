@@ -8,12 +8,15 @@ import (
 
 // MediaMetadata contains the Windows identity facts obtained from inspected
 // installation media. Empty or conflicting facts deliberately produce a
-// fail-closed capability profile.
+// fail-closed capability profile. ImageCount and EditionNames describe the
+// complete bounded edition set that agreed on those identity facts.
 type MediaMetadata struct {
-	ProductName      string `json:"product_name,omitempty"`
-	Version          string `json:"version,omitempty"`
-	Architecture     string `json:"architecture,omitempty"`
-	InstallationType string `json:"installation_type,omitempty"`
+	ProductName      string   `json:"product_name,omitempty"`
+	Version          string   `json:"version,omitempty"`
+	Architecture     string   `json:"architecture,omitempty"`
+	InstallationType string   `json:"installation_type,omitempty"`
+	ImageCount       int      `json:"image_count,omitempty"`
+	EditionNames     []string `json:"edition_names,omitempty"`
 }
 
 // OptionCapability explains whether one setup option is safe for the detected
@@ -37,6 +40,7 @@ type CapabilityProfile struct {
 	ReduceDataCollection OptionCapability `json:"reduce_data_collection"`
 	DisableBitLocker     OptionCapability `json:"disable_bitlocker"`
 	LoadDrivers          OptionCapability `json:"load_drivers"`
+	QualityOfLife        OptionCapability `json:"quality_of_life"`
 	Locale               OptionCapability `json:"locale"`
 	TimeZone             OptionCapability `json:"time_zone"`
 }
@@ -80,6 +84,12 @@ func Capabilities(metadata MediaMetadata) CapabilityProfile {
 	profile.Locale = generic
 	profile.TimeZone = generic
 
+	if family == "client" {
+		profile.QualityOfLife = generic
+	} else {
+		profile.QualityOfLife = OptionCapability{Reason: "Available only for positively identified Windows client media"}
+	}
+
 	if family == "client" && generation == "11" {
 		profile.BypassHardwareChecks = generic
 		profile.BypassOnlineAccount = generic
@@ -115,6 +125,7 @@ func ValidateForMedia(metadata MediaMetadata, options Options) error {
 		{options.ReduceDataCollection, "reduced data collection", profile.ReduceDataCollection},
 		{options.DisableBitLocker, "BitLocker suppression", profile.DisableBitLocker},
 		{options.LoadDrivers, "driver loading", profile.LoadDrivers},
+		{options.QualityOfLife, "Quality of Life policy", profile.QualityOfLife},
 		{strings.TrimSpace(options.Locale) != "", "locale", profile.Locale},
 		{strings.TrimSpace(options.TimeZone) != "", "time zone", profile.TimeZone},
 	}
@@ -135,6 +146,7 @@ func disabledProfile(profile CapabilityProfile, reason string) CapabilityProfile
 	profile.ReduceDataCollection = disabled
 	profile.DisableBitLocker = disabled
 	profile.LoadDrivers = disabled
+	profile.QualityOfLife = disabled
 	profile.Locale = disabled
 	profile.TimeZone = disabled
 	return profile

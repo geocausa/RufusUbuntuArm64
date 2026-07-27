@@ -61,10 +61,10 @@
 - Rich progress and exportable diagnostics (completed)
 - Strict local signed catalog, threshold-root built-in channel, rollback-protected metadata cache, graphical acquisition workflow, and source-only offline public-metadata administration toolkit (implemented; production offline-key ceremony and publication pending)
 - Linux persistence planner, verified writable-tree copy, guarded GPT/UEFI creator, dedicated identity-bound graphical wizard, and checksum-backed reboot qualification reports (implemented; physical ARM64 qualification matrix pending)
-- FreeDOS creation
+- FreeDOS creation (completed in 0.13)
 - Windows To Go feasibility and implementation
-- Production offline-root provisioning, published signed catalog, download resumption, and mirror operations
-- Broader Syslinux/GRUB compatibility workarounds
+- Production offline-root provisioning, published signed catalog, and mirror operations
+- Broader distribution-specific boot compatibility workarounds beyond structural reporting
 
 ## 0.11 — UEFI analysis and runtime media integrity (completed)
 
@@ -81,6 +81,25 @@
 - Exact destination planning and confirmation, progress, cancellation, SHA-256, atomic publication, and desktop ownership
 - Focused privilege, process-lifecycle, report-schema, launcher-isolation, native ARM64, and reproducible-package audit
 - Clean Stage 1 release package and rollback documentation; physical play-testing continues as field feedback
+
+## 0.13 — Stage 2 practical Rufus parity (completed)
+
+- Guarded data-only restore/format workflow and deterministic FreeDOS 1.4 media creation
+- Explicit post-operation recreate and ordinary-storage restoration paths
+- Bounded Linux hybrid/optical compatibility reporting with El Torito and bootloader fingerprints
+- Resumable verified graphical acquisition over the existing signed-catalog trust core
+- GTK keyboard navigation, assistive-technology naming, and selectable status details
+- Windows multi-edition WIM/ESD/split-SWM capability and payload disclosure
+- Release-candidate package, rollback notes, and human real-machine checklist; publication remains gated on recorded hardware sanity
+
+## 0.14 — Stage 3 advanced imaging and recovery (completed)
+
+- Descriptor-bound raw, dynamic VHD, dynamic VHDX, and mounted-filesystem ISO/UDF drive backup
+- Experimental authenticated single-store-v1 FFU restore with strict trust, target, confirmation, write-order, and complete-verification gates
+- Reusable identity-bound USB qualification reports and bounded compressed-image preparation progress
+- El Torito UEFI extraction and opt-in Windows 11 setup Quality of Life policy
+- Privileged loop qualification, native ARM64 execution, Go 1.22 compatibility, static/vulnerability audit, and reproducible Debian packaging
+- Release-candidate notes and real-machine checklist; stable promotion remains gated on recorded physical observations and prerelease feedback
 
 ## 1.0 — supportable stable release
 

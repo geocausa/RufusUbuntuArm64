@@ -260,7 +260,7 @@ func openPatchParent(root *os.File, relative string) (*os.File, string, error) {
 }
 
 func patchOneBootFile(parent *os.File, base, relative string, detection Detection) error {
-	fd, err := syscall.Openat(int(parent.Fd()), base, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
+	fd, err := syscall.Openat(int(parent.Fd()), base, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return fmt.Errorf("open boot configuration %s: %w", relative, err)
 	}

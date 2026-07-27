@@ -1,0 +1,92 @@
+name: FFU loop execution qualification
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ffu-loop-qualification.yml'
+      - 'internal/ffu/**'
+      - 'internal/device/**'
+      - 'internal/safety/**'
+      - 'cmd/rufus-linux/ffu_linux.go'
+      - 'cmd/rufus-linux/ffu_linux_test.go'
+      - 'cmd/rufus-linux/main.go'
+      - 'docs/ffu-physical-qualification.md'
+      - 'gui/rufusarm64.py'
+      - 'gui/rufusarm64_logic.py'
+      - 'gui/rufusarm64_ffu_dialog.py'
+      - 'gui/rufusarm64_ffu_restore_logic.py'
+      - 'gui/rufusarm64_ffu_physical_qualification.py'
+      - 'gui/test_logic.py'
+      - 'gui/test_ffu_restore_logic.py'
+      - 'gui/test_ffu_physical_qualification.py'
+      - 'gui/test_source_structure.py'
+      - 'scripts/ffu-physical-qualification.py'
+      - 'go.mod'
+      - 'go.sum'
+  push:
+    branches: [stage3/0.14.0]
+    paths:
+      - '.github/workflows/ffu-loop-qualification.yml'
+      - 'internal/ffu/**'
+      - 'internal/device/**'
+      - 'internal/safety/**'
+      - 'cmd/rufus-linux/ffu_linux.go'
+      - 'cmd/rufus-linux/ffu_linux_test.go'
+      - 'cmd/rufus-linux/main.go'
+      - 'docs/ffu-physical-qualification.md'
+      - 'gui/rufusarm64.py'
+      - 'gui/rufusarm64_logic.py'
+      - 'gui/rufusarm64_ffu_dialog.py'
+      - 'gui/rufusarm64_ffu_restore_logic.py'
+      - 'gui/rufusarm64_ffu_physical_qualification.py'
+      - 'gui/test_logic.py'
+      - 'gui/test_ffu_restore_logic.py'
+      - 'gui/test_ffu_physical_qualification.py'
+      - 'gui/test_source_structure.py'
+      - 'scripts/ffu-physical-qualification.py'
+      - 'go.mod'
+      - 'go.sum'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  privileged-loop-execution:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+          cache: true
+      - name: Validate physical qualification evidence contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            gui/rufusarm64_ffu_physical_qualification.py \
+            scripts/ffu-physical-qualification.py
+          PYTHONPATH=gui python3 -m unittest test_ffu_physical_qualification
+      - name: Execute authenticated FFU transaction on an exclusive loop target
+        shell: bash
+        run: |
+          set -euo pipefail
+          backing="$(mktemp)"
+          truncate -s 64M "$backing"
+          loop="$(sudo losetup --find --show "$backing")"
+          cleanup() {
+            sudo losetup -d "$loop" 2>/dev/null || true
+            rm -f "$backing"
+          }
+          trap cleanup EXIT
+          size="$(sudo blockdev --getsize64 "$loop")"
+          sudo -E env \
+            PATH="$PATH" \
+            HOME="$HOME" \
+            GOCACHE="$(go env GOCACHE)" \
+            GOMODCACHE="$(go env GOMODCACHE)" \
+            RUFUSARM64_FFU_LOOP_DEVICE="$loop" \
+            RUFUSARM64_FFU_LOOP_SIZE="$size" \
+            go test -count=1 -run '^TestPrivilegedSinglePhaseFullFlashLoopExecution$' ./internal/ffu

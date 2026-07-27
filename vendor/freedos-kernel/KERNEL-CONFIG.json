@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "repository": "https://github.com/FDOS/kernel",
+  "commit": "d6791add2043c9d7b584d840a8ffaf8829fd2bdc",
+  "sources": [
+    {
+      "path": "kernel/kernel.asm",
+      "git_blob_sha1": "657dfbd827e47d332ec82167553112bfda60005e"
+    },
+    {
+      "path": "hdr/kconfig.h",
+      "git_blob_sha1": "02c340ada2634152c74c1e0d2533b5681d84827f"
+    },
+    {
+      "path": "sys/fdkrncfg.c",
+      "git_blob_sha1": "c35a0afa4f505a810966f52870f5ec7f6dbb1460"
+    },
+    {
+      "path": "docs/sys.txt",
+      "git_blob_sha1": "d47bb1d1719b1cbe5b2bbf35f9441c0ad946cec1"
+    }
+  ],
+  "layout": {
+    "short_jump_opcode": 235,
+    "config_signature": "CONFIG",
+    "config_signature_offset": 2,
+    "config_size_offset": 8,
+    "config_fields_offset": 10,
+    "force_lba_field_index": 3,
+    "force_lba_offset": 13,
+    "rufus_force_lba_value": 1
+  },
+  "interpretation": "kernel.asm places a two-byte short jump before the CONFIG area; kconfig.h places ForceLBA after three one-byte fields; SYS CONFIG reads the structure at file offset 2 and documents FORCELBA as a binary setting. Therefore the byte is at file offset 0x0d and Rufus requires value 0x01."
+}

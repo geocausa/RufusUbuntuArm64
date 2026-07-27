@@ -54,6 +54,15 @@ func openDownloadPartial(destination string, image Image, resume bool) (*os.File
 		_ = file.Close()
 		return nil, 0, nil, errors.New("resumable partial must be an owner-only regular file")
 	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		_ = file.Close()
+		return nil, 0, nil, errors.New("resumable partial has unsupported filesystem metadata")
+	}
+	if stat.Uid != uint32(os.Geteuid()) || stat.Nlink != 1 {
+		_ = file.Close()
+		return nil, 0, nil, errors.New("resumable partial must be owned by the current user and have exactly one link")
+	}
 	if info.Size() < 0 || uint64(info.Size()) > image.Size {
 		_ = file.Close()
 		_ = os.Remove(path)

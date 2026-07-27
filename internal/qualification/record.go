@@ -91,7 +91,15 @@ func NormalizeRecord(record CreationRecord) (CreationRecord, error) {
 	if err := validatePartition(record.Persistence, 2); err != nil {
 		return record, fmt.Errorf("persistence partition: %w", err)
 	}
-	if record.Boot.StartBytes+record.Boot.SizeBytes > record.TargetSize || record.Persistence.StartBytes+record.Persistence.SizeBytes > record.TargetSize || record.Boot.StartBytes+record.Boot.SizeBytes > record.Persistence.StartBytes {
+	bootEnd, err := partitionExtentEnd(record.Boot.StartBytes, record.Boot.SizeBytes)
+	if err != nil {
+		return record, fmt.Errorf("boot partition extent: %w", err)
+	}
+	persistenceEnd, err := partitionExtentEnd(record.Persistence.StartBytes, record.Persistence.SizeBytes)
+	if err != nil {
+		return record, fmt.Errorf("persistence partition extent: %w", err)
+	}
+	if bootEnd > record.TargetSize || persistenceEnd > record.TargetSize || bootEnd > record.Persistence.StartBytes {
 		return record, errors.New("creation record partitions overlap or exceed the target")
 	}
 	if record.BootParameter == "" || record.ManifestEntries <= 0 || record.ManifestBytes == 0 {
@@ -111,18 +119,11 @@ func NormalizeRecord(record CreationRecord) (CreationRecord, error) {
 			record.PatchedPaths = append(record.PatchedPaths, value)
 		}
 	}
-	if record.Properties != nil {
-		clean := make(map[string]string, len(record.Properties))
-		for key, value := range record.Properties {
-			key = strings.TrimSpace(key)
-			value = strings.TrimSpace(value)
-			if key == "" || len(key) > 64 || len(value) > 256 {
-				return record, errors.New("creation record property is invalid")
-			}
-			clean[key] = value
-		}
-		record.Properties = clean
+	properties, err := normalizeRecordProperties(record.Properties)
+	if err != nil {
+		return record, err
 	}
+	record.Properties = properties
 	return record, nil
 }
 
@@ -171,15 +172,18 @@ func ParseRecord(data []byte) (CreationRecord, string, error) {
 	if err != nil {
 		return record, "", err
 	}
-	trimmed := append(bytes.TrimSpace(data), '\n')
-	if !bytes.Equal(canonical, trimmed) {
+	if !bytes.Equal(canonical, data) {
 		return record, "", errors.New("creation record is not in canonical form")
 	}
 	return normalized, digest, nil
 }
 
 func WriteRecord(root string, record CreationRecord) (StoredRecord, error) {
-	data, digest, err := MarshalRecord(record)
+	normalized, err := NormalizeRecord(record)
+	if err != nil {
+		return StoredRecord{}, err
+	}
+	data, digest, err := MarshalRecord(normalized)
 	if err != nil {
 		return StoredRecord{}, err
 	}
@@ -192,14 +196,10 @@ func WriteRecord(root string, record CreationRecord) (StoredRecord, error) {
 		return StoredRecord{}, err
 	}
 	recordPath := filepath.Join(metadata, RecordFileName)
-	if err := writeAtomicNoFollow(recordPath, data, 0o600); err != nil {
+	if err := writeRecordPair(recordPath, data, digest); err != nil {
 		return StoredRecord{}, err
 	}
-	checksum := []byte(fmt.Sprintf("%s  %s\n", digest, RecordFileName))
-	if err := writeAtomicNoFollow(recordPath+".sha256", checksum, 0o600); err != nil {
-		return StoredRecord{}, err
-	}
-	return StoredRecord{Record: record, SHA256: digest, Path: filepath.ToSlash(filepath.Join(metadataDirName, RecordFileName))}, nil
+	return StoredRecord{Record: normalized, SHA256: digest, Path: filepath.ToSlash(filepath.Join(metadataDirName, RecordFileName))}, nil
 }
 
 func LoadVerifiedRecord(path string) (StoredRecord, error) {
@@ -312,7 +312,10 @@ func writeAtomicNoFollow(path string, data []byte, mode os.FileMode) (returnErr 
 		}
 		return err
 	}
-	if err := os.Rename(name, path); err != nil {
+	if err := renameMetadataNoReplace(name, path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return errors.New("metadata destination appeared during write")
+		}
 		return err
 	}
 	directory, err := os.Open(parent)
@@ -326,7 +329,17 @@ func writeAtomicNoFollow(path string, data []byte, mode os.FileMode) (returnErr 
 	return directory.Close()
 }
 
+type metadataOpenFunc func(string) (*os.File, error)
+
+func openMetadataNoFollow(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+}
+
 func readRegularNoFollow(path string, limit int64) ([]byte, error) {
+	return readRegularNoFollowWithOpen(path, limit, openMetadataNoFollow)
+}
+
+func readRegularNoFollowWithOpen(path string, limit int64, open metadataOpenFunc) ([]byte, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
@@ -334,11 +347,21 @@ func readRegularNoFollow(path string, limit int64) ([]byte, error) {
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > limit {
 		return nil, errors.New("metadata input must be a bounded real regular file")
 	}
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	file, err := open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !openedInfo.Mode().IsRegular() || openedInfo.Size() < 0 || openedInfo.Size() > limit {
+		return nil, errors.New("metadata input must be a bounded real regular file")
+	}
+	if !os.SameFile(info, openedInfo) {
+		return nil, errors.New("metadata input changed while opening")
+	}
 	data, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
 		return nil, err

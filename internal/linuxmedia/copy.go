@@ -211,27 +211,31 @@ func safeMkdirAll(root, relative string, mode os.FileMode) error {
 	return nil
 }
 
-func copyEntry(ctx context.Context, entry Entry, destination string) (returnErr error) {
+func copyEntry(ctx context.Context, entry Entry, destination string) error {
+	return copyEntryWithOpen(ctx, entry, destination, openLinuxMediaNoFollow)
+}
+
+func copyEntryWithOpen(ctx context.Context, entry Entry, destination string, open linuxMediaOpenFunc) (returnErr error) {
 	if entry.SourcePath == "" {
 		return errors.New("manifest source path is missing")
 	}
-	source, err := os.Open(entry.SourcePath)
-	if err != nil {
-		return err
-	}
-	defer source.Close()
 	lstat, err := os.Lstat(entry.SourcePath)
 	if err != nil {
 		return err
 	}
-	if lstat.Mode()&os.ModeSymlink != 0 || !lstat.Mode().IsRegular() {
+	if lstat.Mode()&os.ModeSymlink != 0 || !lstat.Mode().IsRegular() || lstat.Size() < 0 || uint64(lstat.Size()) != entry.Size {
 		return errors.New("manifest source is no longer a real regular file")
 	}
+	source, err := open(entry.SourcePath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
 	before, err := source.Stat()
 	if err != nil {
 		return err
 	}
-	if !before.Mode().IsRegular() || uint64(before.Size()) != entry.Size || !sameIdentity(lstat, before) {
+	if !before.Mode().IsRegular() || before.Size() < 0 || uint64(before.Size()) != entry.Size || !os.SameFile(lstat, before) {
 		return errors.New("source identity no longer matches the manifest")
 	}
 	parent := filepath.Dir(destination)

@@ -29,19 +29,22 @@ func TestInstallDownloadedFileNoReplace(t *testing.T) {
 	}
 }
 
-func TestInstallDownloadedFileLinksVerifiedInode(t *testing.T) {
+func TestInstallDownloadedFileRenamesVerifiedInode(t *testing.T) {
 	directory := t.TempDir()
 	temp := filepath.Join(directory, ".download.part")
 	destination := filepath.Join(directory, "image.iso")
 	if err := os.WriteFile(temp, []byte("verified"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := installDownloadedFile(temp, destination, false); err != nil {
-		t.Fatal(err)
-	}
 	tempInfo, err := os.Stat(temp)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := installDownloadedFile(temp, destination, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(temp); !os.IsNotExist(err) {
+		t.Fatalf("temporary name remains after no-replace publication: %v", err)
 	}
 	destinationInfo, err := os.Stat(destination)
 	if err != nil {

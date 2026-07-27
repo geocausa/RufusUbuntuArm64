@@ -1,45 +1,138 @@
-.TH RUFUSARM64-DEVICE-BACKUP 1 "19 July 2026" "RufusArm64 0.12.1" "User Commands"
+.TH RUFUSARM64-DEVICE-BACKUP 1 "26 July 2026" "RufusArm64 0.14.0" "User Commands"
 .SH NAME
-rufusarm64-device-backup \- save a verified image of a removable drive
+rufusarm64-device-backup \- save a verified drive image or mounted-filesystem ISO remaster
 .SH SYNOPSIS
 .B rufusarm64-device-backup
 .B --device
 .I /dev/DEVICE
 .B --output
 .I /absolute/path/drive.img
+.RI [ --format " raw|vhd|vhdx" ]
 .RI [ options ]
 .br
 .B rufusarm64-device-backup
 .B --device
 .I /dev/DEVICE
 .B --output
-.I /absolute/path/drive.img
+.I /absolute/path/filesystem.iso
+.B --format iso
+.RI [ options ]
+.br
+.B rufusarm64-device-backup
+.B --device
+.I /dev/DEVICE
+.B --output
+.I /absolute/path/drive.vhdx
+.B --format vhdx
 .B --dry-run
 .RI [ --json ]
 .SH DESCRIPTION
 .B rufusarm64-device-backup
-captures the exact reported capacity of one explicitly selected whole block device into a newly created image file.
-The source is opened read-only, bound to its kernel device identity and capacity, and revalidated before and after capture.
-The completed image is published atomically only after every byte has been copied, SHA-256 has been calculated, the file has been synchronized, and the source and destination identities have been rechecked.
+supports two deliberately separate capture models.
 .PP
-The destination must not already exist, must have enough available space, and must be stored on a different disk from the selected source.
-Mounted removable filesystems are unmounted before capture unless
-.B --no-unmount
-is supplied, in which case the command refuses mounted sources.
+The
+.BR raw ,
+.BR vhd ,
+and
+.B vhdx
+formats capture the exact reported capacity of one explicitly selected whole
+block device. The source is opened read-only and exclusively, bound to its
+kernel identity and capacity, and revalidated before and after every externally
+executed container phase.
+.PP
+The
+.B iso
+format remasters exactly one unambiguous mounted filesystem from the selected
+whole disk. It does not capture a partition table, hidden sectors, boot records,
+unallocated space, additional filesystems, or every physical source byte. A
+successful ISO/UDF capture does not establish bootability.
+.PP
+The default
+.B raw
+format is a byte-for-byte image. The
+.B vhd
+and
+.B vhdx
+formats are dynamic sparse containers created by a trusted, root-owned
+.B qemu-img
+utility. The source and private output are passed to that utility only through
+inherited file descriptors. Backing files, compression, encryption, salvage,
+shared-write, fixed containers, and caller-supplied converter options are not
+accepted.
+.PP
+Container capture hashes the held raw source, converts into an owner-only
+same-directory temporary file, compares guest-visible bytes against the held
+source, performs the supported non-repairing consistency check, hashes and
+synchronizes the container, and revalidates the source before publication.
+VHDX requires a successful consistency check. QEMU does not provide that check
+for VHD, so the report records it as unsupported rather than claiming it ran.
+.PP
+ISO capture first inventories the live mounted filesystem through descriptor-
+relative traversal. Symlinks, hard links, special files, mount crossings,
+case-insensitive name collisions, unsupported names, active mutation, and
+resource-limit violations are refused. After authentication, RufusArm64 creates
+a private read-only bind view with
+.BR ro ,
+.BR nosuid ,
+.BR nodev ,
+and
+.B noexec
+flags and requires its complete supported-content digest to match the plan.
+.PP
+For non-interactive and graphical ISO capture, the dry-run source binding and
+supported-content SHA-256 values are supplied to the privileged helper. The
+helper repeats the live inventory and refuses any binding or content difference
+before creating the private source view or destination temporary file.
+.PP
+A trusted, root-owned
+.B genisoimage
+provider receives only the held source descriptor and a fixed ISO9660 level-3,
+Joliet, and UDF policy. Ambient startup configuration, caller-supplied mastering
+flags, graft points, excludes, boot images, and final output pathnames are not
+accepted. Provider output is bounded and written directly to an owner-only
+same-directory temporary file.
+.PP
+After mastering, the source view is inventoried again. The private image is
+mounted independently as UDF with read-only safety flags. Every supported path,
+type, regular-file size, and file-content digest is compared. Filesystem-specific
+directory allocation sizes are deliberately excluded. The image is then
+unmounted and rehashed, and the source is checked once more. Only matching
+evidence may proceed to publication.
+.PP
+Every completed image is published atomically without replacement only after
+all required checks succeed. Existing destination files are never replaced.
+Incomplete output is removed after failure or cancellation. A failed unmount
+preserves its private root-owned workspace rather than recursively deleting a
+mounted tree.
+.PP
+The destination must reside on a different physical disk from the selected
+source. Raw capture requires the source capacity. VHD and VHDX dry-run planning
+requires the complete source capacity plus a 12.5% policy reserve, with a
+minimum 64 MiB margin. ISO planning uses the supported file-content size plus a
+conservative mastering reserve and never promises sparse savings.
+.PP
+Raw, VHD, and VHDX capture normally unmount eligible removable filesystems
+before opening the whole device. ISO capture requires exactly one mounted source
+filesystem and never uses
+.BR --no-unmount .
 .SH GRAPHICAL WORKFLOW
-In the installed RufusArm64 application, select a removable drive and choose
+Select a removable drive and choose
 .BR "Save drive image…" .
-Choose a new image pathname; existing files and symbolic links are refused.
-RufusArm64 first runs the unprivileged planning mode and displays the exact source path, model, reported capacity, destination filesystem directory, required bytes, and available bytes.
+Choose Raw image, Dynamic VHD, Dynamic VHDX, or Filesystem ISO/UDF before
+selecting a new destination. RufusArm64 runs an unprivileged plan and displays
+the exact source, format, destination, conservative required bytes, available
+bytes, and format-specific evidence.
 .PP
-Before authentication, the graphical workflow requires the exact phrase
-.B SAVE /dev/DEVICE TO /absolute/path/drive.img
-so the reviewed source and destination remain explicit.
-The privileged command is then launched only with the selected path, exact identity token, guarded unmounting, deterministic JSON report, and schema-1 progress channel.
-The dialog displays completed bytes, throughput, ETA, cancellation state, final SHA-256, and final image path.
+For raw, VHD, and VHDX, authentication requires the phrase
+.B SAVE /dev/DEVICE TO /absolute/path/drive.ext .
+For ISO capture, the exact mounted child and mountpoint also participate:
+.B SAVE FILESYSTEM /dev/NODE AT /mount/path ON /dev/DEVICE TO /absolute/path/filesystem.iso .
 .PP
-Closing the dialog during capture requests cancellation of the owned process group and waits for incomplete temporary output to be removed before allowing the dialog to close.
-Create USB and Check USB remain separate operations.
+ISO progress distinguishes private source-view creation, inventory, mastering,
+source revalidation, independent UDF mounting, content comparison, and atomic
+publication. A successful report includes source binding and content digests,
+output SHA-256 and size, UDF validation, content-comparison status, and the
+published path.
 .SH OPTIONS
 .TP
 .BI --device " /dev/DEVICE"
@@ -48,70 +141,89 @@ Select the whole source disk. Partitions and paths outside
 are refused.
 .TP
 .BI --output " PATH"
-Absolute path for the new image file. The path must not already exist.
+Absolute path for the new image file. The path must not already exist. ISO
+capture requires a
+.I .iso
+suffix.
+.TP
+.BI --format " raw|vhd|vhdx|iso"
+Select the output format. The default is
+.BR raw .
+VHD and VHDX are dynamic sparse containers with fixed converter policy. ISO is
+a mounted-filesystem remaster with fixed ISO9660/Joliet/UDF policy.
 .TP
 .BI --expected-identity " TOKEN"
-Require the exact identity token returned by
-.BR rufusarm64-cli " list --json".
-This option is mandatory with
+Require the exact whole-device identity returned by
+.BR "rufusarm64-cli list --json" .
+This is mandatory with
 .B --yes
 or
 .BR --allow-fixed .
 .TP
+.BI --expected-source-node " /dev/NODE"
+For non-interactive ISO capture, require the exact mounted filesystem device
+node returned by the dry-run plan.
+.TP
+.BI --expected-source-mount " /mount/path"
+For non-interactive ISO capture, require the exact mounted filesystem path
+returned by the dry-run plan.
+.TP
+.BI --expected-source-binding-sha256 " DIGEST"
+For non-interactive ISO capture, require the exact source-binding SHA-256 from
+the dry-run plan. This binds path, type, metadata, inode and mount evidence for
+the reviewed live inventory.
+.TP
+.BI --expected-source-content-sha256 " DIGEST"
+For non-interactive ISO capture, require the exact supported-content SHA-256
+from the dry-run plan. This authenticates every admitted path, type,
+regular-file size, file-content digest, and the reviewed source's directory
+metadata across administrator authentication. Cross-filesystem UDF comparison
+excludes directory allocation sizes because they are filesystem-specific.
+.TP
+.BI --volume-id " IDENTIFIER"
+Select the ISO volume identifier. Only 1 to 32 uppercase ASCII letters, digits,
+and underscores are accepted. The default is
+.BR RUFUSARM64 .
+.TP
 .B --dry-run
-Validate the source metadata and destination storage and print a plan without opening the source device.
+Validate source metadata, exact mounted-filesystem inventory when applicable,
+trusted provider availability, destination storage, conservative reserve,
+disk separation, and collision state without creating a private mount or output
+file.
 .TP
 .B --json
-Emit one deterministic JSON plan or report. A non-dry-run JSON invocation also requires
-.B --yes
-and
-.BR --expected-identity .
+Emit one deterministic JSON plan or report. Whole-device reports use their
+schema-2 contract; filesystem ISO plans and reports use their dedicated schema-1
+contracts.
 .TP
 .B --progress-json
-With a non-dry-run
-.B --json
-invocation, emit bounded schema-1 progress records as JSON lines on standard error while keeping the final deterministic report on standard output.
-This channel is intended for the packaged graphical workflow and reports completed bytes, total bytes, elapsed time, throughput, and ETA when available.
+Emit bounded schema-2 phase-labelled progress records on standard error while
+retaining the final deterministic report on standard output.
 .TP
 .B --yes
-Skip terminal confirmation. This is accepted only with an exact expected identity.
+Skip terminal confirmation. Whole-device formats require an expected identity.
+ISO additionally requires the expected source node, mountpoint, source-binding
+SHA-256, and supported-content SHA-256 from the dry-run plan.
 .TP
 .B --allow-fixed
-Permit a non-removable whole disk. This is terminal-only, requires an exact expected identity, and does not override root-disk or protected-mount refusals.
+Permit a non-removable whole disk for a direct terminal invocation. Root-disk
+and protected-mount refusals remain in force. Graphical capture remains limited
+to normal removable sources.
 .TP
 .B --no-unmount
-Refuse a source that has mounted filesystems instead of unmounting eligible removable-media mounts.
+For raw, VHD, and VHDX, refuse mounted filesystems instead of unmounting eligible
+removable mounts. This option is rejected for ISO capture.
 .TP
 .BR --version , " -v"
 Print the installed version.
-.TP
-.BR --help , " -h"
-Print usage information.
 .SH SAFETY
-The source is never opened for writing. Nevertheless, a coherent drive image requires mounted filesystems to be unmounted so that filesystem state does not change during capture.
-The normal graphical path is restricted to removable or USB-attached whole disks, exact identity binding, guarded unmounting, deterministic JSON, and noninteractive execution after the graphical confirmation.
-.PP
-No final destination pathname is created until verified capture completion. Incomplete temporary files are removed after failure or cancellation. Existing destination files are never replaced.
-.SH TESTING CHECKLIST
-For an engineering or stage package, use an expendable removable drive and destination storage on a different physical disk.
-Confirm that planning reports the expected model and capacity, an existing destination is refused, cancellation leaves no final image, a completed image has the reported size and SHA-256, and the source drive remains readable afterward.
-.PP
-Also confirm that Create USB and Check USB remain disabled while capture is active, the device list refreshes after completion, and reinstalling or removing the package does not alter existing image files.
-Remove the package with the normal Debian package manager; manually created image files are user data and are not deleted automatically.
-.SH EXAMPLES
-Inspect a planned capture without root privileges:
-.PP
-.nf
-rufusarm64-device-backup --device /dev/sdb \
-  --output /home/user/usb-backup.img --dry-run
-.fi
-.PP
-Capture after reviewing the plan:
-.PP
-.nf
-sudo rufusarm64-device-backup --device /dev/sdb \
-  --output /home/user/usb-backup.img
-.fi
+The source is never opened for writing. Whole-device formats use a held block-
+device descriptor. ISO uses a dedicated read-only bind view of the exact
+reviewed mountpoint and repeats descriptor-rooted inventories around mastering
+and validation. External providers receive descriptor paths rather than the
+selected source or final destination pathname. No final pathname appears before
+verified completion. Manually created image files remain user data after package
+removal.
 .SH SEE ALSO
 .BR rufusarm64 (1),
 .BR rufusarm64-cli (1),

@@ -32,6 +32,7 @@ type backupPlan struct {
 type backupProgress struct {
 	Schema         int    `json:"schema"`
 	Type           string `json:"type"`
+	Phase          string `json:"phase"`
 	Done           uint64 `json:"done"`
 	Total          uint64 `json:"total"`
 	ElapsedMS      int64  `json:"elapsed_ms"`
@@ -58,17 +59,22 @@ func run(args []string) error {
 		}
 	}
 
+	if requestedISO(args) {
+		return runISO(args)
+	}
+
 	flags := flag.NewFlagSet("rufusarm64-device-backup", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	devicePath := flags.String("device", "", "whole source disk")
 	outputPath := flags.String("output", "", "absolute path for the new image file")
+	formatText := flags.String("format", "raw", "output format: raw, vhd, or vhdx")
 	expectedIdentity := flags.String("expected-identity", "", "expected device identity from rufusarm64-cli list --json")
 	yes := flags.Bool("yes", false, "skip interactive confirmation")
 	allowFixed := flags.Bool("allow-fixed", false, "allow a non-removable source disk")
 	noUnmount := flags.Bool("no-unmount", false, "refuse instead of unmounting mounted removable filesystems")
 	dryRun := flags.Bool("dry-run", false, "validate and display the plan without opening the source device")
 	asJSON := flags.Bool("json", false, "output one deterministic JSON plan or report")
-	progressJSON := flags.Bool("progress-json", false, "emit schema-1 JSON progress records to stderr; requires non-dry-run --json")
+	progressJSON := flags.Bool("progress-json", false, "emit schema-2 JSON progress records to stderr; requires non-dry-run --json")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -80,6 +86,10 @@ func run(args []string) error {
 	}
 	if strings.TrimSpace(*outputPath) == "" {
 		return errors.New("--output is required")
+	}
+	format, err := drivebackup.ParseFormat(*formatText)
+	if err != nil {
+		return err
 	}
 	identityArgument := strings.TrimSpace(*expectedIdentity)
 	if *yes && identityArgument == "" {
@@ -126,7 +136,7 @@ func run(args []string) error {
 	if err := validateSource(resolved, selected, *allowFixed); err != nil {
 		return err
 	}
-	destination, err := drivebackup.InspectDestination(*outputPath, resolved, selected.Size)
+	destination, err := drivebackup.InspectDestinationForFormat(context.Background(), *outputPath, resolved, selected.Size, format)
 	if err != nil {
 		return err
 	}
@@ -172,18 +182,26 @@ func run(args []string) error {
 	defer stopSignals()
 	ctx, cancel := context.WithCancel(signalCtx)
 	defer cancel()
-	started := time.Now()
+	phaseStarted := time.Now()
+	currentPhase := ""
 	lastProgress := time.Time{}
 	var progressErr error
 	report, runErr := drivebackup.CaptureDevice(ctx, resolved, destination.Path, drivebackup.DeviceOptions{
 		ExpectedDeviceID: kernelDeviceID,
 		ExpectedSize:     selected.Size,
+		Format:           format,
 		Progress: func(progress drivebackup.Progress) {
+			phase := progressPhase(progress)
+			if phase != currentPhase {
+				currentPhase = phase
+				phaseStarted = time.Now()
+				lastProgress = time.Time{}
+			}
 			if time.Since(lastProgress) < 200*time.Millisecond && progress.Done != progress.Total {
 				return
 			}
 			lastProgress = time.Now()
-			elapsed := time.Since(started)
+			elapsed := time.Since(phaseStarted)
 			if *progressJSON {
 				if progressErr == nil {
 					if err := writeJSONProgressOrCancel(os.Stderr, progress, elapsed, cancel); err != nil {
@@ -290,15 +308,20 @@ func revalidateSource(path, identity string, allowFixed bool) (device.BlockDevic
 }
 
 func usage() {
-	fmt.Printf(`RufusArm64 drive-image backup utility %s
+	fmt.Printf(`RufusArm64 drive-image and filesystem-remaster utility %s
 
 Usage:
-  sudo rufusarm64-device-backup --device /dev/DEVICE --output /path/drive.img
-  rufusarm64-device-backup --device /dev/DEVICE --output /path/drive.img --dry-run [--json]
+  sudo rufusarm64-device-backup --device /dev/DEVICE --output /path/drive.img [--format raw|vhd|vhdx]
+  sudo rufusarm64-device-backup --device /dev/DEVICE --output /path/filesystem.iso --format iso
+  rufusarm64-device-backup --device /dev/DEVICE --output /path/filesystem.iso --format iso --dry-run [--json]
 
-The source is opened read-only. Mounted removable filesystems are unmounted to
-capture a coherent image. The destination must not exist and must be stored on a
-different disk. Use rufusarm64-cli list --json to obtain the path and identity.
+Raw, VHD, and VHDX open the whole source disk read-only; mounted removable
+filesystems are normally unmounted for coherence. ISO remasters exactly one
+mounted filesystem through a private read-only view and does not capture
+partition tables, hidden sectors, boot records, or unallocated space. A
+successful filesystem capture does not claim bootability. Every destination
+must be new, stored on a different disk, independently verified, and published
+without replacement. Use rufusarm64-cli list --json to obtain device identity.
 `, version)
 }
 
@@ -308,9 +331,19 @@ func printPlan(planned backupPlan) {
 		name = planned.Device.Path
 	}
 	fmt.Printf("Source: %s (%s, %s)\n", name, planned.Device.Path, humanBytes(planned.Device.Size))
-	fmt.Printf("Destination: %s\n", planned.Destination.Path)
-	fmt.Printf("Available: %s; required: %s\n", humanBytes(planned.Destination.AvailableBytes), humanBytes(planned.Destination.RequiredBytes))
+	fmt.Printf("Destination: %s (%s)\n", planned.Destination.Path, planned.Destination.Format)
+	fmt.Printf("Available: %s; conservative required: %s\n", humanBytes(planned.Destination.AvailableBytes), humanBytes(planned.Destination.RequiredBytes))
+	if planned.Destination.ContainerMinimumBytes > 0 {
+		fmt.Printf("Container minimum estimate: %s (not used for free-space admission)\n", humanBytes(planned.Destination.ContainerMinimumBytes))
+	}
 	fmt.Println("The source is read-only, but mounted filesystems must be unmounted for a coherent image.")
+}
+
+func progressPhase(progress drivebackup.Progress) string {
+	if strings.TrimSpace(progress.Phase) == "" {
+		return "capture"
+	}
+	return progress.Phase
 }
 
 func printProgress(progress drivebackup.Progress, elapsed time.Duration) {
@@ -327,13 +360,14 @@ func printProgress(progress drivebackup.Progress, elapsed time.Duration) {
 		seconds := float64(progress.Total-progress.Done) / rate
 		eta = time.Duration(seconds * float64(time.Second)).Round(time.Second).String()
 	}
-	fmt.Printf("\r%6.2f%%  %s / %s  %s/s  ETA %s", percent, humanBytes(progress.Done), humanBytes(progress.Total), humanBytes(uint64(rate)), eta)
+	fmt.Printf("\r%-12s %6.2f%%  %s / %s  %s/s  ETA %s", progressPhase(progress), percent, humanBytes(progress.Done), humanBytes(progress.Total), humanBytes(uint64(rate)), eta)
 }
 
 func makeProgressEvent(progress drivebackup.Progress, elapsed time.Duration) backupProgress {
 	event := backupProgress{
-		Schema:    1,
+		Schema:    2,
 		Type:      "progress",
+		Phase:     progressPhase(progress),
 		Done:      progress.Done,
 		Total:     progress.Total,
 		ElapsedMS: elapsed.Milliseconds(),
@@ -366,9 +400,16 @@ func writeJSONProgressOrCancel(writer io.Writer, progress drivebackup.Progress, 
 
 func printReport(report drivebackup.Report, output string) {
 	fmt.Printf("Status: %s\n", report.Status)
-	fmt.Printf("Captured: %s\n", humanBytes(report.CompletedBytes))
-	if report.SHA256 != "" {
-		fmt.Printf("SHA-256: %s\n", report.SHA256)
+	fmt.Printf("Format: %s\n", report.Format)
+	fmt.Printf("Source bytes: %s\n", humanBytes(report.CompletedBytes))
+	if report.SourceSHA256 != "" {
+		fmt.Printf("Source SHA-256: %s\n", report.SourceSHA256)
+	}
+	if report.OutputSHA256 != "" {
+		fmt.Printf("Output SHA-256: %s\n", report.OutputSHA256)
+		fmt.Printf("Output bytes: %s\n", humanBytes(report.OutputBytes))
+		fmt.Printf("Content comparison: %s\n", report.ContentComparison)
+		fmt.Printf("Consistency: %s\n", report.Consistency)
 		fmt.Printf("Image: %s\n", output)
 	}
 	if report.Failure != nil {

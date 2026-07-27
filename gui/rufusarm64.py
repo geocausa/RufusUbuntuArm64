@@ -23,6 +23,7 @@ from gi.repository import GLib, Gtk
 
 from rufusarm64_checksums import ChecksumDialog
 from rufusarm64_device_qualify_dialog import DeviceQualificationDialog
+from rufusarm64_ffu_dialog import FFUReviewDialog
 from rufusarm64_persistence_logic import (
     build_create_command as build_persistence_create_command,
     completion_checklist,
@@ -34,6 +35,14 @@ from rufusarm64_persistence_logic import (
 from rufusarm64_logic import (
     acquisition_image_label,
     atomic_write_json,
+    DEFAULT_BAD_BLOCK_CHECK,
+    DEFAULT_PERSISTENCE_ENABLED,
+    DEFAULT_QUICK_FORMAT,
+    DEFAULT_VERIFY_AFTER_WRITE,
+    DEFAULT_WINDOWS_CLUSTER_SIZE,
+    DEFAULT_WINDOWS_FILESYSTEM,
+    DEFAULT_WINDOWS_PARTITION_SCHEME,
+    DEFAULT_WINDOWS_TARGET_SYSTEM,
     build_acquisition_channel_download_command,
     build_acquisition_channel_list_command,
     build_acquisition_download_command,
@@ -132,9 +141,15 @@ def normalize_windows_capability_analysis(payload):
     metadata = payload.get("metadata") or {}
     if not isinstance(capabilities, dict) or not isinstance(metadata, dict):
         raise ValueError("Windows capability analysis is missing metadata or capabilities.")
+    default_scheme = str(payload.get("default_partition_scheme") or "").strip().lower()
+    default_target = str(payload.get("default_target_system") or "").strip().lower()
+    if default_scheme not in {"gpt", "mbr"} or default_target not in {"uefi", "bios"}:
+        raise ValueError("Windows capability analysis is missing a resolved automatic layout.")
     normalized = dict(payload)
     normalized["metadata"] = metadata
     normalized["capabilities"] = capabilities
+    normalized["default_partition_scheme"] = default_scheme
+    normalized["default_target_system"] = default_target
     return normalized
 
 
@@ -143,6 +158,8 @@ def unavailable_windows_capability_analysis(reason):
     disabled = {"enabled": False, "reason": reason}
     return {
         "metadata": {},
+        "default_partition_scheme": "",
+        "default_target_system": "",
         "capabilities": {
             "recognized": False,
             "reason": reason,
@@ -150,6 +167,7 @@ def unavailable_windows_capability_analysis(reason):
             "bypass_online_account": dict(disabled),
             "local_account": dict(disabled),
             "reduce_data_collection": dict(disabled),
+            "quality_of_life": dict(disabled),
             "disable_bitlocker": dict(disabled),
             "load_drivers": dict(disabled),
             "locale": dict(disabled),
@@ -238,6 +256,12 @@ class WindowsOptionsDialog(Gtk.Dialog):
             "Sets Windows Setup privacy choices and disables advertising/consumer-content policies where supported.",
             previous.get("reduce_data_collection", False),
         )
+        self.quality_of_life = self.check(
+            box,
+            "Apply Rufus Quality of Life changes",
+            "Removes bundled OneDrive setup, Outlook and Teams, and disables Copilot, web search, consumer-content suggestions and related Microsoft promotions.",
+            previous.get("quality_of_life", False),
+        )
         self.region_locale, self.region_timezone, self.region_iana = current_regional_settings()
         region_parts = []
         if self.region_locale:
@@ -284,7 +308,10 @@ class WindowsOptionsDialog(Gtk.Dialog):
             generation = capabilities.get("generation") or "unknown generation"
             family = capabilities.get("family") or "unknown family"
             architecture = capabilities.get("architecture") or "unknown architecture"
-            return f"Detected Windows {generation} {family} media ({architecture}). Unsupported options are disabled below."
+            scheme = str(self.capability_analysis.get("default_partition_scheme") or "").upper()
+            target = str(self.capability_analysis.get("default_target_system") or "").upper()
+            layout = f" Automatic layout: {scheme}/{target}." if scheme and target else ""
+            return f"Detected Windows {generation} {family} media ({architecture}).{layout} Unsupported options are disabled below."
         return "Setup customizations are unavailable: " + str(
             capabilities.get("reason") or "the Windows version and architecture could not be identified safely."
         )
@@ -310,6 +337,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
         self.apply_option_capability(self.bypass_online, "bypass_online_account")
         self.local_account_allowed = self.apply_option_capability(self.local_account, "local_account")
         self.apply_option_capability(self.reduce_data, "reduce_data_collection")
+        self.apply_option_capability(self.quality_of_life, "quality_of_life")
         self.apply_option_capability(self.disable_bitlocker, "disable_bitlocker")
         regional_keys = []
         if self.region_locale:
@@ -357,6 +385,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
             "bypass_online_account": self.bypass_online.get_active(),
             "local_user": local_user,
             "reduce_data_collection": self.reduce_data.get_active(),
+            "quality_of_life": self.quality_of_life.get_active(),
             "disable_bitlocker": self.disable_bitlocker.get_active(),
             "use_regional_settings": self.use_region.get_active(),
             "locale": self.region_locale if self.use_region.get_active() else "",
@@ -1065,6 +1094,13 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.checksum_button.set_tooltip_text("Calculate MD5, SHA-1, SHA-256, and SHA-512 for the selected image")
         self.checksum_button.connect("clicked", self.open_checksum_dialog)
         image_row.pack_start(self.checksum_button, False, False, 0)
+        self.ffu_review_button = Gtk.Button(label="Review FFU…")
+        self.ffu_review_button.set_sensitive(False)
+        self.ffu_review_button.set_tooltip_text(
+            "Authenticate a Full Flash Update and review the exact removable target without modifying it"
+        )
+        self.ffu_review_button.connect("clicked", self.open_ffu_review)
+        image_row.pack_start(self.ffu_review_button, False, False, 0)
         grid.attach(image_row, 1, 0, 2, 1)
 
         self.attach_label(grid, "USB drive", 1)
@@ -1088,7 +1124,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         grid.attach(self.mode_value, 1, 2, 2, 1)
 
         self.verify = Gtk.CheckButton(label="Verify copied data after writing")
-        self.verify.set_active(bool(self.settings.get("verify", True)))
+        self.verify.set_active(bool(self.settings.get("verify", DEFAULT_VERIFY_AFTER_WRITE)))
         self.verify.set_tooltip_text("Recommended. Verification takes additional time but detects faulty media or writes.")
         self.verify.connect("toggled", self.verify_changed)
         grid.attach(self.verify, 1, 3, 2, 1)
@@ -1111,7 +1147,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         persistence_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         persistence_box.set_margin_top(8)
         self.persistence_enabled = Gtk.CheckButton(label="Keep files and settings across reboots")
-        self.persistence_enabled.set_active(False)
+        self.persistence_enabled.set_active(DEFAULT_PERSISTENCE_ENABLED)
         self.persistence_enabled.connect("toggled", self.persistence_selection_changed)
         persistence_box.pack_start(self.persistence_enabled, False, False, 0)
         persistence_intro = Gtk.Label(label=(
@@ -1144,21 +1180,23 @@ class RufusWindow(Gtk.ApplicationWindow):
 
         self.attach_label(adv_grid, "Partition scheme", 0)
         self.partition_combo = Gtk.ComboBoxText()
+        self.partition_combo.append("auto", "Automatic (image-derived)")
         self.partition_combo.append("gpt", "GPT")
         self.partition_combo.append("mbr", "MBR")
         self.partition_combo.append("from-image", "From image")
-        saved_scheme = self.settings.get("partition_scheme", "gpt")
-        self.windows_partition_scheme = saved_scheme if saved_scheme in {"gpt", "mbr"} else "gpt"
+        saved_scheme = self.settings.get("partition_scheme", DEFAULT_WINDOWS_PARTITION_SCHEME)
+        self.windows_partition_scheme = saved_scheme if saved_scheme in {"auto", "gpt", "mbr"} else DEFAULT_WINDOWS_PARTITION_SCHEME
         self.partition_combo.set_active_id(self.windows_partition_scheme)
         self.partition_combo.connect("changed", self.partition_changed)
         adv_grid.attach(self.partition_combo, 1, 0, 1, 1)
         self.attach_label(adv_grid, "Target system", 1)
         self.target_system_combo = Gtk.ComboBoxText()
+        self.target_system_combo.append("auto", "Automatic (image-derived)")
         self.target_system_combo.append("uefi", "UEFI (non-CSM)")
         self.target_system_combo.append("bios", "BIOS or UEFI-CSM")
         self.target_system_combo.append("from-image", "From image")
-        saved_target = str(self.settings.get("target_system", "uefi"))
-        self.windows_target_system = saved_target if saved_target in {"uefi", "bios"} else "uefi"
+        saved_target = str(self.settings.get("target_system", DEFAULT_WINDOWS_TARGET_SYSTEM))
+        self.windows_target_system = saved_target if saved_target in {"auto", "uefi", "bios"} else DEFAULT_WINDOWS_TARGET_SYSTEM
         self.target_system_combo.set_active_id(self.windows_target_system)
         self.target_system_combo.connect("changed", self.target_system_changed)
         adv_grid.attach(self.target_system_combo, 1, 1, 1, 1)
@@ -1168,8 +1206,8 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.filesystem_combo.append("fat32", "FAT32")
         self.filesystem_combo.append("ntfs", "NTFS")
         self.filesystem_combo.append("from-image", "From image")
-        saved_filesystem = str(self.settings.get("filesystem", "auto"))
-        self.windows_filesystem = saved_filesystem if saved_filesystem in {"auto", "fat32", "ntfs"} else "auto"
+        saved_filesystem = str(self.settings.get("filesystem", DEFAULT_WINDOWS_FILESYSTEM))
+        self.windows_filesystem = saved_filesystem if saved_filesystem in {"auto", "fat32", "ntfs"} else DEFAULT_WINDOWS_FILESYSTEM
         self.filesystem_combo.set_active_id(self.windows_filesystem)
         self.filesystem_combo.connect("changed", self.filesystem_changed)
         adv_grid.attach(self.filesystem_combo, 1, 2, 1, 1)
@@ -1179,8 +1217,8 @@ class RufusWindow(Gtk.ApplicationWindow):
         for identifier, text in (("auto", "Automatic"), ("4096", "4 KiB"), ("8192", "8 KiB"), ("16384", "16 KiB"), ("32768", "32 KiB")):
             self.cluster_combo.append(identifier, text)
         self.cluster_combo.append("from-image", "From image")
-        saved_cluster = str(self.settings.get("cluster_size", "auto"))
-        self.windows_cluster_size = saved_cluster if saved_cluster in {"auto", "4096", "8192", "16384", "32768"} else "auto"
+        saved_cluster = str(self.settings.get("cluster_size", DEFAULT_WINDOWS_CLUSTER_SIZE))
+        self.windows_cluster_size = saved_cluster if saved_cluster in {"auto", "4096", "8192", "16384", "32768"} else DEFAULT_WINDOWS_CLUSTER_SIZE
         self.cluster_combo.set_active_id(self.windows_cluster_size)
         adv_grid.attach(self.cluster_combo, 1, 3, 1, 1)
 
@@ -1227,11 +1265,11 @@ class RufusWindow(Gtk.ApplicationWindow):
         adv_grid.attach(dbx_row, 1, 6, 1, 1)
 
         self.quick_format = Gtk.CheckButton(label="Quick format")
-        self.quick_format.set_active(bool(self.settings.get("quick_format", True)))
+        self.quick_format.set_active(bool(self.settings.get("quick_format", DEFAULT_QUICK_FORMAT)))
         self.quick_format.set_tooltip_text("Disable to zero-write the entire new data partition before formatting. This can take a long time.")
         adv_grid.attach(self.quick_format, 1, 7, 1, 1)
         self.bad_block_check = Gtk.CheckButton(label="Check device for bad blocks (1 pass)")
-        self.bad_block_check.set_active(bool(self.settings.get("bad_block_check", False)))
+        self.bad_block_check.set_active(bool(self.settings.get("bad_block_check", DEFAULT_BAD_BLOCK_CHECK)))
         self.bad_block_check.set_tooltip_text("Zero-writes and reads back the entire new data partition before formatting. This is slow and destructive.")
         self.bad_block_check.connect("toggled", self.bad_block_toggled)
         adv_grid.attach(self.bad_block_check, 1, 8, 1, 1)
@@ -1348,9 +1386,9 @@ class RufusWindow(Gtk.ApplicationWindow):
         target_system = self.target_system_combo.get_active_id()
         filesystem = self.filesystem_combo.get_active_id()
         cluster = self.cluster_combo.get_active_id()
-        if scheme in {"gpt", "mbr"}:
+        if scheme in {"auto", "gpt", "mbr"}:
             self.windows_partition_scheme = scheme
-        if target_system in {"uefi", "bios"}:
+        if target_system in {"auto", "uefi", "bios"}:
             self.windows_target_system = target_system
         if filesystem in {"auto", "fat32", "ntfs"}:
             self.windows_filesystem = filesystem
@@ -1465,6 +1503,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.checksum_button.set_sensitive(
             not busy and background_idle and bool(selected_image) and os.path.isfile(selected_image)
         )
+        self.update_ffu_review_button()
         self.refresh_button.set_sensitive(not busy and not self.device_refreshing)
         self.qualify_button.set_sensitive(not busy and not self.device_refreshing and self.target_combo.get_active() >= 0)
         windows_controls = not busy and self.inspection.get("mode") == "windows"
@@ -1505,6 +1544,46 @@ class RufusWindow(Gtk.ApplicationWindow):
             return
         dialog.destroy()
         self.refresh_devices()
+
+    def selected_ffu_review_inputs(self):
+        image = self.image_chooser.get_filename() or ""
+        index = self.target_combo.get_active()
+        if self.busy or not image.lower().endswith(".ffu") or not os.path.isfile(image):
+            return None
+        if not (0 <= index < len(self.devices)):
+            return None
+        device = self.devices[index]
+        required = (
+            str(device.get("path") or ""),
+            str(device.get("identity") or ""),
+            int(device.get("size") or 0),
+            int(device.get("logical_sector_size") or 0),
+            int(device.get("physical_sector_size") or 0),
+        )
+        if not all(required):
+            return None
+        return image, device
+
+    def update_ffu_review_button(self):
+        if getattr(self, "ffu_review_button", None) is not None:
+            self.ffu_review_button.set_sensitive(self.selected_ffu_review_inputs() is not None)
+
+    def open_ffu_review(self, *_):
+        selected = self.selected_ffu_review_inputs()
+        if selected is None:
+            self.message(
+                "Choose a .ffu image and refresh/select a removable drive with complete identity and sector geometry first.",
+                Gtk.MessageType.INFO,
+            )
+            return
+        image, device = selected
+        dialog = FFUReviewDialog(self, PKEXEC, helper_path(), image, device)
+        dialog.run()
+        if dialog.running:
+            return
+        dialog.closed = True
+        dialog.generation += 1
+        dialog.destroy()
 
     def open_checksum_dialog(self, *_):
         if self.busy:
@@ -1597,9 +1676,9 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.bad_block_toggled()
         self.update_verify_warning()
         if windows:
-            if self.partition_combo.get_active_id() in {"gpt", "mbr"}:
+            if self.partition_combo.get_active_id() in {"auto", "gpt", "mbr"}:
                 self.windows_partition_scheme = self.partition_combo.get_active_id()
-            if self.target_system_combo.get_active_id() in {"uefi", "bios"}:
+            if self.target_system_combo.get_active_id() in {"auto", "uefi", "bios"}:
                 self.windows_target_system = self.target_system_combo.get_active_id()
             if self.filesystem_combo.get_active_id() in {"auto", "fat32", "ntfs"}:
                 self.windows_filesystem = self.filesystem_combo.get_active_id()
@@ -1611,9 +1690,9 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.cluster_combo.set_active_id(self.windows_cluster_size)
             self.filesystem_changed()
         elif info.get("mode") == "raw":
-            if self.partition_combo.get_active_id() in {"gpt", "mbr"}:
+            if self.partition_combo.get_active_id() in {"auto", "gpt", "mbr"}:
                 self.windows_partition_scheme = self.partition_combo.get_active_id()
-            if self.target_system_combo.get_active_id() in {"uefi", "bios"}:
+            if self.target_system_combo.get_active_id() in {"auto", "uefi", "bios"}:
                 self.windows_target_system = self.target_system_combo.get_active_id()
             if self.filesystem_combo.get_active_id() in {"auto", "fat32", "ntfs"}:
                 self.windows_filesystem = self.filesystem_combo.get_active_id()
@@ -1631,7 +1710,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         raw_ready = bool(self.devices) and bool(info.get("recognized")) and info.get("mode") == "raw"
         persistence_on = self.persistence_enabled.get_active()
         if persistence_on and not raw_ready:
-            self.persistence_enabled.set_active(False)
+            self.persistence_enabled.set_active(DEFAULT_PERSISTENCE_ENABLED)
             persistence_on = False
             self.persistence_plan = None
             self.persistence_plan_key = None
@@ -1681,11 +1760,11 @@ class RufusWindow(Gtk.ApplicationWindow):
     def target_system_changed(self, *_):
         if self.inspection.get("mode") != "windows":
             return
-        target_system = self.target_system_combo.get_active_id() or "uefi"
-        if target_system not in {"uefi", "bios"}:
+        target_system = self.target_system_combo.get_active_id() or DEFAULT_WINDOWS_TARGET_SYSTEM
+        if target_system not in {"auto", "uefi", "bios"}:
             return
         self.windows_target_system = target_system
-        if target_system == "bios" and self.partition_combo.get_active_id() != "mbr":
+        if target_system == "bios" and self.partition_combo.get_active_id() == "gpt":
             self.partition_combo.set_active_id("mbr")
             return
         self.partition_changed()
@@ -1693,16 +1772,29 @@ class RufusWindow(Gtk.ApplicationWindow):
     def partition_changed(self, *_):
         if self.inspection.get("mode") != "windows":
             return
-        scheme = self.partition_combo.get_active_id() or "gpt"
-        target_system = self.target_system_combo.get_active_id() or "uefi"
-        filesystem = self.filesystem_combo.get_active_id() or "auto"
-        if scheme not in {"gpt", "mbr"} or target_system not in {"uefi", "bios"}:
+        scheme = self.partition_combo.get_active_id() or DEFAULT_WINDOWS_PARTITION_SCHEME
+        target_system = self.target_system_combo.get_active_id() or DEFAULT_WINDOWS_TARGET_SYSTEM
+        filesystem = self.filesystem_combo.get_active_id() or DEFAULT_WINDOWS_FILESYSTEM
+        if scheme not in {"auto", "gpt", "mbr"} or target_system not in {"auto", "uefi", "bios"}:
             return
-        if target_system == "bios" and scheme != "mbr":
+        if target_system == "bios" and scheme == "gpt":
             self.partition_combo.set_active_id("mbr")
             return
         self.windows_partition_scheme = scheme
         self.windows_target_system = target_system
+
+        if scheme == "auto" or target_system == "auto":
+            if filesystem == "ntfs":
+                fs_note = "NTFS keeps install.wim intact and uses UEFI:NTFS when the resolved target is UEFI."
+            elif filesystem == "fat32":
+                fs_note = "FAT32 uses the native firmware path and splits install.wim when required."
+            else:
+                fs_note = "Automatic filesystem selection prefers FAT32 and uses NTFS only when FAT32 cannot safely represent the ISO."
+            self.layout_note.set_text(
+                "Automatic layout follows the selected Windows image: supported UEFI-capable media defaults to GPT/UEFI; "
+                "an explicit BIOS choice resolves Automatic partition scheme to MBR. " + fs_note
+            )
+            return
 
         if target_system == "bios":
             scheme_note = (
@@ -1850,6 +1942,7 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.persistence_plan = None
             self.persistence_plan_key = None
             self.persistence_source_identity = ""
+        self.update_ffu_review_button()
         if getattr(self, "inspection", {}).get("recognized"):
             self.update_layout(self.inspection)
 
@@ -2179,12 +2272,12 @@ class RufusWindow(Gtk.ApplicationWindow):
                 return
         if self.inspection.get("mode") == "windows":
             try:
-                partition_scheme = normalize_partition_scheme(self.partition_combo.get_active_id() or "gpt")
-                target_system = normalize_target_system(self.target_system_combo.get_active_id() or "uefi")
-                if target_system == "bios" and partition_scheme != "mbr":
-                    raise ValueError("BIOS/CSM requires the MBR partition scheme.")
-                filesystem = normalize_filesystem(self.filesystem_combo.get_active_id() or "auto")
-                cluster_size = normalize_cluster_size(self.cluster_combo.get_active_id() or "auto")
+                partition_scheme = normalize_partition_scheme(self.partition_combo.get_active_id() or DEFAULT_WINDOWS_PARTITION_SCHEME)
+                target_system = normalize_target_system(self.target_system_combo.get_active_id() or DEFAULT_WINDOWS_TARGET_SYSTEM)
+                if target_system == "bios" and partition_scheme == "gpt":
+                    raise ValueError("BIOS/CSM cannot be combined with the GPT partition scheme.")
+                filesystem = normalize_filesystem(self.filesystem_combo.get_active_id() or DEFAULT_WINDOWS_FILESYSTEM)
+                cluster_size = normalize_cluster_size(self.cluster_combo.get_active_id() or DEFAULT_WINDOWS_CLUSTER_SIZE)
                 label = normalize_volume_label(self.volume_label.get_text(), filesystem)
             except ValueError as exc:
                 self.message(str(exc), Gtk.MessageType.ERROR)
@@ -2194,15 +2287,18 @@ class RufusWindow(Gtk.ApplicationWindow):
             quick_format = self.quick_format.get_active()
             bad_block_check = self.bad_block_check.get_active()
         else:
-            partition_scheme = "gpt"
-            target_system = "uefi"
-            filesystem = "auto"
-            cluster_size = "auto"
+            # Windows-only controls must never leak saved choices into raw or
+            # persistent workflows. The privileged helper treats auto values as
+            # neutral and rejects explicit Windows options for non-Windows media.
+            partition_scheme = DEFAULT_WINDOWS_PARTITION_SCHEME
+            target_system = DEFAULT_WINDOWS_TARGET_SYSTEM
+            filesystem = DEFAULT_WINDOWS_FILESYSTEM
+            cluster_size = DEFAULT_WINDOWS_CLUSTER_SIZE
             driver_folder = ""
             dbx_file = ""
             label = "RUFUSARM64"
-            quick_format = True
-            bad_block_check = False
+            quick_format = DEFAULT_QUICK_FORMAT
+            bad_block_check = DEFAULT_BAD_BLOCK_CHECK
 
         device = self.devices[index]
         path = device.get("path")
@@ -2219,6 +2315,7 @@ class RufusWindow(Gtk.ApplicationWindow):
                 (options.get("bypass_online_account"), "offline-account setup"),
                 (bool(options.get("local_user")), f"local account {options.get('local_user', '')}"),
                 (options.get("reduce_data_collection"), "reduced setup data collection"),
+                (options.get("quality_of_life"), "Quality of Life app removals and policies"),
                 (options.get("disable_bitlocker"), "automatic encryption disabled"),
                 (options.get("use_regional_settings"), "Ubuntu regional settings"),
             )
@@ -2263,7 +2360,13 @@ class RufusWindow(Gtk.ApplicationWindow):
         if persistence_requested:
             layout_summary = f"GPT / UEFI / FAT32 boot + {human_bytes(self.persistence_plan['size'])} ext4 persistence"
         elif self.inspection.get("mode") == "windows":
-            layout_summary = f"{partition_scheme.upper()} / {self.target_system_combo.get_active_text()} / {filesystem.upper()} / {self.cluster_combo.get_active_text()} clusters"
+            display_scheme = partition_scheme
+            display_target = target_system
+            if partition_scheme == "auto":
+                display_scheme = str(self.windows_capability_analysis.get("default_partition_scheme") or "auto")
+            if target_system == "auto":
+                display_target = str(self.windows_capability_analysis.get("default_target_system") or "auto")
+            layout_summary = f"{display_scheme.upper()} / {display_target.upper()} / {filesystem.upper()} / {self.cluster_combo.get_active_text()} clusters"
         else:
             layout_summary = "From image / From image / From image"
         self.append_log(f"Layout: {layout_summary}")

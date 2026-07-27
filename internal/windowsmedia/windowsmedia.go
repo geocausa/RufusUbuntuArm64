@@ -87,9 +87,12 @@ type mediaPlan struct {
 	ExistingSplitFiles []string
 	SplitBytes         uint64
 	Architecture       string
+	BootWIMPath        string
 	HasARM64           bool
 	HasX64             bool
 	HasX86             bool
+	HasBIOS            bool
+	BIOSArchitecture   string
 	HasBootmgr         bool
 	OtherBytes         uint64
 	CopyBytes          uint64
@@ -112,8 +115,34 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 	if err != nil {
 		return err
 	}
-	defer isoFile.Close()
+	defer func() {
+		returnErr = finishWindowsMediaFile(returnErr, isoFile, false, "selected Windows ISO")
+	}()
 	stableISOPath := fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), isoFile.Fd())
+	targetChanged := false
+
+	sourceLease, leaseErr := sourcefile.AcquireReadLease(ctx, isoFile, opts.ExpectedSource)
+	switch {
+	case leaseErr == nil:
+		ctx = sourceLease.Context()
+		send(emit, Event{Stage: "source_hold", Message: "Holding the selected Windows ISO read-only with a Linux kernel lease; one complete SHA-256 pass will authenticate the held bytes."})
+		defer func() {
+			heldErr := sourceLease.Check()
+			if errors.Is(heldErr, sourcefile.ErrReadLeaseBroken) {
+				message := "the selected Windows ISO was opened for writing while media preparation was in progress; nothing was erased"
+				if targetChanged {
+					message = "the selected Windows ISO was opened for writing while USB creation was in progress; the USB is incomplete and must be recreated"
+				}
+				heldErr = fmt.Errorf("%s: %w", message, heldErr)
+			}
+			returnErr = errors.Join(returnErr, heldErr, sourceLease.Close())
+		}()
+	case errors.Is(leaseErr, sourcefile.ErrReadLeaseUnavailable), errors.Is(leaseErr, sourcefile.ErrReadLeaseConflict):
+		sourceLease = nil
+		send(emit, Event{Stage: "source_hold", Message: fmt.Sprintf("Kernel source hold unavailable (%v); using conservative three-pass SHA-256 source verification.", leaseErr)})
+	default:
+		return fmt.Errorf("hold selected Windows ISO stable: %w", leaseErr)
+	}
 
 	hashPinnedISO := func(stage, message string) ([sha256.Size]byte, error) {
 		lastEmit := time.Time{}
@@ -133,11 +162,14 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		return digest, nil
 	}
 
-	// Bind the exact ISO bytes before mounting or preparing WIM data. Later
-	// hashes must match this snapshot before destructive work and again after
-	// copying, preventing same-size edits with restored timestamps from creating
-	// mixed Windows media.
-	sourceDigest, err := hashPinnedISO("hash_source", "Hashing the selected Windows ISO…")
+	// Authenticate the exact ISO bytes once. A held Linux read lease excludes
+	// conflicting writers for the rest of the operation. Filesystems that cannot
+	// provide that hold retain the existing three-pass digest comparison.
+	initialHashMessage := "Hashing the selected Windows ISO once under the kernel source hold…"
+	if sourceLease == nil {
+		initialHashMessage = "Hashing the selected Windows ISO (conservative pass 1 of 3)…"
+	}
+	sourceDigest, err := hashPinnedISO("hash_source", initialHashMessage)
 	if err != nil {
 		return fmt.Errorf("hash selected Windows ISO: %w", err)
 	}
@@ -152,14 +184,17 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 	if err != nil {
 		return fmt.Errorf("open target for locking: %w", err)
 	}
-	defer lock.Close()
+	lockHeld := false
+	defer func() {
+		returnErr = finishWindowsMediaFile(returnErr, lock, lockHeld, "Windows media target")
+	}()
 	if err := safety.VerifyOpenDevice(lock, opts.ExpectedDeviceID, opts.TargetSize); err != nil {
 		return err
 	}
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		return fmt.Errorf("another writer appears to be using %s: %w", devicePath, err)
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) // best effort
+	lockHeld = true
 
 	workDir, err := createWorkDir()
 	if err != nil {
@@ -213,20 +248,22 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 	if err != nil {
 		return err
 	}
-	if opts.RequireARM64 && !plan.HasARM64 {
-		return errors.New("this ISO contains only x86/x86-64 Windows boot files and will not boot this ARM64 computer; choose an official Windows ARM64 ISO")
+	if err := bindBootCapabilities(ctx, &plan); err != nil {
+		return err
 	}
-	targetSystem, err := normalizeTargetSystem(opts.TargetSystem)
+	scheme, targetSystem, err := resolveWindowsLayout(plan, opts.PartitionScheme, opts.TargetSystem)
 	if err != nil {
 		return err
 	}
-	if targetSystem == "bios" {
-		if !plan.HasX64 && !plan.HasX86 {
-			return errors.New("legacy BIOS/CSM Windows media requires an x86 or x86-64 ISO; Windows ARM64 boots through UEFI only")
-		}
-		if !plan.HasBootmgr {
-			return errors.New("this Windows ISO has no root bootmgr file and cannot be made legacy-BIOS bootable")
-		}
+	if opts.RequireARM64 && targetSystem == "uefi" && !plan.HasARM64 {
+		return errors.New("this ISO contains only x86/x86-64 Windows UEFI boot files and will not boot this ARM64 computer; choose an official Windows ARM64 ISO or deliberately select a proven legacy-BIOS layout")
+	}
+	if strings.EqualFold(strings.TrimSpace(opts.PartitionScheme), "auto") || strings.TrimSpace(opts.PartitionScheme) == "" ||
+		strings.EqualFold(strings.TrimSpace(opts.TargetSystem), "auto") || strings.TrimSpace(opts.TargetSystem) == "" {
+		send(emit, Event{Stage: "inspect", Message: fmt.Sprintf("Automatic Windows layout resolved to %s/%s from the selected image capabilities.", strings.ToUpper(scheme), strings.ToUpper(targetSystem))})
+	}
+	if targetSystem == "bios" && !plan.HasBIOS {
+		return errors.New("legacy BIOS/CSM Windows media requires a root bootmgr file and x86 or x86-64 boot metadata; Windows ARM64 boots through UEFI only")
 	}
 	if strings.TrimSpace(opts.DBXPath) != "" {
 		dbxPath, err := filepath.Abs(opts.DBXPath)
@@ -323,13 +360,6 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 	if err != nil {
 		return err
 	}
-	scheme, err := normalizePartitionScheme(opts.PartitionScheme)
-	if err != nil {
-		return err
-	}
-	if targetSystem == "bios" && scheme != "mbr" {
-		return errors.New("legacy BIOS/CSM Windows media requires the MBR partition scheme")
-	}
 	if opts.TargetSize == 0 {
 		opts.TargetSize, err = blockDeviceSize(ctx, devicePath)
 		if err != nil {
@@ -395,16 +425,27 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 			return fmt.Errorf("the USB drive is too small after preparing the Windows image: need at least %s, but the drive is %s", humanBytes(plan.RequiredBytes), humanBytes(opts.TargetSize))
 		}
 	}
-	preDestructiveDigest, err := hashPinnedISO("verify_source", "Rechecking the Windows ISO before erasing the USB…")
-	if err != nil {
-		return fmt.Errorf("recheck selected Windows ISO: %w", err)
-	}
-	if !bytes.Equal(sourceDigest[:], preDestructiveDigest[:]) {
-		return errors.New("the selected Windows ISO changed while it was being prepared; nothing was erased")
+	if sourceLease != nil {
+		if err := sourceLease.Check(); err != nil {
+			return fmt.Errorf("confirm held Windows ISO before erasing the USB: %w", err)
+		}
+	} else {
+		preDestructiveDigest, err := hashPinnedISO("verify_source", "Rechecking the Windows ISO before erasing the USB (conservative pass 2 of 3)…")
+		if err != nil {
+			return fmt.Errorf("recheck selected Windows ISO: %w", err)
+		}
+		if !bytes.Equal(sourceDigest[:], preDestructiveDigest[:]) {
+			return errors.New("the selected Windows ISO changed while it was being prepared; nothing was erased")
+		}
 	}
 	send(emit, Event{Stage: "inspect", Message: fmt.Sprintf("Windows %s installation media detected; %s/%s selected; approximately %s will be written.", plan.Architecture, strings.ToUpper(targetSystem), strings.ToUpper(filesystem), humanBytes(plan.CopyBytes))})
 
 	checkTarget := func() error {
+		if sourceLease != nil {
+			if err := sourceLease.Check(); err != nil {
+				return err
+			}
+		}
 		if err := sourcefile.VerifyPinned(isoFile, opts.ExpectedSource); err != nil {
 			return err
 		}
@@ -425,6 +466,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 			return fmt.Errorf("target safety check: %w", err)
 		}
 	}
+	targetChanged = true
 	send(emit, Event{Stage: "partition", Message: fmt.Sprintf("Creating a %s partition table…", strings.ToUpper(scheme))})
 	if err := runOnTarget("wipefs", "--all", "--force", "--", devicePath); err != nil {
 		return err
@@ -663,12 +705,18 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 			return fmt.Errorf("NTFS filesystem check failed: %w", err)
 		}
 	}
-	postCopyDigest, err := hashPinnedISO("verify_source", "Checking that the source ISO stayed unchanged…")
-	if err != nil {
-		return fmt.Errorf("recheck Windows ISO after copying: %w", err)
-	}
-	if !bytes.Equal(sourceDigest[:], postCopyDigest[:]) {
-		return errors.New("the selected Windows ISO changed while files were being copied; the USB is incomplete and must be recreated")
+	if sourceLease != nil {
+		if err := sourceLease.Check(); err != nil {
+			return fmt.Errorf("confirm held Windows ISO after copying: %w", err)
+		}
+	} else {
+		postCopyDigest, err := hashPinnedISO("verify_source", "Checking that the source ISO stayed unchanged (conservative pass 3 of 3)…")
+		if err != nil {
+			return fmt.Errorf("recheck Windows ISO after copying: %w", err)
+		}
+		if !bytes.Equal(sourceDigest[:], postCopyDigest[:]) {
+			return errors.New("the selected Windows ISO changed while files were being copied; the USB is incomplete and must be recreated")
+		}
 	}
 	if err := run(ctx, emit, "umount", "--", isoMount); err != nil {
 		return err
@@ -678,7 +726,8 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 }
 
 func inspectMountedISO(root string) (mediaPlan, error) {
-	if _, ok := findRelativeCaseInsensitive(root, "sources/boot.wim"); !ok {
+	bootWIMPath, ok := findRelativeCaseInsensitive(root, "sources/boot.wim")
+	if !ok {
 		return mediaPlan{}, errors.New("this is not a supported Windows installation ISO: sources/boot.wim was not found")
 	}
 
@@ -686,7 +735,7 @@ func inspectMountedISO(root string) (mediaPlan, error) {
 	_, x64 := findRelativeCaseInsensitive(root, "efi/boot/bootx64.efi")
 	_, x86 := findRelativeCaseInsensitive(root, "efi/boot/bootia32.efi")
 	_, bootmgr := findRelativeCaseInsensitive(root, "bootmgr")
-	architecture := "UEFI"
+	architecture := ""
 	switch {
 	case arm64 && x64:
 		architecture = "ARM64/x86-64 UEFI"
@@ -696,8 +745,10 @@ func inspectMountedISO(root string) (mediaPlan, error) {
 		architecture = "x86-64 UEFI"
 	case x86:
 		architecture = "x86 UEFI"
+	case bootmgr:
+		architecture = "legacy BIOS (architecture pending WIM inspection)"
 	default:
-		return mediaPlan{}, errors.New("the ISO has no standard ARM64 or x86-64 UEFI boot file")
+		return mediaPlan{}, errors.New("the ISO has no standard UEFI fallback loader and no root bootmgr file")
 	}
 
 	installWIM, hasWIM := findRelativeCaseInsensitive(root, "sources/install.wim")
@@ -731,10 +782,18 @@ func inspectMountedISO(root string) (mediaPlan, error) {
 		InstallPath:        installPath,
 		ExistingSplitFiles: existingSplitFiles,
 		Architecture:       architecture,
+		BootWIMPath:        bootWIMPath,
 		HasARM64:           arm64,
 		HasX64:             x64,
 		HasX86:             x86,
 		HasBootmgr:         bootmgr,
+	}
+	if bootmgr && x64 {
+		plan.HasBIOS = true
+		plan.BIOSArchitecture = "amd64"
+	} else if bootmgr && x86 {
+		plan.HasBIOS = true
+		plan.BIOSArchitecture = "x86"
 	}
 	if answerPath, ok := findRelativeCaseInsensitive(root, "autounattend.xml"); ok {
 		plan.ExistingAnswerPath = answerPath
@@ -796,6 +855,50 @@ func inspectMountedISO(root string) (mediaPlan, error) {
 		return mediaPlan{}, err
 	}
 	return plan, nil
+}
+
+func bindBootCapabilities(ctx context.Context, plan *mediaPlan) error {
+	if plan == nil {
+		return errors.New("windows media plan is nil")
+	}
+	if plan.HasARM64 || plan.HasX64 || plan.HasX86 {
+		return nil
+	}
+	if !plan.HasBootmgr {
+		return errors.New("the Windows ISO has neither a supported UEFI fallback loader nor root bootmgr")
+	}
+	if strings.TrimSpace(plan.BootWIMPath) == "" {
+		return errors.New("the Windows ISO has no identity-bound boot.wim path for legacy-BIOS architecture inspection")
+	}
+	metadata, err := InspectWIMMetadata(ctx, plan.BootWIMPath)
+	if err != nil {
+		return fmt.Errorf("inspect boot.wim before accepting legacy-BIOS media: %w", err)
+	}
+	return bindBIOSMetadata(plan, metadata)
+}
+
+func bindBIOSMetadata(plan *mediaPlan, metadata windowsconfig.MediaMetadata) error {
+	if plan == nil {
+		return errors.New("windows media plan is nil")
+	}
+	if !plan.HasBootmgr {
+		return errors.New("legacy-BIOS capability requires a root bootmgr file")
+	}
+	switch normalizeWIMArchitecture(metadata.Architecture) {
+	case "amd64":
+		plan.HasBIOS = true
+		plan.BIOSArchitecture = "amd64"
+		plan.Architecture = "x86-64 legacy BIOS"
+	case "x86":
+		plan.HasBIOS = true
+		plan.BIOSArchitecture = "x86"
+		plan.Architecture = "x86 legacy BIOS"
+	case "arm64":
+		return errors.New("windows ARM64 boot.wim cannot be used as legacy-BIOS media; ARM64 boots through UEFI only")
+	default:
+		return fmt.Errorf("boot.wim architecture %q is unsupported or ambiguous for legacy-BIOS media", metadata.Architecture)
+	}
+	return nil
 }
 
 // validateFATCompatibility performs the checks that matter only when the main

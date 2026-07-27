@@ -28,6 +28,7 @@ const (
 type DeviceOptions struct {
 	ExpectedDeviceID uint64
 	ExpectedSize     uint64
+	Format           Format
 	BufferSize       int
 	Progress         ProgressFunc
 	BeforeRead       func(*os.File) error
@@ -41,10 +42,14 @@ type destinationPlan struct {
 
 // CaptureDevice holds one read-only, exclusive block-device descriptor for the
 // complete capture. Output is written to an owner-only same-directory temporary
-// file and published without replacement only after copy, hash, sync, close,
-// and final source revalidation all succeed.
+// file and published without replacement only after capture/conversion, hashes,
+// content verification, sync, close, and final source revalidation all succeed.
 func CaptureDevice(ctx context.Context, sourcePath, outputPath string, options DeviceOptions) (Report, error) {
-	report := Report{Schema: ReportSchema, Status: StatusFailed, PlannedBytes: options.ExpectedSize}
+	format := options.Format
+	if format == "" {
+		format = FormatRaw
+	}
+	report := Report{Schema: ReportSchema, Status: StatusFailed, Format: format, PlannedBytes: options.ExpectedSize}
 	if ctx == nil {
 		return fail(report, "invalid_context", 0, false, errors.New("backup context is nil"))
 	}
@@ -57,11 +62,22 @@ func CaptureDevice(ctx context.Context, sourcePath, outputPath string, options D
 	if options.ExpectedSize == 0 {
 		return fail(report, "invalid_size", 0, false, errors.New("expected device capacity is required"))
 	}
+	if !format.Valid() {
+		return fail(report, "invalid_format", 0, false, fmt.Errorf("unsupported backup format %q", format))
+	}
 	if err := ctx.Err(); err != nil {
-		return cancel(report, 0, err)
+		return cancel(report, 0, context.Cause(ctx))
 	}
 
-	destination, err := prepareDestination(outputPath, sourcePath, options.ExpectedSize)
+	requiredBytes := options.ExpectedSize
+	if format.Container() {
+		measure, err := MeasureContainer(ctx, options.ExpectedSize, format)
+		if err != nil {
+			return capturePhaseError(report, "container_measure", err)
+		}
+		requiredBytes = measure.FullyAllocatedBytes
+	}
+	destination, err := prepareDestination(outputPath, sourcePath, requiredBytes)
 	if err != nil {
 		return fail(report, "destination_preflight", 0, false, err)
 	}
@@ -76,7 +92,7 @@ func CaptureDevice(ctx context.Context, sourcePath, outputPath string, options D
 	}
 	defer func() { _ = source.Close() }()
 
-	if err := safety.VerifyOpenDevice(source, options.ExpectedDeviceID, options.ExpectedSize); err != nil {
+	if err := verifyHeldSource(source, options); err != nil {
 		return fail(report, "source_identity", 0, false, err)
 	}
 	if options.BeforeRead != nil {
@@ -84,7 +100,7 @@ func CaptureDevice(ctx context.Context, sourcePath, outputPath string, options D
 			return fail(report, "source_safety", 0, false, fmt.Errorf("final backup source safety check: %w", err))
 		}
 	}
-	if err := safety.VerifyOpenDevice(source, options.ExpectedDeviceID, options.ExpectedSize); err != nil {
+	if err := verifyHeldSource(source, options); err != nil {
 		return fail(report, "source_identity", 0, false, err)
 	}
 
@@ -94,13 +110,17 @@ func CaptureDevice(ctx context.Context, sourcePath, outputPath string, options D
 	}
 	defer func() { _ = syscall.Unlinkat(int(destination.directory.Fd()), temporaryName) }()
 
-	report, copyErr := Copy(ctx, source, temporary, options.ExpectedSize, Config{
-		BufferSize: options.BufferSize,
-		Progress:   options.Progress,
-	})
-	if copyErr != nil {
+	if format == FormatRaw {
+		report, err = Copy(ctx, source, temporary, options.ExpectedSize, Config{
+			BufferSize: options.BufferSize,
+			Progress:   options.Progress,
+		})
+	} else {
+		report, err = captureContainer(ctx, source, temporary, format, options, report)
+	}
+	if err != nil {
 		_ = temporary.Close()
-		return report, copyErr
+		return report, err
 	}
 	if err := applyGraphicalDestinationOwner(temporary); err != nil {
 		_ = temporary.Close()
@@ -116,7 +136,7 @@ func CaptureDevice(ctx context.Context, sourcePath, outputPath string, options D
 	if closeErr != nil {
 		return fail(report, "close_destination", report.CompletedBytes, true, fmt.Errorf("close backup temporary destination: %w", closeErr))
 	}
-	if err := safety.VerifyOpenDevice(source, options.ExpectedDeviceID, options.ExpectedSize); err != nil {
+	if err := verifyHeldSource(source, options); err != nil {
 		return fail(report, "source_revalidation", report.CompletedBytes, true, err)
 	}
 	if err := destination.revalidatePath(); err != nil {
@@ -126,6 +146,86 @@ func CaptureDevice(ctx context.Context, sourcePath, outputPath string, options D
 		return fail(report, "publish_destination", report.CompletedBytes, true, err)
 	}
 	return report, nil
+}
+
+func captureContainer(ctx context.Context, source, temporary *os.File, format Format, options DeviceOptions, report Report) (Report, error) {
+	sourceHash, err := HashExact(ctx, source, options.ExpectedSize, "hash_source", options.Progress)
+	if err != nil {
+		return capturePhaseError(report, "source_hash", err)
+	}
+	if err := verifyHeldSource(source, options); err != nil {
+		return fail(report, "source_revalidation", 0, false, err)
+	}
+
+	conversionProgress := func(progress Progress) {
+		if options.Progress != nil {
+			progress.Phase = "convert"
+			options.Progress(progress)
+		}
+	}
+	if err := ConvertContainer(ctx, source, temporary, options.ExpectedSize, format, conversionProgress); err != nil {
+		return capturePhaseError(report, "container_convert", err)
+	}
+	if err := verifyHeldSource(source, options); err != nil {
+		return fail(report, "source_revalidation", 0, false, err)
+	}
+
+	if err := CompareContainer(ctx, source, temporary, format); err != nil {
+		return capturePhaseError(report, "content_compare", err)
+	}
+	if err := verifyHeldSource(source, options); err != nil {
+		return fail(report, "source_revalidation", 0, false, err)
+	}
+
+	consistency, err := CheckContainer(ctx, temporary, format)
+	if err != nil {
+		return capturePhaseError(report, "container_consistency", err)
+	}
+	if err := verifyHeldSource(source, options); err != nil {
+		return fail(report, "source_revalidation", 0, false, err)
+	}
+
+	outputInfo, err := temporary.Stat()
+	if err != nil {
+		return fail(report, "inspect_destination", 0, false, fmt.Errorf("inspect converted backup container: %w", err))
+	}
+	if !outputInfo.Mode().IsRegular() || outputInfo.Size() <= 0 {
+		return fail(report, "invalid_destination", 0, false, errors.New("converted backup container is not a non-empty regular file"))
+	}
+	outputBytes := uint64(outputInfo.Size())
+	outputHash, err := HashExact(ctx, temporary, outputBytes, "hash_output", options.Progress)
+	if err != nil {
+		return capturePhaseError(report, "output_hash", err)
+	}
+	if err := verifyHeldSource(source, options); err != nil {
+		return fail(report, "source_revalidation", 0, false, err)
+	}
+	if err := temporary.Sync(); err != nil {
+		return fail(report, "sync_destination", 0, false, fmt.Errorf("sync converted backup container: %w", err))
+	}
+
+	report.Status = StatusPassed
+	report.CompletedBytes = options.ExpectedSize
+	// The legacy hash remains the raw source-content digest. New schema-2
+	// consumers also receive the independently hashed container artifact.
+	report.SHA256 = sourceHash
+	report.SourceSHA256 = sourceHash
+	report.OutputSHA256 = outputHash
+	report.OutputBytes = outputBytes
+	report.ContentComparison = ComparisonPassed
+	report.Consistency = consistency
+	return report, nil
+}
+
+func verifyHeldSource(source *os.File, options DeviceOptions) error {
+	return safety.VerifyOpenDevice(source, options.ExpectedDeviceID, options.ExpectedSize)
+}
+
+func capturePhaseError(report Report, kind string, err error) (Report, error) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return cancel(report, report.CompletedBytes, err)
+	}
+	return fail(report, kind, report.CompletedBytes, false, err)
 }
 
 func prepareDestination(outputPath, sourcePath string, required uint64) (destinationPlan, error) {
