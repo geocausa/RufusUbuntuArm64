@@ -139,10 +139,24 @@ MARKUP_TEMPLATES = {
 
 
 def load_translation(localedir=DEFAULT_LOCALE_DIR, languages=None):
-    """Load one standard gettext catalog, falling back safely to source English."""
+    """Load standard GNU catalogs without reusing gettext's process cache."""
     try:
-        return _gettext.translation(DOMAIN, localedir=localedir, languages=languages, fallback=True)
-    except (EOFError, OSError, UnicodeError, ValueError):
+        filenames = _gettext.find(
+            DOMAIN,
+            localedir=localedir,
+            languages=languages,
+            all=True,
+        )
+        translation = None
+        for filename in filenames:
+            with open(filename, "rb") as handle:
+                catalog = _gettext.GNUTranslations(handle)
+            if translation is None:
+                translation = catalog
+            else:
+                translation.add_fallback(catalog)
+        return translation or _gettext.NullTranslations()
+    except (EOFError, OSError, TypeError, UnicodeError, ValueError):
         return _gettext.NullTranslations()
 
 
