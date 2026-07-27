@@ -1,0 +1,67 @@
+name: Fix gettext catalog cache once
+
+on:
+  push:
+    branches:
+      - feature/gettext-primary-ui
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+          ref: feature/gettext-primary-ui
+      - name: Load GNU catalogs without stale process-global cache reuse
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("gui/rufusarm64_i18n.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''def load_translation(localedir=DEFAULT_LOCALE_DIR, languages=None):
+              """Load one standard gettext catalog, falling back safely to source English."""
+              try:
+                  return _gettext.translation(DOMAIN, localedir=localedir, languages=languages, fallback=True)
+              except (EOFError, OSError, UnicodeError, ValueError):
+                  return _gettext.NullTranslations()
+          '''
+          new = '''def load_translation(localedir=DEFAULT_LOCALE_DIR, languages=None):
+              """Load standard GNU catalogs without reusing gettext's process cache."""
+              try:
+                  filenames = _gettext.find(
+                      DOMAIN,
+                      localedir=localedir,
+                      languages=languages,
+                      all=True,
+                  )
+                  translation = None
+                  for filename in filenames:
+                      with open(filename, "rb") as handle:
+                          catalog = _gettext.GNUTranslations(handle)
+                      if translation is None:
+                          translation = catalog
+                      else:
+                          translation.add_fallback(catalog)
+                  return translation or _gettext.NullTranslations()
+              except (EOFError, OSError, TypeError, UnicodeError, ValueError):
+                  return _gettext.NullTranslations()
+          '''
+          if text.count(old) != 1:
+              raise SystemExit("gettext loader insertion point changed")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+          python3 scripts/update-pot.py --check
+          git rm .github/workflows/fix-gettext-cache-once.yml
+          git add gui/rufusarm64_i18n.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "i18n: avoid stale GNU catalog cache reuse"
+          git push origin HEAD:feature/gettext-primary-ui
