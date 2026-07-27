@@ -126,6 +126,7 @@ class FFUDialogLocalizationTests(unittest.TestCase):
                 ("rufusarm64_freedos_dialog", "FreeDOSFormatDialog"),
                 ("rufusarm64", "WindowsOptionsDialog"),
                 ("rufusarm64", "AcquisitionDialog"),
+                ("rufusarm64_persistence", "Window"),
             ),
         )
 
