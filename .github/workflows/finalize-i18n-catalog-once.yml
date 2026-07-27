@@ -1,0 +1,78 @@
+name: Finalize primary gettext catalog once
+
+on:
+  push:
+    branches:
+      - feature/gettext-primary-ui
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+          ref: feature/gettext-primary-ui
+      - name: Complete admitted source messages and parity record
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path("gui/rufusarm64_i18n.py")
+          text = source.read_text(encoding="utf-8")
+          replacements = {
+              '    N_("Create deterministic FreeDOS 1.4 media for x86 BIOS or Legacy/CSM systems."),\n':
+                  '    N_("Create deterministic FreeDOS 1.4 media for x86 BIOS or Legacy/CSM systems."),\n'
+                  '    N_("Create a bootable USB drive"),\n',
+              '    N_("Download unavailable"),\n':
+                  '    N_("Download unavailable"),\n'
+                  '    N_("Download the current architecture-specific Microsoft DBX update for local inspection."),\n',
+              '    N_("Download verified image"),\n':
+                  '    N_("Download verified image"),\n'
+                  '    N_("Open verified signed-catalog image acquisition when the installed channel is available."),\n',
+              '    N_("Open read-only UEFI media validation. Shortcut Ctrl+U."),\n':
+                  '    N_("Open read-only UEFI media validation. Shortcut Ctrl+U."),\n'
+                  '    N_("Open read-only validation of a mounted or extracted UEFI media directory."),\n',
+              '    N_("Review FFU…"),\n':
+                  '    N_("Review FFU…"),\n'
+                  '    N_("Review the final destructive warning for the selected image and exact USB drive."),\n',
+          }
+          for old, new in replacements.items():
+              if text.count(old) != 1:
+                  raise SystemExit(f"catalog insertion point changed: {old!r}")
+              text = text.replace(old, new, 1)
+          source.write_text(text, encoding="utf-8")
+
+          parity = Path("docs/upstream-rufus-parity.json")
+          text = parity.read_text(encoding="utf-8")
+          text = text.replace(
+              '"baseline_commit": "eaf6a685133433baf5693344b82a6c826adeaaff"',
+              '"baseline_commit": "a4c73d0b23461dd2d6bf19ad01431da21d0694a1"',
+              1,
+          )
+          old_localization = '''      "status": "planned",
+                "notes": "GTK strings and diagnostics must move into a translation catalog before language packs are accepted."'''
+          new_localization = '''      "status": "partial",
+                "notes": "A standard GNU gettext runtime, deterministic source-only primary-UI POT, package closure, safe English fallback, and exact post-composition translation are implemented for main headings, labels, actions, appearance wording, tooltips, and related accessibility metadata. Machine-readable JSON, flags, paths, identities, planner values, exact destructive confirmations, diagnostics, and report schemas remain byte-stable. Broader dialog and dynamic status/diagnostic migration, plural review, completed language packs, and full translation-aware accessibility review remain planned."'''
+          if text.count(old_localization) != 1:
+              raise SystemExit("localization parity row changed")
+          text = text.replace(old_localization, new_localization, 1)
+          old_appearance = '''      "notes": "GTK keyboard navigation, assistive names, selectable diagnostics, resizable layout, a process-wide System/Light/Dark selector with canonical persisted settings, and complete main-window option/action tooltips are implemented. System restores the desktop preference observed at process startup, explicit modes remain application-scoped, and the deferred tooltip pass preserves workflow-specific disclosures. Translation-catalog extraction and translation-aware accessibility review remain planned."'''
+          new_appearance = '''      "notes": "GTK keyboard navigation, assistive names, selectable diagnostics, resizable layout, a process-wide System/Light/Dark selector with canonical persisted settings, complete main-window option/action tooltips, and bounded gettext translation of primary accessibility metadata are implemented. System restores the desktop preference observed at process startup, explicit modes remain application-scoped, and deferred passes preserve workflow-specific disclosures. Broader dialog migration and full translation-aware accessibility review remain planned."'''
+          if text.count(old_appearance) != 1:
+              raise SystemExit("appearance parity row changed")
+          parity.write_text(text.replace(old_appearance, new_appearance, 1), encoding="utf-8")
+          PY
+          python3 scripts/update-pot.py
+          git rm .github/workflows/finalize-i18n-catalog-once.yml
+          git add gui/rufusarm64_i18n.py po/rufusarm64.pot docs/upstream-rufus-parity.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "i18n: finalize primary catalog and parity record"
+          git push origin HEAD:feature/gettext-primary-ui
