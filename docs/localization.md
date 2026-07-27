@@ -12,6 +12,8 @@ A compiled language catalog uses the normal system path:
 
 Python's gettext runtime follows the process locale and standard environment variables such as `LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, and `LANG`. When no matching catalog is installed, the catalog is malformed, or a source string is not admitted to the current translation set, RufusArm64 keeps its reviewed English source text.
 
+The loader opens each discovered GNU catalog directly instead of reusing Python gettext's process-global translation cache. This keeps repeated validation deterministic and prevents an earlier valid load from masking a later malformed catalog at the same path.
+
 The project currently ships the translation source template rather than claiming completed language coverage:
 
 ```text
