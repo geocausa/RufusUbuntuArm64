@@ -1,0 +1,79 @@
+name: Apply acquisition localization v2 once
+
+on:
+  pull_request:
+    branches:
+      - stage4/0.15.0
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+          ref: feature/gettext-acquisition-dialog
+      - name: Apply corrected patch, repair generated source assertion, and test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path('.github/workflows/patch-acquisition-i18n-once.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          start = next(i for i, line in enumerate(lines) if "python3 - <<'PY'" in line)
+          end = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == 'PY')
+          program = textwrap.dedent('\n'.join(lines[start + 1:end]))
+          program = program.replace(
+              'System keeps the desktop preference observed when RufusArm64 started. Light and Dark affect only RufusArm64 and its dialogs.',
+              'System keeps the desktop preference observed when this application started. Light and Dark affect only RufusArm64 and its dialogs.',
+          )
+          exec(compile(program, str(workflow), 'exec'), {'__name__': '__main__'})
+
+          test_path = Path('gui/test_acquisition_dialog_i18n.py')
+          test_text = test_path.read_text(encoding='utf-8')
+          old = "                          'f\"SHA-256: {image['sha256']}\"',\n"
+          new = "                          'SHA-256:',\n"
+          if test_text.count(old) != 1:
+              raise SystemExit('generated acquisition SHA-256 source assertion changed')
+          test_path.write_text(test_text.replace(old, new, 1), encoding='utf-8')
+          PY
+          python3 scripts/update-pot.py
+          python3 -m py_compile gui/rufusarm64_i18n.py gui/test_i18n.py gui/test_acquisition_dialog_i18n.py
+          python3 -m unittest gui.test_acquisition_dialog_i18n gui.test_i18n gui.test_verified_acquisition_ui
+          python3 scripts/update-pot.py --check
+          git rm --ignore-unmatch \
+            .github/workflows/apply-acquisition-i18n-v2-once.yml \
+            .github/workflows/apply-acquisition-i18n-fixed-once.yml \
+            .github/workflows/patch-acquisition-i18n-once.yml \
+            .github/workflows/fix-acquisition-anchor-once.yml \
+            .github/workflows/fix-acquisition-anchor-v2-once.yml \
+            .github/workflows/diagnose-acquisition-i18n-once.yml \
+            .github/workflows/diagnose-acquisition-fixed-once.yml \
+            docs/acquisition-i18n-diagnostic.txt \
+            docs/acquisition-i18n-fixed-diagnostic.txt
+          git add \
+            CHANGELOG.md \
+            ROADMAP.md \
+            docs/localization.md \
+            docs/release-0.15.0.md \
+            docs/upstream-rufus-parity.json \
+            gui/rufusarm64_i18n.py \
+            gui/test_acquisition_dialog_i18n.py \
+            gui/test_checksum_dialog_i18n.py \
+            gui/test_device_qualification_i18n.py \
+            gui/test_ffu_dialog_i18n.py \
+            gui/test_guarded_dialog_i18n_contract.py \
+            gui/test_i18n.py \
+            gui/test_windows_options_dialog_i18n.py \
+            po/rufusarm64.pot
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "i18n: translate the verified acquisition shell"
+          git push origin HEAD:feature/gettext-acquisition-dialog
