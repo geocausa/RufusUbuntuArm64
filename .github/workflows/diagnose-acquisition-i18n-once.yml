@@ -1,0 +1,47 @@
+name: Diagnose acquisition localization once
+
+on:
+  pull_request:
+    branches:
+      - stage4/0.15.0
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+          ref: feature/gettext-acquisition-dialog
+      - name: Execute embedded replacement program and capture exact failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+          import traceback
+
+          workflow = Path('.github/workflows/patch-acquisition-i18n-once.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          start = next(i for i, line in enumerate(lines) if "python3 - <<'PY'" in line)
+          end = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == 'PY')
+          program = textwrap.dedent('\n'.join(lines[start + 1:end]))
+          try:
+              exec(compile(program, str(workflow), 'exec'), {'__name__': '__main__'})
+          except BaseException:
+              result = traceback.format_exc()
+          else:
+              result = 'Embedded replacement program completed; failure occurs in a later command.\n'
+          Path('docs/acquisition-i18n-diagnostic.txt').write_text(result, encoding='utf-8')
+          PY
+          git rm .github/workflows/diagnose-acquisition-i18n-once.yml
+          git add docs/acquisition-i18n-diagnostic.txt
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "ci: capture acquisition localization failure"
+          git push origin HEAD:feature/gettext-acquisition-dialog
