@@ -16,6 +16,7 @@ class SecondaryDialogLocalizationContractTests(unittest.TestCase):
         text = I18N.read_text(encoding="utf-8")
         for marker in (
             '("rufusarm64_checksums", "ChecksumDialog")',
+            '("rufusarm64_device_qualify_dialog", "DeviceQualificationDialog")',
             '("rufusarm64_nonbootable_dialog", "NonBootableFormatDialog")',
             '("rufusarm64_freedos_dialog", "FreeDOSFormatDialog")',
             "def install_secondary_dialog_localization():",
@@ -37,6 +38,7 @@ class SecondaryDialogLocalizationContractTests(unittest.TestCase):
             "isinstance(widget, Gtk.ProgressBar)",
             "isinstance(widget, Gtk.TextView)",
             'N_("Image checksums")',
+            'N_("Check USB drive")',
             'N_("Create non-bootable media")',
             'N_("FreeDOS 1.4 — x86 BIOS/Legacy media")',
             'N_("Type the exact FORMAT phrase")',
