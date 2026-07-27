@@ -26,7 +26,7 @@ func TestExecuteDeviceFormatsRealLoopDevices(t *testing.T) {
 	for _, tool := range []string{
 		"losetup", "blockdev", "sfdisk", "wipefs", "blkid",
 		"mkfs.vfat", "fsck.vfat", "mkfs.exfat", "fsck.exfat",
-		"mkfs.ntfs", "ntfsfix", "mkfs.ext4", "e2fsck",
+		"mkfs.ntfs", "ntfsfix", "mkfs.ext2", "mkfs.ext3", "mkfs.ext4", "e2fsck",
 	} {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Fatalf("required loop-test tool %q is unavailable: %v", tool, err)
@@ -42,6 +42,8 @@ func TestExecuteDeviceFormatsRealLoopDevices(t *testing.T) {
 		{name: "gpt-fat32", scheme: SchemeGPT, filesystem: FilesystemFAT32, label: "RUFUSFAT"},
 		{name: "mbr-exfat", scheme: SchemeMBR, filesystem: FilesystemExFAT, label: "RUFUS-EXFAT"},
 		{name: "gpt-ntfs", scheme: SchemeGPT, filesystem: FilesystemNTFS, label: "RUFUS-NTFS"},
+		{name: "gpt-ext2", scheme: SchemeGPT, filesystem: FilesystemExt2, label: "RUFUS-EXT2"},
+		{name: "mbr-ext3", scheme: SchemeMBR, filesystem: FilesystemExt3, label: "RUFUS-EXT3"},
 		{name: "mbr-ext4", scheme: SchemeMBR, filesystem: FilesystemExt4, label: "RUFUS-EXT4"},
 	}
 	for _, test := range tests {

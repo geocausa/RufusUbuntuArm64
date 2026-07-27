@@ -16,7 +16,7 @@ rufusarm64-nonbootable-format \- erase and format a removable drive as data-only
 .B rufusarm64-nonbootable-format
 is the dedicated identity-bound data-only formatter. It erases one explicitly
 selected whole block device, writes one GPT or MBR partition, creates FAT32,
-exFAT, NTFS, or ext4, and verifies the published partition table, kernel
+exFAT, NTFS, ext2, ext3, or ext4, and verifies the published partition table, kernel
 geometry, filesystem type, label, and read-only checker result. The result is
 not claimed bootable.
 .PP
@@ -28,8 +28,8 @@ before erasure.
 .SH LAYOUT
 Exactly one data partition is created with a 1 MiB aligned start and a 1 MiB
 reserved tail. GPT uses Microsoft basic-data for FAT32, exFAT, and NTFS and the
-Linux filesystem-data type for ext4. MBR uses type 0x0c for FAT32, 0x07 for
-exFAT/NTFS, and 0x83 for ext4. Geometry beyond the exact MBR address range is
+Linux filesystem-data type for ext2, ext3, and ext4. MBR uses type 0x0c for FAT32, 0x07 for
+exFAT/NTFS, and 0x83 for ext2/ext3/ext4. Geometry beyond the exact MBR address range is
 refused with instructions to use GPT.
 .SH OPTIONS
 .TP
@@ -45,7 +45,7 @@ Mandatory with noninteractive or override-capable terminal modes.
 .BI --scheme " gpt|mbr"
 Choose GPT or MBR. GPT is the default.
 .TP
-.BI --filesystem " fat32|exfat|ntfs|ext4"
+.BI --filesystem " fat32|exfat|ntfs|ext2|ext3|ext4"
 Choose the data filesystem. FAT32 is the default.
 .TP
 .BI --label " LABEL"

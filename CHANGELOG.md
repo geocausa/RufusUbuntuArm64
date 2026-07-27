@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added guarded ext2 and ext3 data-only formatting through the existing identity-bound GPT/MBR planner, exact confirmation, read-only e2fsck verification, strict CLI/GTK report contract, and real loop-device qualification.
+
 ## 0.14.0 — 2026-07-26
 
 - Added descriptor-bound drive backup in raw, dynamic VHD, dynamic VHDX, and mounted-filesystem ISO/UDF formats, with exact source identity, conservative destination admission, cancellation, hashing, independent content comparison, and atomic no-replace publication.
