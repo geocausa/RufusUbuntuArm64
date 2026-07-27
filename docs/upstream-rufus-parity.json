@@ -10,7 +10,7 @@
   "project": {
     "repository": "geocausa/RufusUbuntuArm64",
     "baseline": "stage4/0.15.0",
-    "baseline_commit": "eaf6a685133433baf5693344b82a6c826adeaaff",
+    "baseline_commit": "a4c73d0b23461dd2d6bf19ad01431da21d0694a1",
     "target_milestone": "1.0",
     "windows_to_go_policy": "deferred-maybe"
   },
@@ -184,8 +184,8 @@
     {
       "id": "localization",
       "upstream_feature": "Localized user interface",
-      "status": "planned",
-      "notes": "GTK strings and diagnostics must move into a translation catalog before language packs are accepted.",
+      "status": "partial",
+      "notes": "A standard GNU gettext runtime, deterministic source-only primary-UI POT, package closure, safe English fallback, and exact post-composition translation are implemented for main headings, labels, actions, appearance wording, tooltips, and related accessibility metadata. Machine-readable JSON, flags, paths, identities, planner values, exact destructive confirmations, diagnostics, and report schemas remain byte-stable. Broader dialog and dynamic status/diagnostic migration, plural review, completed language packs, and full translation-aware accessibility review remain planned.",
       "upstream_sources": [
         "src/localization.c",
         "res/loc/"
@@ -205,7 +205,7 @@
       "id": "appearance-and-accessibility",
       "upstream_feature": "Dark mode, tooltips, keyboard navigation, and accessible UI",
       "status": "partial",
-      "notes": "GTK keyboard navigation, assistive names, selectable diagnostics, resizable layout, a process-wide System/Light/Dark selector with canonical persisted settings, and complete main-window option/action tooltips are implemented. System restores the desktop preference observed at process startup, explicit modes remain application-scoped, and the deferred tooltip pass preserves workflow-specific disclosures. Translation-catalog extraction and translation-aware accessibility review remain planned.",
+      "notes": "GTK keyboard navigation, assistive names, selectable diagnostics, resizable layout, a process-wide System/Light/Dark selector with canonical persisted settings, complete main-window option/action tooltips, and bounded gettext translation of primary accessibility metadata are implemented. System restores the desktop preference observed at process startup, explicit modes remain application-scoped, and deferred passes preserve workflow-specific disclosures. Broader dialog migration and full translation-aware accessibility review remain planned.",
       "upstream_sources": [
         "src/ui.c",
         "src/rufus.c",

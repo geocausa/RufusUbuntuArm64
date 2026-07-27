@@ -3,6 +3,9 @@
 ## Unreleased
 
 - Added guarded ext2 and ext3 data-only formatting through the existing identity-bound GPT/MBR planner, exact confirmation, read-only e2fsck verification, strict CLI/GTK report contract, and real loop-device qualification.
+- Added application-scoped System, Light, and Dark appearance selection with canonical persisted settings and safe restoration of the startup desktop preference.
+- Completed bounded main-window option/action tooltips while preserving workflow-specific disclosures.
+- Added a standard GNU gettext runtime, deterministic primary-interface POT, safe English fallback, and exact post-composition translation for reviewed static main-window, tooltip, appearance, and accessibility text while keeping machine and destructive-operation contracts byte-stable.
 
 ## 0.14.0 — 2026-07-26
 

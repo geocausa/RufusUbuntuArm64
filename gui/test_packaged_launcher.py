@@ -24,6 +24,7 @@ class LauncherModuleContext:
         self.names = (
             "gi",
             "gi.repository",
+            "rufusarm64_i18n",
             "rufusarm64_drive_backup_formats",
             "rufusarm64_drive_backup_iso",
             "rufusarm64",
@@ -39,8 +40,12 @@ class LauncherModuleContext:
         repository = types.ModuleType("gi.repository")
         repository.GLib = types.SimpleNamespace()
         repository.Gtk = types.SimpleNamespace()
+        i18n = types.ModuleType("rufusarm64_i18n")
+        i18n.gettext = lambda message: message
+        i18n.install_localization = lambda window_class: setattr(window_class, "_localization_installed", True)
         sys.modules["gi"] = fake_gi
         sys.modules["gi.repository"] = repository
+        sys.modules["rufusarm64_i18n"] = i18n
         return self
 
     def __exit__(self, *_):
@@ -57,8 +62,10 @@ class PackagedLauncherTests(unittest.TestCase):
         self.assertTrue(text.startswith("#!/bin/sh\n"))
         self.assertIn('exec /usr/bin/python3 -I - "$@"', text)
         self.assertIn('if [ "${1:-}" = "--persistence" ]; then', text)
-        self.assertLess(payload.index('gi.require_version("Gtk", "3.0")'), payload.index("from gi.repository import GLib, Gtk"))
-        self.assertLess(payload.index('gi.require_version("Gtk", "3.0")'), payload.index("from rufusarm64_drive_backup_formats import"))
+        pin = payload.index('gi.require_version("Gtk", "3.0")')
+        self.assertLess(pin, payload.index("from gi.repository import GLib, Gtk"))
+        self.assertLess(pin, payload.index("from rufusarm64_i18n import"))
+        self.assertLess(pin, payload.index("from rufusarm64_drive_backup_formats import"))
         self.assertIn('sys.path.insert(0, "/usr/lib/rufusarm64")', payload)
         compile(payload, str(LAUNCHER), "exec")
 
@@ -99,7 +106,7 @@ class PackagedLauncherTests(unittest.TestCase):
             path.write_text("{", encoding="utf-8")
             self.assertEqual(reader(path), "system")
 
-    def test_entrypoint_installs_appearance_before_running_composed_application(self):
+    def test_entrypoint_installs_product_polish_before_running_composed_application(self):
         _, payload = launcher_payload()
         calls = []
         run_arguments = []
@@ -143,20 +150,25 @@ class PackagedLauncherTests(unittest.TestCase):
             self.assertEqual(calls, ["formats", "iso", "run"])
             self.assertEqual(run_arguments, [["rufusarm64", "image.iso"]])
             self.assertTrue(RufusWindow._appearance_installed)
+            self.assertTrue(RufusWindow._main_control_tooltips_installed)
+            self.assertTrue(RufusWindow._localization_installed)
             self.assertTrue(callable(RufusWindow.apply_appearance))
             self.assertTrue(callable(RufusWindow.open_appearance_dialog))
 
-    def test_source_exposes_accessible_system_light_dark_dialog(self):
+    def test_source_exposes_accessible_localized_system_light_dark_dialog(self):
         _, payload = launcher_payload()
         for marker in (
+            'from rufusarm64_i18n import gettext as _, install_localization',
             'APPEARANCE_MODES = (APPEARANCE_SYSTEM, APPEARANCE_LIGHT, APPEARANCE_DARK)',
             'GTK_DARK_PROPERTY = "gtk-application-prefer-dark-theme"',
             '"preferences-desktop-theme-symbolic"',
-            '"Change appearance"',
-            '"Choose System, Light, or Dark appearance for RufusArm64 and its dialogs."',
+            '_("Change appearance")',
+            '_("Choose System, Light, or Dark appearance for RufusArm64 and its dialogs.")',
             'window.settings["appearance"] = normalized',
             "window.save_settings()",
-            "Follow the desktop appearance observed when RufusArm64 started.",
+            '_("Follow the desktop appearance observed when RufusArm64 started.")',
+            "install_main_control_tooltips(RufusWindow)",
+            "install_localization(RufusWindow)",
         ):
             self.assertIn(marker, payload)
 
