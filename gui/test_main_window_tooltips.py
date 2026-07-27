@@ -49,14 +49,19 @@ def launcher_namespace():
     if match is None:
         raise AssertionError("launcher Python payload is missing")
 
-    saved = {name: sys.modules.get(name) for name in ("gi", "gi.repository")}
+    names = ("gi", "gi.repository", "rufusarm64_i18n")
+    saved = {name: sys.modules.get(name) for name in names}
     fake_gi = types.ModuleType("gi")
     fake_gi.require_version = lambda *_: None
     repository = types.ModuleType("gi.repository")
     repository.GLib = types.SimpleNamespace()
     repository.Gtk = types.SimpleNamespace()
+    i18n = types.ModuleType("rufusarm64_i18n")
+    i18n.gettext = lambda message: message
+    i18n.install_localization = lambda window_class: setattr(window_class, "_localization_installed", True)
     sys.modules["gi"] = fake_gi
     sys.modules["gi.repository"] = repository
+    sys.modules["rufusarm64_i18n"] = i18n
     try:
         namespace = {"__name__": "rufusarm64_tooltip_contract"}
         exec(compile(match.group(1), str(LAUNCHER), "exec"), namespace)
@@ -126,13 +131,15 @@ class MainWindowTooltipTests(unittest.TestCase):
         self.assertIs(callback, namespace["apply_main_control_tooltips"])
         self.assertEqual(args, (window,))
 
-    def test_launcher_orders_tooltips_after_appearance_and_before_application_run(self):
+    def test_launcher_orders_tooltips_after_appearance_and_localization_after_tooltips(self):
         text, _ = launcher_namespace()
         appearance = text.index("install_appearance(RufusWindow)")
         tooltips = text.index("install_main_control_tooltips(RufusWindow)")
+        localization = text.index("install_localization(RufusWindow)")
         run = text.index('return run_rufusarm64(["rufusarm64", *arguments])')
         self.assertLess(appearance, tooltips)
-        self.assertLess(tooltips, run)
+        self.assertLess(tooltips, localization)
+        self.assertLess(localization, run)
         self.assertIn("GLib.idle_add(apply_main_control_tooltips, window)", text)
 
 
