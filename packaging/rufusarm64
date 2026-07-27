@@ -1,10 +1,10 @@
 #!/bin/sh
-# GTK 3 is pinned before any packaged dialog import. The embedded Python entry point also installs app-scoped appearance controls.
+# GTK 3 is pinned before any packaged dialog import. The embedded Python entry point installs app-scoped appearance and tooltip controls.
 if [ "${1:-}" = "--persistence" ]; then
   shift
 fi
 exec /usr/bin/python3 -I - "$@" <<'PYRUFUSARM64'
-"""Isolated GTK 3 launcher and application-scoped appearance integration."""
+"""Isolated GTK 3 launcher with application-scoped product-polish integration."""
 
 import json
 import os
@@ -32,6 +32,41 @@ APPEARANCE_DESCRIPTIONS = {
     APPEARANCE_DARK: "Prefer the dark variant of the active GTK theme for RufusArm64.",
 }
 GTK_DARK_PROPERTY = "gtk-application-prefer-dark-theme"
+
+MAIN_CONTROL_TOOLTIPS = {
+    "image_chooser": "Choose the ISO, disk image, compressed image, virtual disk, or FFU source to inspect before any write.",
+    "download_button": "Open verified signed-catalog image acquisition when the installed channel is available.",
+    "checksum_button": "Calculate MD5, SHA-1, SHA-256, and SHA-512 for the selected image without modifying it.",
+    "ffu_review_button": "Authenticate a supported FFU and review the exact removable target before experimental restoration.",
+    "target_combo": "Choose the exact removable whole drive that will be erased only after review and confirmation.",
+    "refresh_button": "Rescan connected removable whole drives without changing any device.",
+    "qualify_button": "Open the separate destructive USB capacity, bad-block, and fake-capacity qualification workflow.",
+    "backup_button": "Save a verified raw, dynamic VHD/VHDX, or one-filesystem ISO/UDF image of the selected drive.",
+    "mode_value": "Shows the detected image type, selected write path, and bounded compatibility or boot limitations.",
+    "verify": "After writing, read copied data back from the USB and compare it with authenticated source content.",
+    "persistence_enabled": "For supported Ubuntu or Debian live media, create separate saved-change storage that can survive reboot.",
+    "persistence_size": "Choose persistence capacity in GiB; zero requests the recommended available capacity.",
+    "persistence_button": "Run the mandatory read-only persistence compatibility and capacity analysis.",
+    "partition_combo": "Choose Automatic, GPT, or MBR for supported Windows media; incompatible combinations are refused.",
+    "target_system_combo": "Choose Automatic, UEFI, or x86-family BIOS/CSM for supported Windows installation media.",
+    "filesystem_combo": "Choose Automatic, FAT32, or NTFS for supported Windows installation media.",
+    "cluster_combo": "Choose the allocation-unit size for a newly created Windows FAT32 or NTFS filesystem.",
+    "volume_label": "Set the validated volume label used for the newly created Windows installation filesystem.",
+    "driver_chooser": "Optionally stage validated Windows PE driver packages from this folder onto the USB.",
+    "dbx_chooser": "Optionally select a Microsoft DBX update used to reject revoked Windows EFI boot files.",
+    "dbx_update_button": "Download the current architecture-specific Microsoft DBX update for local inspection.",
+    "quick_format": "Keep quick formatting enabled, or disable it to zero-write the complete new data partition first.",
+    "bad_block_check": "Zero-write and read back the complete new data partition before formatting; this is slow and destructive.",
+    "copy_log_button": "Copy the complete diagnostic report to the clipboard.",
+    "save_log_button": "Save the complete diagnostic report to an owner-private file.",
+    "clear_log_button": "Clear only the visible diagnostic log.",
+    "cancel_button": "Request safe cancellation of the active operation and wait for its final state and cleanup.",
+    "start_button": "Review the final destructive warning for the selected image and exact USB drive.",
+    "nonbootable_button": "Erase the selected drive and create one verified data-only filesystem without claiming bootability.",
+    "freedos_button": "Create deterministic FreeDOS 1.4 media for x86 BIOS or Legacy/CSM systems.",
+    "uefi_validation_button": "Open read-only validation of a mounted or extracted UEFI media directory.",
+    "appearance_button": "Choose System, Light, or Dark appearance for RufusArm64 and its dialogs.",
+}
 
 
 def normalize_appearance(value):
@@ -72,6 +107,36 @@ def _set_accessible(widget, name, description):
         return
     accessible.set_name(name)
     accessible.set_description(description)
+
+
+def apply_main_control_tooltips(window):
+    """Fill only missing tooltips after every composed window integration exists."""
+    applied = []
+    for attribute, description in MAIN_CONTROL_TOOLTIPS.items():
+        widget = getattr(window, attribute, None)
+        if widget is None:
+            continue
+        current = str(widget.get_tooltip_text() or "").strip()
+        if not current:
+            widget.set_tooltip_text(description)
+        if str(widget.get_tooltip_text() or "").strip():
+            applied.append(attribute)
+    window._main_control_tooltips = tuple(applied)
+    return False
+
+
+def install_main_control_tooltips(window_class):
+    """Defer tooltip completion until all composed GTK integrations are constructed."""
+    if getattr(window_class, "_main_control_tooltips_installed", False):
+        return
+    original_init = window_class.__init__
+
+    def integrated_init(window, app):
+        original_init(window, app)
+        GLib.idle_add(apply_main_control_tooltips, window)
+
+    window_class.__init__ = integrated_init
+    window_class._main_control_tooltips_installed = True
 
 
 def install_appearance(window_class):
@@ -218,6 +283,7 @@ def main(argv=None):
     from rufusarm64_integrated import run_rufusarm64
 
     install_appearance(RufusWindow)
+    install_main_control_tooltips(RufusWindow)
     return run_rufusarm64(["rufusarm64", *arguments])
 
 
