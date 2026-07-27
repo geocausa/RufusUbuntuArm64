@@ -376,13 +376,13 @@ class PrimaryLocalizationTests(unittest.TestCase):
             self.assertIs(dialog._rufusarm64_translation, translation)
             self.assertGreaterEqual(dialog._rufusarm64_translated_fields, 5)
 
-    def test_guarded_dialog_installer_wraps_only_loaded_classes_and_is_idempotent(self):
+    def test_secondary_dialog_installer_wraps_only_loaded_classes_and_is_idempotent(self):
         module, deferred = load_i18n_module()
-        names = ("rufusarm64_nonbootable_dialog", "rufusarm64_freedos_dialog")
+        names = ("rufusarm64_checksums", "rufusarm64_nonbootable_dialog", "rufusarm64_freedos_dialog")
         saved = {name: sys.modules.get(name) for name in names}
         try:
             classes = []
-            for module_name, class_name in module.GUARDED_DIALOG_CLASSES:
+            for module_name, class_name in module.SECONDARY_DIALOG_CLASSES:
                 fake_module = types.ModuleType(module_name)
 
                 class Dialog(Window):
@@ -395,15 +395,15 @@ class PrimaryLocalizationTests(unittest.TestCase):
                 sys.modules[module_name] = fake_module
                 classes.append(Dialog)
 
-            module.install_guarded_dialog_localization()
-            module.install_guarded_dialog_localization()
+            module.install_secondary_dialog_localization()
+            module.install_secondary_dialog_localization()
             dialogs = [dialog_class(f"dialog-{index}") for index, dialog_class in enumerate(classes)]
             self.assertTrue(all(dialog_class._localization_installed for dialog_class in classes))
             self.assertEqual(
                 deferred,
                 [(module.translate_widget_tree, (dialog,)) for dialog in dialogs],
             )
-            self.assertEqual([dialog.marker for dialog in dialogs], ["dialog-0", "dialog-1"])
+            self.assertEqual([dialog.marker for dialog in dialogs], ["dialog-0", "dialog-1", "dialog-2"])
         finally:
             for name, previous in saved.items():
                 if previous is None:
@@ -438,6 +438,7 @@ class PrimaryLocalizationTests(unittest.TestCase):
         text = POT.read_text(encoding="utf-8")
         self.assertIn('msgid "Create USB"', text)
         self.assertIn('msgid "Keyboard: {shortcut}"', text)
+        self.assertIn('msgid "Image checksums"', text)
         self.assertIn('msgid "Create non-bootable media"', text)
         self.assertIn('msgid "FreeDOS 1.4 — x86 BIOS/Legacy media"', text)
         self.assertIn('#: gui/rufusarm64_i18n.py', text)
