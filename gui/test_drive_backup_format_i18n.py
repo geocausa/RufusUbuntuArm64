@@ -84,36 +84,51 @@ class BackupFormatLocalizationTests(unittest.TestCase):
             module._FORMAT_EXTENSIONS["iso"] = ".iso"
 
             self.assertEqual(tuple(module._FORMAT_LABELS), ("raw", "vhd", "vhdx", "iso"))
-            self.assertEqual(module._FORMAT_EXTENSIONS, {"raw": ".img", "vhd": ".vhd", "vhdx": ".vhdx", "iso": ".iso"})
+            self.assertEqual(
+                module._FORMAT_EXTENSIONS,
+                {"raw": ".img", "vhd": ".vhd", "vhdx": ".vhdx", "iso": ".iso"},
+            )
             self.assertEqual(module._format_presentation_label("raw"), translations["Raw image (.img)"])
             self.assertEqual(module._format_presentation_label("vhd"), translations["Dynamic VHD (.vhd)"])
             self.assertEqual(module._format_presentation_label("vhdx"), translations["Dynamic VHDX (.vhdx)"])
-            self.assertEqual(module._format_presentation_label("iso"), translations["Filesystem ISO/UDF (.iso)"])
+            self.assertEqual(
+                module._format_presentation_label("iso"),
+                translations["Filesystem ISO/UDF (.iso)"],
+            )
             for format_name in ("raw", "vhd", "vhdx", "iso"):
                 source_title = module._FORMAT_CHOOSER_TITLES[format_name]
                 self.assertEqual(module._format_chooser_title(format_name), translations[source_title])
             self.assertEqual(module._format_presentation_label("unknown"), "")
             self.assertEqual(module._format_chooser_title("unknown"), "")
 
+            i18n.configure_translation(str(locale_root), ["missing"])
+            self.assertEqual(module._format_presentation_label("raw"), "Raw image (.img)")
+            self.assertEqual(
+                module._format_chooser_title("iso"),
+                "Choose a new Filesystem ISO/UDF (.iso) file",
+            )
+            self.assertEqual(tuple(module._FORMAT_LABELS), ("raw", "vhd", "vhdx", "iso"))
+            self.assertEqual(module._FORMAT_EXTENSIONS["iso"], ".iso")
+
     def test_source_uses_ids_for_behavior_and_translations_only_for_presentation(self):
         text = FORMAT_SOURCE.read_text(encoding="utf-8")
         iso = ISO_SOURCE.read_text(encoding="utf-8")
         for marker in (
             'value = str(dialog.format_selector.get_active_id() or "raw")',
-            'dialog.format_selector.append(format_name, _format_presentation_label(format_name))',
-            'title=_format_chooser_title(format_name)',
-            'image_filter.set_name(_format_presentation_label(format_name))',
-            'extension = _FORMAT_EXTENSIONS[format_name]',
-            'if not filename.lower().endswith(extension)',
-            'filename += extension',
+            "dialog.format_selector.append(format_name, _format_presentation_label(format_name))",
+            "title=_format_chooser_title(format_name)",
+            "image_filter.set_name(_format_presentation_label(format_name))",
+            "extension = _FORMAT_EXTENSIONS[format_name]",
+            "if not filename.lower().endswith(extension)",
+            "filename += extension",
             'payload["destination"]["format"] != format_name',
             'dialog.plan["destination"]["format"] != format_name',
         ):
             self.assertIn(marker, text)
         self.assertIn('formats._FORMAT_LABELS["iso"] = "Filesystem ISO/UDF (.iso)"', iso)
         self.assertIn('formats._FORMAT_EXTENSIONS["iso"] = ".iso"', iso)
-        self.assertNotIn('append(_format_presentation_label(format_name),', text)
-        self.assertNotIn('get_active_text()', text)
+        self.assertNotIn("append(_format_presentation_label(format_name),", text)
+        self.assertNotIn("get_active_text()", text)
 
 
 if __name__ == "__main__":
