@@ -1,0 +1,44 @@
+name: Patch guarded dialog parity once
+
+on:
+  push:
+    branches:
+      - feature/gettext-guarded-dialogs
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+          ref: feature/gettext-guarded-dialogs
+      - name: Advance pinned localization parity and remove this workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("docs/upstream-rufus-parity.json")
+          text = path.read_text(encoding="utf-8")
+          old_localization = "A standard GNU gettext runtime, deterministic source-only primary-UI POT, package closure, safe English fallback, and exact post-composition translation are implemented for main headings, labels, actions, appearance wording, tooltips, and related accessibility metadata. Machine-readable JSON, flags, paths, identities, planner values, exact destructive confirmations, diagnostics, and report schemas remain byte-stable. Broader dialog and dynamic status/diagnostic migration, plural review, completed language packs, and full translation-aware accessibility review remain planned."
+          new_localization = "A standard GNU gettext runtime, deterministic source-only POT, package closure, safe English fallback, and exact post-construction translation are implemented for the primary window plus the static opening shells of guarded data-only formatting and FreeDOS creation. Generated confirmation values, comparison logic, selected values, machine-readable JSON, flags, paths, identities, planner values, dynamic plans/status, diagnostics, and report schemas remain byte-stable. Broader secondary-dialog and dynamic status/diagnostic migration, plural review, completed language packs, and full translation-aware accessibility review remain planned."
+          old_accessibility = "GTK keyboard navigation, assistive names, selectable diagnostics, resizable layout, a process-wide System/Light/Dark selector with canonical persisted settings, complete main-window option/action tooltips, and bounded gettext translation of primary accessibility metadata are implemented. System restores the desktop preference observed at process startup, explicit modes remain application-scoped, and deferred passes preserve workflow-specific disclosures. Broader dialog migration and full translation-aware accessibility review remain planned."
+          new_accessibility = "GTK keyboard navigation, assistive names, selectable diagnostics, resizable layout, a process-wide System/Light/Dark selector with canonical persisted settings, complete main-window option/action tooltips, and bounded gettext translation of primary plus guarded formatter/FreeDOS static interface metadata are implemented. System restores the desktop preference observed at process startup, explicit modes remain application-scoped, and deferred exact-match passes preserve workflow-specific disclosures and destructive-operation contracts. Broader dialog migration and full translation-aware accessibility review remain planned."
+          if text.count(old_localization) != 1 or text.count(old_accessibility) != 1:
+              raise SystemExit("pinned localization parity wording changed")
+          text = text.replace(old_localization, new_localization, 1)
+          text = text.replace(old_accessibility, new_accessibility, 1)
+          path.write_text(text, encoding="utf-8")
+          PY
+          git rm .github/workflows/patch-guarded-dialog-parity-once.yml
+          git add docs/upstream-rufus-parity.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "docs: advance guarded dialog localization parity"
+          git push origin HEAD:feature/gettext-guarded-dialogs
