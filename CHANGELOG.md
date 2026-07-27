@@ -7,6 +7,7 @@
 - Completed bounded main-window option/action tooltips while preserving workflow-specific disclosures.
 - Added a standard GNU gettext runtime, deterministic primary-interface POT, safe English fallback, and exact post-composition translation for reviewed static main-window, tooltip, appearance, and accessibility text while keeping machine and destructive-operation contracts byte-stable.
 - Extended exact static localization to the guarded data-only formatter and FreeDOS dialog shells while preserving generated confirmation phrases, identities, dynamic plans, reports, and operation paths byte-for-byte.
+- Extended exact static localization to the read-only image checksum dialog while preserving selected paths, calculated digests, report and clipboard content, helper execution, and diagnostic logging byte-for-byte.
 
 ## 0.14.0 — 2026-07-26
 

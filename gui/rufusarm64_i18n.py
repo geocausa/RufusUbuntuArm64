@@ -8,7 +8,8 @@ from gi.repository import GLib, Gtk
 
 DOMAIN = "rufusarm64"
 DEFAULT_LOCALE_DIR = "/usr/share/locale"
-GUARDED_DIALOG_CLASSES = (
+SECONDARY_DIALOG_CLASSES = (
+    ("rufusarm64_checksums", "ChecksumDialog"),
     ("rufusarm64_nonbootable_dialog", "NonBootableFormatDialog"),
     ("rufusarm64_freedos_dialog", "FreeDOSFormatDialog"),
 )
@@ -33,6 +34,8 @@ CATALOG_MESSAGES = (
     N_("Bootable USB creator for Linux ARM64"),
     N_("C_ancel"),
     N_("C_hecksums…"),
+    N_("Calculate"),
+    N_("Calculate MD5, SHA-1, SHA-256, and SHA-512 for the selected image in one read-only pass. The image is not mounted or modified, no USB device is opened, and administrator authentication is not used."),
     N_("Calculate image checksums"),
     N_("Calculate MD5, SHA-1, SHA-256, and SHA-512 for the selected image without modifying it."),
     N_("Cancel"),
@@ -65,6 +68,7 @@ CATALOG_MESSAGES = (
     N_("Close"),
     N_("Cluster size"),
     N_("Copy"),
+    N_("Copy report"),
     N_("Copy the complete diagnostic report to the clipboard."),
     N_("Create a bootable USB drive"),
     N_("Create deterministic FreeDOS 1.4 media for x86 BIOS or Legacy/CSM systems."),
@@ -87,12 +91,15 @@ CATALOG_MESSAGES = (
     N_("FreeDOS 1.4 — x86 BIOS/Legacy media"),
     N_("FreeDOS…"),
     N_("GiB (0 = recommended available space)"),
+    N_("Image checksums"),
     N_("Image compatibility and write path"),
     N_("Image option"),
     N_("Keep files and settings across reboots"),
     N_("Keep quick formatting enabled, or disable it to zero-write the complete new data partition first."),
     N_("Keyboard: {shortcut}"),
     N_("Light"),
+    N_("MD5 and SHA-1 are included only for comparison with legacy published values. They are not used by RufusArm64 for trust, signatures, downloads, or write assurance."),
+    N_("No checksums have been calculated."),
     N_("No formatting report is available yet."),
     N_("No FreeDOS report is available yet."),
     N_("Non bootable — data-only media"),
@@ -133,6 +140,7 @@ CATALOG_MESSAGES = (
     N_("Save…"),
     N_("Saved-change space"),
     N_("Secure Boot DBX"),
+    N_("Select Calculate to hash the exact image file."),
     N_("Set the validated volume label used for the newly created Windows installation filesystem."),
     N_("Set Windows installation filesystem options without changing the source image."),
     N_("Show application and licence information. Shortcut F1."),
@@ -345,9 +353,9 @@ def apply_primary_ui_translation(window, translation=None):
     return translate_widget_tree(window, translation)
 
 
-def install_guarded_dialog_localization():
+def install_secondary_dialog_localization():
     """Wrap already-imported guarded dialogs without changing their operation paths."""
-    for module_name, class_name in GUARDED_DIALOG_CLASSES:
+    for module_name, class_name in SECONDARY_DIALOG_CLASSES:
         module = sys.modules.get(module_name)
         dialog_class = getattr(module, class_name, None) if module is not None else None
         if dialog_class is None or getattr(dialog_class, "_localization_installed", False):
@@ -364,7 +372,7 @@ def install_guarded_dialog_localization():
 
 def install_localization(window_class):
     """Defer translation until appearance, tooltips, and composed controls exist."""
-    install_guarded_dialog_localization()
+    install_secondary_dialog_localization()
     if getattr(window_class, "_localization_installed", False):
         return
     original_init = window_class.__init__

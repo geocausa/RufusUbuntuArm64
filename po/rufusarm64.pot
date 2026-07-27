@@ -62,6 +62,14 @@ msgid "C_hecksums…"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Calculate"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Calculate MD5, SHA-1, SHA-256, and SHA-512 for the selected image in one read-only pass. The image is not mounted or modified, no USB device is opened, and administrator authentication is not used."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Calculate MD5, SHA-1, SHA-256, and SHA-512 for the selected image without modifying it."
 msgstr ""
 
@@ -190,6 +198,10 @@ msgid "Copy"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Copy report"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Copy the complete diagnostic report to the clipboard."
 msgstr ""
 
@@ -278,6 +290,10 @@ msgid "GiB (0 = recommended available space)"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Image checksums"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Image compatibility and write path"
 msgstr ""
 
@@ -302,11 +318,19 @@ msgid "Light"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "MD5 and SHA-1 are included only for comparison with legacy published values. They are not used by RufusArm64 for trust, signatures, downloads, or write assurance."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "NTFS"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "No FreeDOS report is available yet."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "No checksums have been calculated."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -459,6 +483,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Secure Boot DBX"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Select Calculate to hash the exact image file."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
