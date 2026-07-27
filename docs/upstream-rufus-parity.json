@@ -17,7 +17,7 @@
   "status_definitions": {
     "implemented": "Available through a tested Linux-native path, subject to any stated qualification scope.",
     "partial": "A useful tested subset is available, with explicit missing behavior.",
-    "in_progress": "Implementation is active on Stage 3 but is not yet an enabled end-to-end product path.",
+    "in_progress": "Implementation is active on the current development branch but is not yet an enabled end-to-end product path.",
     "planned": "Suitable for a Linux-native implementation but not yet present.",
     "not_portable": "Depends on a Windows-only provider or filesystem with no verified Linux equivalent.",
     "deferred": "Deliberately outside the current critical path and not promised for the next release."
@@ -111,7 +111,7 @@
       "id": "windows-to-go",
       "upstream_feature": "Create Windows To Go drives",
       "status": "deferred",
-      "notes": "Explicitly deferred as a later maybe. It is not on the Stage 3 critical path and requires Linux-native deployment, BCD/offline-registry work, and extensive physical qualification.",
+      "notes": "Explicitly deferred as a later maybe. It is not on the current critical path and requires Linux-native deployment, BCD/offline-registry work, and extensive physical qualification.",
       "upstream_sources": [
         "src/wue.c",
         "src/format.c",
