@@ -1,0 +1,51 @@
+name: Diagnose Windows options localization once
+
+on:
+  pull_request:
+    branches:
+      - stage4/0.15.0
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+          ref: feature/gettext-windows-options-dialog
+      - name: Execute embedded patch and capture the exact exception
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+          import traceback
+
+          workflow = Path('.github/workflows/patch-windows-options-i18n-once.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          start = next(i for i, line in enumerate(lines) if "python3 - <<'PY'" in line)
+          end = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == 'PY')
+          program = textwrap.dedent('\n'.join(lines[start + 1:end]))
+          try:
+              exec(compile(program, str(workflow), 'exec'), {'__name__': '__main__'})
+          except BaseException:
+              Path('docs/windows-options-i18n-diagnostic.txt').write_text(
+                  traceback.format_exc(), encoding='utf-8'
+              )
+          else:
+              Path('docs/windows-options-i18n-diagnostic.txt').write_text(
+                  'Embedded replacement program completed; failure occurs in a later command.\n',
+                  encoding='utf-8',
+              )
+          PY
+          git rm .github/workflows/diagnose-windows-options-i18n-once.yml
+          git add docs/windows-options-i18n-diagnostic.txt
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "ci: capture Windows options localization failure"
+          git push origin HEAD:feature/gettext-windows-options-dialog
