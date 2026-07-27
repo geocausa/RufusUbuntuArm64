@@ -1,6 +1,220 @@
-#!/bin/sh
-# Persistence, verified drive-image backup, and data-only formatting are integrated into the main window.
-if [ "${1:-}" = "--persistence" ]; then
-  shift
-fi
-exec /usr/bin/python3 -I -c 'import gi, sys; gi.require_version("Gtk", "3.0"); sys.path.insert(0, "/usr/lib/rufusarm64"); from rufusarm64_drive_backup_formats import install_drive_backup_formats; install_drive_backup_formats(); from rufusarm64_drive_backup_iso import install_drive_backup_iso; install_drive_backup_iso(); from rufusarm64_integrated import run_rufusarm64; raise SystemExit(run_rufusarm64(["rufusarm64", *sys.argv[1:]]))' "$@"
+#!/usr/bin/python3 -I
+"""Isolated GTK 3 launcher and application-scoped appearance integration."""
+
+import json
+import os
+import sys
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import GLib, Gtk
+
+sys.path.insert(0, "/usr/lib/rufusarm64")
+
+APPEARANCE_SYSTEM = "system"
+APPEARANCE_LIGHT = "light"
+APPEARANCE_DARK = "dark"
+APPEARANCE_MODES = (APPEARANCE_SYSTEM, APPEARANCE_LIGHT, APPEARANCE_DARK)
+APPEARANCE_LABELS = {
+    APPEARANCE_SYSTEM: "System",
+    APPEARANCE_LIGHT: "Light",
+    APPEARANCE_DARK: "Dark",
+}
+APPEARANCE_DESCRIPTIONS = {
+    APPEARANCE_SYSTEM: "Follow the desktop appearance observed when RufusArm64 started.",
+    APPEARANCE_LIGHT: "Prefer the light variant of the active GTK theme for RufusArm64.",
+    APPEARANCE_DARK: "Prefer the dark variant of the active GTK theme for RufusArm64.",
+}
+GTK_DARK_PROPERTY = "gtk-application-prefer-dark-theme"
+
+
+def normalize_appearance(value):
+    """Return one canonical persisted appearance value."""
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in APPEARANCE_MODES else APPEARANCE_SYSTEM
+
+
+def appearance_prefers_dark(mode, system_prefer_dark):
+    """Resolve the GTK preference without changing the meaning of System."""
+    normalized = normalize_appearance(mode)
+    if normalized == APPEARANCE_DARK:
+        return True
+    if normalized == APPEARANCE_LIGHT:
+        return False
+    return bool(system_prefer_dark)
+
+
+def _settings_path():
+    return os.path.join(GLib.get_user_config_dir(), "rufusarm64", "settings.json")
+
+
+def read_persisted_appearance(path=None):
+    """Read only the bounded appearance key; malformed settings fail to System."""
+    try:
+        with open(path or _settings_path(), "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, TypeError, ValueError):
+        return APPEARANCE_SYSTEM
+    if not isinstance(payload, dict):
+        return APPEARANCE_SYSTEM
+    return normalize_appearance(payload.get("appearance"))
+
+
+def _set_accessible(widget, name, description):
+    accessible = widget.get_accessible() if widget is not None else None
+    if accessible is None:
+        return
+    accessible.set_name(name)
+    accessible.set_description(description)
+
+
+def install_appearance(window_class):
+    """Install one process-wide System/Light/Dark selector before window creation."""
+    if getattr(window_class, "_appearance_installed", False):
+        return
+
+    original_init = window_class.__init__
+
+    def apply_appearance(window, mode, persist=True):
+        normalized = normalize_appearance(mode)
+        settings = getattr(window, "_appearance_gtk_settings", None)
+        if settings is not None:
+            settings.set_property(
+                GTK_DARK_PROPERTY,
+                appearance_prefers_dark(normalized, window._appearance_system_prefer_dark),
+            )
+        window.appearance_mode = normalized
+        window.settings["appearance"] = normalized
+        button = getattr(window, "appearance_button", None)
+        if button is not None:
+            button.set_tooltip_text(
+                f"Appearance: {APPEARANCE_LABELS[normalized]}. Choose System, Light, or Dark."
+            )
+        if persist:
+            window.save_settings()
+        return normalized
+
+    def open_appearance_dialog(window, *_):
+        dialog = Gtk.Dialog(title="Appearance", transient_for=window, modal=True)
+        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Apply", Gtk.ResponseType.OK)
+        dialog.set_default_response(Gtk.ResponseType.OK)
+        dialog.set_default_size(460, 260)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_border_width(18)
+        dialog.get_content_area().pack_start(box, True, True, 0)
+
+        title = Gtk.Label()
+        title.set_markup("<span size='large' weight='bold'>RufusArm64 appearance</span>")
+        title.set_xalign(0)
+        box.pack_start(title, False, False, 0)
+
+        intro = Gtk.Label(
+            label=(
+                "System keeps the desktop preference observed when this application started. "
+                "Light and Dark affect only RufusArm64 and its dialogs."
+            )
+        )
+        intro.set_xalign(0)
+        intro.set_line_wrap(True)
+        box.pack_start(intro, False, False, 0)
+
+        first = None
+        choices = {}
+        for mode in APPEARANCE_MODES:
+            radio = (
+                Gtk.RadioButton.new_with_label(None, APPEARANCE_LABELS[mode])
+                if first is None
+                else Gtk.RadioButton.new_with_label_from_widget(first, APPEARANCE_LABELS[mode])
+            )
+            if first is None:
+                first = radio
+            radio.set_active(mode == window.appearance_mode)
+            radio.set_tooltip_text(APPEARANCE_DESCRIPTIONS[mode])
+            _set_accessible(
+                radio,
+                f"{APPEARANCE_LABELS[mode]} appearance",
+                APPEARANCE_DESCRIPTIONS[mode],
+            )
+            box.pack_start(radio, False, False, 0)
+            choices[mode] = radio
+
+        dialog.show_all()
+        response = dialog.run()
+        selected = next(
+            (mode for mode in APPEARANCE_MODES if choices[mode].get_active()),
+            APPEARANCE_SYSTEM,
+        )
+        dialog.destroy()
+        if response == Gtk.ResponseType.OK:
+            window.apply_appearance(selected, persist=True)
+
+    def integrated_init(window, app):
+        gtk_settings = Gtk.Settings.get_default()
+        system_prefer_dark = False
+        if gtk_settings is not None:
+            try:
+                system_prefer_dark = bool(gtk_settings.get_property(GTK_DARK_PROPERTY))
+            except (TypeError, ValueError):
+                system_prefer_dark = False
+
+        initial_mode = read_persisted_appearance()
+        if gtk_settings is not None:
+            gtk_settings.set_property(
+                GTK_DARK_PROPERTY,
+                appearance_prefers_dark(initial_mode, system_prefer_dark),
+            )
+
+        original_init(window, app)
+        window._appearance_gtk_settings = gtk_settings
+        window._appearance_system_prefer_dark = system_prefer_dark
+        window.appearance_mode = initial_mode
+        window.settings["appearance"] = initial_mode
+
+        button = Gtk.Button.new_from_icon_name(
+            "preferences-desktop-theme-symbolic",
+            Gtk.IconSize.BUTTON,
+        )
+        button.set_tooltip_text(
+            f"Appearance: {APPEARANCE_LABELS[initial_mode]}. Choose System, Light, or Dark."
+        )
+        _set_accessible(
+            button,
+            "Change appearance",
+            "Choose System, Light, or Dark appearance for RufusArm64 and its dialogs.",
+        )
+        button.connect("clicked", window.open_appearance_dialog)
+        window.appearance_button = button
+
+        header = window.get_titlebar()
+        if isinstance(header, Gtk.HeaderBar):
+            header.pack_end(button)
+            button.show()
+
+    window_class.__init__ = integrated_init
+    window_class.apply_appearance = apply_appearance
+    window_class.open_appearance_dialog = open_appearance_dialog
+    window_class._appearance_installed = True
+
+
+def main(argv=None):
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments[:1] == ["--persistence"]:
+        arguments.pop(0)
+
+    from rufusarm64_drive_backup_formats import install_drive_backup_formats
+    from rufusarm64_drive_backup_iso import install_drive_backup_iso
+
+    install_drive_backup_formats()
+    install_drive_backup_iso()
+
+    from rufusarm64 import RufusWindow
+    from rufusarm64_integrated import run_rufusarm64
+
+    install_appearance(RufusWindow)
+    return run_rufusarm64(["rufusarm64", *arguments])
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
