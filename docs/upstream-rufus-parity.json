@@ -10,7 +10,7 @@
   "project": {
     "repository": "geocausa/RufusUbuntuArm64",
     "baseline": "stage4/0.15.0",
-    "baseline_commit": "df005aac4b562082435e587ed8d14bb8d77d925f",
+    "baseline_commit": "eaf6a685133433baf5693344b82a6c826adeaaff",
     "target_milestone": "1.0",
     "windows_to_go_policy": "deferred-maybe"
   },
@@ -205,7 +205,7 @@
       "id": "appearance-and-accessibility",
       "upstream_feature": "Dark mode, tooltips, keyboard navigation, and accessible UI",
       "status": "partial",
-      "notes": "GTK keyboard navigation, assistive names, selectable diagnostics, resizable layout, and a process-wide System/Light/Dark selector with canonical persisted settings are implemented. System restores the desktop preference observed at process startup, while explicit modes remain application-scoped. Complete option tooltips and translation-aware accessibility review remain planned.",
+      "notes": "GTK keyboard navigation, assistive names, selectable diagnostics, resizable layout, a process-wide System/Light/Dark selector with canonical persisted settings, and complete main-window option/action tooltips are implemented. System restores the desktop preference observed at process startup, explicit modes remain application-scoped, and the deferred tooltip pass preserves workflow-specific disclosures. Translation-catalog extraction and translation-aware accessibility review remain planned.",
       "upstream_sources": [
         "src/ui.c",
         "src/rufus.c",
