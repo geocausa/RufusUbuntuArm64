@@ -101,6 +101,12 @@
 - Privileged loop qualification, native ARM64 execution, Go 1.22 compatibility, static/vulnerability audit, and reproducible Debian packaging
 - Release-candidate notes and real-machine checklist; stable promotion remains gated on recorded physical observations and prerelease feedback
 
+## 0.15 — Stage 4 filesystem and product parity (in progress)
+
+- Guarded ext2 and ext3 data-only formatting with real loop qualification
+- Remaining portable filesystem, appearance, localization, and distribution work selected from the pinned upstream audit
+- No weakening of identity, confirmation, cancellation, synchronization, or verification gates
+
 ## 1.0 — supportable stable release
 
 - Signed release artifacts
