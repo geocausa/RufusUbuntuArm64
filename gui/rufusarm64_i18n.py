@@ -1,7 +1,6 @@
 """Bounded GNU gettext integration for the RufusArm64 primary GTK shell."""
 
 import gettext as _gettext
-import os
 
 from gi.repository import GLib, Gtk
 
@@ -18,8 +17,10 @@ def N_(message):
 CATALOG_MESSAGES = (
     N_("About RufusArm64"),
     N_("Advanced drive properties"),
+    N_("After writing, read copied data back from the USB and compare it with authenticated source content."),
     N_("Appearance"),
     N_("Apply"),
+    N_("Authenticate a supported FFU and review the exact removable target before experimental restoration."),
     N_("Automatic"),
     N_("Automatic (image-derived)"),
     N_("BIOS or UEFI-CSM"),
@@ -27,6 +28,8 @@ CATALOG_MESSAGES = (
     N_("Bootable USB creator for Linux ARM64"),
     N_("C_ancel"),
     N_("C_hecksums…"),
+    N_("Calculate image checksums"),
+    N_("Calculate MD5, SHA-1, SHA-256, and SHA-512 for the selected image without modifying it."),
     N_("Cancel"),
     N_("Change appearance"),
     N_("Check USB capacity and blocks"),
@@ -35,12 +38,12 @@ CATALOG_MESSAGES = (
     N_("Check device for bad blocks (1 pass)"),
     N_("Choose System, Light, or Dark appearance for RufusArm64 and its dialogs."),
     N_("Choose an image and a removable USB drive. Raw, ISOHybrid, compressed, and common virtual-disk images are supported. Windows installation ISOs can use GPT or MBR layouts, FAT32/NTFS selection, WIM splitting, and UEFI:NTFS."),
-    N_("Choose the ISO, disk image, compressed image, virtual disk, or FFU source to inspect before any write."),
-    N_("Choose the exact removable whole drive that will be erased only after review and confirmation."),
-    N_("Choose the ISO or disk image that RufusArm64 will inspect before writing."),
-    N_("Choose the removable whole drive that will be erased only after confirmation."),
     N_("Choose persistence capacity in GiB; zero requests the recommended available capacity."),
     N_("Choose the allocation-unit size for a newly created Windows FAT32 or NTFS filesystem."),
+    N_("Choose the exact removable whole drive that will be erased only after review and confirmation."),
+    N_("Choose the ISO or disk image that RufusArm64 will inspect before writing."),
+    N_("Choose the ISO, disk image, compressed image, virtual disk, or FFU source to inspect before any write."),
+    N_("Choose the removable whole drive that will be erased only after confirmation."),
     N_("Choose Automatic, FAT32, or NTFS for supported Windows installation media."),
     N_("Choose Automatic, GPT, or MBR for supported Windows media; incompatible combinations are refused."),
     N_("Choose Automatic, UEFI, or x86-family BIOS/CSM for supported Windows installation media."),
@@ -49,6 +52,7 @@ CATALOG_MESSAGES = (
     N_("Cluster size"),
     N_("Copy"),
     N_("Copy the complete diagnostic report to the clipboard."),
+    N_("Create deterministic FreeDOS 1.4 media for x86 BIOS or Legacy/CSM systems."),
     N_("Create FreeDOS media"),
     N_("Create USB"),
     N_("Dark"),
@@ -65,6 +69,7 @@ CATALOG_MESSAGES = (
     N_("Image compatibility and write path"),
     N_("Image option"),
     N_("Keep files and settings across reboots"),
+    N_("Keep quick formatting enabled, or disable it to zero-write the complete new data partition first."),
     N_("Keyboard: {shortcut}"),
     N_("Light"),
     N_("NTFS"),
@@ -82,12 +87,15 @@ CATALOG_MESSAGES = (
     N_("Prefer the light variant of the active GTK theme for RufusArm64."),
     N_("Quick format"),
     N_("Refresh USB drives"),
+    N_("Request safe cancellation of the active operation and wait for its final state and cleanup."),
     N_("Rescan connected removable whole drives without changing any device."),
     N_("Rescan removable whole drives. Shortcut Ctrl+R."),
     N_("Restore / format…"),
     N_("Restore or format drive for storage"),
     N_("Review FFU…"),
     N_("RufusArm64 appearance"),
+    N_("Run a read-only validation of a mounted or extracted UEFI media folder"),
+    N_("Run read-only validation of a mounted or extracted UEFI media directory."),
     N_("Run the mandatory read-only persistence compatibility and capacity analysis."),
     N_("Save a verified raw, dynamic VHD/VHDX, or one-filesystem ISO/UDF image of the selected drive."),
     N_("Save drive image…"),
@@ -96,39 +104,28 @@ CATALOG_MESSAGES = (
     N_("Saved-change space"),
     N_("Secure Boot DBX"),
     N_("Set the validated volume label used for the newly created Windows installation filesystem."),
+    N_("Set Windows installation filesystem options without changing the source image."),
+    N_("Show application and licence information. Shortcut F1."),
     N_("Shows the detected image type, selected write path, and bounded compatibility or boot limitations."),
     N_("System"),
     N_("System keeps the desktop preference observed when this application started. Light and Dark affect only RufusArm64 and its dialogs."),
     N_("Target system"),
     N_("Technical diagnostic log"),
+    N_("UEFI (non-CSM)"),
     N_("USB drive"),
     N_("USB target drive"),
-    N_("UEFI (non-CSM)"),
     N_("Validate UEFI Media…"),
     N_("Validate UEFI media"),
     N_("Verify copied data after writing"),
     N_("Volume label"),
     N_("Windows drivers"),
+    N_("Zero-write and read back the complete new data partition before formatting; this is slow and destructive."),
     N_("_Boot image"),
     N_("_Create USB"),
     N_("_Download…"),
     N_("_FreeDOS…"),
     N_("_USB drive"),
     N_("_Validate UEFI Media…"),
-    N_("After writing, read copied data back from the USB and compare it with authenticated source content."),
-    N_("Authenticate a supported FFU and review the exact removable target before experimental restoration."),
-    N_("Calculate image checksums"),
-    N_("Calculate MD5, SHA-1, SHA-256, and SHA-512 for the selected image without modifying it."),
-    N_("Choose System, Light, or Dark appearance for RufusArm64 and its dialogs."),
-    N_("Create deterministic FreeDOS 1.4 media for x86 BIOS or Legacy/CSM systems."),
-    N_("Keep quick formatting enabled, or disable it to zero-write the complete new data partition first."),
-    N_("Request safe cancellation of the active operation and wait for its final state and cleanup."),
-    N_("Run a read-only validation of a mounted or extracted UEFI media folder"),
-    N_("Run read-only validation of a mounted or extracted UEFI media directory."),
-    N_("Set Windows installation filesystem options without changing the source image."),
-    N_("Show application and licence information. Shortcut F1."),
-    N_("Verify copied data after writing"),
-    N_("Zero-write and read back the complete new data partition before formatting; this is slow and destructive."),
 )
 CATALOG_MESSAGE_SET = frozenset(CATALOG_MESSAGES)
 MARKUP_TEMPLATES = {
@@ -169,15 +166,16 @@ def _translated(message, translation):
 
 
 def _translated_tooltip(message, translation):
-    lines = str(message or "").split("\n")
+    if message is None or message == "":
+        return message
     translated = []
-    for line in lines:
+    for line in str(message).split("\n"):
         if line.startswith("Keyboard: "):
             shortcut = line.removeprefix("Keyboard: ")
             template = _translated("Keyboard: {shortcut}", translation)
             try:
                 translated.append(template.format(shortcut=shortcut))
-            except (KeyError, ValueError):
+            except (IndexError, KeyError, ValueError):
                 translated.append(line)
         else:
             translated.append(_translated(line, translation))
@@ -202,7 +200,9 @@ def _translate_accessible(widget, translation):
         if not callable(getter) or not callable(setter):
             continue
         source = getter()
-        translated = _translated(str(source or ""), translation)
+        if not source:
+            continue
+        translated = _translated(str(source), translation)
         if translated != source:
             setter(translated)
             changed += 1
@@ -214,7 +214,9 @@ def _translate_widget(widget, translation):
     if isinstance(widget, Gtk.HeaderBar):
         for getter_name, setter_name in (("get_title", "set_title"), ("get_subtitle", "set_subtitle")):
             source = getattr(widget, getter_name)()
-            translated = _translated(str(source or ""), translation)
+            if not source:
+                continue
+            translated = _translated(str(source), translation)
             if translated != source:
                 getattr(widget, setter_name)(translated)
                 changed += 1
@@ -230,10 +232,11 @@ def _translate_widget(widget, translation):
             changed += 1
     elif isinstance(widget, (Gtk.Button, Gtk.CheckButton, Gtk.Expander)):
         source = widget.get_label()
-        translated = _translated(str(source or ""), translation)
-        if translated != source:
-            widget.set_label(translated)
-            changed += 1
+        if source:
+            translated = _translated(str(source), translation)
+            if translated != source:
+                widget.set_label(translated)
+                changed += 1
 
     if hasattr(widget, "get_tooltip_text") and hasattr(widget, "set_tooltip_text"):
         source = widget.get_tooltip_text()
