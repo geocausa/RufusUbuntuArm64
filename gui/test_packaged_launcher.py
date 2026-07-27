@@ -1,4 +1,4 @@
-import runpy
+import re
 from pathlib import Path
 import sys
 import tempfile
@@ -8,6 +8,14 @@ import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
 LAUNCHER = ROOT / "packaging" / "rufusarm64"
+
+
+def launcher_payload():
+    text = LAUNCHER.read_text(encoding="utf-8")
+    match = re.search(r"<<'PYRUFUSARM64'\n(.*)\nPYRUFUSARM64\n\Z", text, re.DOTALL)
+    if match is None:
+        raise AssertionError("launcher Python payload is missing")
+    return text, match.group(1)
 
 
 class LauncherModuleContext:
@@ -44,16 +52,21 @@ class LauncherModuleContext:
 
 
 class PackagedLauncherTests(unittest.TestCase):
-    def test_launcher_is_isolated_python_and_pins_gtk3_before_project_imports(self):
-        text = LAUNCHER.read_text(encoding="utf-8")
-        self.assertTrue(text.startswith("#!/usr/bin/python3 -I\n"))
-        self.assertLess(text.index('gi.require_version("Gtk", "3.0")'), text.index("from gi.repository import GLib, Gtk"))
-        self.assertLess(text.index('gi.require_version("Gtk", "3.0")'), text.index("from rufusarm64_drive_backup_formats import"))
-        self.assertIn('sys.path.insert(0, "/usr/lib/rufusarm64")', text)
+    def test_launcher_remains_valid_isolated_shell_entrypoint(self):
+        text, payload = launcher_payload()
+        self.assertTrue(text.startswith("#!/bin/sh\n"))
+        self.assertIn('exec /usr/bin/python3 -I - "$@"', text)
+        self.assertIn('if [ "${1:-}" = "--persistence" ]; then', text)
+        self.assertLess(payload.index('gi.require_version("Gtk", "3.0")'), payload.index("from gi.repository import GLib, Gtk"))
+        self.assertLess(payload.index('gi.require_version("Gtk", "3.0")'), payload.index("from rufusarm64_drive_backup_formats import"))
+        self.assertIn('sys.path.insert(0, "/usr/lib/rufusarm64")', payload)
+        compile(payload, str(LAUNCHER), "exec")
 
     def test_pure_appearance_contract_normalizes_and_resolves_preferences(self):
+        _, payload = launcher_payload()
         with LauncherModuleContext() as context:
-            namespace = runpy.run_path(str(LAUNCHER), run_name="rufusarm64_launcher_contract")
+            namespace = {"__name__": "rufusarm64_launcher_contract"}
+            exec(compile(payload, str(LAUNCHER), "exec"), namespace)
             self.assertEqual(context.pin_calls, [("Gtk", "3.0")])
 
         normalize = namespace["normalize_appearance"]
@@ -68,8 +81,10 @@ class PackagedLauncherTests(unittest.TestCase):
         self.assertFalse(prefers_dark("invalid", False))
 
     def test_persisted_appearance_reader_fails_closed_to_system(self):
+        _, payload = launcher_payload()
         with LauncherModuleContext():
-            namespace = runpy.run_path(str(LAUNCHER), run_name="rufusarm64_launcher_contract")
+            namespace = {"__name__": "rufusarm64_launcher_contract"}
+            exec(compile(payload, str(LAUNCHER), "exec"), namespace)
         reader = namespace["read_persisted_appearance"]
 
         with tempfile.TemporaryDirectory() as directory:
@@ -85,6 +100,7 @@ class PackagedLauncherTests(unittest.TestCase):
             self.assertEqual(reader(path), "system")
 
     def test_entrypoint_installs_appearance_before_running_composed_application(self):
+        _, payload = launcher_payload()
         calls = []
         run_arguments = []
 
@@ -115,9 +131,10 @@ class PackagedLauncherTests(unittest.TestCase):
 
             original_argv = sys.argv
             try:
-                sys.argv = ["rufusarm64", "--persistence", "image.iso"]
+                sys.argv = ["-", "image.iso"]
+                namespace = {"__name__": "__main__"}
                 with self.assertRaises(SystemExit) as stopped:
-                    runpy.run_path(str(LAUNCHER), run_name="__main__")
+                    exec(compile(payload, str(LAUNCHER), "exec"), namespace)
             finally:
                 sys.argv = original_argv
 
@@ -130,7 +147,7 @@ class PackagedLauncherTests(unittest.TestCase):
             self.assertTrue(callable(RufusWindow.open_appearance_dialog))
 
     def test_source_exposes_accessible_system_light_dark_dialog(self):
-        text = LAUNCHER.read_text(encoding="utf-8")
+        _, payload = launcher_payload()
         for marker in (
             'APPEARANCE_MODES = (APPEARANCE_SYSTEM, APPEARANCE_LIGHT, APPEARANCE_DARK)',
             'GTK_DARK_PROPERTY = "gtk-application-prefer-dark-theme"',
@@ -141,7 +158,7 @@ class PackagedLauncherTests(unittest.TestCase):
             "window.save_settings()",
             "Follow the desktop appearance observed when RufusArm64 started.",
         ):
-            self.assertIn(marker, text)
+            self.assertIn(marker, payload)
 
 
 if __name__ == "__main__":
