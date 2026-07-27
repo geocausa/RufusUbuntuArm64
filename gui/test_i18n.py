@@ -378,7 +378,7 @@ class PrimaryLocalizationTests(unittest.TestCase):
 
     def test_secondary_dialog_installer_wraps_only_loaded_classes_and_is_idempotent(self):
         module, deferred = load_i18n_module()
-        names = ("rufusarm64_checksums", "rufusarm64_nonbootable_dialog", "rufusarm64_freedos_dialog")
+        names = ("rufusarm64_checksums", "rufusarm64_device_qualify_dialog", "rufusarm64_nonbootable_dialog", "rufusarm64_freedos_dialog")
         saved = {name: sys.modules.get(name) for name in names}
         try:
             classes = []
@@ -403,7 +403,7 @@ class PrimaryLocalizationTests(unittest.TestCase):
                 deferred,
                 [(module.translate_widget_tree, (dialog,)) for dialog in dialogs],
             )
-            self.assertEqual([dialog.marker for dialog in dialogs], ["dialog-0", "dialog-1", "dialog-2"])
+            self.assertEqual([dialog.marker for dialog in dialogs], ["dialog-0", "dialog-1", "dialog-2", "dialog-3"])
         finally:
             for name, previous in saved.items():
                 if previous is None:
@@ -439,6 +439,7 @@ class PrimaryLocalizationTests(unittest.TestCase):
         self.assertIn('msgid "Create USB"', text)
         self.assertIn('msgid "Keyboard: {shortcut}"', text)
         self.assertIn('msgid "Image checksums"', text)
+        self.assertIn('msgid "Check USB drive"', text)
         self.assertIn('msgid "Create non-bootable media"', text)
         self.assertIn('msgid "FreeDOS 1.4 — x86 BIOS/Legacy media"', text)
         self.assertIn('#: gui/rufusarm64_i18n.py', text)

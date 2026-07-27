@@ -45,6 +45,8 @@ It also wraps the already-imported guarded data-only formatter and FreeDOS dialo
 
 The same centralized wrapper covers the read-only image checksum dialog's static opening shell. The selected image path, calculated digest values, generated report, helper errors, clipboard content, and dynamic running/completion status remain untranslated.
 
+The destructive USB qualification dialog is limited to static opening-shell text. Canonical `quick` and `full` profile IDs, their current combo presentation labels, the selected target and identity, generated `ERASE <device>` text, exact comparison, plans, JSON reports, diagnostics, save paths, and dynamic status remain untranslated.
+
 ## Translator contract
 
 - Translate the meaning of the complete source message; do not add new behavior or promises.

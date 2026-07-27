@@ -78,6 +78,10 @@ msgid "Calculate image checksums"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Calculating a read-only plan…"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Calculating the exact FreeDOS plan without administrator access…"
 msgstr ""
 
@@ -106,11 +110,19 @@ msgid "Cancel formatting"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Cancel test"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Change appearance"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Check USB capacity and blocks"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Check USB drive"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -338,6 +350,10 @@ msgid "No formatting report is available yet."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "No qualification report is available yet."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Non bootable — data-only media"
 msgstr ""
 
@@ -410,6 +426,10 @@ msgid "Preparing a read-only plan…"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Preparing…"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Quick format"
 msgstr ""
 
@@ -450,6 +470,10 @@ msgid "RufusArm64 appearance"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Run USB check"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Run a read-only validation of a mounted or extracted UEFI media folder"
 msgstr ""
 
@@ -462,11 +486,19 @@ msgid "Run the mandatory read-only persistence compatibility and capacity analys
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Running the test will erase data in every selected test region. A full test is intended for an empty USB drive."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Save a verified raw, dynamic VHD/VHDX, or one-filesystem ISO/UDF image of the selected drive."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Save drive image…"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Save report…"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -522,11 +554,19 @@ msgid "Technical diagnostic log"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Test profile"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "The exact FORMAT phrase appears after the read-only plan is validated."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "The exact WRITE FREEDOS phrase appears after the read-only plan is validated."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "This is a separate destructive USB qualification test. It overwrites every tested region and does not preserve files or partitions. The normal Create USB workflow is not changed."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py

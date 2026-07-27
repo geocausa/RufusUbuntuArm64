@@ -10,6 +10,7 @@ Status: Stage 4 development branch; not a published release.
 - A bounded GNU gettext runtime and deterministic `po/rufusarm64.pot` source catalog for primary-window headings, labels, actions, appearance wording, main-control tooltips, and related accessibility metadata.
 - Static opening-state localization for the guarded data-only formatter and FreeDOS dialogs, including titles, headings, controls, placeholders, progress text, and initial report text.
 - Static opening-state localization for the unprivileged read-only image checksum dialog while preserving the selected path, calculated digests, reports, and helper workflow.
+- Static opening-state localization for destructive USB qualification while preserving profile IDs, target identity, generated erase confirmation, plans, JSON evidence, and execution.
 
 ## Appearance, tooltip, and localization contract
 

@@ -109,6 +109,7 @@
 - Bounded GNU gettext runtime and deterministic primary-shell source catalog with safe English fallback and byte-stable machine contracts
 - Static opening-state localization for guarded data-only formatting and FreeDOS creation without changing generated confirmations or operation paths
 - Static opening-state localization for the descriptor-bound read-only image checksum dialog
+- Static opening-state localization for identity-bound destructive USB qualification without changing profile IDs or evidence
 - Broader secondary-dialog/status localization, plural review, completed language packs, and translation-aware accessibility work selected from the pinned upstream audit
 - Remaining portable filesystem and distribution work selected from the pinned upstream audit
 - No weakening of identity, confirmation, cancellation, synchronization, or verification gates
