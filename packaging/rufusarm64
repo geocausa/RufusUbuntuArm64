@@ -1,5 +1,5 @@
 #!/bin/sh
-# GTK 3 is pinned before any packaged dialog import. The embedded Python entry point installs app-scoped appearance and tooltip controls.
+# GTK 3 is pinned before any packaged dialog import. The embedded Python entry point installs app-scoped appearance, tooltip, and localization controls.
 if [ "${1:-}" = "--persistence" ]; then
   shift
 fi
@@ -17,19 +17,21 @@ from gi.repository import GLib, Gtk
 
 sys.path.insert(0, "/usr/lib/rufusarm64")
 
+from rufusarm64_i18n import gettext as _, install_localization
+
 APPEARANCE_SYSTEM = "system"
 APPEARANCE_LIGHT = "light"
 APPEARANCE_DARK = "dark"
 APPEARANCE_MODES = (APPEARANCE_SYSTEM, APPEARANCE_LIGHT, APPEARANCE_DARK)
 APPEARANCE_LABELS = {
-    APPEARANCE_SYSTEM: "System",
-    APPEARANCE_LIGHT: "Light",
-    APPEARANCE_DARK: "Dark",
+    APPEARANCE_SYSTEM: _("System"),
+    APPEARANCE_LIGHT: _("Light"),
+    APPEARANCE_DARK: _("Dark"),
 }
 APPEARANCE_DESCRIPTIONS = {
-    APPEARANCE_SYSTEM: "Follow the desktop appearance observed when RufusArm64 started.",
-    APPEARANCE_LIGHT: "Prefer the light variant of the active GTK theme for RufusArm64.",
-    APPEARANCE_DARK: "Prefer the dark variant of the active GTK theme for RufusArm64.",
+    APPEARANCE_SYSTEM: _("Follow the desktop appearance observed when RufusArm64 started."),
+    APPEARANCE_LIGHT: _("Prefer the light variant of the active GTK theme for RufusArm64."),
+    APPEARANCE_DARK: _("Prefer the dark variant of the active GTK theme for RufusArm64."),
 }
 GTK_DARK_PROPERTY = "gtk-application-prefer-dark-theme"
 
@@ -146,6 +148,9 @@ def install_appearance(window_class):
 
     original_init = window_class.__init__
 
+    def appearance_tooltip(mode):
+        return f"{_('Appearance')}: {APPEARANCE_LABELS[mode]}. {_('Choose System, Light, or Dark appearance for RufusArm64 and its dialogs.')}"
+
     def apply_appearance(window, mode, persist=True):
         normalized = normalize_appearance(mode)
         settings = getattr(window, "_appearance_gtk_settings", None)
@@ -158,16 +163,14 @@ def install_appearance(window_class):
         window.settings["appearance"] = normalized
         button = getattr(window, "appearance_button", None)
         if button is not None:
-            button.set_tooltip_text(
-                f"Appearance: {APPEARANCE_LABELS[normalized]}. Choose System, Light, or Dark."
-            )
+            button.set_tooltip_text(appearance_tooltip(normalized))
         if persist:
             window.save_settings()
         return normalized
 
     def open_appearance_dialog(window, *_):
-        dialog = Gtk.Dialog(title="Appearance", transient_for=window, modal=True)
-        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Apply", Gtk.ResponseType.OK)
+        dialog = Gtk.Dialog(title=_("Appearance"), transient_for=window, modal=True)
+        dialog.add_buttons(_("Cancel"), Gtk.ResponseType.CANCEL, _("Apply"), Gtk.ResponseType.OK)
         dialog.set_default_response(Gtk.ResponseType.OK)
         dialog.set_default_size(460, 260)
 
@@ -176,12 +179,16 @@ def install_appearance(window_class):
         dialog.get_content_area().pack_start(box, True, True, 0)
 
         title = Gtk.Label()
-        title.set_markup("<span size='large' weight='bold'>RufusArm64 appearance</span>")
+        title.set_markup(
+            "<span size='large' weight='bold'>{}</span>".format(
+                GLib.markup_escape_text(_("RufusArm64 appearance"))
+            )
+        )
         title.set_xalign(0)
         box.pack_start(title, False, False, 0)
 
         intro = Gtk.Label(
-            label=(
+            label=_(
                 "System keeps the desktop preference observed when this application started. "
                 "Light and Dark affect only RufusArm64 and its dialogs."
             )
@@ -204,7 +211,7 @@ def install_appearance(window_class):
             radio.set_tooltip_text(APPEARANCE_DESCRIPTIONS[mode])
             _set_accessible(
                 radio,
-                f"{APPEARANCE_LABELS[mode]} appearance",
+                f"{APPEARANCE_LABELS[mode]} — {_('Change appearance')}",
                 APPEARANCE_DESCRIPTIONS[mode],
             )
             box.pack_start(radio, False, False, 0)
@@ -246,13 +253,11 @@ def install_appearance(window_class):
             "preferences-desktop-theme-symbolic",
             Gtk.IconSize.BUTTON,
         )
-        button.set_tooltip_text(
-            f"Appearance: {APPEARANCE_LABELS[initial_mode]}. Choose System, Light, or Dark."
-        )
+        button.set_tooltip_text(appearance_tooltip(initial_mode))
         _set_accessible(
             button,
-            "Change appearance",
-            "Choose System, Light, or Dark appearance for RufusArm64 and its dialogs.",
+            _("Change appearance"),
+            _("Choose System, Light, or Dark appearance for RufusArm64 and its dialogs."),
         )
         button.connect("clicked", window.open_appearance_dialog)
         window.appearance_button = button
@@ -284,6 +289,7 @@ def main(argv=None):
 
     install_appearance(RufusWindow)
     install_main_control_tooltips(RufusWindow)
+    install_localization(RufusWindow)
     return run_rufusarm64(["rufusarm64", *arguments])
 
 
