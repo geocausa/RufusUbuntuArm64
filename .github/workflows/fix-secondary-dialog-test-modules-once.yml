@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - feature/gettext-drive-backup-dialog
+  pull_request:
+    branches:
+      - stage4/0.15.0
 
 permissions:
   contents: write
