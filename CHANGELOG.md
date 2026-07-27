@@ -14,6 +14,7 @@
 - Localized drive-backup format labels and Save-dialog presentation while preserving canonical raw/VHD/VHDX/ISO identifiers, extensions, generated paths, confirmation, planning, publication, and verification byte-for-byte.
 - Localized the static Windows Setup options shell while preserving capability gating, previous selections, usernames, locale/time-zone identifiers, generated answer-file semantics, and writer behavior byte-for-byte.
 - Localized the static verified-image acquisition shell while preserving threshold trust, rollback checks, channel and image IDs, trust paths, metadata and digest evidence, resumable state, provider commands, returned values, and atomic publication byte-for-byte.
+- Localized the dedicated persistent live USB wizard's static opening shell while preserving source/target identity, selected size/label/runtime values, planning, confirmation, privileged creation, cancellation, qualification, and evidence byte-for-byte.
 
 ## 0.14.0 — 2026-07-26
 

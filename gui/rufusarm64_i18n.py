@@ -17,6 +17,7 @@ SECONDARY_DIALOG_CLASSES = (
     ("rufusarm64_freedos_dialog", "FreeDOSFormatDialog"),
     ("rufusarm64", "WindowsOptionsDialog"),
     ("rufusarm64", "AcquisitionDialog"),
+    ("rufusarm64_persistence", "Window"),
 )
 
 
@@ -28,6 +29,7 @@ def N_(message):
 CATALOG_MESSAGES = (
     N_("About RufusArm64"),
     N_("Advanced drive properties"),
+    N_("Advanced options"),
     N_("Advanced recovery: local signed catalog"),
     N_("After a successful unmounted-target review, type the displayed phrase exactly. Administrator authentication then reruns every source, policy, trust-generation, target and geometry check before any write."),
     N_("After writing, read copied data back from the USB and compare it with authenticated source content."),
@@ -67,6 +69,7 @@ CATALOG_MESSAGES = (
     N_("Check USB drive"),
     N_("Check USB…"),
     N_("Check compatibility"),
+    N_("Check ISO and USB"),
     N_("Check device for bad blocks (1 pass)"),
     N_("Checking identity, capacity, sector size, layout, filesystem tools, and safety warnings…"),
     N_("Checking target identity, capacity, 512-byte sectors, FAT32 geometry, pinned payload, and platform warnings…"),
@@ -84,6 +87,8 @@ CATALOG_MESSAGES = (
     N_("Choose a new Filesystem ISO/UDF (.iso) file"),
     N_("Choose a new Raw image (.img) file"),
     N_("Choose a new destination path to calculate the read-only plan."),
+    N_("Choose a plain Linux ISOHybrid image"),
+    N_("Choose an ISO and USB drive, then check compatibility."),
     N_("Choose an image and a removable USB drive. Raw, ISOHybrid, compressed, and common virtual-disk images are supported. Windows installation ISOs can use GPT or MBR layouts, FAT32/NTFS selection, WIM splitting, and UEFI:NTFS."),
     N_("Choose persistence capacity in GiB; zero requests the recommended available capacity."),
     N_("Choose the allocation-unit size for a newly created Windows FAT32 or NTFS filesystem."),
@@ -108,9 +113,12 @@ CATALOG_MESSAGES = (
     N_("Create non-bootable media"),
     N_("Create USB"),
     N_("Create a local administrator account"),
+    N_("Create a persistent live Linux USB"),
+    N_("Create persistent USB"),
     N_("Customize Windows Setup"),
     N_("Dark"),
     N_("Details and diagnostics"),
+    N_("Development validation"),
     N_("Disable automatic BitLocker device-encryption provisioning"),
     N_("Does not decrypt an existing installation. It prevents automatic encryption during this new setup where supported."),
     N_("Download"),
@@ -134,7 +142,10 @@ CATALOG_MESSAGES = (
     N_("FreeDOS 1.4 — x86 BIOS/Legacy media"),
     N_("FreeDOS…"),
     N_("GiB (0 = recommended available space)"),
+    N_("GiB — leave at 0 to use the recommended available space"),
     N_("Image checksums"),
+    N_("Linux ISO"),
+    N_("Linux ISO images"),
     N_("Account name"),
     N_("Image format"),
     N_("Image compatibility and write path"),
@@ -180,6 +191,8 @@ CATALOG_MESSAGES = (
     N_("Publisher policy"),
     N_("Quick format"),
     N_("Raw image (.img)"),
+    N_("Ready"),
+    N_("RufusArm64 Persistent Live USB"),
     N_("Raw is byte-for-byte. VHD and VHDX are dynamic sparse containers verified against the held source."),
     N_("Refresh catalog"),
     N_("Refresh USB drives"),
@@ -208,6 +221,7 @@ CATALOG_MESSAGES = (
     N_("Save the complete diagnostic report to an owner-private file."),
     N_("Save…"),
     N_("Saved-change space"),
+    N_("Space for saved changes"),
     N_("Secure Boot DBX"),
     N_("Select Calculate to hash the exact image file."),
     N_("Signature"),
@@ -216,6 +230,8 @@ CATALOG_MESSAGES = (
     N_("Show application and licence information. Shortcut F1."),
     N_("Shows the detected image type, selected write path, and bounded compatibility or boot limitations."),
     N_("System"),
+    N_("The short name shown for the writable boot partition."),
+    N_("The USB cannot be erased until the compatibility check succeeds."),
     N_("Use this Ubuntu user's regional settings"),
     N_("System keeps the desktop preference observed when this application started. Light and Dark affect only RufusArm64 and its dialogs."),
     N_("The built-in channel verifies threshold-signed root and catalog metadata, rejects version rollback, and checksum-verifies every image. No unsigned bypass is offered."),
@@ -228,20 +244,27 @@ CATALOG_MESSAGES = (
     N_("The final image path is created only after every planned byte has been copied, synchronized, SHA-256 hashed, and revalidated. Existing files and symbolic links are never replaced."),
     N_("This is a separate destructive USB qualification test. It overwrites every tested region and does not preserve files or partitions. The normal Create USB workflow is not changed."),
     N_("This separate workflow erases the complete selected removable drive and constructs one deterministic FAT32 FreeDOS volume from checksum-pinned package payloads."),
+    N_("This check reads the ISO without changing the USB. It confirms that the selected image supports persistence and that the USB has enough space."),
+    N_("This feature supports recognized Ubuntu 20.04 or newer and Debian live images. Some images or computers may not be compatible; RufusArm64 checks the ISO before writing anything to the USB."),
     N_("This separate workflow erases the complete selected removable drive, creates one data partition, checks the new filesystem, and explicitly does not claim the result is bootable."),
     N_("Trust-metadata policy"),
     N_("Type the exact SAVE phrase"),
     N_("Type the exact FORMAT phrase"),
     N_("Type the exact WRITE FREEDOS phrase"),
     N_("UEFI (non-CSM)"),
+    N_("Ubuntu casper and Debian live-boot"),
+    N_("Unsigned development loader — Secure Boot compatibility is not established. Development testing only."),
+    N_("USB name"),
     N_("USB drive"),
     N_("USB target drive"),
     N_("Validate UEFI Media…"),
+    N_("Validate media at UEFI boot (development only)"),
     N_("Validate UEFI media"),
     N_("Verify copied data after writing"),
     N_("Verify local catalog"),
     N_("Volume label"),
     N_("Windows drivers"),
+    N_("Choose a supported Ubuntu or Debian ISO, select a removable USB drive, and choose how much space to keep for files and settings. RufusArm64 checks compatibility before it allows the USB to be erased."),
     N_("Windows installation options"),
     N_("Checking the package-owned trust channel…"),
     N_("Use this only with catalog, detached-signature, and public-key files obtained through a separately trusted path."),
@@ -261,6 +284,7 @@ MARKUP_TEMPLATES = {
     "FreeDOS 1.4 — x86 BIOS/Legacy media": "<span size='large' weight='bold'>{}</span>",
     "Non bootable — data-only media": "<span size='large' weight='bold'>{}</span>",
     "Customize Windows Setup": "<span size='large' weight='bold'>{}</span>",
+    "Create a persistent live Linux USB": "<span size='large' weight='bold'>{}</span>",
 }
 
 
@@ -386,6 +410,16 @@ def _translate_widget(widget, translation):
             if translated != source:
                 widget.set_title(translated)
                 changed += 1
+        list_filters = getattr(widget, "list_filters", None)
+        if callable(list_filters):
+            for file_filter in list_filters():
+                source = file_filter.get_name() if hasattr(file_filter, "get_name") else None
+                if not source or not hasattr(file_filter, "set_name"):
+                    continue
+                translated = _translated(str(source), translation)
+                if translated != source:
+                    file_filter.set_name(translated)
+                    changed += 1
     elif isinstance(widget, Gtk.Label):
         source = widget.get_text()
         translated = _translated(str(source or ""), translation)

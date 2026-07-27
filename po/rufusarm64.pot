@@ -22,6 +22,10 @@ msgid "Advanced drive properties"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Advanced options"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Advanced recovery: local signed catalog"
 msgstr ""
 
@@ -162,6 +166,10 @@ msgid "Change appearance"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Check ISO and USB"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Check USB capacity and blocks"
 msgstr ""
 
@@ -238,11 +246,23 @@ msgid "Choose a new destination path to calculate the read-only plan."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Choose a plain Linux ISOHybrid image"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Choose a supported Ubuntu or Debian ISO, select a removable USB drive, and choose how much space to keep for files and settings. RufusArm64 checks compatibility before it allows the USB to be erased."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Choose all three explicit trust inputs."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Choose all three local trust files, then verify."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Choose an ISO and USB drive, then check compatibility."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -342,11 +362,19 @@ msgid "Create a local administrator account"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Create a persistent live Linux USB"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Create deterministic FreeDOS 1.4 media for x86 BIOS or Legacy/CSM systems."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Create non-bootable media"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Create persistent USB"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -359,6 +387,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Details and diagnostics"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Development validation"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -454,6 +486,10 @@ msgid "GiB (0 = recommended available space)"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "GiB — leave at 0 to use the recommended available space"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Image checksums"
 msgstr ""
 
@@ -483,6 +519,14 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Light"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Linux ISO"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Linux ISO images"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -626,6 +670,10 @@ msgid "Raw is byte-for-byte. VHD and VHDX are dynamic sparse containers verified
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Ready"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Refresh USB drives"
 msgstr ""
 
@@ -679,6 +727,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Review the final destructive warning for the selected image and exact USB drive."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "RufusArm64 Persistent Live USB"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -774,6 +826,10 @@ msgid "Skip privacy prompts and reduce initial data collection/recommendations"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Space for saved changes"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "System"
 msgstr ""
 
@@ -794,6 +850,10 @@ msgid "Test profile"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "The USB cannot be erased until the compatibility check succeeds."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "The built-in channel verifies threshold-signed root and catalog metadata, rejects version rollback, and checksum-verifies every image. No unsigned bypass is offered."
 msgstr ""
 
@@ -811,6 +871,18 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "The final image path is created only after every planned byte has been copied, synchronized, SHA-256 hashed, and revalidated. Existing files and symbolic links are never replaced."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "The short name shown for the writable boot partition."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "This check reads the ISO without changing the USB. It confirms that the selected image supports persistence and that the USB has enough space."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "This feature supports recognized Ubuntu 20.04 or newer and Debian live images. Some images or computers may not be compatible; RufusArm64 checks the ISO before writing anything to the USB."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -850,7 +922,19 @@ msgid "USB drive"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "USB name"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "USB target drive"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Ubuntu casper and Debian live-boot"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Unsigned development loader — Secure Boot compatibility is not established. Development testing only."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -871,6 +955,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Validate UEFI media"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Validate media at UEFI boot (development only)"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py

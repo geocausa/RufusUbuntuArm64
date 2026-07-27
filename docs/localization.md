@@ -57,6 +57,8 @@ Windows Setup options translate only the reviewed static dialog shell. Media gen
 
 Verified image acquisition translates only the static opening shell, including reviewed frame and chooser presentation. Channel/mode/image IDs, trust paths, metadata versions and expiry, signing-key IDs, image filename/size/SHA-256, selected image objects, provider commands/errors, elapsed status, rollback decisions, resumable partial state, checksum evidence, returned values, and atomic publication remain untranslated.
 
+The dedicated persistent live USB wizard translates only its reviewed static opening shell and ISO chooser presentation. Image path/source identity, device entries and target identity/capacity, persistence size, boot-volume label value, runtime-validation boolean, plan key/plan, generated confirmation, helper commands, cancellation marker, progress/report JSON, qualification checksums/timestamps, diagnostics, and final evidence remain untranslated.
+
 ## Translator contract
 
 - Translate the meaning of the complete source message; do not add new behavior or promises.

@@ -16,6 +16,7 @@ Status: Stage 4 development branch; not a published release.
 - Presentation-only localization for drive-backup format labels and Save-dialog chrome while preserving canonical format IDs, extensions, destination paths, planning, publication, and verification.
 - Static-shell localization for Windows Setup options while preserving capability gating, prior selections, regional values, generated answer-file semantics, and writer contracts.
 - Static opening-shell localization for verified image acquisition while preserving threshold trust, rollback protection, catalog/image evidence, resumable download state, and atomic publication.
+- Static opening-shell localization for the dedicated persistent live USB wizard while preserving source/target identity, selected values, planning, confirmation, privileged creation, cancellation, qualification, and evidence.
 
 ## Appearance, tooltip, and localization contract
 
@@ -29,7 +30,7 @@ Status: Stage 4 development branch; not a published release.
 - Localization loads the standard `rufusarm64` gettext domain and safely keeps the reviewed English source text when no valid catalog exists.
 - Translation runs only after reviewed GTK construction has completed, and only exact admitted static messages are eligible.
 - The guarded formatter and FreeDOS dialog classes are wrapped centrally after import; their original constructors, signal paths, identity binding, and execution code remain unchanged.
-- Generated `FORMAT ...`, `WRITE FREEDOS ...`, `SAVE ...`, and `RESTORE AUTHENTICATED FFU ...` confirmation phrases, comparison logic, selected values, media capability summaries/reasons, local usernames, locale/time-zone identifiers, generated answer-file values, acquisition channel/mode/image IDs, trust paths, metadata versions/expiry/key IDs, filenames, sizes, digests, resumable state, machine-readable JSON, command flags, paths, identities, filesystem planner values, diagnostic/report schemas, and dynamic evidence remain byte-stable and untranslated.
+- Generated `FORMAT ...`, `WRITE FREEDOS ...`, `SAVE ...`, `RESTORE AUTHENTICATED FFU ...`, and persistence confirmation phrases, comparison logic, selected values, persistence size/label/runtime-validation values, plan keys, media capability summaries/reasons, local usernames, locale/time-zone identifiers, generated answer-file values, acquisition channel/mode/image IDs, trust paths, metadata versions/expiry/key IDs, filenames, sizes, digests, resumable state, machine-readable JSON, command flags, paths, identities, filesystem planner values, diagnostic/qualification/report schemas, and dynamic evidence remain byte-stable and untranslated.
 - These presentation changes do not alter device/image identities, widget sensitivity, signal wiring, destructive confirmation, privilege separation, cancellation, verification, synchronization, or reports.
 
 ## Remaining Stage 4 scope

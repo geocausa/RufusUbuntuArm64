@@ -132,7 +132,8 @@ class AcquisitionDialogLocalizationTests(unittest.TestCase):
 
     def test_exact_dialog_set_includes_acquisition_once(self):
         module, _ = load_i18n_module()
-        self.assertEqual(module.SECONDARY_DIALOG_CLASSES[-1], ("rufusarm64", "AcquisitionDialog"))
+        self.assertEqual(module.SECONDARY_DIALOG_CLASSES[-2], ("rufusarm64", "AcquisitionDialog"))
+        self.assertEqual(module.SECONDARY_DIALOG_CLASSES[-1], ("rufusarm64_persistence", "Window"))
         self.assertEqual(module.SECONDARY_DIALOG_CLASSES.count(("rufusarm64", "AcquisitionDialog")), 1)
 
     def test_source_preserves_catalog_trust_selection_resume_and_returned_values(self):
