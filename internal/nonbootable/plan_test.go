@@ -4,6 +4,7 @@ package nonbootable
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -89,6 +90,8 @@ func TestFilesystemAliasesAndContracts(t *testing.T) {
 		"VFAT":  FilesystemFAT32,
 		"exfat": FilesystemExFAT,
 		"NTFS":  FilesystemNTFS,
+		"ext2":  FilesystemExt2,
+		"EXT3":  FilesystemExt3,
 		"ext4":  FilesystemExt4,
 	} {
 		got, err := NormalizeFilesystem(input)
@@ -107,6 +110,8 @@ func TestFilesystemAliasesAndContracts(t *testing.T) {
 		FilesystemFAT32: "FAT32",
 		FilesystemExFAT: "exFAT",
 		FilesystemNTFS:  "NTFS",
+		FilesystemExt2:  "ext2",
+		FilesystemExt3:  "ext3",
 		FilesystemExt4:  "ext4",
 	} {
 		request := baseRequest()
@@ -118,6 +123,26 @@ func TestFilesystemAliasesAndContracts(t *testing.T) {
 		}
 		if plan.FilesystemDisplay != display || len(plan.RequiredTools) != 4 {
 			t.Fatalf("%s plan = %#v", filesystem, plan)
+		}
+	}
+}
+
+func TestBuildPlanExt2AndExt3UseLinuxDataContracts(t *testing.T) {
+	for _, filesystem := range []string{FilesystemExt2, FilesystemExt3} {
+		request := baseRequest()
+		request.Scheme = SchemeMBR
+		request.Filesystem = filesystem
+		request.Label = "RUFUS-EXT"
+		plan, err := BuildPlan(request)
+		if err != nil {
+			t.Fatalf("%s: %v", filesystem, err)
+		}
+		if plan.PartitionType != "83" || plan.FilesystemDisplay != filesystem {
+			t.Fatalf("%s plan = %#v", filesystem, plan)
+		}
+		wantTools := []string{"sfdisk", "blockdev", "mkfs." + filesystem, "e2fsck"}
+		if !slices.Equal(plan.RequiredTools, wantTools) {
+			t.Fatalf("%s tools = %#v, want %#v", filesystem, plan.RequiredTools, wantTools)
 		}
 	}
 }
@@ -134,7 +159,7 @@ func TestBuildPlanRejectsUnsafeOrUnsupportedInput(t *testing.T) {
 		{name: "unsupported sector", mutate: func(value *Request) { value.LogicalSectorSize = 1024 }, want: "512 or 4096"},
 		{name: "small device", mutate: func(value *Request) { value.DeviceSizeBytes = 32 * 1024 * 1024 }, want: "too small"},
 		{name: "scheme", mutate: func(value *Request) { value.Scheme = "apm" }, want: "GPT or MBR"},
-		{name: "filesystem", mutate: func(value *Request) { value.Filesystem = "btrfs" }, want: "FAT32, exFAT, NTFS, or ext4"},
+		{name: "filesystem", mutate: func(value *Request) { value.Filesystem = "btrfs" }, want: "FAT32, exFAT, NTFS, ext2, ext3, or ext4"},
 		{name: "fat punctuation", mutate: func(value *Request) { value.Label = "DATA!" }, want: "ASCII"},
 		{name: "fat too long", mutate: func(value *Request) { value.Label = "TWELVE CHARS" }, want: "11 bytes"},
 		{name: "leading space", mutate: func(value *Request) { value.Label = " DATA" }, want: "leading or trailing"},

@@ -111,6 +111,8 @@ func TestFilesystemCheckCommandsAreReadOnly(t *testing.T) {
 		FilesystemFAT32: {name: "fsck.vfat", args: "-n /dev/sdb1"},
 		FilesystemExFAT: {name: "fsck.exfat", args: "-n /dev/sdb1"},
 		FilesystemNTFS:  {name: "ntfsfix", args: "-n /dev/sdb1"},
+		FilesystemExt2:  {name: "e2fsck", args: "-f -n /dev/sdb1"},
+		FilesystemExt3:  {name: "e2fsck", args: "-f -n /dev/sdb1"},
 		FilesystemExt4:  {name: "e2fsck", args: "-f -n /dev/sdb1"},
 	}
 	for filesystem, expected := range tests {

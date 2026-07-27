@@ -155,8 +155,8 @@ func (backend *linuxBackend) Format(ctx context.Context, plan Plan, _ PartitionT
 		if plan.Label != "" {
 			args = append(args, "-L", plan.Label)
 		}
-	case FilesystemExt4:
-		name = "mkfs.ext4"
+	case FilesystemExt2, FilesystemExt3, FilesystemExt4:
+		name = "mkfs." + plan.Filesystem
 		args = append(args, "-F")
 		if plan.Label != "" {
 			args = append(args, "-L", plan.Label)
@@ -454,7 +454,7 @@ func filesystemCheck(filesystem, path string) (string, []string, error) {
 		return "fsck.exfat", []string{"-n", path}, nil
 	case FilesystemNTFS:
 		return "ntfsfix", []string{"-n", path}, nil
-	case FilesystemExt4:
+	case FilesystemExt2, FilesystemExt3, FilesystemExt4:
 		return "e2fsck", []string{"-f", "-n", path}, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported filesystem %q", filesystem)

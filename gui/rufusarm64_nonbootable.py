@@ -9,22 +9,30 @@ FILESYSTEM_DISPLAYS = {
     "fat32": "FAT32",
     "exfat": "exFAT",
     "ntfs": "NTFS",
+    "ext2": "ext2",
+    "ext3": "ext3",
     "ext4": "ext4",
 }
 FILESYSTEM_TOOLS = {
     "fat32": ["sfdisk", "blockdev", "mkfs.vfat", "fsck.vfat"],
     "exfat": ["sfdisk", "blockdev", "mkfs.exfat", "fsck.exfat"],
     "ntfs": ["sfdisk", "blockdev", "mkfs.ntfs", "ntfsfix"],
+    "ext2": ["sfdisk", "blockdev", "mkfs.ext2", "e2fsck"],
+    "ext3": ["sfdisk", "blockdev", "mkfs.ext3", "e2fsck"],
     "ext4": ["sfdisk", "blockdev", "mkfs.ext4", "e2fsck"],
 }
 PARTITION_TYPES = {
     ("gpt", "fat32"): "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
     ("gpt", "exfat"): "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
     ("gpt", "ntfs"): "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
+    ("gpt", "ext2"): "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
+    ("gpt", "ext3"): "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
     ("gpt", "ext4"): "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
     ("mbr", "fat32"): "0c",
     ("mbr", "exfat"): "07",
     ("mbr", "ntfs"): "07",
+    ("mbr", "ext2"): "83",
+    ("mbr", "ext3"): "83",
     ("mbr", "ext4"): "83",
 }
 SAFETY_WARNINGS = [
@@ -356,7 +364,7 @@ def _validate_request(binary, device, identity, scheme, filesystem, label):
     if str(scheme or "").lower() not in SCHEMES:
         raise ValueError("Partition scheme must be GPT or MBR.")
     if str(filesystem or "").lower() not in FILESYSTEM_DISPLAYS:
-        raise ValueError("Filesystem must be FAT32, exFAT, NTFS, or ext4.")
+        raise ValueError("Filesystem must be FAT32, exFAT, NTFS, ext2, ext3, or ext4.")
     if not isinstance(label, str):
         raise ValueError("Volume label must be text.")
 
@@ -374,9 +382,9 @@ def _normalize_label(value, filesystem):
         allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-")
         if any(character not in allowed for character in value) or len(value.encode("utf-8")) > 11:
             raise ValueError("FAT32 label violates its canonical on-disk contract.")
-    elif filesystem == "ext4":
+    elif filesystem in {"ext2", "ext3", "ext4"}:
         if len(value.encode("utf-8")) > 16:
-            raise ValueError("ext4 label exceeds 16 bytes.")
+            raise ValueError(f"{filesystem} label exceeds 16 bytes.")
     else:
         limit = 15 if filesystem == "exfat" else 32
         units = len(value.encode("utf-16-le")) // 2

@@ -36,6 +36,12 @@ class NonBootableDialogStructureTests(unittest.TestCase):
         self.assertIn("self.parent_window.set_busy(True)", self.dialog_class_source)
         self.assertIn("self.parent_window.set_busy(False)", self.dialog_class_source)
 
+    def test_ext2_and_ext3_choices_are_explicit(self):
+        self.assertIn('self.filesystem.append("ext2", "ext2")', self.dialog_class_source)
+        self.assertIn('self.filesystem.append("ext3", "ext3")', self.dialog_class_source)
+        self.assertIn('"ext2": ["sfdisk", "blockdev", "mkfs.ext2", "e2fsck"]', self.logic_source)
+        self.assertIn('"ext3": ["sfdisk", "blockdev", "mkfs.ext3", "e2fsck"]', self.logic_source)
+
     def test_unprivileged_plan_and_exact_confirmation_precede_authentication(self):
         self.assertIn("build_dry_run_command", self.dialog_class_source)
         self.assertIn("subprocess.run(command", self.dialog_class_source)

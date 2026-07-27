@@ -26,6 +26,8 @@ const (
 	FilesystemFAT32 = "fat32"
 	FilesystemExFAT = "exfat"
 	FilesystemNTFS  = "ntfs"
+	FilesystemExt2  = "ext2"
+	FilesystemExt3  = "ext3"
 	FilesystemExt4  = "ext4"
 
 	alignmentBytes   = uint64(1024 * 1024)
@@ -107,6 +109,22 @@ var filesystemContracts = map[string]filesystemContract{
 		gptType:       "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
 		mbrType:       "07",
 		maxLabelUTF16: 32,
+	},
+	FilesystemExt2: {
+		display:       "ext2",
+		mkfs:          "mkfs.ext2",
+		check:         "e2fsck",
+		gptType:       "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
+		mbrType:       "83",
+		maxLabelBytes: 16,
+	},
+	FilesystemExt3: {
+		display:       "ext3",
+		mkfs:          "mkfs.ext3",
+		check:         "e2fsck",
+		gptType:       "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
+		mbrType:       "83",
+		maxLabelBytes: 16,
 	},
 	FilesystemExt4: {
 		display:       "ext4",
@@ -205,10 +223,14 @@ func NormalizeFilesystem(value string) (string, error) {
 		return FilesystemExFAT, nil
 	case "ntfs":
 		return FilesystemNTFS, nil
+	case "ext2":
+		return FilesystemExt2, nil
+	case "ext3":
+		return FilesystemExt3, nil
 	case "ext4":
 		return FilesystemExt4, nil
 	default:
-		return "", fmt.Errorf("filesystem must be FAT32, exFAT, NTFS, or ext4, not %q", value)
+		return "", fmt.Errorf("filesystem must be FAT32, exFAT, NTFS, ext2, ext3, or ext4, not %q", value)
 	}
 }
 
