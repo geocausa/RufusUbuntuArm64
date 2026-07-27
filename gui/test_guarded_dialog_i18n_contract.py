@@ -11,16 +11,20 @@ DIALOGS = (
 
 
 class GuardedDialogLocalizationContractTests(unittest.TestCase):
-    def test_each_dialog_defers_exact_widget_tree_translation_after_initial_plan_state(self):
-        for path in DIALOGS:
-            with self.subTest(path=path.name):
-                text = path.read_text(encoding="utf-8")
-                self.assertIn("from rufusarm64_i18n import translate_widget_tree", text)
-                shown = text.index("        self.show_all()")
-                planned = text.index("        self.refresh_plan()", shown)
-                translated = text.index("        GLib.idle_add(translate_widget_tree, self)", planned)
-                self.assertLess(shown, planned)
-                self.assertLess(planned, translated)
+    def test_runtime_wraps_exact_loaded_dialog_classes_after_original_construction(self):
+        text = I18N.read_text(encoding="utf-8")
+        for marker in (
+            '("rufusarm64_nonbootable_dialog", "NonBootableFormatDialog")',
+            '("rufusarm64_freedos_dialog", "FreeDOSFormatDialog")',
+            "def install_guarded_dialog_localization():",
+            "module = sys.modules.get(module_name)",
+            'if dialog_class is None or getattr(dialog_class, "_localization_installed", False):',
+            "_original_init(dialog, *args, **kwargs)",
+            "GLib.idle_add(translate_widget_tree, dialog)",
+            "dialog_class._localization_installed = True",
+            "install_guarded_dialog_localization()",
+        ):
+            self.assertIn(marker, text)
 
     def test_widget_runtime_covers_dialog_shell_fields_without_broad_dynamic_translation(self):
         text = I18N.read_text(encoding="utf-8")
@@ -44,19 +48,16 @@ class GuardedDialogLocalizationContractTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, text)
 
-    def test_exact_generated_confirmation_comparisons_remain_unchanged(self):
-        nonbootable = DIALOGS[0].read_text(encoding="utf-8")
-        freedos = DIALOGS[1].read_text(encoding="utf-8")
-        self.assertIn(
-            "self.confirmation.get_text().strip() == confirmation_phrase(self.plan)",
-            nonbootable,
-        )
-        self.assertIn(
-            "self.confirmation.get_text().strip() == confirmation_phrase(self.plan)",
-            freedos,
-        )
-        self.assertIn("expected = confirmation_phrase(self.plan)", nonbootable)
-        self.assertIn("expected = confirmation_phrase(self.plan)", freedos)
+    def test_dialog_operation_sources_do_not_import_localization_or_change_exact_confirmation(self):
+        for path in DIALOGS:
+            with self.subTest(path=path.name):
+                text = path.read_text(encoding="utf-8")
+                self.assertNotIn("rufusarm64_i18n", text)
+                self.assertIn(
+                    "self.confirmation.get_text().strip() == confirmation_phrase(self.plan)",
+                    text,
+                )
+                self.assertIn("expected = confirmation_phrase(self.plan)", text)
 
 
 if __name__ == "__main__":
