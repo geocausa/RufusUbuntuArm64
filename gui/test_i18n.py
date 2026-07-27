@@ -382,8 +382,13 @@ class PrimaryLocalizationTests(unittest.TestCase):
         saved = {name: sys.modules.get(name) for name in names}
         try:
             classes = []
+            fake_modules = {}
             for module_name, class_name in module.SECONDARY_DIALOG_CLASSES:
-                fake_module = types.ModuleType(module_name)
+                fake_module = fake_modules.get(module_name)
+                if fake_module is None:
+                    fake_module = types.ModuleType(module_name)
+                    fake_modules[module_name] = fake_module
+                    sys.modules[module_name] = fake_module
 
                 class Dialog(Window):
                     def __init__(self, marker):
@@ -392,7 +397,6 @@ class PrimaryLocalizationTests(unittest.TestCase):
 
                 Dialog.__name__ = class_name
                 setattr(fake_module, class_name, Dialog)
-                sys.modules[module_name] = fake_module
                 classes.append(Dialog)
 
             module.install_secondary_dialog_localization()
@@ -403,7 +407,7 @@ class PrimaryLocalizationTests(unittest.TestCase):
                 deferred,
                 [(module.translate_widget_tree, (dialog,)) for dialog in dialogs],
             )
-            self.assertEqual([dialog.marker for dialog in dialogs], ["dialog-0", "dialog-1", "dialog-2", "dialog-3"])
+            self.assertEqual([dialog.marker for dialog in dialogs], ["dialog-0", "dialog-1", "dialog-2", "dialog-3", "dialog-4"])
         finally:
             for name, previous in saved.items():
                 if previous is None:
@@ -440,6 +444,7 @@ class PrimaryLocalizationTests(unittest.TestCase):
         self.assertIn('msgid "Keyboard: {shortcut}"', text)
         self.assertIn('msgid "Image checksums"', text)
         self.assertIn('msgid "Check USB drive"', text)
+        self.assertIn('msgid "Save drive image"', text)
         self.assertIn('msgid "Create non-bootable media"', text)
         self.assertIn('msgid "FreeDOS 1.4 — x86 BIOS/Legacy media"', text)
         self.assertIn('#: gui/rufusarm64_i18n.py', text)

@@ -47,6 +47,8 @@ The same centralized wrapper covers the read-only image checksum dialog's static
 
 The destructive USB qualification dialog is limited to static opening-shell text. Canonical `quick` and `full` profile IDs, their current combo presentation labels, the selected target and identity, generated `ERASE <device>` text, exact comparison, plans, JSON reports, diagnostics, save paths, and dynamic status remain untranslated.
 
+The read-only drive-image backup dialog follows the same static-shell boundary. Source and destination paths, remembered directories, generated `SAVE ...` text, exact comparison, plans, byte totals, progress evidence, JSON reports, diagnostics, ownership/type/size checks, no-replace publication, process-group cancellation, parent-window logs, and dynamic status remain untranslated.
+
 ## Translator contract
 
 - Translate the meaning of the complete source message; do not add new behavior or promises.

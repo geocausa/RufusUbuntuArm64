@@ -185,7 +185,7 @@
       "id": "localization",
       "upstream_feature": "Localized user interface",
       "status": "partial",
-      "notes": "A standard GNU gettext runtime, deterministic source-only POT, package closure, safe English fallback, and exact post-construction translation are implemented for the primary window plus static opening shells for guarded data-only formatting, FreeDOS creation, read-only image checksums, and destructive USB qualification. Generated confirmation values, comparison logic, profile IDs, selected paths/values, identities, calculated digests, plans, reports, machine-readable JSON, flags, dynamic status, diagnostics, and report schemas remain byte-stable. Broader secondary-dialog and dynamic status/diagnostic migration, plural review, completed language packs, and full translation-aware accessibility review remain planned.",
+      "notes": "A standard GNU gettext runtime, deterministic source-only POT, package closure, safe English fallback, and exact post-construction translation are implemented for the primary window plus static opening shells for guarded data-only formatting, FreeDOS creation, read-only image checksums, destructive USB qualification, and read-only drive-image backup. Generated confirmation values, comparison logic, profile IDs, source/destination paths, identities, calculated digests, plans, byte/progress evidence, reports, machine-readable JSON, flags, publication checks, dynamic status, diagnostics, and report schemas remain byte-stable. Broader secondary-dialog and dynamic status/diagnostic migration, plural review, completed language packs, and full translation-aware accessibility review remain planned.",
       "upstream_sources": [
         "src/localization.c",
         "res/loc/"
