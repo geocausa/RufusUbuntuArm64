@@ -9,6 +9,7 @@ import threading
 
 from gi.repository import GLib, Gtk
 
+from rufusarm64_i18n import gettext as _
 import rufusarm64_device_qualify_dialog as backup_dialog
 from rufusarm64_device_qualify import (
     backup_build_dry_run_command,
@@ -26,7 +27,25 @@ _FORMAT_LABELS = {
     "vhdx": "Dynamic VHDX (.vhdx)",
 }
 _FORMAT_EXTENSIONS = {"raw": ".img", "vhd": ".vhd", "vhdx": ".vhdx"}
+_FORMAT_CHOOSER_TITLES = {
+    "raw": "Choose a new Raw image (.img) file",
+    "vhd": "Choose a new Dynamic VHD (.vhd) file",
+    "vhdx": "Choose a new Dynamic VHDX (.vhdx) file",
+    "iso": "Choose a new Filesystem ISO/UDF (.iso) file",
+}
 _SOURCE_PHASES = {"capture", "hash_source", "convert"}
+
+
+def _format_presentation_label(format_name):
+    """Translate only the reviewed display label; canonical format IDs remain unchanged."""
+    source = _FORMAT_LABELS.get(str(format_name or ""), "")
+    return _(source) if source else source
+
+
+def _format_chooser_title(format_name):
+    """Return one exact translated Save-dialog title without formatting an operation value."""
+    source = _FORMAT_CHOOSER_TITLES.get(str(format_name or ""), "")
+    return _(source) if source else source
 
 
 def _backup_detail_box(dialog):
@@ -74,13 +93,13 @@ def install_drive_backup_formats():
         dialog.last_progress_phase = ""
 
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        row.pack_start(Gtk.Label(label="Image format"), False, False, 0)
+        row.pack_start(Gtk.Label(label=_("Image format")), False, False, 0)
         dialog.format_selector = Gtk.ComboBoxText()
-        for format_name, label in _FORMAT_LABELS.items():
-            dialog.format_selector.append(format_name, label)
+        for format_name in _FORMAT_LABELS:
+            dialog.format_selector.append(format_name, _format_presentation_label(format_name))
         dialog.format_selector.set_active_id("raw")
         dialog.format_selector.set_tooltip_text(
-            "Raw is byte-for-byte. VHD and VHDX are dynamic sparse containers verified against the held source."
+            _("Raw is byte-for-byte. VHD and VHDX are dynamic sparse containers verified against the held source.")
         )
         dialog.format_selector.connect("changed", dialog.format_changed)
         row.pack_start(dialog.format_selector, True, True, 0)
@@ -111,18 +130,18 @@ def install_drive_backup_formats():
         format_name = _selected_format(dialog)
         extension = _FORMAT_EXTENSIONS[format_name]
         chooser = Gtk.FileChooserDialog(
-            title=f"Choose a new {_FORMAT_LABELS[format_name]} file",
+            title=_format_chooser_title(format_name),
             transient_for=dialog,
             action=Gtk.FileChooserAction.SAVE,
         )
-        chooser.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Choose", Gtk.ResponseType.OK)
+        chooser.add_buttons(_("Cancel"), Gtk.ResponseType.CANCEL, _("Choose"), Gtk.ResponseType.OK)
         chooser.set_do_overwrite_confirmation(True)
         chooser.set_current_name(f"rufusarm64-{os.path.basename(dialog.device)}{extension}")
         saved_directory = str(dialog.parent_window.settings.get("backup_directory") or "")
         if saved_directory and os.path.isdir(saved_directory):
             chooser.set_current_folder(saved_directory)
         image_filter = Gtk.FileFilter()
-        image_filter.set_name(_FORMAT_LABELS[format_name])
+        image_filter.set_name(_format_presentation_label(format_name))
         image_filter.add_pattern(f"*{extension}")
         chooser.add_filter(image_filter)
         response = chooser.run()

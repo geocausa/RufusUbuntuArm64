@@ -190,6 +190,22 @@ msgid "Choose a new .img path"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Choose a new Dynamic VHD (.vhd) file"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Choose a new Dynamic VHDX (.vhdx) file"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Choose a new Filesystem ISO/UDF (.iso) file"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Choose a new Raw image (.img) file"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Choose a new destination path to calculate the read-only plan."
 msgstr ""
 
@@ -298,6 +314,14 @@ msgid "Download verified image"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Dynamic VHD (.vhd)"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Dynamic VHDX (.vhdx)"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Erase the selected drive and create one verified data-only filesystem without claiming bootability."
 msgstr ""
 
@@ -315,6 +339,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "File system"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Filesystem ISO/UDF (.iso)"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -347,6 +375,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Image compatibility and write path"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Image format"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -487,6 +519,14 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Quick format"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Raw image (.img)"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Raw is byte-for-byte. VHD and VHDX are dynamic sparse containers verified against the held source."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py

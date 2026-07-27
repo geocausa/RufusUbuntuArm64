@@ -51,6 +51,8 @@ The read-only drive-image backup dialog follows the same static-shell boundary. 
 
 The authenticated experimental FFU dialog is limited to its static opening shell. Warning markup, image/target summary, trust and policy paths, file-chooser text, generated `RESTORE AUTHENTICATED FFU ...` confirmation, exact comparison, immutable review evidence, restore reports, diagnostics, dynamic status, cancellation evidence, and final safety messages remain untranslated.
 
+Drive-backup format presentation translates only the visible Image format heading, labels, selector tooltip, and Save-dialog chrome. Canonical IDs (`raw`, `vhd`, `vhdx`, `iso`), extensions, selected IDs, generated filenames, destination paths, plans, reports, confirmation values, and operation evidence remain untranslated.
+
 ## Translator contract
 
 - Translate the meaning of the complete source message; do not add new behavior or promises.

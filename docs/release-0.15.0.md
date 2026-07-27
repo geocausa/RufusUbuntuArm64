@@ -13,6 +13,7 @@ Status: Stage 4 development branch; not a published release.
 - Static opening-state localization for destructive USB qualification while preserving profile IDs, target identity, generated erase confirmation, plans, JSON evidence, and execution.
 - Static opening-state localization for read-only drive-image backup while preserving source/destination binding, generated SAVE confirmation, progress accounting, reports, publication, and process ownership.
 - Static opening-state localization for authenticated experimental FFU review/restore while preserving trust inputs, source/target binding, exact confirmation, evidence, cancellation, and verification.
+- Presentation-only localization for drive-backup format labels and Save-dialog chrome while preserving canonical format IDs, extensions, destination paths, planning, publication, and verification.
 
 ## Appearance, tooltip, and localization contract
 
