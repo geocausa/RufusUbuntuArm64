@@ -89,6 +89,34 @@ class HeaderBar(Container):
         self.subtitle = value
 
 
+class Frame(Container):
+    def __init__(self, label=None, children=None, **kwargs):
+        super().__init__(children=children, **kwargs)
+        self.label = label
+
+    def get_label(self):
+        return self.label
+
+    def set_label(self, value):
+        self.label = value
+
+
+class FileChooserButton(Widget):
+    def __init__(self, title=None, filename=None, **kwargs):
+        super().__init__(**kwargs)
+        self.title = title
+        self.filename = filename
+
+    def get_title(self):
+        return self.title
+
+    def set_title(self, value):
+        self.title = value
+
+    def get_filename(self):
+        return self.filename
+
+
 class Label(Widget):
     def __init__(self, text, use_markup=False, **kwargs):
         super().__init__(**kwargs)
@@ -197,6 +225,8 @@ def load_i18n_module():
         Container=Container,
         Window=Window,
         HeaderBar=HeaderBar,
+        Frame=Frame,
+        FileChooserButton=FileChooserButton,
         Label=Label,
         Button=Button,
         CheckButton=CheckButton,
@@ -407,7 +437,7 @@ class PrimaryLocalizationTests(unittest.TestCase):
                 deferred,
                 [(module.translate_widget_tree, (dialog,)) for dialog in dialogs],
             )
-            self.assertEqual([dialog.marker for dialog in dialogs], ["dialog-0", "dialog-1", "dialog-2", "dialog-3", "dialog-4", "dialog-5", "dialog-6"])
+            self.assertEqual([dialog.marker for dialog in dialogs], ["dialog-0", "dialog-1", "dialog-2", "dialog-3", "dialog-4", "dialog-5", "dialog-6", "dialog-7"])
         finally:
             for name, previous in saved.items():
                 if previous is None:
@@ -447,6 +477,8 @@ class PrimaryLocalizationTests(unittest.TestCase):
         self.assertIn('msgid "Save drive image"', text)
         self.assertIn('msgid "Review Full Flash Update"', text)
         self.assertIn('msgid "Windows installation options"', text)
+        self.assertIn('msgid "Download a verified image"', text)
+        self.assertIn('msgid "Built-in verified catalog"', text)
         self.assertIn('msgid "Customize Windows Setup"', text)
         self.assertIn('msgid "Create non-bootable media"', text)
         self.assertIn('msgid "FreeDOS 1.4 — x86 BIOS/Legacy media"', text)

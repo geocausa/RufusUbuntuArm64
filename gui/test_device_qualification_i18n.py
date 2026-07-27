@@ -105,6 +105,7 @@ class DeviceQualificationLocalizationTests(unittest.TestCase):
                 ("rufusarm64_nonbootable_dialog", "NonBootableFormatDialog"),
                 ("rufusarm64_freedos_dialog", "FreeDOSFormatDialog"),
                 ("rufusarm64", "WindowsOptionsDialog"),
+                ("rufusarm64", "AcquisitionDialog"),
             ),
         )
 

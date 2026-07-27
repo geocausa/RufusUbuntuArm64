@@ -55,6 +55,8 @@ Drive-backup format presentation translates only the visible Image format headin
 
 Windows Setup options translate only the reviewed static dialog shell. Media generation/family/architecture/edition details, capability summaries and refusal reasons, enabled states, previous selections, the local username and placeholder, locale/time-zone identifiers, option keys, and generated `autounattend.xml` values remain untranslated.
 
+Verified image acquisition translates only the static opening shell, including reviewed frame and chooser presentation. Channel/mode/image IDs, trust paths, metadata versions and expiry, signing-key IDs, image filename/size/SHA-256, selected image objects, provider commands/errors, elapsed status, rollback decisions, resumable partial state, checksum evidence, returned values, and atomic publication remain untranslated.
+
 ## Translator contract
 
 - Translate the meaning of the complete source message; do not add new behavior or promises.
