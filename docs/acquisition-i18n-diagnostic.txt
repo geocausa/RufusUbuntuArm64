@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "<stdin>", line 11, in <module>
+  File ".github/workflows/patch-acquisition-i18n-once.yml", line 32, in <module>
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ".github/workflows/patch-acquisition-i18n-once.yml", line 7, in replace_once
+SystemExit: acquisition trust disclosure changed
