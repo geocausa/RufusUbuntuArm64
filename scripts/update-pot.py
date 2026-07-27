@@ -16,7 +16,7 @@ SOURCE_REFERENCE = "gui/rufusarm64_i18n.py"
 
 def collect_messages(source_text):
     tree = ast.parse(source_text, filename=str(SOURCE))
-    messages = {}
+    messages = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name) or node.func.id != "N_":
             continue
@@ -25,7 +25,7 @@ def collect_messages(source_text):
         value = ast.literal_eval(node.args[0])
         if not isinstance(value, str) or not value:
             raise ValueError(f"N_ marker at line {node.lineno} must contain a non-empty string")
-        messages.setdefault(value, []).append(node.lineno)
+        messages.add(value)
     if not messages:
         raise ValueError("no N_ translation markers were found")
     return messages
@@ -50,8 +50,7 @@ def render(messages):
         "",
     ]
     for message in sorted(messages):
-        references = " ".join(f"{SOURCE_REFERENCE}:{line}" for line in sorted(set(messages[message])))
-        lines.extend((f"#: {references}", f"msgid {quote(message)}", "msgstr \"\"", ""))
+        lines.extend((f"#: {SOURCE_REFERENCE}", f"msgid {quote(message)}", "msgstr \"\"", ""))
     return "\n".join(lines)
 
 
