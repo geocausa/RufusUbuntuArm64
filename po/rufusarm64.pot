@@ -166,6 +166,10 @@ msgid "Create USB"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Create a bootable USB drive"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Create deterministic FreeDOS 1.4 media for x86 BIOS or Legacy/CSM systems."
 msgstr ""
 
@@ -175,6 +179,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Details and diagnostics"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Download the current architecture-specific Microsoft DBX update for local inspection."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -246,6 +254,10 @@ msgid "Open read-only UEFI media validation. Shortcut Ctrl+U."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Open read-only validation of a mounted or extracted UEFI media directory."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Open signed image acquisition. Shortcut Ctrl+D."
 msgstr ""
 
@@ -255,6 +267,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Open the separate destructive USB capacity, bad-block, and fake-capacity qualification workflow."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Open verified signed-catalog image acquisition when the installed channel is available."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -319,6 +335,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Review FFU…"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Review the final destructive warning for the selected image and exact USB drive."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
