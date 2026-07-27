@@ -9,6 +9,7 @@ GUARDED_DIALOGS = (
     ROOT / "gui" / "rufusarm64_freedos_dialog.py",
 )
 CHECKSUM_DIALOG = ROOT / "gui" / "rufusarm64_checksums.py"
+FFU_DIALOG = ROOT / "gui" / "rufusarm64_ffu_dialog.py"
 
 
 class SecondaryDialogLocalizationContractTests(unittest.TestCase):
@@ -18,6 +19,7 @@ class SecondaryDialogLocalizationContractTests(unittest.TestCase):
             '("rufusarm64_checksums", "ChecksumDialog")',
             '("rufusarm64_device_qualify_dialog", "DeviceQualificationDialog")',
             '("rufusarm64_device_qualify_dialog", "DriveImageBackupDialog")',
+            '("rufusarm64_ffu_dialog", "FFUReviewDialog")',
             '("rufusarm64_nonbootable_dialog", "NonBootableFormatDialog")',
             '("rufusarm64_freedos_dialog", "FreeDOSFormatDialog")',
             "def install_secondary_dialog_localization():",
@@ -41,6 +43,7 @@ class SecondaryDialogLocalizationContractTests(unittest.TestCase):
             'N_("Image checksums")',
             'N_("Check USB drive")',
             'N_("Save drive image")',
+            'N_("Review Full Flash Update")',
             'N_("Create non-bootable media")',
             'N_("FreeDOS 1.4 — x86 BIOS/Legacy media")',
             'N_("Type the exact FORMAT phrase")',
@@ -50,6 +53,7 @@ class SecondaryDialogLocalizationContractTests(unittest.TestCase):
         for forbidden in (
             'N_("FORMAT /dev',
             'N_("WRITE FREEDOS /dev',
+            'N_("RESTORE AUTHENTICATED FFU TO /dev',
             'N_("device_path")',
             'N_("identity")',
         ):
@@ -76,6 +80,24 @@ class SecondaryDialogLocalizationContractTests(unittest.TestCase):
             "set_text(self.report, -1)",
         ):
             self.assertIn(marker, text)
+
+
+def test_ffu_operation_source_remains_localization_free_and_evidence_bound(self):
+    text = FFU_DIALOG.read_text(encoding="utf-8")
+    self.assertNotIn("rufusarm64_i18n", text)
+    for marker in (
+        "command = build_ffu_review_command(",
+        "command = build_ffu_restore_command(",
+        'self.review.get("exact_confirmation_phrase")',
+        "expected_review = copy.deepcopy(self.review_payload)",
+        "normalized = normalize_ffu_restore_output(payload, expected_review)",
+        "strict_json_loads(stdout)",
+        "communicate_bounded(",
+        "start_new_session=True",
+        "os.killpg(process.pid, signal.SIGTERM)",
+        "json.dumps(payload, indent=2, sort_keys=True)",
+    ):
+        self.assertIn(marker, text)
 
 
 if __name__ == "__main__":

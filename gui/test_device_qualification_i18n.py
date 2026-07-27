@@ -101,6 +101,7 @@ class DeviceQualificationLocalizationTests(unittest.TestCase):
                 ("rufusarm64_checksums", "ChecksumDialog"),
                 ("rufusarm64_device_qualify_dialog", "DeviceQualificationDialog"),
                 ("rufusarm64_device_qualify_dialog", "DriveImageBackupDialog"),
+                ("rufusarm64_ffu_dialog", "FFUReviewDialog"),
                 ("rufusarm64_nonbootable_dialog", "NonBootableFormatDialog"),
                 ("rufusarm64_freedos_dialog", "FreeDOSFormatDialog"),
             ),

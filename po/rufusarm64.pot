@@ -18,6 +18,10 @@ msgid "Advanced drive properties"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "After a successful unmounted-target review, type the displayed phrase exactly. Administrator authentication then reruns every source, policy, trust-generation, target and geometry check before any write."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "After writing, read copied data back from the USB and compare it with authenticated source content."
 msgstr ""
 
@@ -31,6 +35,14 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Authenticate a supported FFU and review the exact removable target before experimental restoration."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Authenticate and review"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Authenticated trust store"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -114,6 +126,10 @@ msgid "Cancel formatting"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Cancel restore"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Cancel test"
 msgstr ""
 
@@ -175,6 +191,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Choose a new destination path to calculate the read-only plan."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Choose all three explicit trust inputs."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -382,6 +402,10 @@ msgid "No qualification report is available yet."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "No review has been performed. The ordinary Create USB action remains disabled for FFU images."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Non bootable — data-only media"
 msgstr ""
 
@@ -458,6 +482,10 @@ msgid "Preparing…"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Publisher policy"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Quick format"
 msgstr ""
 
@@ -482,11 +510,19 @@ msgid "Restore / format…"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Restore authenticated FFU"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Restore or format drive for storage"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Review FFU…"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Review Full Flash Update"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -619,6 +655,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "This separate workflow erases the complete selected removable drive, creates one data partition, checks the new filesystem, and explicitly does not claim the result is bootable."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Trust-metadata policy"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
