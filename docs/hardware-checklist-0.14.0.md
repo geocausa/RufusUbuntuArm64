@@ -4,10 +4,26 @@ This record gates promotion of the 0.14.0 candidate. Software CI evidence is nec
 
 ## Candidate identity
 
-- Candidate commit: to be recorded after the release-contract PR is merged.
-- Prerelease tag: to be recorded after publication.
-- Debian package filename and SHA-256: to be recorded after publication.
-- Test host: Ubuntu ARM64.
+- Candidate commit: `5d0f9ea97af8c055df2a9412b491b9888ec8f665`.
+- Prerelease tag: `0.14.0-rc1`.
+- Debian package: `rufusarm64_0.14.0~rc1_arm64.deb`.
+- Debian package SHA-256: `a47a361d362f3f13357f8f180e608ba78a583e923c2aed6dc45e46550063f1a5`.
+- Source archive SHA-256: `5ffa17704d0a1577495b1166ff93f008c434c78f8a1ac22ff2d76ab5e2de8565`.
+- Authenticated publication workflow: run `30225915981`.
+- Required test platform: Ubuntu ARM64; record the exact machine, kernel, firmware, package source, and removable-media identity for each observation.
+
+## Established software evidence
+
+The following evidence is bound to the candidate identity above. It does not check any physical-observation box in this record.
+
+- [x] Go 1.22 compatibility, full test/audit, native ARM64 execution, packaged-binary execution, privileged raw/VHD/VHDX/ISO-UDF qualification, formatter, FreeDOS, UEFI, FFU software audit, and reproducible Debian packaging passed for the release-candidate tree.
+- [x] The prerelease publication independently rebuilt the pinned ARM64 WIM engine and unsigned UEFI integrity loader.
+- [x] The `0.14.0~rc1` Debian package was reproduced byte-for-byte before publication.
+- [x] Published package identity, source identity, tag target, checksums, and release evidence were authenticated by the publication workflow.
+
+## Observation recording rule
+
+For every exercised item, record the tester, UTC date, exact host/kernel/firmware, source package checksum, source and target device identities, command or graphical path, result, and evidence location. Mark an item **untested** rather than passed when the required hardware, firmware, image, or disposable media is unavailable.
 
 ## Installation and desktop smoke test
 
