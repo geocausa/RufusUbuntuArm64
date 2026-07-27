@@ -1,6 +1,6 @@
 #!/bin/sh
 exec /usr/bin/python3 -I - "$@" <<'PYRUFUSARM64PERSISTENCE'
-"""Isolated GTK 3 entry point for the dedicated persistent-live wizard."""
+"""Isolated GTK 3 package entry point for the dedicated persistent-live wizard."""
 
 import sys
 
