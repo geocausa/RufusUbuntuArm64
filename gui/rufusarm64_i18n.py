@@ -1,12 +1,17 @@
-"""Bounded GNU gettext integration for the RufusArm64 primary GTK shell."""
+"""Bounded GNU gettext integration for the RufusArm64 GTK interface."""
 
 import gettext as _gettext
+import sys
 
 from gi.repository import GLib, Gtk
 
 
 DOMAIN = "rufusarm64"
 DEFAULT_LOCALE_DIR = "/usr/share/locale"
+GUARDED_DIALOG_CLASSES = (
+    ("rufusarm64_nonbootable_dialog", "NonBootableFormatDialog"),
+    ("rufusarm64_freedos_dialog", "FreeDOSFormatDialog"),
+)
 
 
 def N_(message):
@@ -31,11 +36,19 @@ CATALOG_MESSAGES = (
     N_("Calculate image checksums"),
     N_("Calculate MD5, SHA-1, SHA-256, and SHA-512 for the selected image without modifying it."),
     N_("Cancel"),
+    N_("Cancel creation"),
+    N_("Cancel formatting"),
+    N_("Calculating the exact data-only plan without administrator access…"),
+    N_("Calculating the exact FreeDOS plan without administrator access…"),
+    N_("Calculating the unprivileged formatting plan…"),
+    N_("Calculating the unprivileged FreeDOS plan…"),
     N_("Change appearance"),
     N_("Check USB capacity and blocks"),
     N_("Check USB…"),
     N_("Check compatibility"),
     N_("Check device for bad blocks (1 pass)"),
+    N_("Checking identity, capacity, sector size, layout, filesystem tools, and safety warnings…"),
+    N_("Checking target identity, capacity, 512-byte sectors, FAT32 geometry, pinned payload, and platform warnings…"),
     N_("Choose System, Light, or Dark appearance for RufusArm64 and its dialogs."),
     N_("Choose an image and a removable USB drive. Raw, ISOHybrid, compressed, and common virtual-disk images are supported. Windows installation ISOs can use GPT or MBR layouts, FAT32/NTFS selection, WIM splitting, and UEFI:NTFS."),
     N_("Choose persistence capacity in GiB; zero requests the recommended available capacity."),
@@ -49,24 +62,29 @@ CATALOG_MESSAGES = (
     N_("Choose Automatic, UEFI, or x86-family BIOS/CSM for supported Windows installation media."),
     N_("Clear"),
     N_("Clear only the visible diagnostic log."),
+    N_("Close"),
     N_("Cluster size"),
     N_("Copy"),
     N_("Copy the complete diagnostic report to the clipboard."),
-    N_("Create deterministic FreeDOS 1.4 media for x86 BIOS or Legacy/CSM systems."),
     N_("Create a bootable USB drive"),
+    N_("Create deterministic FreeDOS 1.4 media for x86 BIOS or Legacy/CSM systems."),
     N_("Create FreeDOS media"),
+    N_("Create non-bootable media"),
     N_("Create USB"),
     N_("Dark"),
     N_("Details and diagnostics"),
-    N_("Download unavailable"),
     N_("Download the current architecture-specific Microsoft DBX update for local inspection."),
+    N_("Download unavailable"),
     N_("Download verified image"),
-    N_("Open verified signed-catalog image acquisition when the installed channel is available."),
     N_("Erase the selected drive and create one verified data-only filesystem without claiming bootability."),
+    N_("Everything on the selected drive will be permanently erased. Cancelling after erasure may leave intentionally incomplete media that must be formatted again before use."),
+    N_("Everything on the selected drive will be permanently erased. The resulting media runs only on x86-compatible computers using BIOS or UEFI Legacy/CSM. It will not boot ARM64 or UEFI-only systems. Software verification cannot prove that a physical PC will boot it."),
     N_("FAT32"),
     N_("File system"),
     N_("Follow the desktop appearance observed when RufusArm64 started."),
     N_("For supported Ubuntu or Debian live media, create separate saved-change storage that can survive reboot."),
+    N_("Format data-only media"),
+    N_("FreeDOS 1.4 — x86 BIOS/Legacy media"),
     N_("FreeDOS…"),
     N_("GiB (0 = recommended available space)"),
     N_("Image compatibility and write path"),
@@ -75,20 +93,27 @@ CATALOG_MESSAGES = (
     N_("Keep quick formatting enabled, or disable it to zero-write the complete new data partition first."),
     N_("Keyboard: {shortcut}"),
     N_("Light"),
+    N_("No formatting report is available yet."),
+    N_("No FreeDOS report is available yet."),
+    N_("Non bootable — data-only media"),
+    N_("Not started"),
     N_("NTFS"),
     N_("Open read-only UEFI media validation. Shortcut Ctrl+U."),
     N_("Open read-only validation of a mounted or extracted UEFI media directory."),
     N_("Open signed image acquisition. Shortcut Ctrl+D."),
     N_("Open the final erase confirmation for the selected image and drive."),
     N_("Open the separate destructive USB capacity, bad-block, and fake-capacity qualification workflow."),
+    N_("Open verified signed-catalog image acquisition when the installed channel is available."),
     N_("Operation progress"),
     N_("Operation status details"),
+    N_("Optional"),
     N_("Optionally select a Microsoft DBX update used to reject revoked Windows EFI boot files."),
     N_("Optionally stage validated Windows PE driver packages from this folder onto the USB."),
     N_("Partition scheme"),
     N_("Persistent storage"),
     N_("Prefer the dark variant of the active GTK theme for RufusArm64."),
     N_("Prefer the light variant of the active GTK theme for RufusArm64."),
+    N_("Preparing a read-only plan…"),
     N_("Quick format"),
     N_("Refresh USB drives"),
     N_("Request safe cancellation of the active operation and wait for its final state and cleanup."),
@@ -116,6 +141,12 @@ CATALOG_MESSAGES = (
     N_("System keeps the desktop preference observed when this application started. Light and Dark affect only RufusArm64 and its dialogs."),
     N_("Target system"),
     N_("Technical diagnostic log"),
+    N_("The exact FORMAT phrase appears after the read-only plan is validated."),
+    N_("The exact WRITE FREEDOS phrase appears after the read-only plan is validated."),
+    N_("This separate workflow erases the complete selected removable drive and constructs one deterministic FAT32 FreeDOS volume from checksum-pinned package payloads."),
+    N_("This separate workflow erases the complete selected removable drive, creates one data partition, checks the new filesystem, and explicitly does not claim the result is bootable."),
+    N_("Type the exact FORMAT phrase"),
+    N_("Type the exact WRITE FREEDOS phrase"),
     N_("UEFI (non-CSM)"),
     N_("USB drive"),
     N_("USB target drive"),
@@ -135,6 +166,8 @@ CATALOG_MESSAGES = (
 CATALOG_MESSAGE_SET = frozenset(CATALOG_MESSAGES)
 MARKUP_TEMPLATES = {
     "Create a bootable USB drive": "<span size='large' weight='bold'>{}</span>",
+    "FreeDOS 1.4 — x86 BIOS/Legacy media": "<span size='large' weight='bold'>{}</span>",
+    "Non bootable — data-only media": "<span size='large' weight='bold'>{}</span>",
 }
 
 
@@ -230,7 +263,14 @@ def _translate_accessible(widget, translation):
 
 def _translate_widget(widget, translation):
     changed = 0
-    if isinstance(widget, Gtk.HeaderBar):
+    if isinstance(widget, Gtk.Window):
+        source = widget.get_title()
+        if source:
+            translated = _translated(str(source), translation)
+            if translated != source:
+                widget.set_title(translated)
+                changed += 1
+    elif isinstance(widget, Gtk.HeaderBar):
         for getter_name, setter_name in (("get_title", "set_title"), ("get_subtitle", "set_subtitle")):
             source = getattr(widget, getter_name)()
             if not source:
@@ -256,6 +296,29 @@ def _translate_widget(widget, translation):
             if translated != source:
                 widget.set_label(translated)
                 changed += 1
+    elif isinstance(widget, Gtk.Entry):
+        source = widget.get_placeholder_text()
+        if source:
+            translated = _translated(str(source), translation)
+            if translated != source:
+                widget.set_placeholder_text(translated)
+                changed += 1
+    elif isinstance(widget, Gtk.ProgressBar):
+        source = widget.get_text()
+        if source:
+            translated = _translated(str(source), translation)
+            if translated != source:
+                widget.set_text(translated)
+                changed += 1
+    elif isinstance(widget, Gtk.TextView):
+        buffer = widget.get_buffer()
+        start, end = buffer.get_bounds()
+        source = buffer.get_text(start, end, True)
+        if source:
+            translated = _translated(str(source), translation)
+            if translated != source:
+                buffer.set_text(translated)
+                changed += 1
 
     if hasattr(widget, "get_tooltip_text") and hasattr(widget, "set_tooltip_text"):
         source = widget.get_tooltip_text()
@@ -266,19 +329,42 @@ def _translate_widget(widget, translation):
     return changed + _translate_accessible(widget, translation)
 
 
-def apply_primary_ui_translation(window, translation=None):
-    """Translate exact reviewed static strings after the composed window exists."""
+def translate_widget_tree(widget, translation=None):
+    """Translate one exact reviewed GTK widget tree and return from an idle callback."""
     selected = translation or _translation
     changed = 0
-    for widget in _walk_widgets(window):
-        changed += _translate_widget(widget, selected)
-    window._rufusarm64_translation = selected
-    window._rufusarm64_translated_fields = changed
+    for child in _walk_widgets(widget):
+        changed += _translate_widget(child, selected)
+    widget._rufusarm64_translation = selected
+    widget._rufusarm64_translated_fields = changed
     return False
+
+
+def apply_primary_ui_translation(window, translation=None):
+    """Translate exact reviewed static strings after the composed window exists."""
+    return translate_widget_tree(window, translation)
+
+
+def install_guarded_dialog_localization():
+    """Wrap already-imported guarded dialogs without changing their operation paths."""
+    for module_name, class_name in GUARDED_DIALOG_CLASSES:
+        module = sys.modules.get(module_name)
+        dialog_class = getattr(module, class_name, None) if module is not None else None
+        if dialog_class is None or getattr(dialog_class, "_localization_installed", False):
+            continue
+        original_init = dialog_class.__init__
+
+        def localized_init(dialog, *args, _original_init=original_init, **kwargs):
+            _original_init(dialog, *args, **kwargs)
+            GLib.idle_add(translate_widget_tree, dialog)
+
+        dialog_class.__init__ = localized_init
+        dialog_class._localization_installed = True
 
 
 def install_localization(window_class):
     """Defer translation until appearance, tooltips, and composed controls exist."""
+    install_guarded_dialog_localization()
     if getattr(window_class, "_localization_installed", False):
         return
     original_init = window_class.__init__

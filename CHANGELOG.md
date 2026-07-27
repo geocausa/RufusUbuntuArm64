@@ -6,6 +6,7 @@
 - Added application-scoped System, Light, and Dark appearance selection with canonical persisted settings and safe restoration of the startup desktop preference.
 - Completed bounded main-window option/action tooltips while preserving workflow-specific disclosures.
 - Added a standard GNU gettext runtime, deterministic primary-interface POT, safe English fallback, and exact post-composition translation for reviewed static main-window, tooltip, appearance, and accessibility text while keeping machine and destructive-operation contracts byte-stable.
+- Extended exact static localization to the guarded data-only formatter and FreeDOS dialog shells while preserving generated confirmation phrases, identities, dynamic plans, reports, and operation paths byte-for-byte.
 
 ## 0.14.0 — 2026-07-26
 

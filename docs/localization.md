@@ -1,6 +1,6 @@
 # RufusArm64 localization
 
-RufusArm64 uses the standard GNU gettext domain `rufusarm64` for its bounded primary GTK interface.
+RufusArm64 uses the standard GNU gettext domain `rufusarm64` for a bounded set of reviewed GTK interface text.
 
 ## Runtime catalog location
 
@@ -28,7 +28,7 @@ The Debian package installs that template as documentation at:
 
 ## Updating the template
 
-Primary-shell strings are explicitly marked in `gui/rufusarm64_i18n.py`. Regenerate and verify the deterministic template with:
+Reviewed strings are explicitly marked in `gui/rufusarm64_i18n.py`. Regenerate and verify the deterministic template with:
 
 ```bash
 python3 scripts/update-pot.py
@@ -36,6 +36,12 @@ python3 scripts/update-pot.py --check
 ```
 
 The generator deliberately omits timestamps, absolute paths, host facts, and line-number-dependent references so clean builds produce the same bytes.
+
+## Current interface coverage
+
+The runtime translates reviewed static main-window headings, labels, primary actions, appearance wording, main-control tooltips, and related accessibility names/descriptions after the composed window exists.
+
+It also wraps the already-imported guarded data-only formatter and FreeDOS dialog classes centrally. After each original constructor has completed, one deferred exact-match pass covers the opening dialog title, heading, static explanatory and warning labels, control labels, entry placeholders, initial progress text, and initial empty-report text. The dialog modules themselves do not import localization code, so their operation and confirmation paths remain unchanged.
 
 ## Translator contract
 
@@ -45,10 +51,9 @@ The generator deliberately omits timestamps, absolute paths, host facts, and lin
 - Do not add Pango markup. RufusArm64 escapes translated text before restoring reviewed heading markup.
 - Keep filesystem and platform names such as FAT32, NTFS, UEFI, ARM64, GPT, and MBR recognizable.
 - Do not translate examples into instructions that imply boot, Secure Boot, hardware, or vendor compatibility beyond the English source claim.
+- Wording that describes an exact confirmation phrase may be translated, but the generated `FORMAT ...` and `WRITE FREEDOS ...` values themselves must never be added to a catalog.
 
 ## Safety boundary
-
-This first localization tranche covers reviewed static primary-window headings, labels, primary actions, appearance wording, main-control tooltips, and related accessibility names/descriptions. Translation is applied only after the composed GTK window and its tooltip completion pass exist.
 
 The following remain byte-stable and outside the translation catalog:
 
@@ -56,10 +61,11 @@ The following remain byte-stable and outside the translation catalog:
 - command-line flags and helper protocols;
 - source or target device paths and identity tokens;
 - filesystem identifiers used by planners and reports;
-- exact destructive confirmation phrases;
+- generated destructive confirmation phrases and comparison logic;
+- selected volume-label values and generated plan/report summaries;
 - diagnostic field names and privileged-helper errors;
-- dynamic operation status and evidence records.
+- dynamic operation status, progress evidence, and completion records.
 
 Consequently, localization cannot change selected values, widget sensitivity, signal wiring, identity binding, privilege separation, confirmation matching, cancellation, execution, synchronization, verification, or report parsing.
 
-Broader dialog migration, dynamic status/diagnostic localization, plural review, and complete translation-aware accessibility review remain later Stage 4 work.
+Broader secondary-dialog migration, dynamic status/diagnostic localization, plural review, completed language packs, and complete translation-aware accessibility review remain later Stage 4 work.

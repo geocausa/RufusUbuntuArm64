@@ -8,6 +8,7 @@ Status: Stage 4 development branch; not a published release.
 - Application-scoped GTK appearance selection with canonical **System**, **Light**, and **Dark** modes.
 - Complete main-window option and primary-action tooltips, applied after every composed integration while preserving more specific existing disclosures.
 - A bounded GNU gettext runtime and deterministic `po/rufusarm64.pot` source catalog for primary-window headings, labels, actions, appearance wording, main-control tooltips, and related accessibility metadata.
+- Static opening-state localization for the guarded data-only formatter and FreeDOS dialogs, including titles, headings, controls, placeholders, progress text, and initial report text.
 
 ## Appearance, tooltip, and localization contract
 
@@ -19,13 +20,14 @@ Status: Stage 4 development branch; not a published release.
 - Every main image, target, persistence, Windows-layout, diagnostics, appearance, and primary action control has a bounded purpose/safety tooltip.
 - Tooltip completion runs only after the complete composed window exists and never replaces a more specific tooltip supplied by an individual workflow.
 - Localization loads the standard `rufusarm64` gettext domain and safely keeps the reviewed English source text when no valid catalog exists.
-- Translation runs after composed construction and tooltip completion, and only exact admitted static messages are eligible.
-- Machine-readable JSON, command flags, paths, identities, filesystem planner values, exact destructive confirmation phrases, diagnostic/report schemas, and dynamic evidence remain byte-stable and untranslated.
+- Translation runs only after reviewed GTK construction has completed, and only exact admitted static messages are eligible.
+- The guarded formatter and FreeDOS dialog classes are wrapped centrally after import; their original constructors, signal paths, identity binding, and execution code remain unchanged.
+- Generated `FORMAT ...` and `WRITE FREEDOS ...` confirmation phrases, comparison logic, selected values, machine-readable JSON, command flags, paths, identities, filesystem planner values, diagnostic/report schemas, and dynamic evidence remain byte-stable and untranslated.
 - These presentation changes do not alter device/image identities, widget sensitivity, signal wiring, destructive confirmation, privilege separation, cancellation, verification, synchronization, or reports.
 
 ## Remaining Stage 4 scope
 
-- Broader dialog and dynamic status/diagnostic catalog migration, plural review, and complete translation-aware accessibility review.
+- Broader secondary-dialog and dynamic status/diagnostic catalog migration, plural review, completed language packs, and complete translation-aware accessibility review.
 - Remaining portable distribution and filesystem work admitted by the pinned parity audit.
 - UDF formatting remains excluded until a Linux-native post-format checker satisfies the formatter's read-only verification contract.
 - ReFS remains non-portable without a verified Linux-native formatter.
