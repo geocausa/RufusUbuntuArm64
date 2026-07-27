@@ -15,6 +15,8 @@ from test_i18n import load_i18n_module, write_mo
 
 FORMAT_SOURCE = GUI_DIR / "rufusarm64_drive_backup_formats.py"
 ISO_SOURCE = GUI_DIR / "rufusarm64_drive_backup_iso.py"
+BACKUP_CONTRACT_SOURCE = GUI_DIR / "rufusarm64_device_qualify.py"
+ISO_CONTRACT_SOURCE = GUI_DIR / "rufusarm64_iso_capture.py"
 
 
 def load_format_module(i18n):
@@ -129,6 +131,28 @@ class BackupFormatLocalizationTests(unittest.TestCase):
         self.assertIn('formats._FORMAT_EXTENSIONS["iso"] = ".iso"', iso)
         self.assertNotIn("append(_format_presentation_label(format_name),", text)
         self.assertNotIn("get_active_text()", text)
+
+    def test_planners_reports_and_confirmation_contracts_remain_localization_free(self):
+        backup_contract = BACKUP_CONTRACT_SOURCE.read_text(encoding="utf-8")
+        iso_contract = ISO_CONTRACT_SOURCE.read_text(encoding="utf-8")
+        self.assertNotIn("rufusarm64_i18n", backup_contract)
+        self.assertNotIn("rufusarm64_i18n", iso_contract)
+        for marker in (
+            "backup_confirmation_phrase",
+            '"--format"',
+            '"--expected-identity"',
+            "backup_normalize_plan",
+            "backup_normalize_report",
+        ):
+            self.assertIn(marker, backup_contract)
+        for marker in (
+            "confirmation_phrase",
+            '"--expected-source-node"',
+            '"--expected-source-mount"',
+            "normalize_plan",
+            "normalize_report",
+        ):
+            self.assertIn(marker, iso_contract)
 
 
 if __name__ == "__main__":
