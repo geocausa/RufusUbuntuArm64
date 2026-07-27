@@ -31,9 +31,11 @@ class DeviceBackupDialogStructureTests(unittest.TestCase):
         self.assertIn("run_rufusarm64", self.launcher_source)
         self.assertIn("install_drive_backup_formats", self.launcher_source)
         self.assertIn("install_drive_backup_iso", self.launcher_source)
-        self.assertIn("/usr/bin/python3 -I -c", self.launcher_source)
+        self.assertIn('exec /usr/bin/python3 -I - "$@"', self.launcher_source)
+        self.assertIn('gi.require_version("Gtk", "3.0")', self.launcher_source)
         self.assertIn('sys.path.insert(0, "/usr/lib/rufusarm64")', self.launcher_source)
-        self.assertIn('run_rufusarm64(["rufusarm64", *sys.argv[1:]])', self.launcher_source)
+        self.assertIn("install_appearance(RufusWindow)", self.launcher_source)
+        self.assertIn('return run_rufusarm64(["rufusarm64", *arguments])', self.launcher_source)
         self.assertNotIn("PYTHONPATH", self.launcher_source)
         self.assertNotIn("exec /usr/bin/python3 /usr/lib/rufusarm64/rufusarm64.py", self.launcher_source)
 
