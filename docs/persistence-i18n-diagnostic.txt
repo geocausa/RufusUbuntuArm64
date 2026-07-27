@@ -1,0 +1,16 @@
+$ python3 scripts/update-pot.py
+exit=0
+STDOUT:
+
+STDERR:
+
+
+$ python3 -m py_compile gui/rufusarm64_i18n.py gui/test_i18n.py gui/test_persistence_wizard_i18n.py
+exit=1
+STDOUT:
+
+STDERR:
+  File "gui/test_persistence_wizard_i18n.py", line 165
+    "target_identity = str(device.get("identity") or "").strip()",
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+SyntaxError: invalid syntax. Perhaps you forgot a comma?
