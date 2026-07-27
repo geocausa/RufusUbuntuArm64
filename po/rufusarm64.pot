@@ -14,6 +14,10 @@ msgid "About RufusArm64"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Account name"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Advanced drive properties"
 msgstr ""
 
@@ -26,11 +30,19 @@ msgid "After writing, read copied data back from the USB and compare it with aut
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Allows Windows setup to continue with a local account when supported by that Windows build."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Appearance"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Apply"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Apply Rufus Quality of Life changes"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -262,6 +274,10 @@ msgid "Cluster size"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Continue"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Copy"
 msgstr ""
 
@@ -286,6 +302,10 @@ msgid "Create a bootable USB drive"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Create a local administrator account"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Create deterministic FreeDOS 1.4 media for x86 BIOS or Legacy/CSM systems."
 msgstr ""
 
@@ -294,11 +314,23 @@ msgid "Create non-bootable media"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Customize Windows Setup"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Dark"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Details and diagnostics"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Disable automatic BitLocker device-encryption provisioning"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Does not decrypt an existing installation. It prevents automatic encryption during this new setup where supported."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -323,6 +355,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Erase the selected drive and create one verified data-only filesystem without claiming bootability."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Every option below is optional. RufusArm64 creates an autounattend.xml file on the USB; the Windows ISO itself is not changed. Leave everything unchecked for standard Microsoft setup."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -403,6 +439,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "MD5 and SHA-1 are included only for comparison with legacy published values. They are not used by RufusArm64 for trust, signatures, downloads, or write assurance."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Microsoft can change unattended-setup behavior between Windows releases. RufusArm64 validates the answer file, but Windows may ignore an option that a future build no longer supports."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -534,6 +574,18 @@ msgid "Refresh USB drives"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Remove TPM 2.0, Secure Boot and minimum-RAM checks"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Remove the Microsoft online-account requirement"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Removes bundled OneDrive setup, Outlook and Teams, and disables Copilot, web search, consumer-content suggestions and related Microsoft promotions."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Request safe cancellation of the active operation and wait for its final state and cleanup."
 msgstr ""
 
@@ -642,11 +694,19 @@ msgid "Set the validated volume label used for the newly created Windows install
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Sets Windows Setup privacy choices and disables advertising/consumer-content policies where supported."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Show application and licence information. Shortcut F1."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Shows the detected image type, selected write path, and bounded compatibility or boot limitations."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Skip privacy prompts and reduce initial data collection/recommendations"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -726,6 +786,14 @@ msgid "USB target drive"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Use this Ubuntu user's regional settings"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Useful for unsupported PCs. This normally is not needed on a Surface Pro 11 X1E."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Validate UEFI Media…"
 msgstr ""
 
@@ -743,6 +811,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Windows drivers"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Windows installation options"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py

@@ -113,6 +113,7 @@
 - Static opening-state localization for descriptor-bound read-only drive-image backup without changing publication or verification
 - Static opening-state localization for authenticated experimental FFU review/restore without changing trust, target, evidence, or verification
 - Presentation-only localization for drive-backup format selection and Save-dialog chrome without changing canonical IDs or paths
+- Static-shell localization for Windows Setup options without changing capability gating, previous choices, or answer-file values
 - Broader secondary-dialog/status localization, plural review, completed language packs, and translation-aware accessibility work selected from the pinned upstream audit
 - Remaining portable filesystem and distribution work selected from the pinned upstream audit
 - No weakening of identity, confirmation, cancellation, synchronization, or verification gates

@@ -53,6 +53,8 @@ The authenticated experimental FFU dialog is limited to its static opening shell
 
 Drive-backup format presentation translates only the visible Image format heading, labels, selector tooltip, and Save-dialog chrome. Canonical IDs (`raw`, `vhd`, `vhdx`, `iso`), extensions, selected IDs, generated filenames, destination paths, plans, reports, confirmation values, and operation evidence remain untranslated.
 
+Windows Setup options translate only the reviewed static dialog shell. Media generation/family/architecture/edition details, capability summaries and refusal reasons, enabled states, previous selections, the local username and placeholder, locale/time-zone identifiers, option keys, and generated `autounattend.xml` values remain untranslated.
+
 ## Translator contract
 
 - Translate the meaning of the complete source message; do not add new behavior or promises.
