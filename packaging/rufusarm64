@@ -1,4 +1,9 @@
-#!/usr/bin/python3 -I
+#!/bin/sh
+# GTK 3 is pinned before any packaged dialog import. The embedded Python entry point also installs app-scoped appearance controls.
+if [ "${1:-}" = "--persistence" ]; then
+  shift
+fi
+exec /usr/bin/python3 -I - "$@" <<'PYRUFUSARM64'
 """Isolated GTK 3 launcher and application-scoped appearance integration."""
 
 import json
@@ -218,3 +223,4 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
+PYRUFUSARM64
