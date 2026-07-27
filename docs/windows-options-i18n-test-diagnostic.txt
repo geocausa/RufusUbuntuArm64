@@ -1,0 +1,37 @@
+$ python3 scripts/update-pot.py
+exit=0
+STDOUT:
+
+STDERR:
+
+
+$ python3 -m py_compile gui/rufusarm64_i18n.py gui/test_windows_options_dialog_i18n.py
+exit=0
+STDOUT:
+
+STDERR:
+
+
+$ python3 -m unittest gui.test_windows_options_dialog_i18n gui.test_i18n gui.test_windows_qol_selection_scope
+exit=1
+STDOUT:
+
+STDERR:
+.F...........
+======================================================================
+FAIL: test_real_catalog_translates_static_shell_and_preserves_machine_derived_values (gui.test_windows_options_dialog_i18n.WindowsOptionsDialogLocalizationTests.test_real_catalog_translates_static_shell_and_preserves_machine_derived_values)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/RufusUbuntuArm64/RufusUbuntuArm64/gui/test_windows_options_dialog_i18n.py", line 110, in test_real_catalog_translates_static_shell_and_preserves_machine_derived_values
+    self.assertEqual(
+AssertionError: "<spa[18 chars]ght='bold'>Personnaliser l&#x27;installation de Windows</span>" != "<spa[18 chars]ght='bold'>Personnaliser l'installation de Windows</span>"
+- <span size='large' weight='bold'>Personnaliser l&#x27;installation de Windows</span>
+?                                                 ^^^^^^
++ <span size='large' weight='bold'>Personnaliser l'installation de Windows</span>
+?                                                 ^
+
+
+----------------------------------------------------------------------
+Ran 13 tests in 0.118s
+
+FAILED (failures=1)
