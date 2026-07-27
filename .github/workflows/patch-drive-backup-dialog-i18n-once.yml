@@ -1,0 +1,134 @@
+name: Patch drive backup dialog localization once
+
+on:
+  push:
+    branches:
+      - feature/gettext-drive-backup-dialog
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+          ref: feature/gettext-drive-backup-dialog
+      - name: Extend bounded gettext coverage to drive backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          i18n = Path("gui/rufusarm64_i18n.py")
+          text = i18n.read_text(encoding="utf-8")
+          anchor = '    ("rufusarm64_device_qualify_dialog", "DeviceQualificationDialog"),\n'
+          replacement = anchor + '    ("rufusarm64_device_qualify_dialog", "DriveImageBackupDialog"),\n'
+          if text.count(anchor) != 1:
+              raise SystemExit("backup secondary class anchor changed")
+          text = text.replace(anchor, replacement, 1)
+          additions = {
+              '    N_("Cancel creation"),\n': '    N_("Cancel backup"),\n    N_("Cancel creation"),\n',
+              '    N_("Choose an image and a removable USB drive. Raw, ISOHybrid, compressed, and common virtual-disk images are supported. Windows installation ISOs can use GPT or MBR layouts, FAT32/NTFS selection, WIM splitting, and UEFI:NTFS."),\n': '    N_("Choose a destination file."),\n    N_("Choose a new .img path"),\n    N_("Choose a new destination path to calculate the read-only plan."),\n    N_("Choose an image and a removable USB drive. Raw, ISOHybrid, compressed, and common virtual-disk images are supported. Windows installation ISOs can use GPT or MBR layouts, FAT32/NTFS selection, WIM splitting, and UEFI:NTFS."),\n',
+              '    N_("Choose Automatic, FAT32, or NTFS for supported Windows installation media."),\n': '    N_("Choose…"),\n    N_("Choose Automatic, FAT32, or NTFS for supported Windows installation media."),\n',
+              '    N_("No backup report is available yet."),\n': '    N_("No backup report is available yet."),\n',
+              '    N_("No checksums have been calculated."),\n': '    N_("No backup report is available yet."),\n    N_("No checksums have been calculated."),\n',
+              '    N_("NTFS"),\n': '    N_("New image file"),\n    N_("NTFS"),\n',
+              '    N_("Save a verified raw, dynamic VHD/VHDX, or one-filesystem ISO/UDF image of the selected drive."),\n': '    N_("Save a byte-for-byte image of the selected removable drive. The source is opened read-only, but its mounted filesystems may be unmounted briefly to obtain a coherent image. Create USB and Check USB are separate workflows."),\n    N_("Save a verified raw, dynamic VHD/VHDX, or one-filesystem ISO/UDF image of the selected drive."),\n',
+              '    N_("Save drive image…"),\n': '    N_("Save drive image"),\n    N_("Save drive image…"),\n',
+              '    N_("The exact FORMAT phrase appears after the read-only plan is validated."),\n': '    N_("The exact confirmation phrase appears after planning."),\n    N_("The exact FORMAT phrase appears after the read-only plan is validated."),\n',
+              '    N_("This is a separate destructive USB qualification test. It overwrites every tested region and does not preserve files or partitions. The normal Create USB workflow is not changed."),\n': '    N_("The final image path is created only after every planned byte has been copied, synchronized, SHA-256 hashed, and revalidated. Existing files and symbolic links are never replaced."),\n    N_("This is a separate destructive USB qualification test. It overwrites every tested region and does not preserve files or partitions. The normal Create USB workflow is not changed."),\n',
+              '    N_("Type the exact FORMAT phrase"),\n': '    N_("Type the exact SAVE phrase"),\n    N_("Type the exact FORMAT phrase"),\n',
+          }
+          for source, replacement in additions.items():
+              if source.startswith('    N_("No backup'):
+                  continue
+              if text.count(source) != 1:
+                  raise SystemExit(f"backup catalog anchor changed: {source!r}")
+              text = text.replace(source, replacement, 1)
+          i18n.write_text(text, encoding="utf-8")
+
+          tests = Path("gui/test_i18n.py")
+          text = tests.read_text(encoding="utf-8")
+          old_names = '        names = ("rufusarm64_checksums", "rufusarm64_device_qualify_dialog", "rufusarm64_nonbootable_dialog", "rufusarm64_freedos_dialog")\n'
+          new_names = '        names = ("rufusarm64_checksums", "rufusarm64_device_qualify_dialog", "rufusarm64_nonbootable_dialog", "rufusarm64_freedos_dialog")\n'
+          old_expected = '            self.assertEqual([dialog.marker for dialog in dialogs], ["dialog-0", "dialog-1", "dialog-2", "dialog-3"])\n'
+          new_expected = '            self.assertEqual([dialog.marker for dialog in dialogs], ["dialog-0", "dialog-1", "dialog-2", "dialog-3", "dialog-4"])\n'
+          if text.count(old_names) != 1 or text.count(old_expected) != 1:
+              raise SystemExit("backup secondary installer test anchor changed")
+          text = text.replace(old_names, new_names, 1)
+          text = text.replace(old_expected, new_expected, 1)
+          pot_anchor = '        self.assertIn(\'msgid "Check USB drive"\', text)\n'
+          if text.count(pot_anchor) != 1:
+              raise SystemExit("backup POT test anchor changed")
+          text = text.replace(pot_anchor, pot_anchor + '        self.assertIn(\'msgid "Save drive image"\', text)\n', 1)
+          tests.write_text(text, encoding="utf-8")
+
+          for filename in ("gui/test_checksum_dialog_i18n.py", "gui/test_device_qualification_i18n.py"):
+              path = Path(filename)
+              value = path.read_text(encoding="utf-8")
+              anchor = '                ("rufusarm64_device_qualify_dialog", "DeviceQualificationDialog"),\n'
+              if value.count(anchor) != 1:
+                  raise SystemExit(f"backup exact-class test anchor changed: {filename}")
+              path.write_text(value.replace(anchor, anchor + '                ("rufusarm64_device_qualify_dialog", "DriveImageBackupDialog"),\n', 1), encoding="utf-8")
+
+          contract = Path("gui/test_guarded_dialog_i18n_contract.py")
+          text = contract.read_text(encoding="utf-8")
+          class_anchor = '            \'("rufusarm64_device_qualify_dialog", "DeviceQualificationDialog")\',\n'
+          if text.count(class_anchor) != 1:
+              raise SystemExit("backup contract class anchor changed")
+          text = text.replace(class_anchor, class_anchor + '            \'("rufusarm64_device_qualify_dialog", "DriveImageBackupDialog")\',\n', 1)
+          marker_anchor = '            \'N_("Check USB drive")\',\n'
+          if text.count(marker_anchor) != 1:
+              raise SystemExit("backup contract marker anchor changed")
+          contract.write_text(text.replace(marker_anchor, marker_anchor + '            \'N_("Save drive image")\',\n', 1), encoding="utf-8")
+
+          updates = (
+              (
+                  "docs/release-0.15.0.md",
+                  "- Static opening-state localization for destructive USB qualification while preserving profile IDs, target identity, generated erase confirmation, plans, JSON evidence, and execution.\n",
+                  "- Static opening-state localization for destructive USB qualification while preserving profile IDs, target identity, generated erase confirmation, plans, JSON evidence, and execution.\n- Static opening-state localization for read-only drive-image backup while preserving source/destination binding, generated SAVE confirmation, progress accounting, reports, publication, and process ownership.\n",
+              ),
+              (
+                  "docs/localization.md",
+                  "The destructive USB qualification dialog is limited to static opening-shell text. Canonical `quick` and `full` profile IDs, their current combo presentation labels, the selected target and identity, generated `ERASE <device>` text, exact comparison, plans, JSON reports, diagnostics, save paths, and dynamic status remain untranslated.\n",
+                  "The destructive USB qualification dialog is limited to static opening-shell text. Canonical `quick` and `full` profile IDs, their current combo presentation labels, the selected target and identity, generated `ERASE <device>` text, exact comparison, plans, JSON reports, diagnostics, save paths, and dynamic status remain untranslated.\n\nThe read-only drive-image backup dialog follows the same static-shell boundary. Source and destination paths, remembered directories, generated `SAVE ...` text, exact comparison, plans, byte totals, progress evidence, JSON reports, diagnostics, ownership/type/size checks, no-replace publication, process-group cancellation, parent-window logs, and dynamic status remain untranslated.\n",
+              ),
+              (
+                  "ROADMAP.md",
+                  "- Static opening-state localization for identity-bound destructive USB qualification without changing profile IDs or evidence\n",
+                  "- Static opening-state localization for identity-bound destructive USB qualification without changing profile IDs or evidence\n- Static opening-state localization for descriptor-bound read-only drive-image backup without changing publication or verification\n",
+              ),
+              (
+                  "CHANGELOG.md",
+                  "- Extended exact static localization to destructive USB qualification while preserving profile IDs, target identity, generated erase confirmation, plans, JSON evidence, file rules, execution, and verification byte-for-byte.\n",
+                  "- Extended exact static localization to destructive USB qualification while preserving profile IDs, target identity, generated erase confirmation, plans, JSON evidence, file rules, execution, and verification byte-for-byte.\n- Extended exact static localization to read-only drive-image backup while preserving source/destination binding, generated SAVE confirmation, byte accounting, reports, no-replace publication, ownership checks, cancellation, and verification byte-for-byte.\n",
+              ),
+          )
+          for filename, source, replacement in updates:
+              path = Path(filename)
+              value = path.read_text(encoding="utf-8")
+              if value.count(source) != 1:
+                  raise SystemExit(f"backup documentation anchor changed: {filename}")
+              path.write_text(value.replace(source, replacement, 1), encoding="utf-8")
+
+          parity = Path("docs/upstream-rufus-parity.json")
+          text = parity.read_text(encoding="utf-8")
+          old = "A standard GNU gettext runtime, deterministic source-only POT, package closure, safe English fallback, and exact post-construction translation are implemented for the primary window plus static opening shells for guarded data-only formatting, FreeDOS creation, read-only image checksums, and destructive USB qualification. Generated confirmation values, comparison logic, profile IDs, selected paths/values, identities, calculated digests, plans, reports, machine-readable JSON, flags, dynamic status, diagnostics, and report schemas remain byte-stable. Broader secondary-dialog and dynamic status/diagnostic migration, plural review, completed language packs, and full translation-aware accessibility review remain planned."
+          new = "A standard GNU gettext runtime, deterministic source-only POT, package closure, safe English fallback, and exact post-construction translation are implemented for the primary window plus static opening shells for guarded data-only formatting, FreeDOS creation, read-only image checksums, destructive USB qualification, and read-only drive-image backup. Generated confirmation values, comparison logic, profile IDs, source/destination paths, identities, calculated digests, plans, byte/progress evidence, reports, machine-readable JSON, flags, publication checks, dynamic status, diagnostics, and report schemas remain byte-stable. Broader secondary-dialog and dynamic status/diagnostic migration, plural review, completed language packs, and full translation-aware accessibility review remain planned."
+          if text.count(old) != 1:
+              raise SystemExit("backup parity anchor changed")
+          parity.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+          python3 scripts/update-pot.py
+          python3 -m py_compile gui/rufusarm64_i18n.py gui/test_i18n.py gui/test_checksum_dialog_i18n.py gui/test_device_qualification_i18n.py gui/test_guarded_dialog_i18n_contract.py
+          git rm .github/workflows/patch-drive-backup-dialog-i18n-once.yml
+          git add CHANGELOG.md ROADMAP.md docs/localization.md docs/release-0.15.0.md docs/upstream-rufus-parity.json gui/rufusarm64_i18n.py gui/test_i18n.py gui/test_checksum_dialog_i18n.py gui/test_device_qualification_i18n.py gui/test_guarded_dialog_i18n_contract.py po/rufusarm64.pot
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "i18n: translate the drive-image backup dialog shell"
+          git push origin HEAD:feature/gettext-drive-backup-dialog
