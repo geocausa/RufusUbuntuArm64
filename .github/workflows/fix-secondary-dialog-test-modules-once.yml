@@ -1,0 +1,71 @@
+name: Fix secondary dialog test modules once
+
+on:
+  push:
+    branches:
+      - feature/gettext-drive-backup-dialog
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+          ref: feature/gettext-drive-backup-dialog
+      - name: Reuse fake modules when multiple reviewed classes share one module
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("gui/test_i18n.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''            classes = []
+              for module_name, class_name in module.SECONDARY_DIALOG_CLASSES:
+                  fake_module = types.ModuleType(module_name)
+
+                  class Dialog(Window):
+                      def __init__(self, marker):
+                          super().__init__(title=marker)
+                          self.marker = marker
+
+                  Dialog.__name__ = class_name
+                  setattr(fake_module, class_name, Dialog)
+                  sys.modules[module_name] = fake_module
+                  classes.append(Dialog)
+          '''
+          new = '''            classes = []
+              fake_modules = {}
+              for module_name, class_name in module.SECONDARY_DIALOG_CLASSES:
+                  fake_module = fake_modules.get(module_name)
+                  if fake_module is None:
+                      fake_module = types.ModuleType(module_name)
+                      fake_modules[module_name] = fake_module
+                      sys.modules[module_name] = fake_module
+
+                  class Dialog(Window):
+                      def __init__(self, marker):
+                          super().__init__(title=marker)
+                          self.marker = marker
+
+                  Dialog.__name__ = class_name
+                  setattr(fake_module, class_name, Dialog)
+                  classes.append(Dialog)
+          '''
+          if text.count(old) != 1:
+              raise SystemExit("secondary dialog fake-module test block changed")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+          python3 -m py_compile gui/test_i18n.py
+          git rm .github/workflows/fix-secondary-dialog-test-modules-once.yml
+          git add gui/test_i18n.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "test: support multiple localized classes per module"
+          git push origin HEAD:feature/gettext-drive-backup-dialog
