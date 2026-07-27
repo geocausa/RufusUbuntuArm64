@@ -10,6 +10,7 @@
 - Extended exact static localization to the read-only image checksum dialog while preserving selected paths, calculated digests, report and clipboard content, helper execution, and diagnostic logging byte-for-byte.
 - Extended exact static localization to destructive USB qualification while preserving profile IDs, target identity, generated erase confirmation, plans, JSON evidence, file rules, execution, and verification byte-for-byte.
 - Extended exact static localization to read-only drive-image backup while preserving source/destination binding, generated SAVE confirmation, byte accounting, reports, no-replace publication, ownership checks, cancellation, and verification byte-for-byte.
+- Extended exact static localization to authenticated experimental FFU review/restore while preserving trust inputs, source/target identity, generated restore confirmation, immutable evidence, privileged execution, cancellation, and complete verification byte-for-byte.
 
 ## 0.14.0 — 2026-07-26
 

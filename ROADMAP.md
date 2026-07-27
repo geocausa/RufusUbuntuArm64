@@ -111,6 +111,7 @@
 - Static opening-state localization for the descriptor-bound read-only image checksum dialog
 - Static opening-state localization for identity-bound destructive USB qualification without changing profile IDs or evidence
 - Static opening-state localization for descriptor-bound read-only drive-image backup without changing publication or verification
+- Static opening-state localization for authenticated experimental FFU review/restore without changing trust, target, evidence, or verification
 - Broader secondary-dialog/status localization, plural review, completed language packs, and translation-aware accessibility work selected from the pinned upstream audit
 - Remaining portable filesystem and distribution work selected from the pinned upstream audit
 - No weakening of identity, confirmation, cancellation, synchronization, or verification gates

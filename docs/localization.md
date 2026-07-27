@@ -49,6 +49,8 @@ The destructive USB qualification dialog is limited to static opening-shell text
 
 The read-only drive-image backup dialog follows the same static-shell boundary. Source and destination paths, remembered directories, generated `SAVE ...` text, exact comparison, plans, byte totals, progress evidence, JSON reports, diagnostics, ownership/type/size checks, no-replace publication, process-group cancellation, parent-window logs, and dynamic status remain untranslated.
 
+The authenticated experimental FFU dialog is limited to its static opening shell. Warning markup, image/target summary, trust and policy paths, file-chooser text, generated `RESTORE AUTHENTICATED FFU ...` confirmation, exact comparison, immutable review evidence, restore reports, diagnostics, dynamic status, cancellation evidence, and final safety messages remain untranslated.
+
 ## Translator contract
 
 - Translate the meaning of the complete source message; do not add new behavior or promises.
@@ -57,7 +59,7 @@ The read-only drive-image backup dialog follows the same static-shell boundary. 
 - Do not add Pango markup. RufusArm64 escapes translated text before restoring reviewed heading markup.
 - Keep filesystem and platform names such as FAT32, NTFS, UEFI, ARM64, GPT, and MBR recognizable.
 - Do not translate examples into instructions that imply boot, Secure Boot, hardware, or vendor compatibility beyond the English source claim.
-- Wording that describes an exact confirmation phrase may be translated, but the generated `FORMAT ...` and `WRITE FREEDOS ...` values themselves must never be added to a catalog.
+- Wording that describes an exact confirmation phrase may be translated, but generated `FORMAT ...`, `WRITE FREEDOS ...`, `SAVE ...`, and `RESTORE AUTHENTICATED FFU ...` values themselves must never be added to a catalog.
 
 ## Safety boundary
 
