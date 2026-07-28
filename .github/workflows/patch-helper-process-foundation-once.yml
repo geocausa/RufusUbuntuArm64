@@ -1,9 +1,9 @@
 name: Patch helper process foundation once
 
 on:
-  push:
+  pull_request:
     branches:
-      - feature/helper-process-cleanup
+      - stage4/0.15.0
 
 permissions:
   contents: write
