@@ -162,17 +162,24 @@ class BoundedLineTests(unittest.TestCase):
         self.assertIsNotNone(process.returncode)
         self.assertTrue(process.stdout.closed)
 
-    def test_total_limit_and_non_utf8_are_rejected(self):
-        process = self.start("print('12345678'); print('12345678')")
+    def test_total_limit_is_rejected_and_process_is_reaped(self):
+        process = self.start(
+            "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+            "print('12345678', flush=True); print('12345678', flush=True); time.sleep(30)"
+        )
         with self.assertRaises(OutputLimitError):
-            list(iter_bounded_utf8_lines(process.stdout, line_limit=16, total_limit=12))
+            list(iter_bounded_utf8_lines(process.stdout, line_limit=16, total_limit=17))
         terminate_and_reap(process, terminate_timeout=0.1, kill_timeout=2)
+        self.assertIsNotNone(process.returncode)
+        self.assertTrue(process.stdout.closed)
 
-        process = self.start("import os; os.write(1, b'\\xff\\n')")
+    def test_non_utf8_line_is_rejected_after_reaping(self):
+        process = self.start("import os; os.write(1, bytes([255, 10]))")
         with self.assertRaisesRegex(ValueError, "non-UTF-8"):
             list(iter_bounded_utf8_lines(process.stdout, line_limit=16, total_limit=32))
         self.assertEqual(process.wait(timeout=5), 0)
         process.stdout.close()
+        self.assertTrue(process.stdout.closed)
 
 
 if __name__ == "__main__":

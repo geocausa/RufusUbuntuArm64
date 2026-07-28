@@ -501,6 +501,81 @@
       "invariant": "The operation returns failure and no success list, the earlier owned patch remains visible as incomplete-media evidence, the outside symbolic-link target is unchanged, and no owned temporary patch file remains."
     },
     {
+      "id": "helper-process-group-escalation",
+      "boundary": "helper-process-cleanup",
+      "component": "package-owned GUI helper process groups",
+      "failure_mode": "a helper and descendant ignore SIGTERM after UI cancellation",
+      "phase": "process-interruption",
+      "status": "automated",
+      "test_file": "gui/test_process_cleanup.py",
+      "test_name": "test_schedule_escalates_group_when_parent_and_descendant_ignore_sigterm",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "Only the owned new-session process group is signalled, SIGKILL escalation terminates an unresponsive descendant, and the parent is reaped."
+    },
+    {
+      "id": "helper-bounded-capture-reaping",
+      "boundary": "helper-process-cleanup",
+      "component": "bounded helper stdout and stderr capture",
+      "failure_mode": "stdout, stderr, timeout, or UTF-8 evidence bounds are exceeded",
+      "phase": "process-interruption",
+      "status": "automated",
+      "test_file": "gui/test_process_cleanup.py",
+      "test_name": "test_stdout_and_stderr_limits_force_owned_group_shutdown",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "The owned group is terminated and reaped, both pipes close, and oversized output can never be accepted as final evidence."
+    },
+    {
+      "id": "helper-bounded-line-stream",
+      "boundary": "helper-process-cleanup",
+      "component": "streaming JSON and diagnostic helper output",
+      "failure_mode": "one line or the complete stream exceeds reviewed limits or contains non-UTF-8 data",
+      "phase": "process-interruption",
+      "status": "automated",
+      "test_file": "gui/test_process_cleanup.py",
+      "test_name": "test_total_limit_is_rejected_and_process_is_reaped",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "Oversized records are rejected before JSON or log handling and the helper is forcibly reaped without retaining an open output descriptor."
+    },
+    {
+      "id": "persistence-helper-bounded-workers",
+      "boundary": "helper-process-cleanup",
+      "component": "persistent live USB analysis and creation GUI workers",
+      "failure_mode": "analysis output is unbounded or creation emits an oversized or non-UTF-8 progress record while cancellation races process startup",
+      "phase": "process-interruption",
+      "status": "automated",
+      "test_file": "gui/test_source_structure.py",
+      "test_name": "test_slow_gui_subprocesses_use_workers_and_generation_guards",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "Both workers launch owned sessions, analysis uses bounded capture, creation uses bounded line streaming, exceptions reap the group, and cancellation schedules forced escalation."
+    },
+    {
+      "id": "ffu-helper-bounded-evidence",
+      "boundary": "helper-process-cleanup",
+      "component": "authenticated FFU review and restore helpers",
+      "failure_mode": "evidence or diagnostics exceed bounds, time out, or return non-UTF-8 data",
+      "phase": "process-interruption",
+      "status": "automated",
+      "test_file": "gui/test_ffu_json.py",
+      "test_name": "test_timeout",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "The shared bounded capture terminates and reaps the FFU helper before returning an error, so malformed or incomplete evidence cannot become success."
+    },
+    {
       "id": "physical-power-removal",
       "boundary": "physical-power-loss",
       "component": "whole-device destructive workflows",
@@ -545,8 +620,8 @@
       "boundary": "helper-process-cleanup",
       "component": "GTK-launched privileged and read-only helpers",
       "failure_mode": "the helper exits, hangs, is cancelled, or its process group is terminated while descriptors and temporary state are live",
-      "reason": "Individual dialogs pin process-group cancellation contracts, but cross-workflow cleanup and retained-evidence behavior are not yet represented by one executable qualification set.",
-      "planned_test_kind": "subprocess fixtures covering SIGTERM, SIGKILL escalation, bounded output, descriptor closure, and temporary-state ownership"
+      "reason": "The shared process-group, bounded-capture, line-stream, FFU, and persistence paths are executable, but primary acquisition/writer and the remaining guarded streaming dialogs still need migration to the shared utility before this boundary can close.",
+      "planned_test_kind": "migrate remaining GTK workers to the package-owned utility and map each workflow-specific final-evidence contract"
     }
   ]
 }

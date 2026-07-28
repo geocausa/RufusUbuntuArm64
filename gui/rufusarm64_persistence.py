@@ -3,7 +3,6 @@
 
 import json
 import os
-import signal
 import subprocess
 import tempfile
 import threading
@@ -26,6 +25,18 @@ from rufusarm64_persistence_logic import (
     user_plan_summary,
     completion_checklist,
 )
+from rufusarm64_process import (
+    communicate_bounded,
+    iter_bounded_utf8_lines,
+    schedule_process_group_termination,
+    terminate_and_reap,
+    terminate_process_group,
+)
+
+ANALYSIS_STDOUT_LIMIT = 32 * 1024 * 1024
+ANALYSIS_STDERR_LIMIT = 1024 * 1024
+CREATE_LINE_LIMIT = 1024 * 1024
+CREATE_TOTAL_LIMIT = 64 * 1024 * 1024
 
 APP_ID = "io.github.geocausa.RufusArm64.Persistence"
 HELPER = "/usr/lib/rufusarm64/rufusarm64-helper"
@@ -333,19 +344,37 @@ class Window(Gtk.ApplicationWindow):
     def run_analysis(self, command, key):
         process = None
         try:
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+            )
             self.process = process
-            stdout, stderr = process.communicate()
+            if self.cancel_requested and process.poll() is None:
+                schedule_process_group_termination(process, grace_seconds=5)
+            stdout, stderr = communicate_bounded(
+                process,
+                stdout_limit=ANALYSIS_STDOUT_LIMIT,
+                stderr_limit=ANALYSIS_STDERR_LIMIT,
+                timeout=300,
+                terminate=lambda force: terminate_process_group(process, force=force),
+                label="persistence analysis helper",
+            )
             code = process.returncode
             payload = json.loads(stdout) if code == 0 else {}
             error = (stderr.strip() or stdout.strip()) if code else ""
             GLib.idle_add(self.finish_analysis, code, payload, error, key)
         except Exception as exc:
+            if process is not None and process.poll() is None:
+                try:
+                    terminate_and_reap(process)
+                except (OSError, RuntimeError, ValueError):
+                    pass
             GLib.idle_add(self.finish_analysis, 1, {}, str(exc), key)
         finally:
             if self.process is process:
                 self.process = None
-
     def finish_analysis(self, code, payload, error, key):
         cancelled = self.cancel_requested
         self.cleanup_cancel()
@@ -445,9 +474,22 @@ class Window(Gtk.ApplicationWindow):
     def run_create(self, command):
         process = None
         try:
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True)
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                bufsize=0,
+                start_new_session=True,
+            )
             self.process = process
-            for raw in process.stdout or ():
+            if self.cancel_requested and process.poll() is None:
+                schedule_process_group_termination(process, grace_seconds=5)
+            for raw in iter_bounded_utf8_lines(
+                process.stdout,
+                line_limit=CREATE_LINE_LIMIT,
+                total_limit=CREATE_TOTAL_LIMIT,
+                label="persistence creation helper output",
+            ):
                 line = raw.strip()
                 if not line:
                     continue
@@ -457,15 +499,20 @@ class Window(Gtk.ApplicationWindow):
                     GLib.idle_add(self.append_log, line)
                 else:
                     GLib.idle_add(self.handle_event, event)
+            process.stdout.close()
             code = process.wait()
             GLib.idle_add(self.finish_create, code)
         except Exception as exc:
+            if process is not None:
+                try:
+                    terminate_and_reap(process)
+                except (OSError, RuntimeError, ValueError):
+                    pass
             GLib.idle_add(self.append_log, f"Persistent USB creation failed: {exc}")
             GLib.idle_add(self.finish_create, 1)
         finally:
             if self.process is process:
                 self.process = None
-
     def handle_event(self, event):
         message = str(event.get("message") or "")
         stage = str(event.get("stage") or "working")
@@ -559,10 +606,7 @@ class Window(Gtk.ApplicationWindow):
             except OSError as exc:
                 self.append_log(f"Could not create cancellation marker: {exc}")
         if self.process and self.process.poll() is None:
-            try:
-                os.killpg(self.process.pid, signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
-                pass
+            schedule_process_group_termination(self.process, grace_seconds=5)
 
     def cleanup_cancel(self):
         if self.cancel_path:
