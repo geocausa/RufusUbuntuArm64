@@ -1,0 +1,60 @@
+name: Apply ISO layout options tranche
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'parity/iso-layout-options'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out trusted applicator
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: trusted
+          persist-credentials: false
+
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          path: work
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go formatter
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+          cache: false
+
+      - name: Apply reviewed patch
+        run: |
+          python3 trusted/.github/scripts/apply_iso_layout_options.py work
+          gofmt -w \
+            work/internal/linuxmedia/extracted.go \
+            work/internal/linuxmedia/extracted_layout_options.go \
+            work/internal/linuxmedia/extracted_layout_options_test.go \
+            work/internal/linuxmedia/extracted_gpt_loop_test.go \
+            work/cmd/rufus-persistence-helper/main.go
+
+      - name: Commit feature changes
+        working-directory: work
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if git diff --quiet && git diff --cached --quiet; then
+            echo 'No patch changes remain.'
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'iso: add reviewed MBR/GPT layout options'
+          git push origin "HEAD:${HEAD_REF}"
