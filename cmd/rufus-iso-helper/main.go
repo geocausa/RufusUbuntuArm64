@@ -229,6 +229,24 @@ func runCreate(args []string) error {
 	}
 	defer cancelCleanup()
 
+	out := &emitter{json: true}
+	preflightMessage := fmt.Sprintf("Linux ISO Image mode: %s; target: %s", filepath.Base(resolvedImage), resolvedTarget)
+	out.event(jsonEvent{Event: "preflight", Stage: "preflight", Message: preflightMessage})
+	out.event(jsonEvent{Event: "stage", Stage: "revalidate_source", Message: "Repeating ISOHybrid, UEFI, FAT32 and capacity checks before acquiring the target…"})
+	if _, err := linuxmedia.AnalyzeISOImage(ctx, resolvedImage, linuxmedia.ISOImageAnalysisOptions{
+		ExpectedSource: expectedSource,
+		TargetSize:     target.Size,
+		Architecture:   runtime.GOARCH,
+	}, func(event linuxmedia.PersistentEvent) {
+		message := event.Message
+		if event.Path != "" {
+			message = strings.TrimSpace(message + " " + event.Path)
+		}
+		out.event(jsonEvent{Event: "stage", Stage: "revalidate_source", Message: message, Done: event.Done, Total: event.Total})
+	}); err != nil {
+		return fmt.Errorf("revalidate ISO Image mode compatibility at the destructive boundary: %w", err)
+	}
+
 	target, kernelDeviceID, err := safety.RevalidateTarget(resolvedTarget, *expectedTargetIdentity, false)
 	if err != nil {
 		return err
@@ -258,10 +276,6 @@ func runCreate(args []string) error {
 		}
 		return safety.EnsureNoMountedDescendants(resolvedTarget)
 	}
-
-	out := &emitter{json: true}
-	preflightMessage := fmt.Sprintf("Linux ISO Image mode: %s; target: %s", filepath.Base(resolvedImage), resolvedTarget)
-	out.event(jsonEvent{Event: "preflight", Stage: "preflight", Message: preflightMessage})
 
 	heartbeatCtx, stopHeartbeat := context.WithCancel(ctx)
 	defer stopHeartbeat()
