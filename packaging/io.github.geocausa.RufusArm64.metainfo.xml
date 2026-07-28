@@ -19,6 +19,11 @@
     <binary>rufusarm64-persistence</binary>
   </provides>
   <releases>
+    <release version="0.15.0" date="2026-07-28">
+      <description>
+        <p>Adds Rufus-style ISO Image mode with recommended-by-default FAT32 extraction, retained DD fallback, identity-bound complete file verification, hardened target locking, and real reopened-device qualification.</p>
+      </description>
+    </release>
     <release version="0.14.0" date="2026-07-26">
     <description>
       <p>Adds verified raw/VHD/VHDX/ISO-UDF drive backup, experimental authenticated FFU restore, reusable qualification evidence, bounded compressed preparation, and complete native ARM64/reproducible-package qualification.</p>

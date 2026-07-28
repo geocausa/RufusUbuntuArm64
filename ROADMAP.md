@@ -101,6 +101,14 @@
 - Privileged loop qualification, native ARM64 execution, Go 1.22 compatibility, static/vulnerability audit, and reproducible Debian packaging
 - Release-candidate notes and real-machine checklist; stable promotion remains gated on recorded physical observations and prerelease feedback
 
+## 0.15 — ISO Image mode parity and qualification (completed)
+
+- Rufus-style ISO Image mode versus DD Image mode choice for suitable Linux ISOHybrid media
+- ISO Image mode selected as the recommended default, with explicit exact-clone DD fallback
+- Identity-bound MBR/FAT32 extraction, native UEFI fallback validation, complete manifest and copied-file verification, FAT32 checking, and device flushing
+- Bounded cancellable target-lock retry and real detach/reopen loop-device qualification of the production writer
+- Release-candidate package and focused physical Surface Pro 11 ARM64 boot checklist; stable promotion remains gated on recorded hardware evidence
+
 ## 1.0 — supportable stable release
 
 - Signed release artifacts

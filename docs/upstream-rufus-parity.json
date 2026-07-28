@@ -1,6 +1,6 @@
 {
   "schema": 2,
-  "generated_on": "2026-07-26",
+  "generated_on": "2026-07-28",
   "upstream": {
     "repository": "pbatard/rufus",
     "version": "4.15",
@@ -9,8 +9,8 @@
   },
   "project": {
     "repository": "geocausa/RufusUbuntuArm64",
-    "baseline": "stage3/0.14.0",
-    "baseline_commit": "c03e40b2089c5d9bbdc145ae848f371983e795b6",
+    "baseline": "main",
+    "baseline_commit": "78850300e2681f015b0ae90c10356094fc5daeca",
     "target_milestone": "1.0",
     "windows_to_go_policy": "deferred-maybe"
   },
@@ -33,6 +33,16 @@
         "src/format.c",
         "src/vhd.c",
         "src/bled/"
+      ]
+    },
+    {
+      "id": "linux-iso-image-mode",
+      "upstream_feature": "Choose ISO Image mode or DD Image mode for ISOHybrid media",
+      "status": "implemented",
+      "notes": "Suitable Linux ISOHybrid media receive an explicit Rufus-style choice with ISO Image mode recommended by default and DD retained as the exact-clone alternative. ISO mode uses identity-bound MBR/FAT32 extraction, native fallback UEFI validation, bounded complete-tree inspection, transactional copy, SHA-256 readback, filesystem checking, flushing, cancellable locking, and real reopened-loop qualification. Physical firmware boot remains release-qualification evidence.",
+      "upstream_sources": [
+        "src/format.c",
+        "src/iso.c"
       ]
     },
     {

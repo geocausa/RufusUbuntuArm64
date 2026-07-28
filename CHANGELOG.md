@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.15.0 — 2026-07-28
+
+- Added a Rufus-style **ISO Image mode / DD Image mode** choice for suitable Linux ISOHybrid images, with ISO Image mode selected as the recommended default and the existing byte-for-byte DD path retained as an explicit alternative.
+- Added a bounded Linux-native ISO extraction writer that creates conventional writable MBR/FAT32 UEFI media, binds exact source and target identities, inventories and hashes the complete accepted media tree before erasure, verifies the architecture fallback loader, copies transactionally, reads every file back by SHA-256, checks FAT32, and flushes the device.
+- Added conservative refusal for media that cannot be represented safely in the reviewed ISO mode scope, including missing native UEFI fallback loaders, FAT32-incompatible paths or file sizes, case collisions, escaping links, insufficient capacity, unsupported geometry, and changed source or target identities.
+- Hardened target acquisition with bounded cancellable retry for short-lived device-manager lock contention while preserving fail-closed exclusive locking.
+- Added real privileged qualification that writes a synthetic ARM64 ISO through the production MBR/FAT32 backend, detaches and reopens the completed image, probes FAT32 independently, mounts it read-only, and compares copied files.
+- Kept physical ARM64 firmware boot, Secure Boot, broad distribution compatibility, FFU hardware restoration, and universal device compatibility explicitly outside software-only claims pending the 0.15.0 prerelease checklist.
+
 ## 0.14.0 — 2026-07-26
 
 - Added descriptor-bound drive backup in raw, dynamic VHD, dynamic VHDX, and mounted-filesystem ISO/UDF formats, with exact source identity, conservative destination admission, cancellation, hashing, independent content comparison, and atomic no-replace publication.
