@@ -17,6 +17,17 @@ jobs:
         with:
           persist-credentials: true
           ref: feature/remaining-helper-process-workers
+      - name: Preserve generated Python escape sequences
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/remaining-process-once.py')
+          text = path.read_text(encoding='utf-8')
+          count = text.count("'''    def")
+          if count < 10:
+              raise SystemExit(f'generated method anchors changed: {count}')
+          path.write_text(text.replace("'''    def", "r'''    def"), encoding='utf-8')
+          PY
       - name: Apply, qualify, commit, and remove the one-shot
         shell: bash
         run: |
