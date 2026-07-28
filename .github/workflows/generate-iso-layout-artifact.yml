@@ -1,0 +1,76 @@
+name: Generate ISO layout patch artifact
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/generate-iso-layout-artifact.yml'
+      - 'docs/iso-layout-options-plan.md'
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'parity/iso-layout-options'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          path: work
+          persist-credentials: false
+
+      - name: Check out trusted applicator from main
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: main
+          path: trusted
+          persist-credentials: false
+
+      - name: Set up Go formatter
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.22.x'
+          cache: false
+
+      - name: Generate and validate exact files
+        run: |
+          python3 trusted/.github/scripts/apply_iso_layout_options.py work
+          python3 trusted/.github/scripts/finish_iso_layout_options.py work
+          gofmt -w \
+            work/internal/linuxmedia/extracted.go \
+            work/internal/linuxmedia/extracted_layout_options.go \
+            work/internal/linuxmedia/extracted_layout_options_test.go \
+            work/internal/linuxmedia/extracted_loop_test.go \
+            work/internal/linuxmedia/extracted_gpt_loop_test.go \
+            work/cmd/rufus-persistence-helper/main.go
+          python3 -m py_compile \
+            work/gui/rufusarm64_iso_write_mode.py \
+            work/gui/test_iso_layout_options.py
+          cd work
+          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+            -cf ../iso-layout-generated.tar \
+            internal/linuxmedia/extracted.go \
+            internal/linuxmedia/extracted_layout_options.go \
+            internal/linuxmedia/extracted_layout_options_test.go \
+            internal/linuxmedia/extracted_loop_test.go \
+            internal/linuxmedia/extracted_gpt_loop_test.go \
+            cmd/rufus-persistence-helper/main.go \
+            gui/rufusarm64_iso_write_mode.py \
+            gui/test_iso_layout_options.py \
+            .github/workflows/iso-image-loop-qualification.yml \
+            docs/iso-image-mode.md \
+            docs/upstream-rufus-parity.json \
+            docs/iso-layout-options-plan.md \
+            CHANGELOG.md
+          sha256sum ../iso-layout-generated.tar > ../iso-layout-generated.tar.sha256
+
+      - name: Upload generated source tree
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: iso-layout-generated
+          path: |
+            iso-layout-generated.tar
+            iso-layout-generated.tar.sha256
+          if-no-files-found: error
+          retention-days: 1
