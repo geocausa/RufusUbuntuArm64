@@ -1,6 +1,6 @@
 {
   "schema": 2,
-  "generated_on": "2026-07-26",
+  "generated_on": "2026-07-28",
   "upstream": {
     "repository": "pbatard/rufus",
     "version": "4.15",
@@ -33,6 +33,17 @@
         "src/format.c",
         "src/vhd.c",
         "src/bled/"
+      ]
+    },
+    {
+      "id": "linux-iso-image-mode",
+      "upstream_feature": "Offer ISO Image mode or DD Image mode for suitable ISOHybrid media",
+      "status": "implemented",
+      "notes": "Supported plain Linux ISOHybrid images now receive a Rufus-style ISO-versus-DD choice with ISO Image mode selected by default. The Linux-native ISO path repeats compatibility checks at the destructive boundary, creates and reads back one GPT/UEFI/FAT32 layout, requires the architecture fallback loader, copies and verifies the complete accepted filesystem tree, checks FAT32, flushes the target, and is qualified on a real loop device. DD remains explicit and is the only fallback for incompatible trees, compressed or virtual-disk sources, optical-only media, FAT32-incompatible files and paths, insufficient capacity, or exact-clone requirements. Physical firmware boot remains bounded release qualification rather than a universal claim.",
+      "upstream_sources": [
+        "src/iso.c",
+        "src/format.c",
+        "src/ui.c"
       ]
     },
     {
