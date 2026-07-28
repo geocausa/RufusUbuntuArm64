@@ -17,6 +17,7 @@ Status: Stage 4 development branch; not a published release.
 - Static-shell localization for Windows Setup options while preserving capability gating, prior selections, regional values, generated answer-file semantics, and writer contracts.
 - Static opening-shell localization for verified image acquisition while preserving threshold trust, rollback protection, catalog/image evidence, resumable download state, and atomic publication.
 - Static opening-shell localization for the dedicated persistent live USB wizard while preserving source/target identity, selected values, planning, confirmation, privileged creation, cancellation, qualification, and evidence.
+- Translation-aware primary accessibility reconciliation with an exact reviewed inventory for mnemonics, assistive names/descriptions, icon-only controls, and non-destructive shortcuts.
 
 ## Appearance, tooltip, and localization contract
 
@@ -35,7 +36,7 @@ Status: Stage 4 development branch; not a published release.
 
 ## Remaining Stage 4 scope
 
-- Broader secondary-dialog and dynamic status/diagnostic catalog migration, plural review, completed language packs, and complete translation-aware accessibility review.
+- Broader secondary-dialog and dynamic status/diagnostic catalog migration, plural review, completed language packs, and secondary-dialog translation-aware accessibility expansion.
 - Remaining portable distribution and filesystem work admitted by the pinned parity audit.
 - UDF formatting remains excluded until a Linux-native post-format checker satisfies the formatter's read-only verification contract.
 - ReFS remains non-portable without a verified Linux-native formatter.

@@ -85,3 +85,10 @@ The following remain byte-stable and outside the translation catalog:
 Consequently, localization cannot change selected values, widget sensitivity, signal wiring, identity binding, privilege separation, confirmation matching, cancellation, execution, synchronization, verification, or report parsing.
 
 Broader secondary-dialog migration, dynamic status/diagnostic localization, plural review, completed language packs, and complete translation-aware accessibility review remain later Stage 4 work.
+
+## Translation-aware accessibility
+
+The primary window uses one exact reviewed inventory for mnemonic-bearing labels, assistive names and descriptions, icon-only controls, and safe visible shortcuts. Every static string in that inventory must be admitted to the gettext catalog, and real-catalog tests require visible text and assistive metadata to translate together. Dynamic paths, identities, confirmation values, plans, reports, diagnostics, and evidence remain outside the catalog and are never rewritten as accessibility metadata.
+
+The inventory does not add accelerators to destructive creation or cancellation. Existing default-Cancel confirmation dialogs, widget sensitivity, signal wiring, privilege separation, cancellation, and verification remain unchanged. Secondary-dialog expansion remains separately reviewed work.
+
