@@ -1,1 +1,3 @@
 This temporary file exists only to open the same-repository pull request that runs the reviewed 0.15.0 candidate applicator. It is never merged.
+
+Rerun after the heredoc-preserving extractor fix.
