@@ -34,6 +34,43 @@ jobs:
           go-version: '1.22.x'
           cache: false
 
+      - name: Validate bounded patch targets
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import stat
+
+          root = Path("work").resolve()
+          paths = (
+              "internal/linuxmedia/extracted.go",
+              "internal/linuxmedia/extracted_layout_options.go",
+              "internal/linuxmedia/extracted_layout_options_test.go",
+              "internal/linuxmedia/extracted_loop_test.go",
+              "internal/linuxmedia/extracted_gpt_loop_test.go",
+              "cmd/rufus-persistence-helper/main.go",
+              "gui/rufusarm64_iso_write_mode.py",
+              "gui/test_iso_layout_options.py",
+              ".github/workflows/iso-image-loop-qualification.yml",
+              "docs/iso-image-mode.md",
+              "docs/upstream-rufus-parity.json",
+              "docs/iso-layout-options-plan.md",
+              "CHANGELOG.md",
+          )
+          for relative in paths:
+              target = root / relative
+              current = root
+              for component in Path(relative).parts[:-1]:
+                  current = current / component
+                  if current.is_symlink() or not current.is_dir():
+                      raise SystemExit(f"unsafe patch parent: {current}")
+              if target.exists() or target.is_symlink():
+                  metadata = target.lstat()
+                  if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                      raise SystemExit(f"unsafe patch target: {target}")
+              if root not in target.resolve(strict=False).parents:
+                  raise SystemExit(f"patch target escapes checkout: {target}")
+          PY
+
       - name: Apply reviewed patch
         run: |
           python3 trusted/.github/scripts/apply_iso_layout_options.py work
