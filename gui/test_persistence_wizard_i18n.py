@@ -171,7 +171,7 @@ class PersistenceWizardLocalizationTests(unittest.TestCase):
                           'if key != self.plan_key:',
                           'cancel_path = self.new_cancel_path()',
             "start_new_session=True",
-            "os.killpg(self.process.pid, signal.SIGTERM)",
+            "schedule_process_group_termination(self.process, grace_seconds=5)",
             "json.loads(line)",
             "completion_checklist()",
         ):
