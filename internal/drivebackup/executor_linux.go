@@ -369,7 +369,45 @@ func (destination destinationPlan) createTemporary() (*os.File, string, error) {
 	return temporary, name, nil
 }
 
+type publicationOps struct {
+	rename func(*os.File, string, string) error
+	sync   func(*os.File) error
+	unlink func(*os.File, string) error
+}
+
 func publishNoReplace(directory *os.File, temporaryName, outputName string) error {
+	return publishNoReplaceWith(directory, temporaryName, outputName, publicationOps{
+		rename: renameNoReplaceAt,
+		sync: func(open *os.File) error {
+			return open.Sync()
+		},
+		unlink: func(open *os.File, name string) error {
+			return syscall.Unlinkat(int(open.Fd()), name)
+		},
+	})
+}
+
+func publishNoReplaceWith(directory *os.File, temporaryName, outputName string, operations publicationOps) error {
+	if operations.rename == nil || operations.sync == nil || operations.unlink == nil {
+		return errors.New("backup publication operations are incomplete")
+	}
+	if err := operations.rename(directory, temporaryName, outputName); err != nil {
+		return err
+	}
+	if syncErr := operations.sync(directory); syncErr != nil {
+		result := error(fmt.Errorf("sync backup destination directory: %w", syncErr))
+		if unlinkErr := operations.unlink(directory, outputName); unlinkErr != nil {
+			result = errors.Join(result, fmt.Errorf("rollback published backup destination: %w", unlinkErr))
+		}
+		if rollbackSyncErr := operations.sync(directory); rollbackSyncErr != nil {
+			result = errors.Join(result, fmt.Errorf("sync backup destination directory after rollback: %w", rollbackSyncErr))
+		}
+		return result
+	}
+	return nil
+}
+
+func renameNoReplaceAt(directory *os.File, temporaryName, outputName string) error {
 	syscallNumber, err := renameat2SyscallNumber()
 	if err != nil {
 		return err
@@ -394,11 +432,6 @@ func publishNoReplace(directory *os.File, temporaryName, outputName string) erro
 	)
 	if errno != 0 {
 		return fmt.Errorf("publish backup without replacing an existing file: %w", errno)
-	}
-	if err := directory.Sync(); err != nil {
-		_ = syscall.Unlinkat(int(directory.Fd()), outputName)
-		_ = directory.Sync()
-		return fmt.Errorf("sync backup destination directory: %w", err)
 	}
 	return nil
 }

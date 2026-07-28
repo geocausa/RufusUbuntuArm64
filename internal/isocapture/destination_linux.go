@@ -181,7 +181,45 @@ func (destination destinationPlan) revalidate() error {
 	return requireISOAbsent(destination.Directory, destination.Name)
 }
 
+type isoPublicationOps struct {
+	rename func(*os.File, string, string) error
+	sync   func(*os.File) error
+	unlink func(*os.File, string) error
+}
+
 func publishISONoReplace(directory *os.File, temporaryName, destinationName string) error {
+	return publishISONoReplaceWith(directory, temporaryName, destinationName, isoPublicationOps{
+		rename: isoRenameNoReplaceAt,
+		sync: func(open *os.File) error {
+			return open.Sync()
+		},
+		unlink: func(open *os.File, name string) error {
+			return syscall.Unlinkat(int(open.Fd()), name)
+		},
+	})
+}
+
+func publishISONoReplaceWith(directory *os.File, temporaryName, destinationName string, operations isoPublicationOps) error {
+	if operations.rename == nil || operations.sync == nil || operations.unlink == nil {
+		return errors.New("ISO publication operations are incomplete")
+	}
+	if err := operations.rename(directory, temporaryName, destinationName); err != nil {
+		return err
+	}
+	if syncErr := operations.sync(directory); syncErr != nil {
+		result := error(fmt.Errorf("sync ISO destination directory: %w", syncErr))
+		if unlinkErr := operations.unlink(directory, destinationName); unlinkErr != nil {
+			result = errors.Join(result, fmt.Errorf("rollback published ISO destination: %w", unlinkErr))
+		}
+		if rollbackSyncErr := operations.sync(directory); rollbackSyncErr != nil {
+			result = errors.Join(result, fmt.Errorf("sync ISO destination directory after rollback: %w", rollbackSyncErr))
+		}
+		return result
+	}
+	return nil
+}
+
+func isoRenameNoReplaceAt(directory *os.File, temporaryName, destinationName string) error {
 	syscallNumber, err := isoRenameat2Number()
 	if err != nil {
 		return err
@@ -206,11 +244,6 @@ func publishISONoReplace(directory *os.File, temporaryName, destinationName stri
 	)
 	if errno != 0 {
 		return fmt.Errorf("publish ISO without replacing an existing file: %w", errno)
-	}
-	if err := directory.Sync(); err != nil {
-		_ = syscall.Unlinkat(int(directory.Fd()), destinationName)
-		_ = directory.Sync()
-		return fmt.Errorf("sync ISO destination directory: %w", err)
 	}
 	return nil
 }
