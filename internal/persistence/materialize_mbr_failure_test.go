@@ -27,8 +27,8 @@ func TestApplyMBRPartitionPlanFailureStates(t *testing.T) {
 			target := &failureTarget{
 				file: file, failWriteCall: test.failWriteCall,
 				partialWriteSize: test.partialWriteSize,
-				failSyncCall: test.failSyncCall,
-				writeErr: injected, syncErr: injected,
+				failSyncCall:     test.failSyncCall,
+				writeErr:         injected, syncErr: injected,
 			}
 
 			err := ApplyPartitionPlan(target, imageSize, targetSize, plan, MaterializeOptions{})

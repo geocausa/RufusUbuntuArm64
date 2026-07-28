@@ -55,8 +55,8 @@ func TestApplyGPTPartitionPlanInterruptedWriteOrdering(t *testing.T) {
 			target := &failureTarget{
 				file: file, failWriteCall: test.failWriteCall,
 				partialWriteSize: test.partialWriteSize,
-				failSyncCall: test.failSyncCall,
-				writeErr: injected, syncErr: injected,
+				failSyncCall:     test.failSyncCall,
+				writeErr:         injected, syncErr: injected,
 			}
 
 			err := ApplyPartitionPlan(target, imageSize, targetSize, plan, MaterializeOptions{Random: bytes.NewReader(bytes.Repeat([]byte{0x44}, 64))})

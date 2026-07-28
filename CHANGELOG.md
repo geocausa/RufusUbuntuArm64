@@ -19,6 +19,7 @@
 - Added a fail-closed interruption and crash-consistency inventory that maps executable regressions, preserves named software gaps, and keeps electrical power-loss and firmware boot evidence explicitly physical-only.
 - Qualified interrupted acquisition-cache states after root-history, catalog, and accepted-state publication, including forward-only recovery, rollback refusal, malformed-cache rejection, and unchanged-state evidence.
 - Qualified raw/container and filesystem-ISO backup publication rollback, preserving no-replace collisions and surfacing unlink or rollback-sync failures as ambiguous rather than successful publication.
+- Qualified persistence partition and filesystem materialization failures, including GPT backup-first ordering, MBR partial/sync errors, cleanup without false completion, and visible partial boot-patch evidence.
 
 ## 0.14.0 — 2026-07-26
 
