@@ -52,7 +52,8 @@ jobs:
               else:
                   break
           script = '\n'.join(body) + '\n'
-          script = script.replace('${{ github.event.pull_request.head.ref }}', 'release/0.15.0-candidate')
+          expression_needle = '$' + '{{ github.event.pull_request.head.ref }}'
+          script = script.replace(expression_needle, 'release/0.15.0-candidate')
           marker = 'rm -f .github/workflows/prepare-0.15.0-candidate.yml\n'
           replacement = marker + 'rm -f .github/workflows/kick-prepare-0.15.0.yml\n'
           if marker not in script:
