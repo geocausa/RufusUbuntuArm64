@@ -2,11 +2,12 @@
 
 RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on ARM64 computers**, including Snapdragon X systems such as Surface Pro 11 X1E. It is a native Linux implementation inspired by Rufus; it is not a Wine wrapper and is not endorsed by the official Rufus project.
 
-**Version 0.14.0** is the Stage 3 advanced imaging and recovery release candidate.
+**Version 0.15.0** is the ISO Image mode parity and physical-qualification release candidate.
 
 ## Highlights
 
 - Direct writing of recognized Linux ISOHybrid images and GPT/MBR raw disk images.
+- A Rufus-style **ISO Image mode / DD Image mode** choice for suitable Linux ISOHybrid images, with conventional writable FAT32 extraction recommended by default and exact cloning retained as the alternative.
 - Bounded Linux compatibility reporting for hybrid layouts, optical-only ISO media, El Torito BIOS/UEFI entries, and ISOLINUX/SYSLINUX/GRUB fingerprints.
 - Safe preparation of ZIP, gzip, bzip2, XZ, LZMA, Zstandard, VHD, VHDX, QCOW2, and VMDK inputs.
 - Windows installation media using GPT or MBR, UEFI or x86-family BIOS/CSM, and Automatic, FAT32, or NTFS selection.
@@ -27,8 +28,8 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 Verify the release-candidate checksum and install:
 
 ```bash
-sha256sum -c rufusarm64_0.14.0_arm64.deb.sha256
-sudo apt install ./rufusarm64_0.14.0_arm64.deb
+sha256sum -c rufusarm64_0.15.0_arm64.deb.sha256
+sudo apt install ./rufusarm64_0.15.0_arm64.deb
 ```
 
 The package upgrades older `rufusarm64` installations in place. One visible **RufusArm64** application entry is installed. Normal launch opens the composed writer; `rufusarm64 --persistence` remains available for the guarded persistent-media workflow.
@@ -74,6 +75,17 @@ For recognized plain raw/ISO inputs, RufusArm64 performs bounded local reads wit
 - a warning when optical-only USB boot may depend on firmware USB-CD emulation.
 
 This structural report does not prove that a physical computer will boot the media.
+
+## ISO Image mode and DD Image mode
+
+For suitable Linux ISOHybrid images, RufusArm64 presents an explicit choice before destructive authorization:
+
+- **Write in ISO Image mode (Recommended)** creates one conventional writable FAT32 partition and extracts the accepted ISO filesystem tree.
+- **Write in DD Image mode** retains the existing exact byte-for-byte image writer, including the source image's embedded partition and boot structures.
+
+ISO Image mode is offered only after bounded compatibility analysis confirms a native architecture fallback UEFI loader, FAT32-safe paths and file sizes, sufficient target capacity, and the reviewed source and target identities. The privileged helper repeats those checks before erasure, copies every admitted file transactionally, hashes every file back from the USB, checks FAT32, and flushes the device. Unsupported images remain on the DD path; RufusArm64 never silently converts an ISO-mode refusal into a destructive DD write.
+
+Ordinary ISO Image mode does not enable persistence or modify boot configuration. Software and loop-device verification do not prove that every physical computer will boot the result; that is recorded separately in the 0.15.0 hardware checklist.
 
 ## Windows ARM64 media
 
@@ -177,7 +189,7 @@ Privileged helpers:
 - verify packaged boot assets, copied files, structures, and filesystems;
 - require fresh Polkit authorization and support protected cancellation.
 
-Software checks never establish universal physical boot, persistence, whole-device health, or Secure Boot compatibility. Complete the human checklist in `docs/hardware-checklist-0.14.0.md` before public release.
+Software checks never establish universal physical boot, persistence, whole-device health, or Secure Boot compatibility. Complete the human checklist in `docs/hardware-checklist-0.15.0.md` before public release.
 
 ## Build and test
 
@@ -190,7 +202,7 @@ Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, `qemu-u
 The release-candidate package is produced at:
 
 ```text
-dist/rufusarm64_0.14.0_arm64.deb
+dist/rufusarm64_0.15.0_arm64.deb
 ```
 
 ## Command-line examples
@@ -210,15 +222,15 @@ rufusarm64-nonbootable-format --device /dev/sdX --expected-identity TOKEN --file
 
 See:
 
-- `docs/release-0.14.0.md` for release notes, boundaries, installation, and rollback;
-- `docs/hardware-checklist-0.14.0.md` for the mandatory real-machine GO/NO-GO record;
+- `docs/release-0.15.0.md` for release notes, boundaries, installation, and rollback;
+- `docs/hardware-checklist-0.15.0.md` for the mandatory real-machine GO/NO-GO record;
 - `docs/persistence-qualification.md` for exact persistence evidence;
 - `docs/freedos-user-guide.md` for the FreeDOS boundary.
 
 Rollback to the previous package with:
 
 ```bash
-sudo apt install --allow-downgrades ./rufusarm64_0.13.0_arm64.deb
+sudo apt install --allow-downgrades ./rufusarm64_0.14.0_arm64.deb
 ```
 
 Rollback does not repair USB media already written. Use the guarded restoration workflow only after selecting and confirming the exact removable target.
