@@ -85,7 +85,9 @@ func TestCreateISOImageOnRealLoopDevice(t *testing.T) {
 		if mounted {
 			_, _ = exec.Command("umount", "--", mountRoot).CombinedOutput()
 		}
-		_, _ = exec.Command("losetup", "--detach", loopPath).CombinedOutput()
+		if loopPath != "" {
+			_, _ = exec.Command("losetup", "--detach", loopPath).CombinedOutput()
+		}
 	})
 	waitForISOImageLoopTargetReady(t, loopPath)
 
@@ -128,6 +130,23 @@ func TestCreateISOImageOnRealLoopDevice(t *testing.T) {
 	if result.Manifest.Files < 6 || result.UEFIBootPath != "EFI/BOOT/BOOTAA64.EFI" || len(result.SourceSHA256) != 64 {
 		t.Fatalf("unexpected ISO Image mode result: %+v", result)
 	}
+
+	// Reopen the completed backing image as a new loop device. This proves the
+	// data survives descriptor closure and avoids relying on a stale partition
+	// node from the in-place partition-table reread used during creation.
+	if output, err := exec.Command("losetup", "--detach", loopPath).CombinedOutput(); err != nil {
+		t.Fatalf("detach completed ISO Image mode target: %v: %s", err, strings.TrimSpace(string(output)))
+	}
+	loopPath = ""
+	output, err = exec.Command("losetup", "--find", "--show", "--partscan", backing).CombinedOutput()
+	if err != nil {
+		t.Fatalf("reattach completed ISO Image mode image: %v: %s", err, strings.TrimSpace(string(output)))
+	}
+	loopPath = strings.TrimSpace(string(output))
+	if !strings.HasPrefix(loopPath, "/dev/loop") {
+		t.Fatalf("unexpected reopened loop path %q", loopPath)
+	}
+	waitForISOImageLoopTargetReady(t, loopPath)
 
 	partitionPath, err := waitISOImageLoopPartition(loopPath, result.Layout.Partition, 20*time.Second)
 	if err != nil {
