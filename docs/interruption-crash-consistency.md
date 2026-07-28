@@ -14,6 +14,8 @@ The initial inventory records existing coverage for:
 - acquisition metadata rollback refusal and symbolic-link destination substitution;
 - interruption after root-history, catalog, or accepted-state cache publication, including forward-only recovery and malformed-cache refusal.
 
+The acquisition-cache rows exercise the exact durable intermediate states rather than a generic error path. Refused stale, state-ahead, or truncated states leave the accepted-state file unchanged; the one recoverable catalog-ahead state advances only to authenticated metadata and never moves the accepted timestamp backwards.
+
 The inventory deliberately keeps uncovered software cases visible. A missing drive-backup publication, partition/filesystem mutation, persistence materialization, or helper-process cleanup case may not disappear from review merely because another component has a similar test.
 
 ## Required result semantics
