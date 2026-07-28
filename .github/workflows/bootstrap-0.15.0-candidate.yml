@@ -1,0 +1,75 @@
+name: Bootstrap RufusArm64 0.15.0 candidate applicator
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bootstrap-rufusarm64-0.15.0-candidate
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.repository == 'geocausa/RufusUbuntuArm64'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      RELEASE_BRANCH: release/0.15.0-candidate
+      EXPECTED_PRODUCT_COMMIT: 78850300e2681f015b0ae90c10356094fc5daeca
+      RELEASE_VERSION: 0.15.0
+      RELEASE_DATE: 2026-07-28
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: release/0.15.0-candidate
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Apply the reviewed candidate transformation to the release branch
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/prepare-0.15.0-candidate.yml')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          start = None
+          for index, line in enumerate(lines):
+              if line == '        run: |' and index > 0 and 'Apply synchronized candidate metadata exactly once' in lines[index - 1]:
+                  start = index + 1
+                  break
+          if start is None:
+              raise SystemExit('reviewed applicator run block not found')
+          body = []
+          for line in lines[start:]:
+              if line.startswith('          '):
+                  body.append(line[10:])
+              elif line.strip() == '':
+                  body.append('')
+              else:
+                  break
+          script = '\n'.join(body) + '\n'
+          expression_needle = '$' + '{{ github.event.pull_request.head.ref }}'
+          script = script.replace(expression_needle, 'release/0.15.0-candidate')
+          marker = 'rm -f .github/workflows/prepare-0.15.0-candidate.yml\n'
+          replacement = marker + 'rm -f .github/workflows/kick-prepare-0.15.0.yml\n'
+          if marker not in script:
+              raise SystemExit('temporary release-workflow cleanup marker not found')
+          Path('/tmp/apply-0.15.0.sh').write_text(script.replace(marker, replacement, 1), encoding='utf-8')
+          PY
+          bash /tmp/apply-0.15.0.sh
+      - name: Remove this bootstrap from main
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git checkout -B main origin/main
+          test -f .github/workflows/bootstrap-0.15.0-candidate.yml
+          rm .github/workflows/bootstrap-0.15.0-candidate.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'Ops: remove completed 0.15.0 candidate bootstrap'
+          git push origin HEAD:main
