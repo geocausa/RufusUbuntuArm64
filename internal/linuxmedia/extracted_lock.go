@@ -19,10 +19,10 @@ const extractedTargetLockTimeout = 5 * time.Second
 // unexpected contention remains a fail-closed error before target mutation.
 func acquireExtractedTargetLock(ctx context.Context, target *os.File, devicePath string) error {
 	if ctx == nil {
-		return errors.New("ISO Image mode target-lock context is nil")
+		return errors.New("target-lock context for ISO Image mode is nil")
 	}
 	if target == nil {
-		return errors.New("ISO Image mode target descriptor is nil")
+		return errors.New("target descriptor for ISO Image mode is nil")
 	}
 	deadline := time.NewTimer(extractedTargetLockTimeout)
 	defer deadline.Stop()
