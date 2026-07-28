@@ -1,0 +1,65 @@
+name: ISO mode formatter
+
+on:
+  push:
+    branches:
+      - feature/iso-image-mode
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the feature branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: feature/iso-image-mode
+          persist-credentials: true
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Apply reviewed mechanical corrections
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          helper = Path("cmd/rufus-persistence-helper/main.go")
+          text = helper.read_text(encoding="utf-8")
+          old = 'errors.New("Linux media helper does not accept positional arguments")'
+          new = 'errors.New("linux media helper does not accept positional arguments")'
+          if text.count(old) != 1:
+              raise SystemExit("expected helper error string was not found exactly once")
+          helper.write_text(text.replace(old, new), encoding="utf-8")
+
+          extracted = Path("internal/linuxmedia/extracted.go")
+          text = extracted.read_text(encoding="utf-8")
+          if text.count('\n\t"strings"\n') != 1:
+              raise SystemExit("expected unused strings import was not found exactly once")
+          text = text.replace('\n\t"strings"\n', '\n')
+          marker = '\nfunc normalizeExtractedArchitecture(value string) string {'
+          if text.count(marker) != 1:
+              raise SystemExit("expected unused architecture helper was not found exactly once")
+          text = text.split(marker, 1)[0].rstrip() + '\n'
+          extracted.write_text(text, encoding="utf-8")
+          PY
+          gofmt -w internal/linuxmedia/extracted.go internal/linuxmedia/extracted_test.go cmd/rufus-persistence-helper/main.go
+          git diff --check
+      - name: Commit canonical output
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No formatting update required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cmd/rufus-persistence-helper/main.go internal/linuxmedia/extracted.go internal/linuxmedia/extracted_test.go
+          git commit -m "ISO mode: apply canonical formatting and audit fixes"
+          git push origin HEAD:feature/iso-image-mode
