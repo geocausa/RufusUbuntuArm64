@@ -1,5 +1,6 @@
 name: Bootstrap RufusArm64 0.15.0 candidate applicator
 
+# One-shot trigger commit after this workflow became present on main.
 on:
   push:
     branches:
