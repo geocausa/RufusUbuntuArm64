@@ -15,21 +15,21 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out trusted applicator
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: main
           path: trusted
           persist-credentials: false
 
       - name: Check out feature branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           path: work
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Go formatter
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.22.x'
           cache: false
@@ -37,12 +37,17 @@ jobs:
       - name: Apply reviewed patch
         run: |
           python3 trusted/.github/scripts/apply_iso_layout_options.py work
+          python3 trusted/.github/scripts/finish_iso_layout_options.py work
           gofmt -w \
             work/internal/linuxmedia/extracted.go \
             work/internal/linuxmedia/extracted_layout_options.go \
             work/internal/linuxmedia/extracted_layout_options_test.go \
+            work/internal/linuxmedia/extracted_loop_test.go \
             work/internal/linuxmedia/extracted_gpt_loop_test.go \
             work/cmd/rufus-persistence-helper/main.go
+          python3 -m py_compile \
+            work/gui/rufusarm64_iso_write_mode.py \
+            work/gui/test_iso_layout_options.py
 
       - name: Commit feature changes
         working-directory: work
