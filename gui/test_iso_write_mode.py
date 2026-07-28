@@ -17,15 +17,27 @@ class FakeDialog:
 fake_gtk = types.SimpleNamespace(Dialog=FakeDialog)
 fake_repository.Gtk = fake_gtk
 fake_gi.repository = fake_repository
-sys.modules.setdefault("gi", fake_gi)
-sys.modules.setdefault("gi.repository", fake_repository)
 
 fake_rufusarm64 = types.ModuleType("rufusarm64")
 fake_rufusarm64.RufusWindow = object
 fake_rufusarm64.build_writer_command = lambda *args, **kwargs: []
-sys.modules.setdefault("rufusarm64", fake_rufusarm64)
 
-from rufusarm64_iso_write_mode import build_iso_write_command, hybrid_mode_available
+_saved_modules = {
+    name: sys.modules.get(name)
+    for name in ("gi", "gi.repository", "rufusarm64", "rufusarm64_iso_write_mode")
+}
+try:
+    sys.modules["gi"] = fake_gi
+    sys.modules["gi.repository"] = fake_repository
+    sys.modules["rufusarm64"] = fake_rufusarm64
+    sys.modules.pop("rufusarm64_iso_write_mode", None)
+    from rufusarm64_iso_write_mode import build_iso_write_command, hybrid_mode_available
+finally:
+    for name, module in _saved_modules.items():
+        if module is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = module
 
 
 class ISOImageModeTests(unittest.TestCase):
