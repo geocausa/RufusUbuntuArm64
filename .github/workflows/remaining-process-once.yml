@@ -17,7 +17,7 @@ jobs:
         with:
           persist-credentials: true
           ref: feature/remaining-helper-process-workers
-      - name: Preserve generated Python escape sequences
+      - name: Preserve generated code and refresh exact source contracts
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -26,7 +26,16 @@ jobs:
           count = text.count("'''    def")
           if count < 10:
               raise SystemExit(f'generated method anchors changed: {count}')
-          path.write_text(text.replace("'''    def", "r'''    def"), encoding='utf-8')
+          text = text.replace("'''    def", "r'''    def")
+          marker = '# Remove bootstrap files before focused/full qualification.'
+          if text.count(marker) != 1:
+              raise SystemExit('bootstrap qualification marker changed')
+          text = text.replace(marker, 'run("python3", ".github/remaining-test-contracts.py")\n\n' + marker, 1)
+          old_rm = 'run("git", "rm", "-f", "--ignore-unmatch", ".github/remaining-process-once.py", ".github/workflows/remaining-process-once.yml")'
+          new_rm = 'run("git", "rm", "-f", "--ignore-unmatch", ".github/remaining-process-once.py", ".github/remaining-test-contracts.py", ".github/workflows/remaining-process-once.yml")'
+          if text.count(old_rm) != 1:
+              raise SystemExit('bootstrap removal command changed')
+          path.write_text(text.replace(old_rm, new_rm, 1), encoding='utf-8')
           PY
       - name: Apply, qualify, commit, and remove the one-shot
         shell: bash
