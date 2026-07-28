@@ -90,7 +90,7 @@ func run(args []string) error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("Linux media helper does not accept positional arguments")
+		return errors.New("linux media helper does not accept positional arguments")
 	}
 	selectedOperation := strings.ToLower(strings.TrimSpace(*operation))
 	if selectedOperation != "persistence" && selectedOperation != "iso" {

@@ -15,7 +15,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -32,13 +31,13 @@ type ExtractedLayout struct {
 }
 
 type ExtractedCreateOptions struct {
-	TargetSize        uint64
-	ExpectedDeviceID  uint64
-	ExpectedSource    sourcefile.Identity
-	Architecture      string
-	VolumeLabel       string
-	WorkDirectory     string
-	BeforeDestructive func(source *os.File) error
+	TargetSize         uint64
+	ExpectedDeviceID   uint64
+	ExpectedSource     sourcefile.Identity
+	Architecture       string
+	VolumeLabel        string
+	WorkDirectory      string
+	BeforeDestructive  func(source *os.File) error
 	ManifestMaxEntries int
 	ManifestMaxBytes   uint64
 }
@@ -495,12 +494,4 @@ func CreateExtracted(ctx context.Context, isoPath, devicePath string, opts Extra
 	}
 	sendPersistent(emit, PersistentEvent{Stage: "complete", Message: "ISO Image mode USB created and verified."})
 	return result, nil
-}
-
-func normalizeExtractedArchitecture(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	if value == "aarch64" {
-		return "arm64"
-	}
-	return value
 }

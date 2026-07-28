@@ -118,11 +118,11 @@ func TestCreateExtractedOrchestratesVerifiedUEFIMedia(t *testing.T) {
 
 	var stages []string
 	result, err := CreateExtracted(context.Background(), isoPath, targetPath, ExtractedCreateOptions{
-		TargetSize:       targetSize,
-		ExpectedSource:   identity,
-		Architecture:     "arm64",
-		VolumeLabel:      "RUFUS-LIVE",
-		WorkDirectory:    t.TempDir(),
+		TargetSize:     targetSize,
+		ExpectedSource: identity,
+		Architecture:   "arm64",
+		VolumeLabel:    "RUFUS-LIVE",
+		WorkDirectory:  t.TempDir(),
 	}, func(event PersistentEvent) { stages = append(stages, event.Stage) })
 	if err != nil {
 		t.Fatal(err)
