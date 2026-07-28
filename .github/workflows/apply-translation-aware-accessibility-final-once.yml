@@ -54,17 +54,19 @@ jobs:
                   raise SystemExit(f'corrected patch tuple changed: {old}')
               script = script.replace(old, new, 1)
 
-          extra = '''    (
-                  '    N_("Choose the ISO or disk image that RufusArm64 will inspect before writing."),\\n',
-                  '    N_("Choose an ISO or disk image that RufusArm64 will inspect before writing."),\\n    N_("Choose the ISO or disk image that RufusArm64 will inspect before writing."),\\n',
-                  "image chooser accessibility description",
-              ),
-              (
-                  '    N_("Request safe cancellation of the active operation and wait for its final state and cleanup."),\\n',
-                  '    N_("Request safe cancellation and wait for cleanup to finish."),\\n    N_("Request safe cancellation of the active operation and wait for its final state and cleanup."),\\n',
-                  "cancellation accessibility description",
-              ),
-'''
+          extra = "\n".join((
+              "    (",
+              "        '    N_(\"Choose the ISO or disk image that RufusArm64 will inspect before writing.\"),\\n',",
+              "        '    N_(\"Choose an ISO or disk image that RufusArm64 will inspect before writing.\"),\\n    N_(\"Choose the ISO or disk image that RufusArm64 will inspect before writing.\"),\\n',",
+              "        \"image chooser accessibility description\",",
+              "    ),",
+              "    (",
+              "        '    N_(\"Request safe cancellation of the active operation and wait for its final state and cleanup.\"),\\n',",
+              "        '    N_(\"Request safe cancellation and wait for cleanup to finish.\"),\\n    N_(\"Request safe cancellation of the active operation and wait for its final state and cleanup.\"),\\n',",
+              "        \"cancellation accessibility description\",",
+              "    ),",
+              "",
+          ))
           anchor = 'additions = (\n'
           if script.count(anchor) != 1:
               raise SystemExit('catalog additions anchor changed')
