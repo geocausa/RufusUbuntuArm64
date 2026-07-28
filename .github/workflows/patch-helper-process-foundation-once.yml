@@ -17,6 +17,18 @@ jobs:
         with:
           persist-credentials: true
           ref: feature/helper-process-cleanup
+      - name: Remove nested escape ambiguity from the fixture
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/stage4-process-once.py')
+          text = path.read_text(encoding='utf-8')
+          old = 'process = self.start("import os; os.write(1, b\'\\\\\\\\xff\\\\\\\\n\')")'
+          new = 'process = self.start("import os; os.write(1, bytes([255, 10]))")'
+          if text.count(old) != 1:
+              raise SystemExit('non-UTF8 fixture anchor changed')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Apply, qualify, commit, and remove the one-shot
         shell: bash
         run: |
