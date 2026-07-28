@@ -1,0 +1,45 @@
+name: Run translation-aware accessibility patch once
+
+on:
+  pull_request:
+    branches:
+      - stage4/0.15.0
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+          ref: feature/translation-aware-accessibility
+      - name: Execute the reviewed one-shot patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+
+          workflow = Path('.github/workflows/patch-translation-aware-accessibility-once.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          start = next(i for i, line in enumerate(lines) if line.strip() == 'run: |')
+          block = []
+          for line in lines[start + 1:]:
+              if line.startswith('          '):
+                  block.append(line[10:])
+              elif block:
+                  break
+          script = '\n'.join(block) + '\n'
+          Path('/tmp/accessibility-patch.sh').write_text(script, encoding='utf-8')
+          PY
+          bash /tmp/accessibility-patch.sh
+          git rm .github/workflows/run-translation-aware-accessibility-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "ci: remove accessibility patch trigger"
+          git push origin HEAD:feature/translation-aware-accessibility
