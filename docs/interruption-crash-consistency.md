@@ -11,9 +11,10 @@ The initial inventory records existing coverage for:
 - no-replace metadata preflight and rollback of partially published record/evidence pairs;
 - complete rollback of runtime-integrity installation and removal at every admitted transaction boundary;
 - FFU cancellation before and after mutation, partial writes, synchronization failure, and readback mismatch;
-- acquisition metadata rollback refusal and symbolic-link destination substitution.
+- acquisition metadata rollback refusal and symbolic-link destination substitution;
+- interruption after root-history, catalog, or accepted-state cache publication, including forward-only recovery and malformed-cache refusal.
 
-The inventory deliberately keeps uncovered software cases visible. A missing drive-backup publication, partition/filesystem mutation, persistence materialization, acquisition-cache transaction, or helper-process cleanup case may not disappear from review merely because another component has a similar test.
+The inventory deliberately keeps uncovered software cases visible. A missing drive-backup publication, partition/filesystem mutation, persistence materialization, or helper-process cleanup case may not disappear from review merely because another component has a similar test.
 
 ## Required result semantics
 
