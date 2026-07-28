@@ -45,14 +45,10 @@ jobs:
                   break
           if start is None:
               raise SystemExit('reviewed applicator run block not found')
-          body = []
-          for line in lines[start:]:
-              if line.startswith('          '):
-                  body.append(line[10:])
-              elif line.strip() == '':
-                  body.append('')
-              else:
-                  break
+          # The applicator is the final workflow step. Consume the complete
+          # remaining scalar, stripping YAML indentation only where present so
+          # unindented heredoc and triple-quoted content remains intact.
+          body = [line[10:] if line.startswith('          ') else line for line in lines[start:]]
           script = '\n'.join(body) + '\n'
           expression_needle = '$' + '{{ github.event.pull_request.head.ref }}'
           script = script.replace(expression_needle, 'release/0.15.0-candidate')
