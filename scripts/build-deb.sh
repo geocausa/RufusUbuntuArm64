@@ -51,6 +51,10 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
   "${ROOT_DIR}/cmd/rufus-persistence-helper"
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
   go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \
+  -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-iso-helper" \
+  "${ROOT_DIR}/cmd/rufus-iso-helper"
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+  go build -buildvcs=false -trimpath -ldflags="-buildid= -s -w -X main.version=${VERSION}" \
   -o "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64-device-qualify" \
   "${ROOT_DIR}/cmd/rufus-device-qualify"
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
@@ -103,6 +107,8 @@ grep -Fq 'Gtk.Button(label="Non bootable…")' "${ROOT_DIR}/gui/rufusarm64_nonbo
 grep -Fq 'install_nonbootable(RufusWindow)' "${ROOT_DIR}/gui/rufusarm64_integrated.py"
 grep -Fq 'Gtk.Button(label="FreeDOS…")' "${ROOT_DIR}/gui/rufusarm64_freedos_dialog.py"
 grep -Fq 'install_freedos(RufusWindow)' "${ROOT_DIR}/gui/rufusarm64_integrated.py"
+grep -Fq 'Write in ISO Image mode (Recommended)' "${ROOT_DIR}/gui/rufusarm64_iso_write.py"
+grep -Fq 'install_iso_image_mode(RufusWindow)' "${ROOT_DIR}/packaging/rufusarm64"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_logic.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_logic.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_checksums.py" \
@@ -119,6 +125,10 @@ install -Dm644 "${ROOT_DIR}/gui/rufusarm64_iso_capture.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_iso_capture.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_iso.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_iso.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_iso_write_logic.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_iso_write_logic.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_iso_write.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_iso_write.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_nonbootable.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable_dialog.py" \
@@ -149,7 +159,7 @@ import pathlib
 import sys
 
 root = pathlib.Path(sys.argv[1])
-pending = [root / "rufusarm64.py"]
+pending = [root / "rufusarm64.py", root / "rufusarm64_iso_write.py"]
 seen = set()
 while pending:
     path = pending.pop()
@@ -386,10 +396,11 @@ Installed-Size: ${INSTALLED_SIZE}
 Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, mount, fdisk, dosfstools, exfatprogs, e2fsprogs, ntfs-3g, udev, xz-utils, zstd, qemu-utils, genisoimage
 Homepage: https://github.com/geocausa/RufusUbuntuArm64
 Description: Bootable USB creator for Ubuntu ARM64
- A graphical utility that writes Linux ISOHybrid/raw images, creates verified
- persistent Ubuntu/Debian live media, creates Windows installation USB media,
- creates verified x86 BIOS/Legacy FreeDOS 1.4 media, captures verified
- physical-drive images, and creates validated mounted-filesystem ISO/UDF remasters. It supports GPT or MBR,
+ A graphical utility that writes Linux ISOHybrid/raw images in extracted ISO
+ Image mode or byte-for-byte DD mode, creates verified persistent Ubuntu/Debian
+ live media, creates Windows installation USB media, creates verified x86
+ BIOS/Legacy FreeDOS 1.4 media, captures verified physical-drive images, and
+ creates validated mounted-filesystem ISO/UDF remasters. It supports GPT or MBR,
  UEFI or x86-family BIOS/CSM, FAT32 or NTFS, compressed or virtual-disk inputs,
  Secure Boot DBX checks, verified boot assets, WIM splitting, and optional drivers.
 CONTROL
