@@ -11,7 +11,7 @@ jobs:
   apply:
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'parity/iso-layout-options'
+      github.event.pull_request.head.ref == 'ops/trigger-iso-layout-options'
     runs-on: ubuntu-24.04
     steps:
       - name: Check out trusted applicator
@@ -21,10 +21,10 @@ jobs:
           path: trusted
           persist-credentials: false
 
-      - name: Check out feature branch
+      - name: Check out fixed feature branch
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: parity/iso-layout-options
           path: work
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -88,8 +88,6 @@ jobs:
 
       - name: Commit feature changes
         working-directory: work
-        env:
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           if git diff --quiet && git diff --cached --quiet; then
             echo 'No patch changes remain.'
@@ -99,4 +97,4 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
           git commit -m 'iso: add reviewed MBR/GPT layout options'
-          git push origin "HEAD:${HEAD_REF}"
+          git push origin HEAD:parity/iso-layout-options
