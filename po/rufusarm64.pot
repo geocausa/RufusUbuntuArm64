@@ -110,6 +110,10 @@ msgid "Calculate MD5, SHA-1, SHA-256, and SHA-512 for the selected image without
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Calculate comparison hashes. Shortcut Ctrl+K."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Calculate image checksums"
 msgstr ""
 
@@ -135,6 +139,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Cancel"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Cancel active operation"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -263,6 +271,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Choose an ISO and USB drive, then check compatibility."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Choose an ISO or disk image that RufusArm64 will inspect before writing."
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
@@ -634,6 +646,10 @@ msgid "Persistent storage"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Post-operation actions"
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Prefer the dark variant of the active GTK theme for RufusArm64."
 msgstr ""
 
@@ -694,6 +710,10 @@ msgid "Removes bundled OneDrive setup, Outlook and Teams, and disables Copilot, 
 msgstr ""
 
 #: gui/rufusarm64_i18n.py
+msgid "Request safe cancellation and wait for cleanup to finish."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
 msgid "Request safe cancellation of the active operation and wait for its final state and cleanup."
 msgstr ""
 
@@ -703,6 +723,10 @@ msgstr ""
 
 #: gui/rufusarm64_i18n.py
 msgid "Rescan removable whole drives. Shortcut Ctrl+R."
+msgstr ""
+
+#: gui/rufusarm64_i18n.py
+msgid "Restore / for_mat…"
 msgstr ""
 
 #: gui/rufusarm64_i18n.py

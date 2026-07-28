@@ -116,6 +116,7 @@
 - Static-shell localization for Windows Setup options without changing capability gating, previous choices, or answer-file values
 - Static opening-shell localization for verified image acquisition without changing trust metadata, image evidence, resume, or publication
 - Static opening-shell localization for the dedicated persistent live USB wizard without changing identity, selected values, confirmation, qualification, or evidence
+- Translation-aware primary accessibility inventory covering reviewed mnemonics, assistive metadata, icon-only controls, and safe shortcuts
 - Broader secondary-dialog/status localization, plural review, completed language packs, and translation-aware accessibility work selected from the pinned upstream audit
 - Remaining portable filesystem and distribution work selected from the pinned upstream audit
 - No weakening of identity, confirmation, cancellation, synchronization, or verification gates

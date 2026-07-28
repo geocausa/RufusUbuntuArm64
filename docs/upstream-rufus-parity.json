@@ -205,7 +205,7 @@
       "id": "appearance-and-accessibility",
       "upstream_feature": "Dark mode, tooltips, keyboard navigation, and accessible UI",
       "status": "partial",
-      "notes": "GTK keyboard navigation, assistive names, selectable diagnostics, resizable layout, a process-wide System/Light/Dark selector with canonical persisted settings, complete main-window option/action tooltips, and bounded gettext translation of primary plus guarded formatter/FreeDOS static interface metadata are implemented. System restores the desktop preference observed at process startup, explicit modes remain application-scoped, and deferred exact-match passes preserve workflow-specific disclosures and destructive-operation contracts. Broader dialog migration and full translation-aware accessibility review remain planned.",
+      "notes": "GTK keyboard navigation, assistive names, selectable diagnostics, resizable layout, a process-wide System/Light/Dark selector with canonical persisted settings, complete main-window option/action tooltips, bounded gettext translation, and an exact translation-aware primary accessibility inventory are implemented. Reviewed mnemonic labels, assistive names/descriptions, icon-only controls, and safe shortcuts remain aligned after translation; destructive creation and cancellation receive no direct accelerator. System restores the desktop preference observed at process startup, explicit modes remain application-scoped, and exact-match passes preserve workflow-specific disclosures and destructive-operation contracts. Broader secondary-dialog accessibility expansion remains planned.",
       "upstream_sources": [
         "src/ui.c",
         "src/rufus.c",

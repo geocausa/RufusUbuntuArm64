@@ -15,6 +15,7 @@
 - Localized the static Windows Setup options shell while preserving capability gating, previous selections, usernames, locale/time-zone identifiers, generated answer-file semantics, and writer behavior byte-for-byte.
 - Localized the static verified-image acquisition shell while preserving threshold trust, rollback checks, channel and image IDs, trust paths, metadata and digest evidence, resumable state, provider commands, returned values, and atomic publication byte-for-byte.
 - Localized the dedicated persistent live USB wizard's static opening shell while preserving source/target identity, selected size/label/runtime values, planning, confirmation, privileged creation, cancellation, qualification, and evidence byte-for-byte.
+- Completed a translation-aware primary accessibility inventory so reviewed mnemonics, assistive names, descriptions, icon-only controls, and safe shortcuts remain aligned after gettext translation.
 
 ## 0.14.0 — 2026-07-26
 
