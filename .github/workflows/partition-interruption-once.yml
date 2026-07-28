@@ -17,6 +17,18 @@ jobs:
         with:
           persist-credentials: true
           ref: feature/partition-filesystem-interruption
+      - name: Preserve the executor's close-failure phase contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/partition-interruption-once.py')
+          text = path.read_text(encoding='utf-8')
+          old = '{"close", &memoryExecutionBackend{closeErr: errors.New("close failed")}, true, ExecutionPhaseComplete},'
+          new = '{"close", &memoryExecutionBackend{closeErr: errors.New("close failed")}, true, ExecutionPhaseFinish},'
+          if text.count(old) != 1:
+              raise SystemExit('FreeDOS close-phase fixture changed')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Apply, qualify, commit, and remove the one-shot
         shell: bash
         run: |
