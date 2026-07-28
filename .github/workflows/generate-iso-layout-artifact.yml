@@ -35,6 +35,7 @@ jobs:
 
       - name: Generate and validate exact files
         run: |
+          # Trusted finishing logic was corrected after the first safe refusal.
           python3 trusted/.github/scripts/apply_iso_layout_options.py work
           python3 trusted/.github/scripts/finish_iso_layout_options.py work
           gofmt -w \
