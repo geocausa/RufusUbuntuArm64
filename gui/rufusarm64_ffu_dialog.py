@@ -4,7 +4,6 @@
 import copy
 import json
 import os
-import signal
 import subprocess
 import threading
 
@@ -14,6 +13,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import GLib, Gtk
 
 from rufusarm64_ffu_json import communicate_bounded, strict_json_loads
+from rufusarm64_process import schedule_process_group_termination, terminate_and_reap, terminate_process_group
 from rufusarm64_ffu_restore_logic import (
     build_ffu_restore_command,
     ffu_restore_summary,
@@ -26,10 +26,6 @@ from rufusarm64_logic import (
 )
 
 
-def _terminate_process_group(process, force=False):
-    if process is None or process.poll() is not None:
-        return
-    os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
 
 
 class FFUReviewDialog(Gtk.Dialog):
@@ -288,7 +284,7 @@ class FFUReviewDialog(Gtk.Dialog):
             stdout, stderr = communicate_bounded(
                 process,
                 timeout=300,
-                terminate=lambda force: _terminate_process_group(process, force),
+                terminate=lambda force: terminate_process_group(process, force=force),
             )
             if stdout.strip():
                 payload = strict_json_loads(stdout)
@@ -385,12 +381,12 @@ class FFUReviewDialog(Gtk.Dialog):
             self.process = process
             if self.cancel_requested and process.poll() is None:
                 try:
-                    _terminate_process_group(process)
+                    terminate_process_group(process)
                 except (ProcessLookupError, PermissionError, OSError):
                     pass
             stdout, stderr = communicate_bounded(
                 process,
-                terminate=lambda force: _terminate_process_group(process, force),
+                terminate=lambda force: terminate_process_group(process, force=force),
             )
             return_code = process.returncode
             if stdout.strip():
@@ -433,11 +429,7 @@ class FFUReviewDialog(Gtk.Dialog):
         )
         process = self.process
         if process is not None and process.poll() is None:
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except (ProcessLookupError, PermissionError, OSError):
-                pass
-
+            schedule_process_group_termination(process, grace_seconds=5)
     def _finish_restore(
         self,
         generation,

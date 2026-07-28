@@ -107,15 +107,13 @@ class DeviceBackupDialogStructureTests(unittest.TestCase):
         self.assertIn("No physical-disk", self.iso_contract_source)
 
     def test_cancel_and_close_target_only_the_owned_process_group(self):
-        self.assertIn("os.killpg(process.pid, signal.SIGTERM)", self.backup_class_source)
-        self.assertIn("GLib.timeout_add_seconds(5, self._force_kill, process)", self.backup_class_source)
-        self.assertIn("os.killpg(process.pid, signal.SIGKILL)", self.backup_class_source)
-        self.assertIn("if self.process is process and process.poll() is None", self.backup_class_source)
-        self.assertIn("def _terminate_and_reap(process):", self.backup_class_source)
-        self.assertIn("process.communicate(timeout=5)", self.backup_class_source)
+        self.assertIn("schedule_process_group_termination(process, grace_seconds=5)", self.backup_class_source)
+        self.assertIn("iter_bounded_process_utf8_lines(", self.backup_class_source)
+        self.assertIn("terminate_and_reap(process)", self.backup_class_source)
+        self.assertNotIn("os.killpg(", self.backup_class_source)
         self.assertIn("Closing requested. Cancelling", self.backup_class_source)
-        self.assertIn("dialog._terminate_and_reap(process)", self.format_source)
-        self.assertIn("dialog._terminate_and_reap(process)", self.iso_source)
+        self.assertIn("terminate_and_reap(process)", self.format_source)
+        self.assertIn("terminate_and_reap(process)", self.iso_source)
 
     def test_main_window_busy_state_and_refresh_are_mutually_exclusive(self):
         self.assertIn('Gtk.Button(label="Save drive image…")', self.dialog_source)

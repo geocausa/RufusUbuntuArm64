@@ -84,7 +84,8 @@ class VerifiedAcquisitionUIStructureTests(unittest.TestCase):
         self.assertIn("original_finish_download(window, return_code, payload)", self.installer_source)
         self.assertIn('window.append_log("A compatible private partial may be retained', self.installer_source)
         self.assertNotIn('window.progress_detail.set_text(\n                "No unverified image was installed. A compatible', self.installer_source)
-        self.assertIn("os.killpg(process.pid, signal.SIGTERM)", self.main_source)
+        self.assertIn("schedule_process_group_termination(process, grace_seconds=5)", self.main_source)
+        self.assertIn("iter_bounded_utf8_lines(", self.main_source)
         self.assertIn('self.active_job = "download"', self.main_source)
 
     def test_busy_state_disables_acquisition_and_idle_state_reenables_it(self):

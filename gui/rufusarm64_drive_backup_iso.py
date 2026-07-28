@@ -2,12 +2,12 @@
 
 import json
 import os
-import signal
 import stat
 import subprocess
 import threading
 
 import rufusarm64_drive_backup_formats as formats
+from rufusarm64_process import iter_bounded_process_utf8_lines, run_bounded, terminate_and_reap
 from rufusarm64_iso_capture import (
     build_dry_run_command,
     build_run_command,
@@ -87,7 +87,13 @@ def install_drive_backup_iso():
         if format_name != "iso":
             return original_plan_worker(dialog, command, generation, format_name, output_path)
         try:
-            completed = subprocess.run(command, check=False, capture_output=True, text=True, timeout=120)
+            completed = run_bounded(
+                command,
+                stdout_limit=8 * 1024 * 1024,
+                stderr_limit=1024 * 1024,
+                timeout=120,
+                label="filesystem ISO plan helper",
+            )
             if completed.returncode != 0:
                 raise RuntimeError((completed.stderr or completed.stdout or "Filesystem ISO planning failed.").strip())
             payload = normalize_plan(json.loads(completed.stdout))
@@ -100,7 +106,6 @@ def install_drive_backup_iso():
             GLib.idle_add(dialog._plan_ready, generation, payload, "")
         except Exception as exc:
             GLib.idle_add(dialog._plan_ready, generation, None, str(exc))
-
     def plan_ready(dialog, generation, payload, error):
         if not iso_selected(dialog):
             return original_plan_ready(dialog, generation, payload, error)
@@ -176,15 +181,15 @@ def install_drive_backup_iso():
             return original_run_worker(dialog, command, generation)
         diagnostics = []
         diagnostics_size = 0
+        stdout_lines = []
         payload = None
         returncode = 1
+        process = None
         try:
             process = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
                 start_new_session=True,
             )
             dialog.process = process
@@ -192,7 +197,17 @@ def install_drive_backup_iso():
             source_bytes = int(plan["filesystem_capture"]["source_bytes"])
             required_bytes = int(plan["filesystem_capture"]["required_bytes"])
             last_by_phase = {}
-            for line in process.stderr:
+            for channel, line in iter_bounded_process_utf8_lines(
+                process,
+                stdout_line_limit=1024 * 1024,
+                stdout_total_limit=8 * 1024 * 1024,
+                stderr_line_limit=1024 * 1024,
+                stderr_total_limit=64 * 1024 * 1024,
+                label="filesystem ISO capture helper",
+            ):
+                if channel == "stdout":
+                    stdout_lines.append(line)
+                    continue
                 progress = decode_progress_line(line)
                 if progress is not None:
                     phase = progress["phase"]
@@ -213,9 +228,9 @@ def install_drive_backup_iso():
                 if text and len(diagnostics) < 64 and diagnostics_size + len(text) <= 32768:
                     diagnostics.append(text)
                     diagnostics_size += len(text)
-            stdout = process.stdout.read()
-            returncode = process.wait()
+            returncode = process.returncode
             dialog.process = None
+            stdout = "".join(stdout_lines)
             if stdout.strip():
                 payload = normalize_report(json.loads(stdout))
             if payload is None:
@@ -239,25 +254,20 @@ def install_drive_backup_iso():
                 raise ValueError("Filesystem ISO report status does not match the helper exit status.")
             if payload["status"] == "passed":
                 info = os.lstat(dialog.output_path)
-                if (
-                    not stat.S_ISREG(info.st_mode)
-                    or info.st_size != payload["output_bytes"]
-                    or info.st_uid != os.getuid()
-                ):
-                    raise ValueError(
-                        "The completed ISO does not match the verified report or desktop user."
-                    )
+                if not stat.S_ISREG(info.st_mode) or info.st_size != payload["output_bytes"] or info.st_uid != os.getuid():
+                    raise ValueError("The completed ISO does not match the verified report or desktop user.")
             GLib.idle_add(dialog._run_ready, generation, payload, "\n".join(diagnostics), returncode)
         except Exception as exc:
-            process = dialog.process
             dialog.process = None
-            if process is not None:
-                dialog._terminate_and_reap(process)
+            if process is not None and process.poll() is None:
+                try:
+                    terminate_and_reap(process)
+                except (OSError, RuntimeError, ValueError):
+                    pass
             detail = str(exc)
             if diagnostics:
                 detail += "\n\nDiagnostics:\n" + "\n".join(diagnostics)
             GLib.idle_add(dialog._run_ready, generation, None, detail, returncode)
-
     def format_progress_ready(dialog, generation, progress):
         if str((dialog.plan or {}).get("destination", {}).get("format") or "") != "iso":
             return original_progress_ready(dialog, generation, progress)

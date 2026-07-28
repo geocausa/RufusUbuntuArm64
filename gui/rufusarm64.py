@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 import os
 import platform
 import shutil
-import signal
 import subprocess
 import tempfile
 import threading
@@ -71,6 +70,19 @@ from rufusarm64_logic import (
     validate_local_username,
     windows_timezone_for_iana,
 )
+
+from rufusarm64_process import (
+    communicate_bounded,
+    iter_bounded_utf8_lines,
+    run_bounded,
+    schedule_process_group_termination,
+    terminate_and_reap,
+)
+
+GUI_STDOUT_LIMIT = 32 * 1024 * 1024
+GUI_STDERR_LIMIT = 2 * 1024 * 1024
+GUI_STREAM_LINE_LIMIT = 1024 * 1024
+GUI_STREAM_TOTAL_LIMIT = 64 * 1024 * 1024
 
 APP_ID = "io.github.geocausa.RufusArm64"
 APP_NAME = "RufusArm64"
@@ -493,11 +505,7 @@ class AcquisitionDialog(Gtk.Dialog):
         self.closed = True
         process = self.channel_process
         if process and process.poll() is None:
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except (ProcessLookupError, PermissionError, OSError):
-                pass
-
+            schedule_process_group_termination(process, grace_seconds=5)
     @staticmethod
     def _chooser(grid, label_text, row, action, saved):
         label = Gtk.Label(label=label_text)
@@ -546,24 +554,33 @@ class AcquisitionDialog(Gtk.Dialog):
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
                 start_new_session=True,
             )
             self.channel_process = process
-            if self.closed:
-                os.killpg(process.pid, signal.SIGTERM)
-            stdout, stderr = process.communicate()
+            if self.closed and process.poll() is None:
+                schedule_process_group_termination(process, grace_seconds=5)
+            stdout, stderr = communicate_bounded(
+                process,
+                stdout_limit=GUI_STDOUT_LIMIT,
+                stderr_limit=GUI_STDERR_LIMIT,
+                timeout=900,
+                label="acquisition channel refresh",
+            )
             if process.returncode != 0:
                 raise RuntimeError(stderr.strip() or stdout.strip() or "Built-in catalog refresh failed")
             metadata = normalize_acquisition_channel(json.loads(stdout))
             GLib.idle_add(self._finish_channel_refresh, metadata, "")
         except Exception as exc:
+            if process is not None and process.poll() is None:
+                try:
+                    terminate_and_reap(process)
+                except (OSError, RuntimeError, ValueError):
+                    pass
             if not self.closed:
                 GLib.idle_add(self._finish_channel_refresh, {}, str(exc))
         finally:
             if self.channel_process is process:
                 self.channel_process = None
-
     def _finish_channel_refresh(self, metadata, error):
         if self.closed:
             return False
@@ -625,14 +642,19 @@ class AcquisitionDialog(Gtk.Dialog):
         images = []
         error = ""
         try:
-            result = subprocess.run(command, check=False, text=True, capture_output=True, timeout=20)
+            result = run_bounded(
+                command,
+                stdout_limit=GUI_STDOUT_LIMIT,
+                stderr_limit=GUI_STDERR_LIMIT,
+                timeout=20,
+                label="local acquisition catalog verification",
+            )
             if result.returncode != 0:
                 raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Catalog verification failed")
             images = normalize_acquisition_images(json.loads(result.stdout))
         except Exception as exc:
             error = str(exc)
         GLib.idle_add(self._finish_catalog_verify, images, error, selection, generation)
-
     def _finish_catalog_verify(self, images, error, selection, generation):
         if self.closed or generation != self.catalog_generation:
             return False
@@ -1869,15 +1891,21 @@ class RufusWindow(Gtk.ApplicationWindow):
         result_payload = {}
         process = None
         try:
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True)
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
             self.process = process
-            assert process.stdout is not None
             if self.cancel_requested and process.poll() is None:
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except (ProcessLookupError, PermissionError, OSError):
-                    pass
-            for raw in process.stdout:
+                schedule_process_group_termination(process, grace_seconds=5)
+            for raw in iter_bounded_utf8_lines(
+                process.stdout,
+                line_limit=GUI_STREAM_LINE_LIMIT,
+                total_limit=GUI_STREAM_TOTAL_LIMIT,
+                label="verified download helper output",
+            ):
                 line = raw.strip()
                 if not line:
                     continue
@@ -1890,15 +1918,20 @@ class RufusWindow(Gtk.ApplicationWindow):
                     GLib.idle_add(self.handle_event, payload)
                 elif isinstance(payload, dict) and payload.get("path"):
                     result_payload = payload
+            process.stdout.close()
             return_code = process.wait()
             GLib.idle_add(self.finish_download, return_code, result_payload)
         except Exception as exc:
+            if process is not None and process.poll() is None:
+                try:
+                    terminate_and_reap(process)
+                except (OSError, RuntimeError, ValueError):
+                    pass
             GLib.idle_add(self.append_log, f"Verified download failed: {exc}")
             GLib.idle_add(self.finish_download, 1, {})
         finally:
             if self.process is process:
                 self.process = None
-
     def finish_download(self, return_code, payload):
         was_cancelled = self.cancel_requested
         self.set_busy(False)
@@ -2018,19 +2051,34 @@ class RufusWindow(Gtk.ApplicationWindow):
     def run_persistence_plan(self, command, plan_key, source_identity):
         process = None
         try:
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+            )
             self.process = process
-            stdout, stderr = process.communicate()
+            stdout, stderr = communicate_bounded(
+                process,
+                stdout_limit=GUI_STDOUT_LIMIT,
+                stderr_limit=GUI_STDERR_LIMIT,
+                timeout=300,
+                label="integrated persistence analysis helper",
+            )
             return_code = process.returncode
             payload = json.loads(stdout) if return_code == 0 else {}
-            error = stderr.strip() or stdout.strip() if return_code != 0 else ""
+            error = (stderr.strip() or stdout.strip()) if return_code != 0 else ""
             GLib.idle_add(self.finish_persistence_plan, return_code, payload, error, plan_key, source_identity)
         except Exception as exc:
+            if process is not None and process.poll() is None:
+                try:
+                    terminate_and_reap(process)
+                except (OSError, RuntimeError, ValueError):
+                    pass
             GLib.idle_add(self.finish_persistence_plan, 1, {}, str(exc), plan_key, source_identity)
         finally:
             if self.process is process:
                 self.process = None
-
     def finish_persistence_plan(self, return_code, payload, error, plan_key, source_identity):
         was_cancelled = self.cancel_requested
         self.set_busy(False)
@@ -2450,18 +2498,17 @@ class RufusWindow(Gtk.ApplicationWindow):
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
                 start_new_session=True,
             )
             self.process = process
-            assert process.stdout is not None
             if self.cancel_requested and process.poll() is None:
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except (ProcessLookupError, PermissionError, OSError):
-                    pass
-            for raw in process.stdout:
+                schedule_process_group_termination(process, grace_seconds=5)
+            for raw in iter_bounded_utf8_lines(
+                process.stdout,
+                line_limit=GUI_STREAM_LINE_LIMIT,
+                total_limit=GUI_STREAM_TOTAL_LIMIT,
+                label="writer helper output",
+            ):
                 line = raw.strip()
                 if not line:
                     continue
@@ -2471,15 +2518,20 @@ class RufusWindow(Gtk.ApplicationWindow):
                     GLib.idle_add(self.append_log, line)
                     continue
                 GLib.idle_add(self.handle_event, event)
+            process.stdout.close()
             return_code = process.wait()
             GLib.idle_add(self.finish, return_code)
         except Exception as exc:
+            if process is not None and process.poll() is None:
+                try:
+                    terminate_and_reap(process)
+                except (OSError, RuntimeError, ValueError):
+                    pass
             GLib.idle_add(self.append_log, f"Failed to start the writer: {exc}")
             GLib.idle_add(self.finish, 1)
         finally:
             if self.process is process:
                 self.process = None
-
     def handle_event(self, event):
         message = event.get("message", "")
         event_type = event.get("event")
@@ -2568,11 +2620,7 @@ class RufusWindow(Gtk.ApplicationWindow):
                 self.append_log(f"Could not create cancellation marker: {exc}")
         process = self.process
         if process and process.poll() is None:
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
-                pass
-
+            schedule_process_group_termination(process, grace_seconds=5)
     def message(self, text, kind):
         dialog = Gtk.MessageDialog(transient_for=self, modal=True, message_type=kind, buttons=Gtk.ButtonsType.OK, text=text)
         dialog.run()

@@ -128,7 +128,8 @@ class DriveBackupLocalizationTests(unittest.TestCase):
             "info = os.lstat(self.output_path)",
             "not stat.S_ISREG(info.st_mode)",
             "info.st_uid != os.getuid()",
-            "os.killpg(process.pid, signal.SIGTERM)",
+            "schedule_process_group_termination(process, grace_seconds=5)",
+            "iter_bounded_process_utf8_lines(",
             "os.path.lexists(self.output_path)",
         ):
             self.assertIn(marker, text)

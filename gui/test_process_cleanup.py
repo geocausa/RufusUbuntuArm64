@@ -12,7 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from rufusarm64_process import (  # noqa: E402
     OutputLimitError,
     communicate_bounded,
+    iter_bounded_process_utf8_lines,
     iter_bounded_utf8_lines,
+    run_bounded,
     schedule_process_group_termination,
     terminate_and_reap,
     terminate_process_group,
@@ -180,6 +182,64 @@ class BoundedLineTests(unittest.TestCase):
         self.assertEqual(process.wait(timeout=5), 0)
         process.stdout.close()
         self.assertTrue(process.stdout.closed)
+
+
+class BoundedProcessStreamTests(unittest.TestCase):
+    def start(self, code):
+        return subprocess.Popen(
+            [sys.executable, "-c", code],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+
+    def test_two_pipe_streaming_is_concurrent_bounded_and_reaped(self):
+        process = self.start(
+            "import sys; "
+            "[print(f'out-{i}', flush=True) or print(f'err-{i}', file=sys.stderr, flush=True) for i in range(4)]"
+        )
+        lines = list(iter_bounded_process_utf8_lines(
+            process,
+            stdout_line_limit=32,
+            stdout_total_limit=256,
+            stderr_line_limit=32,
+            stderr_total_limit=256,
+            label="dual test helper",
+        ))
+        self.assertEqual(process.returncode, 0)
+        self.assertEqual([line for channel, line in lines if channel == "stdout"], [f"out-{i}\n" for i in range(4)])
+        self.assertEqual([line for channel, line in lines if channel == "stderr"], [f"err-{i}\n" for i in range(4)])
+        self.assertTrue(process.stdout.closed)
+        self.assertTrue(process.stderr.closed)
+
+    def test_two_pipe_limit_stops_and_reaps_owned_group(self):
+        process = self.start(
+            "import signal,sys,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+            "sys.stderr.write('x'*10000); sys.stderr.flush(); time.sleep(30)"
+        )
+        with self.assertRaises(OutputLimitError):
+            list(iter_bounded_process_utf8_lines(
+                process,
+                stdout_line_limit=32,
+                stdout_total_limit=128,
+                stderr_line_limit=64,
+                stderr_total_limit=128,
+                label="dual limit helper",
+                termination_grace=0.1,
+            ))
+        self.assertIsNotNone(process.returncode)
+        self.assertTrue(process.stdout.closed)
+        self.assertTrue(process.stderr.closed)
+
+    def test_run_bounded_rejects_oversized_capture_and_reaps(self):
+        with self.assertRaises(OutputLimitError):
+            run_bounded(
+                [sys.executable, "-c", "print('x'*10000)"],
+                stdout_limit=100,
+                stderr_limit=100,
+                timeout=5,
+                label="bounded run test",
+            )
 
 
 if __name__ == "__main__":

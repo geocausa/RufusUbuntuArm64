@@ -2,12 +2,13 @@
 
 import json
 import os
-import signal
 import stat
 import subprocess
 import threading
 
 from gi.repository import GLib, Gtk
+
+from rufusarm64_process import iter_bounded_process_utf8_lines, run_bounded, terminate_and_reap
 
 from rufusarm64_i18n import gettext as _
 import rufusarm64_device_qualify_dialog as backup_dialog
@@ -197,7 +198,13 @@ def install_drive_backup_formats():
 
     def format_plan_worker(dialog, command, generation, format_name, output_path):
         try:
-            completed = subprocess.run(command, check=False, capture_output=True, text=True, timeout=30)
+            completed = run_bounded(
+                command,
+                stdout_limit=8 * 1024 * 1024,
+                stderr_limit=1024 * 1024,
+                timeout=30,
+                label="container backup plan helper",
+            )
             if completed.returncode != 0:
                 raise RuntimeError((completed.stderr or completed.stdout or "Backup planning failed.").strip())
             payload = backup_normalize_plan(json.loads(completed.stdout))
@@ -212,7 +219,6 @@ def install_drive_backup_formats():
             GLib.idle_add(dialog._plan_ready, generation, payload, "")
         except Exception as exc:
             GLib.idle_add(dialog._plan_ready, generation, None, str(exc))
-
     def set_running(dialog, running):
         original_set_running(dialog, running)
         dialog.format_selector.set_sensitive(not dialog.running)
@@ -252,22 +258,32 @@ def install_drive_backup_formats():
     def format_run_worker(dialog, command, generation):
         diagnostics = []
         diagnostics_size = 0
+        stdout_lines = []
         payload = None
         returncode = 1
+        process = None
         try:
             process = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
                 start_new_session=True,
             )
             dialog.process = process
             source_bytes = int(dialog.plan["destination"]["source_bytes"])
             planned_format = str(dialog.plan["destination"]["format"])
             last_by_phase = {}
-            for line in process.stderr:
+            for channel, line in iter_bounded_process_utf8_lines(
+                process,
+                stdout_line_limit=1024 * 1024,
+                stdout_total_limit=8 * 1024 * 1024,
+                stderr_line_limit=1024 * 1024,
+                stderr_total_limit=64 * 1024 * 1024,
+                label="container backup helper",
+            ):
+                if channel == "stdout":
+                    stdout_lines.append(line)
+                    continue
                 progress = backup_decode_progress_line(line)
                 if progress is not None:
                     phase = progress["phase"]
@@ -282,9 +298,9 @@ def install_drive_backup_formats():
                 if text and len(diagnostics) < 64 and diagnostics_size + len(text) <= 32768:
                     diagnostics.append(text)
                     diagnostics_size += len(text)
-            stdout = process.stdout.read()
-            returncode = process.wait()
+            returncode = process.returncode
             dialog.process = None
+            stdout = "".join(stdout_lines)
             if stdout.strip():
                 payload = backup_normalize_report(json.loads(stdout))
             if payload is None:
@@ -295,23 +311,20 @@ def install_drive_backup_formats():
                 raise ValueError("Backup report status does not match the helper exit status.")
             if payload["status"] == "passed":
                 info = os.lstat(dialog.output_path)
-                if (
-                    not stat.S_ISREG(info.st_mode)
-                    or info.st_size != payload["output_bytes"]
-                    or info.st_uid != os.getuid()
-                ):
+                if not stat.S_ISREG(info.st_mode) or info.st_size != payload["output_bytes"] or info.st_uid != os.getuid():
                     raise ValueError("The completed destination file does not match the verified report or desktop user.")
             GLib.idle_add(dialog._run_ready, generation, payload, "\n".join(diagnostics), returncode)
         except Exception as exc:
-            process = dialog.process
             dialog.process = None
-            if process is not None:
-                dialog._terminate_and_reap(process)
+            if process is not None and process.poll() is None:
+                try:
+                    terminate_and_reap(process)
+                except (OSError, RuntimeError, ValueError):
+                    pass
             detail = str(exc)
             if diagnostics:
                 detail += "\n\nDiagnostics:\n" + "\n".join(diagnostics)
             GLib.idle_add(dialog._run_ready, generation, None, detail, returncode)
-
     def format_progress_ready(dialog, generation, progress):
         if dialog.closed or generation != dialog.run_generation or not dialog.running:
             return False

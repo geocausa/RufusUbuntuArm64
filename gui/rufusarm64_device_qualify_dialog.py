@@ -2,13 +2,20 @@
 
 import json
 import os
-import signal
 import stat
 import subprocess
 import sys
 import threading
 
 from gi.repository import GLib, Gtk
+
+from rufusarm64_process import (
+    communicate_bounded,
+    iter_bounded_process_utf8_lines,
+    run_bounded,
+    schedule_process_group_termination,
+    terminate_and_reap,
+)
 
 from rufusarm64_device_qualify import (
     backup_build_dry_run_command,
@@ -183,14 +190,19 @@ class DeviceQualificationDialog(Gtk.Dialog):
 
     def _plan_worker(self, command):
         try:
-            completed = subprocess.run(command, check=False, capture_output=True, text=True, timeout=30)
+            completed = run_bounded(
+                command,
+                stdout_limit=8 * 1024 * 1024,
+                stderr_limit=1024 * 1024,
+                timeout=30,
+                label="USB qualification plan helper",
+            )
             if completed.returncode != 0:
                 raise RuntimeError((completed.stderr or completed.stdout or "Plan failed").strip())
             payload = normalize_plan(json.loads(completed.stdout))
             GLib.idle_add(self._plan_ready, payload, "")
         except Exception as exc:
             GLib.idle_add(self._plan_ready, None, str(exc))
-
     def _plan_ready(self, payload, error):
         if error:
             self.plan = None
@@ -224,21 +236,35 @@ class DeviceQualificationDialog(Gtk.Dialog):
         threading.Thread(target=self._run_worker, args=(command,), daemon=True).start()
 
     def _run_worker(self, command):
+        process = None
         try:
-            self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            stdout, stderr = self.process.communicate()
-            returncode = self.process.returncode
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+            )
+            self.process = process
+            stdout, stderr = communicate_bounded(
+                process,
+                stdout_limit=8 * 1024 * 1024,
+                stderr_limit=1024 * 1024,
+                label="USB qualification helper",
+            )
+            returncode = process.returncode
             self.process = None
-            payload = None
-            if stdout.strip():
-                payload = normalize_report(json.loads(stdout))
+            payload = normalize_report(json.loads(stdout)) if stdout.strip() else None
             if payload is None:
                 raise RuntimeError((stderr or "Qualification did not return a report.").strip())
             GLib.idle_add(self._run_ready, payload, stderr.strip(), returncode)
         except Exception as exc:
             self.process = None
+            if process is not None and process.poll() is None:
+                try:
+                    terminate_and_reap(process)
+                except (OSError, RuntimeError, ValueError):
+                    pass
             GLib.idle_add(self._run_ready, None, str(exc), 1)
-
     def _run_ready(self, payload, error, returncode):
         self.set_running(False)
         self.confirmation.set_text("")
@@ -301,10 +327,9 @@ class DeviceQualificationDialog(Gtk.Dialog):
         if not process or process.poll() is not None:
             return
         self.status.set_text("Cancelling after the current I/O operation…")
-        try:
-            process.terminate()
-        except OSError as exc:
-            self.status.set_text(f"Could not request cancellation: {exc}")
+        thread = schedule_process_group_termination(process, grace_seconds=5)
+        if thread is None and process.poll() is None:
+            self.status.set_text("Could not request cancellation of the owned qualification process group.")
 
 
 class DriveImageBackupDialog(Gtk.Dialog):
@@ -564,21 +589,31 @@ class DriveImageBackupDialog(Gtk.Dialog):
     def _run_worker(self, command, generation):
         diagnostics = []
         diagnostics_size = 0
+        stdout_lines = []
         payload = None
         returncode = 1
+        process = None
         try:
             process = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
                 start_new_session=True,
             )
             self.process = process
             planned = int(self.plan["destination"]["required_bytes"])
             last_done = 0
-            for line in process.stderr:
+            for channel, line in iter_bounded_process_utf8_lines(
+                process,
+                stdout_line_limit=1024 * 1024,
+                stdout_total_limit=8 * 1024 * 1024,
+                stderr_line_limit=1024 * 1024,
+                stderr_total_limit=64 * 1024 * 1024,
+                label="drive-image backup helper",
+            ):
+                if channel == "stdout":
+                    stdout_lines.append(line)
+                    continue
                 progress = backup_decode_progress_line(line)
                 if progress is not None:
                     if progress["total"] != planned or progress["done"] < last_done:
@@ -590,9 +625,9 @@ class DriveImageBackupDialog(Gtk.Dialog):
                 if text and len(diagnostics) < 64 and diagnostics_size + len(text) <= 32768:
                     diagnostics.append(text)
                     diagnostics_size += len(text)
-            stdout = process.stdout.read()
-            returncode = process.wait()
+            returncode = process.returncode
             self.process = None
+            stdout = "".join(stdout_lines)
             if stdout.strip():
                 payload = backup_normalize_report(json.loads(stdout))
             if payload is None:
@@ -603,43 +638,20 @@ class DriveImageBackupDialog(Gtk.Dialog):
                 raise ValueError("Backup report status does not match the helper exit status.")
             if payload["status"] == "passed":
                 info = os.lstat(self.output_path)
-                if (
-                    not stat.S_ISREG(info.st_mode)
-                    or info.st_size != payload["completed_bytes"]
-                    or info.st_uid != os.getuid()
-                ):
+                if not stat.S_ISREG(info.st_mode) or info.st_size != payload["completed_bytes"] or info.st_uid != os.getuid():
                     raise ValueError("The completed destination file does not match the verified report or desktop user.")
             GLib.idle_add(self._run_ready, generation, payload, "\n".join(diagnostics), returncode)
         except Exception as exc:
-            process = self.process
             self.process = None
-            if process is not None:
-                self._terminate_and_reap(process)
+            if process is not None and process.poll() is None:
+                try:
+                    terminate_and_reap(process)
+                except (OSError, RuntimeError, ValueError):
+                    pass
             detail = str(exc)
             if diagnostics:
                 detail += "\n\nDiagnostics:\n" + "\n".join(diagnostics)
             GLib.idle_add(self._run_ready, generation, None, detail, returncode)
-
-    @staticmethod
-    def _terminate_and_reap(process):
-        """Stop and reap only the process group created for this backup."""
-        if process.poll() is None:
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
-                pass
-        try:
-            process.communicate(timeout=5)
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
-            try:
-                process.communicate(timeout=5)
-            except subprocess.TimeoutExpired:
-                pass
-
     def _progress_ready(self, generation, progress):
         if self.closed or generation != self.run_generation or not self.running:
             return False
@@ -694,20 +706,9 @@ class DriveImageBackupDialog(Gtk.Dialog):
         self.cancel_button.set_sensitive(False)
         self.status.set_text("Cancelling after the current read operation; incomplete temporary output will be removed…")
         self.progress.set_text("Cancelling safely…")
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-            GLib.timeout_add_seconds(5, self._force_kill, process)
-        except (ProcessLookupError, PermissionError) as exc:
-            self.status.set_text(f"Could not request cancellation: {exc}")
-
-    def _force_kill(self, process):
-        if self.process is process and process.poll() is None:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
-        return False
-
+        thread = schedule_process_group_termination(process, grace_seconds=5)
+        if thread is None and process.poll() is None:
+            self.status.set_text("Could not request cancellation of the owned backup process group.")
     def on_delete_event(self, *_):
         if self.running:
             self.cancel_run()

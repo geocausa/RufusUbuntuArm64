@@ -2,12 +2,13 @@
 
 import json
 import os
-import signal
 import subprocess
 import tempfile
 import threading
 
 from gi.repository import GLib, Gtk
+
+from rufusarm64_process import communicate_bounded, run_bounded, terminate_and_reap
 
 from rufusarm64_nonbootable import (
     build_dry_run_command,
@@ -209,7 +210,13 @@ class NonBootableFormatDialog(Gtk.Dialog):
 
     def _plan_worker(self, command, generation, scheme, filesystem, label):
         try:
-            completed = subprocess.run(command, check=False, capture_output=True, text=True, timeout=30)
+            completed = run_bounded(
+                command,
+                stdout_limit=8 * 1024 * 1024,
+                stderr_limit=1024 * 1024,
+                timeout=30,
+                label="non-bootable formatter plan helper",
+            )
             if completed.returncode != 0:
                 raise RuntimeError((completed.stderr or completed.stdout or "Formatting plan failed.").strip())
             payload = normalize_plan(json.loads(completed.stdout))
@@ -224,7 +231,6 @@ class NonBootableFormatDialog(Gtk.Dialog):
             GLib.idle_add(self._plan_ready, generation, payload, "")
         except Exception as exc:
             GLib.idle_add(self._plan_ready, generation, None, str(exc))
-
     def _plan_ready(self, generation, payload, error):
         if self.closed or self.running or generation != self.plan_generation:
             return False
@@ -328,11 +334,15 @@ class NonBootableFormatDialog(Gtk.Dialog):
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
                 start_new_session=True,
             )
             self.process = process
-            stdout, stderr = process.communicate()
+            stdout, stderr = communicate_bounded(
+                process,
+                stdout_limit=8 * 1024 * 1024,
+                stderr_limit=1024 * 1024,
+                label="non-bootable formatter helper",
+            )
             returncode = process.returncode
             self.process = None
             for line in stderr.splitlines():
@@ -349,32 +359,15 @@ class NonBootableFormatDialog(Gtk.Dialog):
             GLib.idle_add(self._run_ready, generation, payload, "\n".join(diagnostics), returncode)
         except Exception as exc:
             self.process = None
-            if process is not None:
-                self._terminate_and_reap(process)
+            if process is not None and process.poll() is None:
+                try:
+                    terminate_and_reap(process)
+                except (OSError, RuntimeError, ValueError):
+                    pass
             detail = str(exc)
             if diagnostics:
                 detail += "\n\nDiagnostics:\n" + "\n".join(diagnostics)
             GLib.idle_add(self._run_ready, generation, None, detail, returncode)
-
-    @staticmethod
-    def _terminate_and_reap(process):
-        if process.poll() is None:
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
-                pass
-        try:
-            process.communicate(timeout=5)
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
-            try:
-                process.communicate(timeout=5)
-            except subprocess.TimeoutExpired:
-                pass
-
     def _run_ready(self, generation, payload, diagnostics, returncode):
         if self.closed or generation != self.run_generation:
             return False

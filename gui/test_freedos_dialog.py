@@ -40,7 +40,7 @@ class FreeDOSDialogStructureTests(unittest.TestCase):
 
     def test_plan_and_platform_warning_precede_authentication(self):
         self.assertIn("build_dry_run_command", self.dialog_class_source)
-        self.assertIn("subprocess.run(command", self.dialog_class_source)
+        self.assertIn("run_bounded(", self.dialog_class_source)
         self.assertIn("normalize_plan", self.dialog_class_source)
         self.assertIn("WRITE FREEDOS", self.dialog_class_source)
         self.assertIn("not boot ARM64", self.dialog_class_source)
@@ -76,8 +76,9 @@ class FreeDOSDialogStructureTests(unittest.TestCase):
         self.assertIn("/run/user/{os.getuid()}", self.dialog_class_source)
         self.assertIn("os.O_EXCL | os.O_NOFOLLOW", self.dialog_class_source)
         self.assertIn("start_new_session=True", self.dialog_class_source)
-        self.assertIn("os.killpg(process.pid, signal.SIGTERM)", self.dialog_class_source)
-        self.assertIn("os.killpg(process.pid, signal.SIGKILL)", self.dialog_class_source)
+        self.assertIn("iter_bounded_process_utf8_lines(", self.dialog_class_source)
+        self.assertIn("terminate_and_reap(process)", self.dialog_class_source)
+        self.assertNotIn("os.killpg(", self.dialog_class_source)
         self.assertIn("waiting for the final media-state report", self.dialog_class_source)
 
     def test_result_keeps_exact_boot_boundary_and_refreshes_devices(self):
@@ -92,7 +93,7 @@ class FreeDOSDialogStructureTests(unittest.TestCase):
         self.assertIn("decode_progress_line", self.dialog_class_source)
         self.assertIn("validate_progress_against_plan", self.dialog_class_source)
         self.assertNotIn('device_size_bytes"]) * 2', self.dialog_class_source)
-        self.assertIn("for line in process.stderr", self.dialog_class_source)
+        self.assertIn("for channel, line in iter_bounded_process_utf8_lines(", self.dialog_class_source)
         self.assertIn("self._progress_ready", self.dialog_class_source)
         self.assertIn("progress_summary(progress)", self.dialog_class_source)
         self.assertNotIn("process.communicate()", self.dialog_class_source)

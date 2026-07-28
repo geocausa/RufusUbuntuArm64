@@ -21,7 +21,7 @@ The acquisition-cache rows exercise the exact durable intermediate states rather
 
 The drive-backup publication rows require rollback to remove and durably record the owned final name after a post-rename sync failure. If unlink or rollback synchronization fails, every error remains joined and the result is explicitly ambiguous rather than successful.
 
-The inventory deliberately keeps uncovered software cases visible. A missing general partition/filesystem mutation or remaining workflow-specific helper-process cleanup case may not disappear from review merely because persistence, FFU, or another component has a shared utility test.
+The inventory deliberately keeps uncovered software cases visible. The helper-process boundary is now represented by shared runtime and exact source-contract tests; the remaining software residual is destructive partition/filesystem mutation qualification.
 
 Persistence materialization uses conservative stage-specific evidence. Before the first GPT write, failure must leave both authoritative metadata copies unchanged. After mutation, errors never become completion; backup-first ordering, retained old metadata, cleanup attempts, and visible partial boot patches describe the recovery state without claiming electrical power-loss behavior.
 
