@@ -32,16 +32,16 @@ type ISOImageAnalysisOptions struct {
 // offer ISO Image mode. A successful result means the current image tree fits
 // the selected target and is representable by the bounded GPT/UEFI/FAT32 path.
 type ISOImageAnalysisResult struct {
-	Layout             ISOImageLayout `json:"layout"`
-	ImageSize          uint64         `json:"image_size"`
-	TargetSize         uint64         `json:"target_size"`
-	ManifestEntries    int            `json:"manifest_entries"`
-	ManifestFiles      int            `json:"manifest_files"`
-	ManifestDirectories int           `json:"manifest_directories"`
-	ManifestBytes      uint64         `json:"manifest_bytes"`
-	FAT32RequiredBytes uint64         `json:"fat32_required_bytes"`
-	UEFIBootPath       string         `json:"uefi_boot_path"`
-	Architecture       string         `json:"architecture"`
+	Layout              ISOImageLayout `json:"layout"`
+	ImageSize           uint64         `json:"image_size"`
+	TargetSize          uint64         `json:"target_size"`
+	ManifestEntries     int            `json:"manifest_entries"`
+	ManifestFiles       int            `json:"manifest_files"`
+	ManifestDirectories int            `json:"manifest_directories"`
+	ManifestBytes       uint64         `json:"manifest_bytes"`
+	FAT32RequiredBytes  uint64         `json:"fat32_required_bytes"`
+	UEFIBootPath        string         `json:"uefi_boot_path"`
+	Architecture        string         `json:"architecture"`
 }
 
 // AnalyzeISOImage mounts a plain Linux ISOHybrid image privately and read-only,
