@@ -18,4 +18,15 @@ jobs:
           persist-credentials: true
           ref: feature/helper-process-cleanup
       - name: Apply, qualify, commit, and remove the one-shot
-        run: python3 .github/stage4-process-once.py
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 .github/stage4-process-once.py > /tmp/stage4-process.log 2>&1
+      - name: Upload focused qualification log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: stage4-process-log-${{ github.run_id }}
+          path: /tmp/stage4-process.log
+          if-no-files-found: error
+          retention-days: 7
