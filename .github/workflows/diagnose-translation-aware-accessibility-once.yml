@@ -1,0 +1,81 @@
+name: Diagnose translation-aware accessibility patch once
+
+on:
+  pull_request:
+    branches:
+      - stage4/0.15.0
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+          ref: feature/translation-aware-accessibility
+      - name: Run corrected patch and preserve exact failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/patch-translation-aware-accessibility-once.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          start = next(i for i, line in enumerate(lines) if line.strip() == 'run: |')
+          block = []
+          for line in lines[start + 1:]:
+              if not line:
+                  block.append('')
+              elif line.startswith('          '):
+                  block.append(line[10:])
+              else:
+                  raise SystemExit(f'unexpected line outside run block: {line!r}')
+          script = '\n'.join(block) + '\n'
+          replacements = (
+              (
+                  "('    N_(\"_FreeDOS…\"),\\n', '    N_(\"_FreeDOS…\"),\\n",
+                  "('    N_(\"FreeDOS…\"),\\n', '    N_(\"FreeDOS…\"),\\n    N_(\"_FreeDOS…\"),\\n",
+              ),
+              (
+                  "('    N_(\"Post-operation actions\"),\\n', '    N_(\"Post-operation actions\"),\\n', \"existing post-operation message\"),",
+                  "('    N_(\"Operation status details\"),\\n', '    N_(\"Operation status details\"),\\n    N_(\"Post-operation actions\"),\\n', \"post-operation accessibility name\"),",
+              ),
+          )
+          for old, new in replacements:
+              if script.count(old) != 1:
+                  raise SystemExit(f'corrected patch tuple changed: {old}')
+              script = script.replace(old, new, 1)
+          Path('/tmp/accessibility-patch.sh').write_text(script, encoding='utf-8')
+          PY
+          set +e
+          bash /tmp/accessibility-patch.sh > /tmp/accessibility-patch.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            git reset --hard HEAD
+            cp /tmp/accessibility-patch.log docs/accessibility-patch-diagnostic.txt
+            git rm --ignore-unmatch \
+              .github/workflows/run-translation-aware-accessibility-v2-once.yml \
+              .github/workflows/run-translation-aware-accessibility-v3-once.yml \
+              .github/workflows/diagnose-translation-aware-accessibility-once.yml
+            git add docs/accessibility-patch-diagnostic.txt
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git commit -m "test: capture accessibility patch failure"
+            git push origin HEAD:feature/translation-aware-accessibility
+            exit 0
+          fi
+          git rm --ignore-unmatch \
+            .github/workflows/run-translation-aware-accessibility-v2-once.yml \
+            .github/workflows/run-translation-aware-accessibility-v3-once.yml \
+            .github/workflows/diagnose-translation-aware-accessibility-once.yml \
+            docs/accessibility-patch-diagnostic.txt
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "ci: remove accessibility patch diagnostics"
+          git push origin HEAD:feature/translation-aware-accessibility
