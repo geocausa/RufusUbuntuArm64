@@ -1,0 +1,32 @@
+name: Apply remaining helper process migration once
+
+on:
+  pull_request:
+    branches:
+      - stage4/0.15.0
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+          ref: feature/remaining-helper-process-workers
+      - name: Apply, qualify, commit, and remove the one-shot
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 .github/remaining-process-once.py > /tmp/remaining-process.log 2>&1
+      - name: Upload focused qualification log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: remaining-process-log-${{ github.run_id }}
+          path: /tmp/remaining-process.log
+          if-no-files-found: error
+          retention-days: 7
