@@ -150,8 +150,15 @@ jobs:
             rufusarm64-nonbootable-format \
             rufusarm64-freedos-format; do
             file "${package_root}/usr/lib/rufusarm64/${binary}" | grep -F 'ARM aarch64'
+          done
+          for binary in \
+            rufusarm64-helper \
+            rufusarm64-device-qualify \
+            rufusarm64-device-backup; do
             test "$(qemu-aarch64-static "${package_root}/usr/lib/rufusarm64/${binary}" version)" = "${VERSION}"
           done
+          grep -Fxq "VERSION = \"${VERSION}\"" \
+            "${package_root}/usr/lib/rufusarm64/rufusarm64.py"
           grep -Fq 'Write in ISO Image mode (Recommended)' \
             "${package_root}/usr/lib/rufusarm64/rufusarm64_iso_write_mode.py"
           grep -Fq 'Write in DD Image mode' \
