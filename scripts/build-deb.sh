@@ -119,6 +119,8 @@ install -Dm644 "${ROOT_DIR}/gui/rufusarm64_iso_capture.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_iso_capture.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_drive_backup_iso.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_drive_backup_iso.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_iso_write_mode.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_iso_write_mode.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_nonbootable.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_nonbootable_dialog.py" \
@@ -348,6 +350,8 @@ install -Dm644 "${ROOT_DIR}/docs/persistence-user-guide.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/persistence-user-guide.md"
 install -Dm644 "${ROOT_DIR}/docs/persistence-qualification.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/persistence-qualification.md"
+install -Dm644 "${ROOT_DIR}/docs/iso-image-mode.md" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/iso-image-mode.md"
 install -Dm644 "${ROOT_DIR}/docs/freedos-feasibility.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-feasibility.md"
 install -Dm644 "${ROOT_DIR}/docs/freedos-release-maintenance.md" \
