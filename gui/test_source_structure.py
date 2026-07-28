@@ -143,6 +143,20 @@ class SourceStructureTests(unittest.TestCase):
                     "refresh_devices": ("threading.Thread(",),
                     "_run_device_refresh": ("subprocess.run(",),
                     "_finish_device_refresh": ("generation != self.device_generation", "self.closed"),
+                    "run_analysis": (
+                        "start_new_session=True",
+                        "communicate_bounded(",
+                        "stdout_limit=ANALYSIS_STDOUT_LIMIT",
+                        "timeout=300",
+                        "terminate_process_group",
+                    ),
+                    "run_create": (
+                        "start_new_session=True",
+                        "iter_bounded_utf8_lines(",
+                        "line_limit=CREATE_LINE_LIMIT",
+                        "terminate_and_reap(process)",
+                    ),
+                    "cancel": ("schedule_process_group_termination(", "grace_seconds=5"),
                 },
             },
         }

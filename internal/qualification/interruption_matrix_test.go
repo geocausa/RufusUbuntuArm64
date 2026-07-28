@@ -175,19 +175,27 @@ func validateInterruptionMatrix(document interruptionMatrix, readFile func(strin
 				failures = append(failures, fmt.Sprintf("%s test_file %q is not a safe repository-relative path", prefix, entry.TestFile))
 				break
 			}
-			if !strings.HasSuffix(entry.TestFile, "_test.go") {
-				failures = append(failures, fmt.Sprintf("%s test_file %s is not a Go test file", prefix, entry.TestFile))
-			}
-			if !strings.HasPrefix(entry.TestName, "Test") {
-				failures = append(failures, fmt.Sprintf("%s test_name %q does not start with Test", prefix, entry.TestName))
+			var needle string
+			switch {
+			case strings.HasSuffix(entry.TestFile, "_test.go"):
+				if !strings.HasPrefix(entry.TestName, "Test") {
+					failures = append(failures, fmt.Sprintf("%s Go test_name %q does not start with Test", prefix, entry.TestName))
+				}
+				needle = "func " + entry.TestName + "("
+			case strings.HasSuffix(entry.TestFile, ".py") && strings.HasPrefix(filepath.Base(entry.TestFile), "test_"):
+				if !strings.HasPrefix(entry.TestName, "test_") {
+					failures = append(failures, fmt.Sprintf("%s Python test_name %q does not start with test_", prefix, entry.TestName))
+				}
+				needle = "def " + entry.TestName + "("
+			default:
+				failures = append(failures, fmt.Sprintf("%s test_file %s is not a supported Go or Python test file", prefix, entry.TestFile))
 			}
 			source, err := readFile(entry.TestFile)
 			if err != nil {
 				failures = append(failures, fmt.Sprintf("%s test file %s cannot be read: %v", prefix, entry.TestFile, err))
 				break
 			}
-			needle := "func " + entry.TestName + "("
-			if !bytes.Contains(source, []byte(needle)) {
+			if needle != "" && !bytes.Contains(source, []byte(needle)) {
 				failures = append(failures, fmt.Sprintf("%s test %s is not declared in %s", prefix, entry.TestName, entry.TestFile))
 			}
 		case "physical-only":

@@ -136,6 +136,8 @@ install -Dm755 "${ROOT_DIR}/gui/rufusarm64_persistence.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_persistence.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_persistence_logic.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_persistence_logic.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_process.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_process.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_ffu_json.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_ffu_json.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_ffu_restore_logic.py" \
