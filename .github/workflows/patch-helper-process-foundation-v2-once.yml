@@ -1,21 +1,14 @@
-name: Apply Stage 4 helper process patch once
+name: Disabled duplicate helper process bootstrap
 
 on:
-  push:
-    branches:
-      - feature/helper-process-cleanup
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply:
+  disabled:
+    if: ${{ false }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: true
-          ref: feature/helper-process-cleanup
-      - name: Apply, qualify, commit, and remove the one-shot
-        run: python3 .github/stage4-process-once.py
+      - run: echo disabled
