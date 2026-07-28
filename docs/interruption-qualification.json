@@ -29,7 +29,10 @@
       "status": "automated",
       "test_file": "internal/qualification/record_transaction_linux_test.go",
       "test_name": "TestWriteRecordPreflightsChecksumBeforePublishingRecord",
-      "platforms": ["linux-amd64", "linux-arm64"],
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
       "invariant": "The creation record is not published and the pre-existing checksum remains byte-for-byte unchanged."
     },
     {
@@ -41,7 +44,10 @@
       "status": "automated",
       "test_file": "internal/qualification/record_transaction_linux_test.go",
       "test_name": "TestWriteRecordPairRollsBackRecordAfterChecksumFailure",
-      "platforms": ["linux-amd64", "linux-arm64"],
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
       "invariant": "The owned record is removed, the checksum is absent, and the publication failure is returned."
     },
     {
@@ -53,7 +59,10 @@
       "status": "automated",
       "test_file": "internal/qualification/evidence_transaction_test.go",
       "test_name": "TestEvidencePairRollsBackAfterChecksumPublicationFailure",
-      "platforms": ["linux-amd64", "linux-arm64"],
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
       "invariant": "Neither the evidence document nor its checksum remains after the injected failure."
     },
     {
@@ -65,7 +74,10 @@
       "status": "automated",
       "test_file": "internal/runtimeintegrity/transaction_test.go",
       "test_name": "TestInstallRollbackAtEveryBoundary",
-      "platforms": ["linux-amd64", "linux-arm64"],
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
       "invariant": "The complete media tree matches its pre-installation snapshot after every injected boundary failure."
     },
     {
@@ -77,7 +89,10 @@
       "status": "automated",
       "test_file": "internal/runtimeintegrity/transaction_test.go",
       "test_name": "TestRemovalRollbackAtEveryBoundary",
-      "platforms": ["linux-amd64", "linux-arm64"],
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
       "invariant": "The complete installed media tree matches its pre-removal snapshot after every injected boundary failure."
     },
     {
@@ -89,7 +104,10 @@
       "status": "automated",
       "test_file": "internal/ffu/restore_executor_linux_test.go",
       "test_name": "TestExecuteAuthorizedSinglePhaseFullFlashCancellationBeforeMutation",
-      "platforms": ["linux-amd64", "linux-arm64"],
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
       "invariant": "No target mutation starts, the authorization remains reusable, and the result records cancellation before mutation."
     },
     {
@@ -101,7 +119,10 @@
       "status": "automated",
       "test_file": "internal/ffu/restore_executor_linux_test.go",
       "test_name": "TestExecuteAuthorizedSinglePhaseFullFlashCancellationAfterMutation",
-      "platforms": ["linux-amd64", "linux-arm64"],
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
       "invariant": "Success is impossible, partial byte accounting is retained, and the target is conservatively marked as possibly modified."
     },
     {
@@ -113,7 +134,10 @@
       "status": "automated",
       "test_file": "internal/ffu/restore_executor_linux_test.go",
       "test_name": "TestExecuteAuthorizedSinglePhaseFullFlashWriteFailure",
-      "platforms": ["linux-amd64", "linux-arm64"],
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
       "invariant": "The write failure is returned, success is false, and partial target mutation is explicitly reported."
     },
     {
@@ -125,7 +149,10 @@
       "status": "automated",
       "test_file": "internal/ffu/restore_executor_linux_test.go",
       "test_name": "TestExecuteAuthorizedSinglePhaseFullFlashSyncFailure",
-      "platforms": ["linux-amd64", "linux-arm64"],
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
       "invariant": "The operation cannot report success or synchronized completion and the target remains conservatively marked as possibly modified."
     },
     {
@@ -137,7 +164,10 @@
       "status": "automated",
       "test_file": "internal/ffu/restore_executor_linux_test.go",
       "test_name": "TestExecuteAuthorizedSinglePhaseFullFlashReadbackMismatch",
-      "platforms": ["linux-amd64", "linux-arm64"],
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
       "invariant": "The result is written-but-unverified, success remains false, and the mismatch is retained as final evidence."
     },
     {
@@ -149,7 +179,10 @@
       "status": "automated",
       "test_file": "internal/acquisition/channel_test.go",
       "test_name": "TestRefreshChannelCachesAndRejectsRollback",
-      "platforms": ["linux-amd64", "linux-arm64"],
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
       "invariant": "Rollback metadata is rejected and the previously accepted channel state remains authoritative."
     },
     {
@@ -161,8 +194,71 @@
       "status": "automated",
       "test_file": "internal/acquisition/channel_test.go",
       "test_name": "TestChannelRejectsDisabledConfigurationAndStateSymlink",
-      "platforms": ["linux-amd64", "linux-arm64"],
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
       "invariant": "The symlink destination is refused and the outside file remains byte-for-byte unchanged."
+    },
+    {
+      "id": "acquisition-root-published-stale-catalog",
+      "boundary": "acquisition-cache-commit",
+      "component": "verified acquisition channel cache",
+      "failure_mode": "root history is durably advanced but the cached catalog and accepted state remain from the previous trust generation",
+      "phase": "post-publication",
+      "status": "automated",
+      "test_file": "internal/acquisition/channel_interruption_test.go",
+      "test_name": "TestRefreshChannelRefusesStaleCatalogAfterRootPublicationInterruption",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "The incompatible stale catalog is refused, no cached result is returned, and accepted state remains byte-for-byte unchanged."
+    },
+    {
+      "id": "acquisition-catalog-published-stale-state",
+      "boundary": "acquisition-cache-commit",
+      "component": "verified acquisition channel cache",
+      "failure_mode": "a newer verified catalog is durably published while accepted state still records the previous catalog",
+      "phase": "post-publication",
+      "status": "automated",
+      "test_file": "internal/acquisition/channel_interruption_test.go",
+      "test_name": "TestRefreshChannelRecoversForwardAfterCatalogPublicationInterruption",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "Offline refresh recovers only forward to the verified catalog, publishes matching accepted state, and never moves accepted time backwards."
+    },
+    {
+      "id": "acquisition-state-ahead-of-catalog",
+      "boundary": "acquisition-cache-commit",
+      "component": "verified acquisition channel cache",
+      "failure_mode": "accepted state claims a newer catalog than the durably cached catalog",
+      "phase": "post-publication",
+      "status": "automated",
+      "test_file": "internal/acquisition/channel_interruption_test.go",
+      "test_name": "TestRefreshChannelRefusesStateAheadOfCatalogAfterStatePublicationInterruption",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "The stale cached catalog is rejected as rollback and neither the catalog nor accepted state is rewritten."
+    },
+    {
+      "id": "acquisition-truncated-cache-publication",
+      "boundary": "acquisition-cache-commit",
+      "component": "verified acquisition channel cache",
+      "failure_mode": "root-history or catalog cache content is truncated before a complete authenticated document is durable",
+      "phase": "post-publication",
+      "status": "automated",
+      "test_file": "internal/acquisition/channel_interruption_test.go",
+      "test_name": "TestRefreshChannelRejectsTruncatedCacheWithoutRewritingState",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "Malformed cached trust material is refused without returning a result or rewriting the previously accepted state."
     },
     {
       "id": "physical-power-removal",
@@ -173,7 +269,10 @@
       "status": "physical-only",
       "test_file": "",
       "test_name": "",
-      "platforms": ["physical-arm64", "physical-x86_64"],
+      "platforms": [
+        "physical-arm64",
+        "physical-x86_64"
+      ],
       "invariant": "The application must not claim software simulation proves electrical power-loss behavior; recovery state and subsequent refusal behavior require recorded hardware evidence."
     },
     {
@@ -185,19 +284,14 @@
       "status": "physical-only",
       "test_file": "",
       "test_name": "",
-      "platforms": ["physical-arm64", "physical-x86_64"],
+      "platforms": [
+        "physical-arm64",
+        "physical-x86_64"
+      ],
       "invariant": "Boot outcome, firmware messaging, and recovery behavior are recorded as physical qualification and are never inferred from unit or loop-device tests."
     }
   ],
   "residual_software_gaps": [
-    {
-      "id": "gap-acquisition-cache-commit",
-      "boundary": "acquisition-cache-commit",
-      "component": "verified acquisition channel cache",
-      "failure_mode": "interruption between root history, catalog, and accepted-state publication",
-      "reason": "Rollback and path-substitution checks exist, but the multi-file durable commit sequence is not yet exercised at every publication and directory-sync boundary.",
-      "planned_test_kind": "package-internal publication hook with directory snapshot assertions"
-    },
     {
       "id": "gap-drive-backup-publication",
       "boundary": "drive-backup-publication",
