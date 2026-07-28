@@ -1,9 +1,31 @@
 import os
 from pathlib import Path
+import sys
 import tempfile
+import types
 import unittest
 
-from rufusarm64_iso_write_mode_logic import build_iso_write_command, hybrid_mode_available
+
+fake_gi = types.ModuleType("gi")
+fake_repository = types.ModuleType("gi.repository")
+
+
+class FakeDialog:
+    pass
+
+
+fake_gtk = types.SimpleNamespace(Dialog=FakeDialog)
+fake_repository.Gtk = fake_gtk
+fake_gi.repository = fake_repository
+sys.modules.setdefault("gi", fake_gi)
+sys.modules.setdefault("gi.repository", fake_repository)
+
+fake_rufusarm64 = types.ModuleType("rufusarm64")
+fake_rufusarm64.RufusWindow = object
+fake_rufusarm64.build_writer_command = lambda *args, **kwargs: []
+sys.modules.setdefault("rufusarm64", fake_rufusarm64)
+
+from rufusarm64_iso_write_mode import build_iso_write_command, hybrid_mode_available
 
 
 class ISOImageModeTests(unittest.TestCase):
