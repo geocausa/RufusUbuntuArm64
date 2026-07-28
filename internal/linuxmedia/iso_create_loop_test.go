@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -86,6 +87,7 @@ func TestCreateISOImageOnRealLoopDevice(t *testing.T) {
 		}
 		_, _ = exec.Command("losetup", "--detach", loopPath).CombinedOutput()
 	})
+	waitForISOImageLoopTargetReady(t, loopPath)
 
 	deviceID, err := safety.KernelDeviceID(loopPath)
 	if err != nil {
@@ -146,9 +148,9 @@ func TestCreateISOImageOnRealLoopDevice(t *testing.T) {
 	}
 	mounted = true
 	for relative, expected := range map[string]string{
-		"README.txt":                 "RufusArm64 real ISO Image mode loop qualification\n",
-		"casper/vmlinuz":             "loop-kernel",
-		"boot/grub/grub.cfg":         "linux /casper/vmlinuz boot=casper --- quiet\n",
+		"README.txt":         "RufusArm64 real ISO Image mode loop qualification\n",
+		"casper/vmlinuz":     "loop-kernel",
+		"boot/grub/grub.cfg": "linux /casper/vmlinuz boot=casper --- quiet\n",
 	} {
 		data, err := os.ReadFile(filepath.Join(mountRoot, filepath.FromSlash(relative)))
 		if err != nil {
@@ -196,6 +198,22 @@ func patchTestISOHybridMBR(t *testing.T, path string) {
 	if err := file.Sync(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func waitForISOImageLoopTargetReady(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		file, err := os.OpenFile(path, os.O_RDWR|syscall.O_EXCL|syscall.O_NOFOLLOW, 0)
+		if err == nil {
+			_ = file.Close()
+			return
+		}
+		lastErr = err
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("loop device %s did not become exclusively openable: %v", path, lastErr)
 }
 
 func waitISOImageLoopPartition(loopPath string, layout PartitionLayout, timeout time.Duration) (string, error) {
