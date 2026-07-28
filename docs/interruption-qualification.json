@@ -411,6 +411,96 @@
       "invariant": "The symbolic link and target remain unchanged and no-replace publication refuses the collision."
     },
     {
+      "id": "persistence-mbr-write-sync-failure",
+      "boundary": "persistence-materialization",
+      "component": "MBR persistence partition materialization",
+      "failure_mode": "the MBR metadata write is partial or the post-write synchronization fails",
+      "phase": "post-mutation",
+      "status": "automated",
+      "test_file": "internal/persistence/materialize_mbr_failure_test.go",
+      "test_name": "TestApplyMBRPartitionPlanFailureStates",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "Failure is returned, the protective boot signature remains intact, and partial or fully written metadata stays inspectable rather than being reported as successful materialization."
+    },
+    {
+      "id": "persistence-gpt-prewrite-entropy-failure",
+      "boundary": "persistence-materialization",
+      "component": "GPT persistence partition materialization",
+      "failure_mode": "unique partition GUID entropy fails before the first metadata write",
+      "phase": "pre-mutation",
+      "status": "automated",
+      "test_file": "internal/persistence/materialize_gpt_failure_test.go",
+      "test_name": "TestApplyGPTPartitionPlanEntropyFailureLeavesMetadataUnchanged",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "No write or synchronization occurs and the complete primary and original backup metadata ranges remain byte-for-byte unchanged."
+    },
+    {
+      "id": "persistence-gpt-backup-first-interruption",
+      "boundary": "persistence-materialization",
+      "component": "GPT persistence partition materialization",
+      "failure_mode": "interruption occurs during relocated backup publication, its first durable sync, primary publication, or obsolete-backup cleanup",
+      "phase": "post-mutation",
+      "status": "automated",
+      "test_file": "internal/persistence/materialize_gpt_failure_test.go",
+      "test_name": "TestApplyGPTPartitionPlanInterruptedWriteOrdering",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "Every interruption returns failure and preserves conservative evidence consistent with backup-first ordering: the primary is not moved early, the original backup is not removed before the new pair is durable, and cleanup failure remains visible."
+    },
+    {
+      "id": "persistence-filesystem-command-failure-cleanup",
+      "boundary": "persistence-materialization",
+      "component": "ext4 persistence filesystem initialization",
+      "failure_mode": "format, mount, unmount, or read-only filesystem check fails after the partition has been selected",
+      "phase": "post-mutation",
+      "status": "automated",
+      "test_file": "internal/persistence/filesystem_failure_test.go",
+      "test_name": "TestCreateFilesystemFailureStagesSuppressCompletionAndCleanup",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "Every stage failure returns an error, suppresses the complete event, retries owned unmount cleanup where required, and removes the private workspace after successful cleanup."
+    },
+    {
+      "id": "persistence-config-symlink-initialization-failure",
+      "boundary": "persistence-materialization",
+      "component": "Debian persistence filesystem initialization",
+      "failure_mode": "a symbolic link occupies persistence.conf after the new filesystem is mounted",
+      "phase": "post-mutation",
+      "status": "automated",
+      "test_file": "internal/persistence/filesystem_test.go",
+      "test_name": "TestCreateFilesystemRejectsPersistenceConfigSymlinkAndUnmounts",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "The outside target remains unchanged, initialization fails, and cleanup unmount is attempted."
+    },
+    {
+      "id": "persistence-boot-patch-later-path-failure",
+      "boundary": "persistence-materialization",
+      "component": "persistent live-media boot configuration",
+      "failure_mode": "a later detected boot configuration is replaced by a symbolic link after an earlier owned configuration was patched",
+      "phase": "post-mutation",
+      "status": "automated",
+      "test_file": "internal/persistence/patch_failure_test.go",
+      "test_name": "TestPatchBootTreeLaterFailurePreservesOwnedPartialEvidence",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "The operation returns failure and no success list, the earlier owned patch remains visible as incomplete-media evidence, the outside symbolic-link target is unchanged, and no owned temporary patch file remains."
+    },
+    {
       "id": "physical-power-removal",
       "boundary": "physical-power-loss",
       "component": "whole-device destructive workflows",
@@ -449,14 +539,6 @@
       "failure_mode": "interruption after partition-table mutation, filesystem creation, payload copy, or final sync",
       "reason": "Privileged loop qualification covers successful invariants, but deterministic injected interruption at each destructive boundary remains incomplete.",
       "planned_test_kind": "bounded privileged loop-device interruption cases plus package-level fault seams"
-    },
-    {
-      "id": "gap-persistence-materialization",
-      "boundary": "persistence-materialization",
-      "component": "persistent live USB creation",
-      "failure_mode": "persistence partition creation, filesystem initialization, or boot-configuration patching fails after mutation",
-      "reason": "Compatibility and successful creation are covered, but post-mutation failure classification and cleanup need an explicit matrix.",
-      "planned_test_kind": "package-internal materializer and patcher failure seams with conservative result assertions"
     },
     {
       "id": "gap-helper-process-cleanup",

@@ -13,13 +13,16 @@ The initial inventory records existing coverage for:
 - FFU cancellation before and after mutation, partial writes, synchronization failure, and readback mismatch;
 - acquisition metadata rollback refusal and symbolic-link destination substitution;
 - interruption after root-history, catalog, or accepted-state cache publication, including forward-only recovery and malformed-cache refusal;
-- raw, dynamic-container, and filesystem-ISO backup cleanup, no-replace collision, directory substitution, post-rename sync rollback, and ambiguous rollback evidence.
+- raw, dynamic-container, and filesystem-ISO backup cleanup, no-replace collision, directory substitution, post-rename sync rollback, and ambiguous rollback evidence;
+- MBR/GPT persistence metadata failure ordering, ext4 initialization cleanup, and partial boot-tree patch evidence.
 
 The acquisition-cache rows exercise the exact durable intermediate states rather than a generic error path. Refused stale, state-ahead, or truncated states leave the accepted-state file unchanged; the one recoverable catalog-ahead state advances only to authenticated metadata and never moves the accepted timestamp backwards.
 
 The drive-backup publication rows require rollback to remove and durably record the owned final name after a post-rename sync failure. If unlink or rollback synchronization fails, every error remains joined and the result is explicitly ambiguous rather than successful.
 
-The inventory deliberately keeps uncovered software cases visible. A missing partition/filesystem mutation, persistence materialization, or helper-process cleanup case may not disappear from review merely because another component has a similar test.
+The inventory deliberately keeps uncovered software cases visible. A missing general partition/filesystem mutation or helper-process cleanup case may not disappear from review merely because persistence or another component has a similar test.
+
+Persistence materialization uses conservative stage-specific evidence. Before the first GPT write, failure must leave both authoritative metadata copies unchanged. After mutation, errors never become completion; backup-first ordering, retained old metadata, cleanup attempts, and visible partial boot patches describe the recovery state without claiming electrical power-loss behavior.
 
 ## Required result semantics
 
