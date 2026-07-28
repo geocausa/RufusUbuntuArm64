@@ -10,13 +10,37 @@ ROOT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
 def replace(path: str, old: str, new: str) -> None:
     target = ROOT / path
     text = target.read_text(encoding="utf-8")
-    if new in text:
+    if new and new in text:
         return
     if old not in text:
+        if not new:
+            return
         raise SystemExit(f"expected finish context not found in {path}: {old[:100]!r}")
     target.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
+# The primary applicator intentionally writes the complete GPT implementation
+# first. Remove its temporary injectable reader scaffold after switching the
+# actual GUID calls to crypto/rand.Reader.
+replace(
+    "internal/linuxmedia/extracted_layout_options.go",
+    """// randReader keeps random GUID generation injectable through the existing
+// io.Reader contract without exposing another package-level mutable variable.
+type randReader struct{}
+
+func (randReader) Read(buffer []byte) (int, error) {
+	return io.ReadFull(systemRandomReader{}, buffer)
+}
+
+type systemRandomReader struct{}
+
+func (systemRandomReader) Read(buffer []byte) (int, error) {
+	return cryptoRandRead(buffer)
+}
+
+""",
+    "",
+)
 replace(
     "internal/linuxmedia/extracted_layout_options.go",
     "const (\n\textractedPartitionMBR = \"mbr\"\n\textractedPartitionGPT = \"gpt\"\n)\n",
