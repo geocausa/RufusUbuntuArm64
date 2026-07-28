@@ -23,15 +23,15 @@ import (
 // target device and the final safety callback supplied by the privileged GUI
 // helper.
 type ISOImageCreateOptions struct {
-	TargetSize        uint64
-	ExpectedDeviceID  uint64
-	ExpectedSource    sourcefile.Identity
-	Architecture      string
-	VolumeLabel       string
-	WorkDirectory     string
-	BeforeDestructive func(source *os.File) error
+	TargetSize         uint64
+	ExpectedDeviceID   uint64
+	ExpectedSource     sourcefile.Identity
+	Architecture       string
+	VolumeLabel        string
+	WorkDirectory      string
+	BeforeDestructive  func(source *os.File) error
 	ManifestMaxEntries int
-	ManifestMaxBytes  uint64
+	ManifestMaxBytes   uint64
 }
 
 // ISOImageCreateResult records the exact layout and verified source tree copied
@@ -129,8 +129,8 @@ func CreateISOImage(ctx context.Context, isoPath, devicePath string, opts ISOIma
 	if err := safety.VerifyOpenDevice(target, opts.ExpectedDeviceID, opts.TargetSize); err != nil {
 		return result, err
 	}
-	if err := syscall.Flock(int(target.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return result, fmt.Errorf("another writer appears to be using %s: %w", devicePath, err)
+	if err := acquireISOImageTargetLock(ctx, target, devicePath); err != nil {
+		return result, err
 	}
 	targetLocked = true
 	stableTargetPath := fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), target.Fd())
