@@ -20,12 +20,12 @@ def replace(path: str, old: str, new: str) -> None:
 replace(
     "internal/linuxmedia/extracted_layout_options.go",
     "const (\n\textractedPartitionMBR = \"mbr\"\n\textractedPartitionGPT = \"gpt\"\n)\n",
-    "const (\n\textractedPartitionMBR  = \"mbr\"\n\textractedPartitionGPT  = \"gpt\"\n\tminimumFAT32Clusters   = uint64(65525)\n)\n",
+    "const (\n\textractedPartitionMBR = \"mbr\"\n\textractedPartitionGPT = \"gpt\"\n\t// FAT32 requires at least 65,525 data clusters. Reserve additional clusters\n\t// for FAT and reserved-sector metadata so the pre-erasure check stays safe.\n\tminimumFAT32PartitionClusters = uint64(70000)\n)\n",
 )
 replace(
     "internal/linuxmedia/extracted_layout_options.go",
     "func WriteExtractedPartitionTable(target layoutTarget, layout ExtractedLayout, scheme, label string) error {\n",
-    "func validateExtractedFAT32Capacity(partitionBytes, clusterBytes uint64) error {\n\tif clusterBytes == 0 || partitionBytes/clusterBytes < minimumFAT32Clusters {\n\t\treturn fmt.Errorf(\"the selected FAT32 cluster size %d leaves too few clusters on the target\", clusterBytes)\n\t}\n\treturn nil\n}\n\nfunc WriteExtractedPartitionTable(target layoutTarget, layout ExtractedLayout, scheme, label string) error {\n",
+    "func validateExtractedFAT32Capacity(partitionBytes, clusterBytes uint64) error {\n\tif clusterBytes == 0 || partitionBytes/clusterBytes < minimumFAT32PartitionClusters {\n\t\treturn fmt.Errorf(\"the selected FAT32 cluster size %d leaves too few clusters on the target\", clusterBytes)\n\t}\n\treturn nil\n}\n\nfunc WriteExtractedPartitionTable(target layoutTarget, layout ExtractedLayout, scheme, label string) error {\n",
 )
 replace(
     "internal/linuxmedia/extracted.go",
