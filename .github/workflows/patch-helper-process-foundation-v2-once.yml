@@ -1,0 +1,78 @@
+name: Patch helper process foundation v2 once
+
+on:
+  push:
+    branches:
+      - feature/helper-process-cleanup
+  pull_request:
+    branches:
+      - stage4/0.15.0
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+          ref: feature/helper-process-cleanup
+      - name: Execute robust reviewed helper process patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/patch-helper-process-foundation-once.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          start = next(i for i, line in enumerate(lines) if line.strip() == 'run: |')
+          block = []
+          for line in lines[start + 1:]:
+              if not line:
+                  block.append('')
+              elif line.startswith('          '):
+                  block.append(line[10:])
+              else:
+                  raise SystemExit(f'unexpected line outside run block: {line!r}')
+          script = '\n'.join(block) + '\n'
+
+          analysis_call = 'replace_once(persistence, old_analysis, new_analysis, "persistence analysis worker")'
+          analysis_replacement = '''text = persistence.read_text(encoding="utf-8")
+          method_start = text.index("    def run_analysis(self, command, key):")
+          method_end = text.index("\\n    def finish_analysis", method_start)
+          persistence.write_text(text[:method_start] + new_analysis.rstrip() + text[method_end:], encoding="utf-8")'''
+          create_call = 'replace_once(persistence, old_create, new_create, "persistence creation worker")'
+          create_replacement = '''text = persistence.read_text(encoding="utf-8")
+          method_start = text.index("    def run_create(self, command):")
+          method_end = text.index("\\n    def handle_event", method_start)
+          persistence.write_text(text[:method_start] + new_create.rstrip() + text[method_end:], encoding="utf-8")'''
+          cancel_call = 'replace_once(persistence, old_cancel, new_cancel, "persistence cancellation signal")'
+          cancel_replacement = '''text = persistence.read_text(encoding="utf-8")
+          cancel_start = text.index("        if self.process and self.process.poll() is None:", text.index("    def cancel(self"))
+          cancel_end = text.index("\\n\\n    def cleanup_cancel", cancel_start)
+          persistence.write_text(text[:cancel_start] + new_cancel.rstrip() + text[cancel_end:], encoding="utf-8")'''
+          for old, new in (
+              (analysis_call, analysis_replacement),
+              (create_call, create_replacement),
+              (cancel_call, cancel_replacement),
+          ):
+              if script.count(old) != 1:
+                  raise SystemExit(f'helper process script call changed: {old}')
+              script = script.replace(old, new, 1)
+
+          cleanup = 'git rm .github/workflows/patch-helper-process-foundation-once.yml'
+          cleanup_replacement = '''git rm \\
+            .github/workflows/patch-helper-process-foundation-once.yml \\
+            .github/workflows/patch-helper-process-foundation-v2-once.yml \\
+            .github/workflows/diagnose-helper-process-foundation-once.yml \\
+            docs/helper-process-patch-diagnostic.txt'''
+          if script.count(cleanup) != 1:
+              raise SystemExit('helper process workflow cleanup changed')
+          script = script.replace(cleanup, cleanup_replacement, 1)
+          Path('/tmp/helper-process-patch-v2.sh').write_text(script, encoding='utf-8')
+          PY
+          bash /tmp/helper-process-patch-v2.sh
