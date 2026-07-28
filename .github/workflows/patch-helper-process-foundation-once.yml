@@ -22,12 +22,21 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           path = Path('.github/stage4-process-once.py')
-          text = path.read_text(encoding='utf-8')
-          old = 'process = self.start("import os; os.write(1, b\'\\\\\\\\xff\\\\\\\\n\')")'
-          new = 'process = self.start("import os; os.write(1, bytes([255, 10]))")'
-          if text.count(old) != 1:
-              raise SystemExit('non-UTF8 fixture anchor changed')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          method_seen = False
+          changed = 0
+          for index, line in enumerate(lines):
+              if 'def test_non_utf8_line_is_rejected_after_reaping' in line:
+                  method_seen = True
+                  continue
+              if method_seen and 'process = self.start("import os; os.write(1,' in line:
+                  indent = line[:len(line) - len(line.lstrip())]
+                  lines[index] = indent + 'process = self.start("import os; os.write(1, bytes([255, 10]))")'
+                  changed += 1
+                  break
+          if changed != 1:
+              raise SystemExit(f'non-UTF8 fixture line changed: {changed}')
+          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
           PY
       - name: Apply, qualify, commit, and remove the one-shot
         shell: bash
