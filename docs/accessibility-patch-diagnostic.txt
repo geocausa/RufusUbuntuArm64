@@ -1,0 +1,21 @@
+......F.................
+======================================================================
+FAIL: test_every_primary_accessibility_string_is_admitted_to_catalog (gui.test_accessibility_i18n.TranslationAwareAccessibilityTests.test_every_primary_accessibility_string_is_admitted_to_catalog)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/RufusUbuntuArm64/RufusUbuntuArm64/gui/test_accessibility_i18n.py", line 100, in test_every_primary_accessibility_string_is_admitted_to_catalog
+    self.assertEqual(missing, [])
+AssertionError: Lists differ: ['Choose an ISO or disk image that RufusAr[90 chars]sh.'] != []
+
+First list contains 2 additional elements.
+First extra element 0:
+'Choose an ISO or disk image that RufusArm64 will inspect before writing.'
+
++ []
+- ['Choose an ISO or disk image that RufusArm64 will inspect before writing.',
+-  'Request safe cancellation and wait for cleanup to finish.']
+
+----------------------------------------------------------------------
+Ran 24 tests in 0.093s
+
+FAILED (failures=1)
