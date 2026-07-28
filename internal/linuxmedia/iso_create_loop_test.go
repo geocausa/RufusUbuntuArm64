@@ -205,15 +205,20 @@ func waitForISOImageLoopTargetReady(t *testing.T, path string) {
 	deadline := time.Now().Add(5 * time.Second)
 	var lastErr error
 	for time.Now().Before(deadline) {
-		file, err := os.OpenFile(path, os.O_RDWR|syscall.O_EXCL|syscall.O_NOFOLLOW, 0)
+		file, err := os.OpenFile(path, os.O_RDWR|syscall.O_NOFOLLOW, 0)
 		if err == nil {
+			err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+			if err == nil {
+				_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+				_ = file.Close()
+				return
+			}
 			_ = file.Close()
-			return
 		}
 		lastErr = err
 		time.Sleep(50 * time.Millisecond)
 	}
-	t.Fatalf("loop device %s did not become exclusively openable: %v", path, lastErr)
+	t.Fatalf("loop device %s did not become flockable: %v", path, lastErr)
 }
 
 func waitISOImageLoopPartition(loopPath string, layout PartitionLayout, timeout time.Duration) (string, error) {
