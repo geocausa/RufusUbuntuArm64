@@ -11,4 +11,6 @@ Planned exact scope:
 - exact option binding through confirmation, privileged helper, diagnostics, tests, and loop-device qualification;
 - DD mode continues to preserve the source image byte-for-byte and ignores ISO extraction layout choices.
 
+The reviewed applicator is ready; this branch update triggers its bounded same-repository run.
+
 Refs #289.
