@@ -12,6 +12,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import GLib, Gtk
 
 from rufusarm64_logic import build_checksum_command, checksum_summary, normalize_checksum_result
+from rufusarm64_process import run_bounded
 
 
 class ChecksumDialog(Gtk.Dialog):
@@ -131,12 +132,12 @@ class ChecksumDialog(Gtk.Dialog):
         payload = None
         failure = ""
         try:
-            completed = subprocess.run(
+            completed = run_bounded(
                 command,
-                check=False,
-                text=True,
-                capture_output=True,
+                stdout_limit=8 * 1024 * 1024,
+                stderr_limit=1024 * 1024,
                 timeout=900,
+                label="checksum helper",
             )
             if completed.returncode != 0:
                 failure = completed.stderr.strip() or "The checksum helper failed."
@@ -154,7 +155,6 @@ class ChecksumDialog(Gtk.Dialog):
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             failure = str(exc)
         GLib.idle_add(self._finish, generation, payload, failure)
-
     def _finish(self, generation, payload, failure):
         if self.closed or generation != self.generation:
             return False

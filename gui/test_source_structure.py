@@ -103,7 +103,7 @@ class SourceStructureTests(unittest.TestCase):
             "rufusarm64.py": {
                 "AcquisitionDialog": {
                     "verify_catalog": ("threading.Thread(",),
-                    "_run_catalog_verify": ("subprocess.run(",),
+                    "_run_catalog_verify": ("run_bounded(",),
                     "_finish_catalog_verify": ("generation != self.catalog_generation", "self.closed"),
                 },
                 "RufusWindow": {
@@ -134,7 +134,7 @@ class SourceStructureTests(unittest.TestCase):
                         "strict_json_loads(",
                         "normalize_ffu_restore_output",
                     ),
-                    "cancel_restore": ("os.killpg(", "signal.SIGTERM", "target state is not yet known"),
+                    "cancel_restore": ("schedule_process_group_termination(", "grace_seconds=5", "target state is not yet known"),
                     "_finish_restore": ("generation != self.generation", "self.closed", "possibly modified"),
                 },
             },

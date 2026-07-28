@@ -576,6 +576,36 @@
       "invariant": "The shared bounded capture terminates and reaps the FFU helper before returning an error, so malformed or incomplete evidence cannot become success."
     },
     {
+      "id": "remaining-gui-helper-worker-contract",
+      "boundary": "helper-process-cleanup",
+      "component": "primary acquisition, checksum, writer, formatter, qualification, backup, ISO, FreeDOS, and FFU GTK workers",
+      "failure_mode": "a remaining GTK helper hangs, overproduces output, returns non-UTF-8 evidence, or ignores cancellation while both pipes are live",
+      "phase": "process-interruption",
+      "status": "automated",
+      "test_file": "gui/test_remaining_process_workers.py",
+      "test_name": "test_remaining_gui_workers_use_shared_bounded_process_contract",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "Every remaining reviewed GTK helper uses package-owned bounded capture or concurrent streaming, owned process groups, forced escalation where cancellation signals are allowed, and workflow-specific final-evidence handling."
+    },
+    {
+      "id": "dual-pipe-progress-report-bounds",
+      "boundary": "helper-process-cleanup",
+      "component": "helpers that stream progress on stderr and publish final JSON on stdout",
+      "failure_mode": "one pipe fills, a line or channel exceeds its bound, or a descendant ignores SIGTERM",
+      "phase": "process-interruption",
+      "status": "automated",
+      "test_file": "gui/test_process_cleanup.py",
+      "test_name": "test_two_pipe_streaming_is_concurrent_bounded_and_reaped",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "Both pipes are drained concurrently with independent line and total limits, output remains strict UTF-8, and the owned group is reaped without accepting incomplete final evidence."
+    },
+    {
       "id": "physical-power-removal",
       "boundary": "physical-power-loss",
       "component": "whole-device destructive workflows",
@@ -614,14 +644,6 @@
       "failure_mode": "interruption after partition-table mutation, filesystem creation, payload copy, or final sync",
       "reason": "Privileged loop qualification covers successful invariants, but deterministic injected interruption at each destructive boundary remains incomplete.",
       "planned_test_kind": "bounded privileged loop-device interruption cases plus package-level fault seams"
-    },
-    {
-      "id": "gap-helper-process-cleanup",
-      "boundary": "helper-process-cleanup",
-      "component": "GTK-launched privileged and read-only helpers",
-      "failure_mode": "the helper exits, hangs, is cancelled, or its process group is terminated while descriptors and temporary state are live",
-      "reason": "The shared process-group, bounded-capture, line-stream, FFU, and persistence paths are executable, but primary acquisition/writer and the remaining guarded streaming dialogs still need migration to the shared utility before this boundary can close.",
-      "planned_test_kind": "migrate remaining GTK workers to the package-owned utility and map each workflow-specific final-evidence contract"
     }
   ]
 }

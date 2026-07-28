@@ -59,10 +59,12 @@ class DeviceQualificationDialogStructureTests(unittest.TestCase):
             self.qualification_source.index("detail_scroll = Gtk.ScrolledWindow()"),
         )
 
-    def test_cancellation_does_not_kill_arbitrary_processes(self):
+    def test_cancellation_targets_only_the_owned_process_group(self):
         self.assertIn("process = self.process", self.qualification_source)
         self.assertIn("process.poll() is not None", self.qualification_source)
-        self.assertIn("process.terminate()", self.qualification_source)
+        self.assertIn("schedule_process_group_termination(process, grace_seconds=5)", self.qualification_source)
+        self.assertIn("start_new_session=True", self.qualification_source)
+        self.assertNotIn("process.terminate()", self.qualification_source)
         self.assertNotIn("os.killpg", self.qualification_source)
 
 
