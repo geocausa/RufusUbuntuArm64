@@ -606,6 +606,81 @@
       "invariant": "Both pipes are drained concurrently with independent line and total limits, output remains strict UTF-8, and the owned group is reaped without accepting incomplete final evidence."
     },
     {
+      "id": "raw-imaging-mutation-interruption",
+      "boundary": "partition-filesystem-mutation",
+      "component": "raw and ISOHybrid target writing",
+      "failure_mode": "cancellation follows the first target chunk or final target synchronization fails after all bytes are written",
+      "phase": "post-mutation",
+      "status": "automated",
+      "test_file": "internal/imaging/interruption_test.go",
+      "test_name": "TestWriteImageInterruptionQualification",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "The write returns failure with a conservative byte count and no authenticated success digest; post-mutation target state remains inspectable and is never reported complete."
+    },
+    {
+      "id": "windows-media-mutation-interruption",
+      "boundary": "partition-filesystem-mutation",
+      "component": "Windows installation media creation",
+      "failure_mode": "execution stops before mutation or immediately after partition publication, filesystem creation, payload copy, or final synchronization",
+      "phase": "pre-and-post-mutation",
+      "status": "automated",
+      "test_file": "internal/windowsmedia/interruption_test.go",
+      "test_name": "TestCreateInterruptionAfterEachDestructiveBoundary",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "Pre-destructive refusal leaves the target unchanged; every later injected failure returns error after observable target mutation and never emits completion."
+    },
+    {
+      "id": "freedos-mutation-interruption",
+      "boundary": "partition-filesystem-mutation",
+      "component": "FreeDOS required-extent media creation",
+      "failure_mode": "identity, target write, flush, readback, finish, or close fails",
+      "phase": "pre-and-post-mutation",
+      "status": "automated",
+      "test_file": "internal/freedos/interruption_qualification_test.go",
+      "test_name": "TestExecuteDevicePlanInterruptionQualification",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "Every injected failure retains exact phase and changed-media evidence, never marks media reusable, and pre-destructive refusal claims no I/O."
+    },
+    {
+      "id": "nonbootable-mutation-interruption",
+      "boundary": "partition-filesystem-mutation",
+      "component": "data-only partitioning and filesystem creation",
+      "failure_mode": "preflight, erase, partition, format, verification, or completion fails",
+      "phase": "pre-and-post-mutation",
+      "status": "automated",
+      "test_file": "internal/nonbootable/interruption_qualification_test.go",
+      "test_name": "TestExecuteInterruptionQualificationEveryMutationPhase",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "Every phase failure produces a validated non-success report; only preflight is unchanged, and no failed path publishes reusable filesystem evidence."
+    },
+    {
+      "id": "nonbootable-real-loop-post-partition-cancel",
+      "boundary": "partition-filesystem-mutation",
+      "component": "Linux kernel loop-device partition publication",
+      "failure_mode": "context cancellation occurs after the real partition table and node are published but before filesystem creation",
+      "phase": "post-mutation",
+      "status": "automated",
+      "test_file": "internal/nonbootable/interruption_loop_test.go",
+      "test_name": "TestExecuteDeviceInterruptionAfterPartitionOnRealLoop",
+      "platforms": [
+        "linux-amd64-privileged-loop",
+        "linux-arm64-privileged-loop"
+      ],
+      "invariant": "The real loop target is reported changed and cancelled, the partition node remains inspectable, and no filesystem or reusable success evidence is published."
+    },
+    {
       "id": "physical-power-removal",
       "boundary": "physical-power-loss",
       "component": "whole-device destructive workflows",
@@ -636,14 +711,5 @@
       "invariant": "Boot outcome, firmware messaging, and recovery behavior are recorded as physical qualification and are never inferred from unit or loop-device tests."
     }
   ],
-  "residual_software_gaps": [
-    {
-      "id": "gap-partition-filesystem-mutation",
-      "boundary": "partition-filesystem-mutation",
-      "component": "raw imaging, Windows media, FreeDOS, and non-bootable formatting",
-      "failure_mode": "interruption after partition-table mutation, filesystem creation, payload copy, or final sync",
-      "reason": "Privileged loop qualification covers successful invariants, but deterministic injected interruption at each destructive boundary remains incomplete.",
-      "planned_test_kind": "bounded privileged loop-device interruption cases plus package-level fault seams"
-    }
-  ]
+  "residual_software_gaps": []
 }

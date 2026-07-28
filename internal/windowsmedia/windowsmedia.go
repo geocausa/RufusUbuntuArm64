@@ -66,6 +66,25 @@ type Options struct {
 	BadBlockCheck     bool
 	Customizations    windowsconfig.Options
 	BeforeDestructive func(source *os.File) error
+
+	faults *mutationFaults
+}
+
+type mutationFaults struct {
+	afterPartition func() error
+	afterFormat    func() error
+	afterCopy      func() error
+	afterSync      func() error
+}
+
+func runMutationFault(stage string, fault func() error) error {
+	if fault == nil {
+		return nil
+	}
+	if err := fault(); err != nil {
+		return fmt.Errorf("interrupted after %s: %w", stage, err)
+	}
+	return nil
 }
 
 // Event is a progress or status update suitable for a terminal or GUI.
@@ -500,6 +519,11 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 			return err
 		}
 	}
+	if opts.faults != nil {
+		if err := runMutationFault("partition-table publication", opts.faults.afterPartition); err != nil {
+			return err
+		}
+	}
 	if err := checkTarget(); err != nil {
 		return err
 	}
@@ -583,6 +607,11 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		}
 		send(emit, Event{Stage: "boot", Message: "Installed Windows legacy BIOS/CSM MBR and partition boot code."})
 	}
+	if opts.faults != nil {
+		if err := runMutationFault("filesystem creation", opts.faults.afterFormat); err != nil {
+			return err
+		}
+	}
 	if err := unmountDeviceMounts(ctx, partition); err != nil {
 		return err
 	}
@@ -648,6 +677,11 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 	}); err != nil {
 		return err
 	}
+	if opts.faults != nil {
+		if err := runMutationFault("payload copy", opts.faults.afterCopy); err != nil {
+			return err
+		}
+	}
 
 	send(emit, Event{Stage: "sync", Message: "Flushing pending USB writes safely…"})
 	if err := run(ctx, emit, "sync", "-f", usbMount); err != nil {
@@ -662,6 +696,11 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 	}
 	if err := run(ctx, emit, "blockdev", "--flushbufs", partition); err != nil {
 		return fmt.Errorf("flush USB buffers: %w", err)
+	}
+	if opts.faults != nil {
+		if err := runMutationFault("final synchronization", opts.faults.afterSync); err != nil {
+			return err
+		}
 	}
 
 	if opts.Verify {

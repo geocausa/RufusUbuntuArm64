@@ -22,6 +22,7 @@
 - Qualified persistence partition and filesystem materialization failures, including GPT backup-first ordering, MBR partial/sync errors, cleanup without false completion, and visible partial boot-patch evidence.
 - Added package-owned bounded helper-process utilities and migrated FFU capture plus persistence analysis and creation to tested process-group escalation, bounded binary capture, bounded UTF-8 line streaming, pipe closure, and reaping.
 - Migrated the remaining GTK acquisition, checksum, writer, formatter, qualification, backup, ISO, FreeDOS, and FFU workers to shared bounded one-shot or concurrent two-pipe contracts with strict UTF-8 evidence limits, closing the helper-process interruption residual.
+- Qualified raw imaging, Windows media, FreeDOS, and data-only partition/filesystem interruption at each admitted destructive boundary, including real loop-device cancellation after partition publication, closing the final software interruption residual.
 
 ## 0.14.0 — 2026-07-26
 

@@ -67,6 +67,7 @@ type WriteOptions struct {
 	trustedSnapshotIdentity sourcefile.Identity
 	beforeMutation          func()
 	afterWriteChunk         func(uint64)
+	syncTarget              func(*os.File) error
 }
 
 func WriteImage(ctx context.Context, imagePath, devicePath string, opts WriteOptions) (uint64, error) {
@@ -132,6 +133,10 @@ func WritePreparedOpenImageWithResult(ctx context.Context, prepared *PreparedInp
 func writeOpenImage(ctx context.Context, src *os.File, devicePath string, opts WriteOptions) (writeResult WriteResult, resultErr error) {
 	if opts.BufferSize <= 0 {
 		opts.BufferSize = DefaultBufferSize
+	}
+	syncTarget := opts.syncTarget
+	if syncTarget == nil {
+		syncTarget = func(target *os.File) error { return target.Sync() }
 	}
 	var sourceLease *sourcefile.ReadLease
 	targetChanged := false
@@ -282,7 +287,7 @@ func writeOpenImage(ctx context.Context, src *os.File, devicePath string, opts W
 	var written uint64
 	for {
 		if err := ctx.Err(); err != nil {
-			syncErr := dst.Sync()
+			syncErr := syncTarget(dst)
 			stopReporter()
 			if syncErr != nil {
 				return WriteResult{BytesWritten: written}, fmt.Errorf("operation cancelled; flushing partial write also failed: %w", syncErr)
@@ -302,7 +307,7 @@ func writeOpenImage(ctx context.Context, src *os.File, devicePath string, opts W
 			}
 			done.Store(written)
 			if writeErr != nil {
-				syncErr := dst.Sync()
+				syncErr := syncTarget(dst)
 				stopReporter()
 				if syncErr != nil {
 					return WriteResult{BytesWritten: written}, fmt.Errorf("write target at offset %d: %v; flushing partial write: %w", written-uint64(wn), writeErr, syncErr)
@@ -314,7 +319,7 @@ func writeOpenImage(ctx context.Context, src *os.File, devicePath string, opts W
 			break
 		}
 		if readErr != nil {
-			syncErr := dst.Sync()
+			syncErr := syncTarget(dst)
 			stopReporter()
 			if syncErr != nil {
 				return WriteResult{BytesWritten: written}, fmt.Errorf("read image: %v; flushing partial write: %w", readErr, syncErr)
@@ -323,7 +328,7 @@ func writeOpenImage(ctx context.Context, src *os.File, devicePath string, opts W
 		}
 	}
 
-	if err := dst.Sync(); err != nil {
+	if err := syncTarget(dst); err != nil {
 		stopReporter()
 		return WriteResult{BytesWritten: written}, fmt.Errorf("sync target: %w", err)
 	}

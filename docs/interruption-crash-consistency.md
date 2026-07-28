@@ -15,13 +15,14 @@ The initial inventory records existing coverage for:
 - interruption after root-history, catalog, or accepted-state cache publication, including forward-only recovery and malformed-cache refusal;
 - raw, dynamic-container, and filesystem-ISO backup cleanup, no-replace collision, directory substitution, post-rename sync rollback, and ambiguous rollback evidence;
 - MBR/GPT persistence metadata failure ordering, ext4 initialization cleanup, and partial boot-tree patch evidence.
-- owned helper-process SIGTERM/SIGKILL escalation, bounded capture and line streaming, FFU evidence handling, and persistence worker reaping.
+- owned helper-process SIGTERM/SIGKILL escalation, bounded capture and line streaming, and workflow-specific evidence handling;
+- raw imaging, Windows media, FreeDOS, and data-only formatting interruption before and after every admitted destructive boundary, including a real loop-device post-partition cancellation.
 
 The acquisition-cache rows exercise the exact durable intermediate states rather than a generic error path. Refused stale, state-ahead, or truncated states leave the accepted-state file unchanged; the one recoverable catalog-ahead state advances only to authenticated metadata and never moves the accepted timestamp backwards.
 
 The drive-backup publication rows require rollback to remove and durably record the owned final name after a post-rename sync failure. If unlink or rollback synchronization fails, every error remains joined and the result is explicitly ambiguous rather than successful.
 
-The inventory deliberately keeps uncovered software cases visible. The helper-process boundary is now represented by shared runtime and exact source-contract tests; the remaining software residual is destructive partition/filesystem mutation qualification.
+The software interruption inventory has no residual gap: every admitted boundary is represented by executable regression coverage, while electrical power removal and firmware boot remain explicitly physical-only.
 
 Persistence materialization uses conservative stage-specific evidence. Before the first GPT write, failure must leave both authoritative metadata copies unchanged. After mutation, errors never become completion; backup-first ordering, retained old metadata, cleanup attempts, and visible partial boot patches describe the recovery state without claiming electrical power-loss behavior.
 
