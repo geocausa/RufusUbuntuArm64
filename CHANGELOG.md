@@ -18,6 +18,7 @@
 - Completed a translation-aware primary accessibility inventory so reviewed mnemonics, assistive names, descriptions, icon-only controls, and safe shortcuts remain aligned after gettext translation.
 - Added a fail-closed interruption and crash-consistency inventory that maps executable regressions, preserves named software gaps, and keeps electrical power-loss and firmware boot evidence explicitly physical-only.
 - Qualified interrupted acquisition-cache states after root-history, catalog, and accepted-state publication, including forward-only recovery, rollback refusal, malformed-cache rejection, and unchanged-state evidence.
+- Qualified raw/container and filesystem-ISO backup publication rollback, preserving no-replace collisions and surfacing unlink or rollback-sync failures as ambiguous rather than successful publication.
 
 ## 0.14.0 — 2026-07-26
 

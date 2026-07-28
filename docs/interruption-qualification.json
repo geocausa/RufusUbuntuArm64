@@ -261,6 +261,156 @@
       "invariant": "Malformed cached trust material is refused without returning a result or rewriting the previously accepted state."
     },
     {
+      "id": "drive-backup-source-truncation-cleanup",
+      "boundary": "drive-backup-publication",
+      "component": "raw drive backup",
+      "failure_mode": "the source becomes shorter than the reviewed capture size after private output creation",
+      "phase": "post-temporary-creation",
+      "status": "automated",
+      "test_file": "internal/drivebackup/backup_test.go",
+      "test_name": "TestCaptureRemovesIncompleteDestinationOnSourceTruncation",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "The incomplete owner-private destination is removed and the failed report cannot expose completed hash evidence."
+    },
+    {
+      "id": "drive-backup-cancellation-cleanup",
+      "boundary": "drive-backup-publication",
+      "component": "raw drive backup",
+      "failure_mode": "the capture context is cancelled after partial destination mutation",
+      "phase": "post-temporary-creation",
+      "status": "automated",
+      "test_file": "internal/drivebackup/backup_test.go",
+      "test_name": "TestCaptureCancellationRemovesIncompleteDestination",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "The partial destination is removed, cancellation byte accounting is retained, and completed evidence is cleared."
+    },
+    {
+      "id": "drive-backup-write-sync-failure",
+      "boundary": "drive-backup-publication",
+      "component": "raw drive backup copy engine",
+      "failure_mode": "destination write accounting or file synchronization fails before publication",
+      "phase": "post-temporary-creation",
+      "status": "automated",
+      "test_file": "internal/drivebackup/backup_test.go",
+      "test_name": "TestCopyClassifiesDestinationFailures",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "Invalid, zero, erroring writes and synchronization failure are classified as failure and never retain completed digest evidence."
+    },
+    {
+      "id": "drive-backup-destination-directory-substitution",
+      "boundary": "drive-backup-publication",
+      "component": "raw and container drive backup",
+      "failure_mode": "the destination directory path is replaced after its descriptor was admitted",
+      "phase": "pre-publication",
+      "status": "automated",
+      "test_file": "internal/drivebackup/destination_linux_test.go",
+      "test_name": "TestDestinationRevalidationRejectsReplacedParent",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "Publication is refused when the path no longer names the held destination directory."
+    },
+    {
+      "id": "drive-backup-directory-sync-rollback",
+      "boundary": "drive-backup-publication",
+      "component": "raw, VHD, and VHDX drive backup publication",
+      "failure_mode": "directory synchronization fails immediately after a successful no-replace rename",
+      "phase": "post-publication",
+      "status": "automated",
+      "test_file": "internal/drivebackup/publication_interruption_linux_test.go",
+      "test_name": "TestPublishNoReplaceRollsBackAfterDirectorySyncFailure",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "The owned published name is removed, the rollback is synchronized, and no temporary or final name remains while failure is returned."
+    },
+    {
+      "id": "drive-backup-ambiguous-publication-rollback",
+      "boundary": "drive-backup-publication",
+      "component": "raw, VHD, and VHDX drive backup publication",
+      "failure_mode": "directory synchronization, rollback unlink, and rollback synchronization all fail after no-replace rename",
+      "phase": "post-publication",
+      "status": "automated",
+      "test_file": "internal/drivebackup/publication_interruption_linux_test.go",
+      "test_name": "TestPublishNoReplaceReportsAmbiguousRollbackFailure",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "Every failure is joined into the returned error, success is impossible, and the ambiguous published name is retained rather than silently misreported."
+    },
+    {
+      "id": "drive-backup-symlink-publication-collision",
+      "boundary": "drive-backup-publication",
+      "component": "raw, VHD, and VHDX drive backup publication",
+      "failure_mode": "a symbolic-link destination appears before the no-replace rename",
+      "phase": "pre-publication",
+      "status": "automated",
+      "test_file": "internal/drivebackup/publication_interruption_linux_test.go",
+      "test_name": "TestPublishNoReplaceRefusesSymlinkDestinationWithoutChangingTarget",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "The symbolic link and its target remain unchanged and the verified temporary capture remains available to the caller for owned cleanup."
+    },
+    {
+      "id": "iso-backup-directory-sync-rollback",
+      "boundary": "drive-backup-publication",
+      "component": "filesystem ISO/UDF drive backup publication",
+      "failure_mode": "directory synchronization fails immediately after a successful ISO no-replace rename",
+      "phase": "post-publication",
+      "status": "automated",
+      "test_file": "internal/isocapture/publication_interruption_linux_test.go",
+      "test_name": "TestPublishISONoReplaceRollsBackAfterDirectorySyncFailure",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "The owned ISO name is removed, rollback is synchronized, and failure is returned without a temporary or final publication name."
+    },
+    {
+      "id": "iso-backup-ambiguous-publication-rollback",
+      "boundary": "drive-backup-publication",
+      "component": "filesystem ISO/UDF drive backup publication",
+      "failure_mode": "ISO directory synchronization, rollback unlink, and rollback synchronization all fail after no-replace rename",
+      "phase": "post-publication",
+      "status": "automated",
+      "test_file": "internal/isocapture/publication_interruption_linux_test.go",
+      "test_name": "TestPublishISONoReplaceReportsAmbiguousRollbackFailure",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "Every failure is joined into the returned error, success and Published evidence remain impossible, and ambiguous output is visible to recovery."
+    },
+    {
+      "id": "iso-backup-symlink-publication-collision",
+      "boundary": "drive-backup-publication",
+      "component": "filesystem ISO/UDF drive backup publication",
+      "failure_mode": "a symbolic-link ISO destination appears before the no-replace rename",
+      "phase": "pre-publication",
+      "status": "automated",
+      "test_file": "internal/isocapture/publication_interruption_linux_test.go",
+      "test_name": "TestPublishISONoReplaceRefusesSymlinkDestinationWithoutChangingTarget",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "invariant": "The symbolic link and target remain unchanged and no-replace publication refuses the collision."
+    },
+    {
       "id": "physical-power-removal",
       "boundary": "physical-power-loss",
       "component": "whole-device destructive workflows",
@@ -292,14 +442,6 @@
     }
   ],
   "residual_software_gaps": [
-    {
-      "id": "gap-drive-backup-publication",
-      "boundary": "drive-backup-publication",
-      "component": "raw, VHD, VHDX, and ISO drive backup",
-      "failure_mode": "copy, conversion, verification, synchronization, or no-replace publication fails after temporary output creation",
-      "reason": "Current operation contracts cover verification and no-replace behavior, but a single executable matrix does not yet inject every temporary-output and final-publication failure.",
-      "planned_test_kind": "package-internal writer, sync, verifier, and publisher fault seams"
-    },
     {
       "id": "gap-partition-filesystem-mutation",
       "boundary": "partition-filesystem-mutation",
