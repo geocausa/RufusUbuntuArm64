@@ -1,12 +1,9 @@
-name: Patch helper process foundation v2 once
+name: Patch helper process foundation v3 once
 
 on:
   push:
     branches:
       - feature/helper-process-cleanup
-  pull_request:
-    branches:
-      - stage4/0.15.0
 
 permissions:
   contents: write
@@ -14,13 +11,13 @@ permissions:
 jobs:
   patch:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: true
           ref: feature/helper-process-cleanup
-      - name: Execute robust reviewed helper process patch
+      - name: Apply and qualify reviewed helper process patch
         shell: bash
         run: |
           set -euo pipefail
@@ -40,39 +37,85 @@ jobs:
                   raise SystemExit(f'unexpected line outside run block: {line!r}')
           script = '\n'.join(block) + '\n'
 
-          analysis_call = 'replace_once(persistence, old_analysis, new_analysis, "persistence analysis worker")'
-          analysis_replacement = '''text = persistence.read_text(encoding="utf-8")
+          replacements = {
+              'replace_once(persistence, old_analysis, new_analysis, "persistence analysis worker")': '''text = persistence.read_text(encoding="utf-8")
           method_start = text.index("    def run_analysis(self, command, key):")
           method_end = text.index("\\n    def finish_analysis", method_start)
-          persistence.write_text(text[:method_start] + new_analysis.rstrip() + text[method_end:], encoding="utf-8")'''
-          create_call = 'replace_once(persistence, old_create, new_create, "persistence creation worker")'
-          create_replacement = '''text = persistence.read_text(encoding="utf-8")
+          persistence.write_text(text[:method_start] + new_analysis.rstrip() + text[method_end:], encoding="utf-8")''',
+              'replace_once(persistence, old_create, new_create, "persistence creation worker")': '''text = persistence.read_text(encoding="utf-8")
           method_start = text.index("    def run_create(self, command):")
           method_end = text.index("\\n    def handle_event", method_start)
-          persistence.write_text(text[:method_start] + new_create.rstrip() + text[method_end:], encoding="utf-8")'''
-          cancel_call = 'replace_once(persistence, old_cancel, new_cancel, "persistence cancellation signal")'
-          cancel_replacement = '''text = persistence.read_text(encoding="utf-8")
+          persistence.write_text(text[:method_start] + new_create.rstrip() + text[method_end:], encoding="utf-8")''',
+              'replace_once(persistence, old_cancel, new_cancel, "persistence cancellation signal")': '''text = persistence.read_text(encoding="utf-8")
           cancel_start = text.index("        if self.process and self.process.poll() is None:", text.index("    def cancel(self"))
           cancel_end = text.index("\\n\\n    def cleanup_cancel", cancel_start)
-          persistence.write_text(text[:cancel_start] + new_cancel.rstrip() + text[cancel_end:], encoding="utf-8")'''
-          for old, new in (
-              (analysis_call, analysis_replacement),
-              (create_call, create_replacement),
-              (cancel_call, cancel_replacement),
-          ):
+          persistence.write_text(text[:cancel_start] + new_cancel.rstrip() + text[cancel_end:], encoding="utf-8")''',
+          }
+          for old, new in replacements.items():
               if script.count(old) != 1:
                   raise SystemExit(f'helper process script call changed: {old}')
               script = script.replace(old, new, 1)
 
-          cleanup = 'git rm .github/workflows/patch-helper-process-foundation-once.yml'
-          cleanup_replacement = '''git rm \\
+          test_fix = r'''test_path = Path("gui/test_process_cleanup.py")
+          text = test_path.read_text(encoding="utf-8")
+          method_start = text.index("    def test_total_limit_and_non_utf8_are_rejected(self):")
+          method_end = text.index("\n\n\nif __name__", method_start)
+          replacement = ''' + "'''" + r'''    def test_total_limit_is_rejected_and_process_is_reaped(self):
+              process = self.start(
+                  "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                  "print('12345678', flush=True); print('12345678', flush=True); time.sleep(30)"
+              )
+              with self.assertRaises(OutputLimitError):
+                  list(iter_bounded_utf8_lines(process.stdout, line_limit=16, total_limit=17))
+              terminate_and_reap(process, terminate_timeout=0.1, kill_timeout=2)
+              self.assertIsNotNone(process.returncode)
+              self.assertTrue(process.stdout.closed)
+
+              def test_non_utf8_line_is_rejected_after_reaping(self):
+                  process = self.start("import os; os.write(1, b'\\xff\\n')")
+                  with self.assertRaisesRegex(ValueError, "non-UTF-8"):
+                      list(iter_bounded_utf8_lines(process.stdout, line_limit=16, total_limit=32))
+                  self.assertEqual(process.wait(timeout=5), 0)
+                  process.stdout.close()
+                  self.assertTrue(process.stdout.closed)
+          ''' + "'''" + r'''
+          replacement = replacement.replace("\n              def test_non_utf8", "\n\n    def test_non_utf8")
+          test_path.write_text(text[:method_start] + replacement.rstrip() + text[method_end:], encoding="utf-8")
+          '''
+          marker = '          matrix_test = Path("internal/qualification/interruption_matrix_test.go")'
+          if script.count(marker) != 1:
+              raise SystemExit('matrix patch marker changed')
+          script = script.replace(marker, test_fix + '\n' + marker, 1)
+
+          old_cleanup = 'git rm .github/workflows/patch-helper-process-foundation-once.yml'
+          if script.count(old_cleanup) != 1:
+              raise SystemExit('original cleanup command changed')
+          script = script.replace(old_cleanup, ': # cleanup is moved before focused qualification', 1)
+
+          cleanup = '''git rm -f --ignore-unmatch \\
             .github/workflows/patch-helper-process-foundation-once.yml \\
             .github/workflows/patch-helper-process-foundation-v2-once.yml \\
             .github/workflows/diagnose-helper-process-foundation-once.yml \\
-            docs/helper-process-patch-diagnostic.txt'''
-          if script.count(cleanup) != 1:
-              raise SystemExit('helper process workflow cleanup changed')
-          script = script.replace(cleanup, cleanup_replacement, 1)
-          Path('/tmp/helper-process-patch-v2.sh').write_text(script, encoding='utf-8')
+            docs/helper-process-patch-diagnostic.txt
+          '''
+          gofmt_marker = 'gofmt -w internal/qualification/interruption_matrix_test.go'
+          if script.count(gofmt_marker) != 1:
+              raise SystemExit('qualification marker changed')
+          script = script.replace(gofmt_marker, cleanup + gofmt_marker, 1)
+
+          add_marker = '            gui/rufusarm64_persistence.py \\\n'
+          if script.count(add_marker) != 1:
+              raise SystemExit('git add persistence marker changed')
+          script = script.replace(
+              add_marker,
+              add_marker + '            gui/test_process_cleanup.py \\\n',
+              1,
+          )
+
+          push = 'git push origin HEAD:feature/helper-process-cleanup'
+          if script.count(push) != 1:
+              raise SystemExit('helper process push command changed')
+          script = script.replace(push, 'git push --force origin HEAD:feature/helper-process-cleanup', 1)
+          Path('/tmp/helper-process-patch-v3.sh').write_text(script, encoding='utf-8')
           PY
-          bash /tmp/helper-process-patch-v2.sh
+          bash /tmp/helper-process-patch-v3.sh
