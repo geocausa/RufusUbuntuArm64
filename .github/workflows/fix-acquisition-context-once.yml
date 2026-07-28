@@ -1,0 +1,45 @@
+name: Fix acquisition context compatibility once
+
+on:
+  push:
+    branches:
+      - feature/acquisition-cache-interruption
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: true
+          ref: feature/acquisition-cache-interruption
+      - name: Use the declared Go 1.22 context API
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("internal/acquisition/channel_interruption_test.go")
+          text = path.read_text(encoding="utf-8")
+          if text.count("t.Context()") != 4:
+              raise SystemExit("acquisition interruption context call count changed")
+          old = 'import (\n\t"os"\n'
+          new = 'import (\n\t"context"\n\t"os"\n'
+          if text.count(old) != 1:
+              raise SystemExit("acquisition interruption import block changed")
+          text = text.replace(old, new, 1).replace("t.Context()", "context.Background()")
+          path.write_text(text, encoding="utf-8")
+          PY
+          gofmt -w internal/acquisition/channel_interruption_test.go
+          go test ./internal/acquisition ./internal/qualification
+          git rm .github/workflows/fix-acquisition-context-once.yml
+          git add internal/acquisition/channel_interruption_test.go
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "test: keep acquisition interruption coverage on Go 1.22"
+          git push origin HEAD:feature/acquisition-cache-interruption
