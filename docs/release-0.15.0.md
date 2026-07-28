@@ -50,7 +50,7 @@ The canonical stable workflow will publish:
 - `rufusarm64_0.15.0_arm64.deb.sha256`;
 - the corresponding deterministic source and required corresponding-source archives.
 
-A separate explicitly marked prerelease uses Debian version `0.15.0~rc1`, which sorts before stable `0.15.0`.
+A separate explicitly marked prerelease uses Debian version `0.15.0~rc1`, which sorts before stable `0.15.0`. Its installable candidate asset is named `rufusarm64_0.15.0~rc1_arm64.deb` and is published with an adjacent SHA-256 sidecar.
 
 ## Install and rollback
 
