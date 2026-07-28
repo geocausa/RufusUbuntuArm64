@@ -1,0 +1,49 @@
+name: Linux ISO Image mode
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-iso-image-mode-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  loop-qualification:
+    name: GPT/FAT32 extracted-media loop qualification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.22.x'
+      - name: Install ISO, loop, FAT32 and verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            util-linux dosfstools genisoimage
+      - name: Create and verify extracted Linux media on a real loop device
+        env:
+          RUFUS_REAL_ISO_IMAGE_TEST: '1'
+        run: |
+          mkdir -p dist/audit-logs
+          sudo modprobe loop || true
+          go test -c -o "${RUNNER_TEMP}/linux-iso-image-loop.test" ./internal/linuxmedia
+          set -o pipefail
+          sudo env RUFUS_REAL_ISO_IMAGE_TEST="${RUFUS_REAL_ISO_IMAGE_TEST}" \
+            "${RUNNER_TEMP}/linux-iso-image-loop.test" \
+            -test.run '^TestCreateISOImageOnRealLoopDevice$' \
+            -test.v 2>&1 | tee dist/audit-logs/linux-iso-image-loop.log
+      - name: Upload ISO Image mode loop transcript
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: linux-iso-image-loop-${{ github.run_id }}
+          path: dist/audit-logs/linux-iso-image-loop.log
+          if-no-files-found: warn
