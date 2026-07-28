@@ -133,7 +133,7 @@ func TestCreateISOImageOnRealLoopDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	blkidOutput, err := exec.Command("blkid", "-o", "export", partitionPath).CombinedOutput()
+	blkidOutput, err := exec.Command("blkid", "-p", "-o", "export", partitionPath).CombinedOutput()
 	if err != nil {
 		t.Fatalf("inspect completed FAT32 partition: %v: %s", err, strings.TrimSpace(string(blkidOutput)))
 	}
