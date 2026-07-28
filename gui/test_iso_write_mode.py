@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from rufusarm64_iso_write_mode import build_iso_write_command, hybrid_mode_available
+from rufusarm64_iso_write_mode_logic import build_iso_write_command, hybrid_mode_available
 
 
 class ISOImageModeTests(unittest.TestCase):
@@ -40,6 +40,7 @@ class ISOImageModeTests(unittest.TestCase):
                 str(cancel),
                 "rufus-live",
             )
+            resolved_image = os.path.realpath(image)
 
         self.assertEqual(command[:4], [
             "/usr/bin/pkexec",
@@ -47,7 +48,7 @@ class ISOImageModeTests(unittest.TestCase):
             "--operation",
             "iso",
         ])
-        self.assertEqual(command[command.index("--image") + 1], os.path.realpath(image))
+        self.assertEqual(command[command.index("--image") + 1], resolved_image)
         source_identity = command[command.index("--expected-source-identity") + 1]
         self.assertEqual(len(source_identity.split(":")), 5)
         self.assertEqual(command[command.index("--device") + 1], "/dev/sdz")
