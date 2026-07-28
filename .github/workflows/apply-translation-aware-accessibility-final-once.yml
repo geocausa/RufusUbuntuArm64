@@ -1,6 +1,9 @@
 name: Apply translation-aware accessibility final once
 
 on:
+  push:
+    branches:
+      - feature/translation-aware-accessibility
   pull_request:
     branches:
       - stage4/0.15.0
@@ -71,7 +74,8 @@ jobs:
           bash /tmp/accessibility-patch.sh
           git rm --ignore-unmatch \
             .github/workflows/apply-translation-aware-accessibility-final-once.yml \
-            docs/accessibility-patch-diagnostic.txt
+            docs/accessibility-patch-diagnostic.txt \
+            docs/accessibility-final-trigger.txt
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git commit -m "ci: remove accessibility patch diagnostics"
