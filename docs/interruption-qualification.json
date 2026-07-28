@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "title": "RufusArm64 interruption and crash-consistency qualification",
+  "required_boundaries": [
+    "metadata-publication",
+    "transaction-rollback",
+    "pre-mutation-cancellation",
+    "post-mutation-cancellation",
+    "target-write",
+    "target-sync",
+    "readback-verification",
+    "trust-metadata-rollback",
+    "path-substitution",
+    "acquisition-cache-commit",
+    "drive-backup-publication",
+    "partition-filesystem-mutation",
+    "persistence-materialization",
+    "helper-process-cleanup",
+    "physical-power-loss",
+    "firmware-boot-after-interruption"
+  ],
+  "entries": [
+    {
+      "id": "qualification-record-checksum-preflight",
+      "boundary": "metadata-publication",
+      "component": "qualification creation record",
+      "failure_mode": "a pre-existing checksum destination is present before publication",
+      "phase": "pre-publication",
+      "status": "automated",
+      "test_file": "internal/qualification/record_transaction_linux_test.go",
+      "test_name": "TestWriteRecordPreflightsChecksumBeforePublishingRecord",
+      "platforms": ["linux-amd64", "linux-arm64"],
+      "invariant": "The creation record is not published and the pre-existing checksum remains byte-for-byte unchanged."
+    },
+    {
+      "id": "qualification-record-checksum-rollback",
+      "boundary": "transaction-rollback",
+      "component": "qualification creation record",
+      "failure_mode": "checksum publication fails after the record is published",
+      "phase": "post-publication",
+      "status": "automated",
+      "test_file": "internal/qualification/record_transaction_linux_test.go",
+      "test_name": "TestWriteRecordPairRollsBackRecordAfterChecksumFailure",
+      "platforms": ["linux-amd64", "linux-arm64"],
+      "invariant": "The owned record is removed, the checksum is absent, and the publication failure is returned."
+    },
+    {
+      "id": "qualification-evidence-checksum-rollback",
+      "boundary": "transaction-rollback",
+      "component": "qualification evidence",
+      "failure_mode": "checksum publication fails after evidence publication",
+      "phase": "post-publication",
+      "status": "automated",
+      "test_file": "internal/qualification/evidence_transaction_test.go",
+      "test_name": "TestEvidencePairRollsBackAfterChecksumPublicationFailure",
+      "platforms": ["linux-amd64", "linux-arm64"],
+      "invariant": "Neither the evidence document nor its checksum remains after the injected failure."
+    },
+    {
+      "id": "runtime-integrity-install-boundary-rollback",
+      "boundary": "transaction-rollback",
+      "component": "runtime-integrity installation",
+      "failure_mode": "installation is interrupted at every admitted transaction boundary",
+      "phase": "post-mutation",
+      "status": "automated",
+      "test_file": "internal/runtimeintegrity/transaction_test.go",
+      "test_name": "TestInstallRollbackAtEveryBoundary",
+      "platforms": ["linux-amd64", "linux-arm64"],
+      "invariant": "The complete media tree matches its pre-installation snapshot after every injected boundary failure."
+    },
+    {
+      "id": "runtime-integrity-removal-boundary-rollback",
+      "boundary": "transaction-rollback",
+      "component": "runtime-integrity removal",
+      "failure_mode": "removal is interrupted at every admitted transaction boundary",
+      "phase": "post-mutation",
+      "status": "automated",
+      "test_file": "internal/runtimeintegrity/transaction_test.go",
+      "test_name": "TestRemovalRollbackAtEveryBoundary",
+      "platforms": ["linux-amd64", "linux-arm64"],
+      "invariant": "The complete installed media tree matches its pre-removal snapshot after every injected boundary failure."
+    },
+    {
+      "id": "ffu-cancellation-before-mutation",
+      "boundary": "pre-mutation-cancellation",
+      "component": "authenticated FFU restore",
+      "failure_mode": "the context is cancelled before the first target mutation",
+      "phase": "pre-mutation",
+      "status": "automated",
+      "test_file": "internal/ffu/restore_executor_linux_test.go",
+      "test_name": "TestExecuteAuthorizedSinglePhaseFullFlashCancellationBeforeMutation",
+      "platforms": ["linux-amd64", "linux-arm64"],
+      "invariant": "No target mutation starts, the authorization remains reusable, and the result records cancellation before mutation."
+    },
+    {
+      "id": "ffu-cancellation-after-mutation",
+      "boundary": "post-mutation-cancellation",
+      "component": "authenticated FFU restore",
+      "failure_mode": "the context is cancelled after the first target write chunk",
+      "phase": "post-mutation",
+      "status": "automated",
+      "test_file": "internal/ffu/restore_executor_linux_test.go",
+      "test_name": "TestExecuteAuthorizedSinglePhaseFullFlashCancellationAfterMutation",
+      "platforms": ["linux-amd64", "linux-arm64"],
+      "invariant": "Success is impossible, partial byte accounting is retained, and the target is conservatively marked as possibly modified."
+    },
+    {
+      "id": "ffu-target-short-write",
+      "boundary": "target-write",
+      "component": "authenticated FFU restore",
+      "failure_mode": "the target writer performs a partial write and returns an injected error",
+      "phase": "post-mutation",
+      "status": "automated",
+      "test_file": "internal/ffu/restore_executor_linux_test.go",
+      "test_name": "TestExecuteAuthorizedSinglePhaseFullFlashWriteFailure",
+      "platforms": ["linux-amd64", "linux-arm64"],
+      "invariant": "The write failure is returned, success is false, and partial target mutation is explicitly reported."
+    },
+    {
+      "id": "ffu-target-sync-failure",
+      "boundary": "target-sync",
+      "component": "authenticated FFU restore",
+      "failure_mode": "target synchronization fails after all planned writes",
+      "phase": "post-mutation",
+      "status": "automated",
+      "test_file": "internal/ffu/restore_executor_linux_test.go",
+      "test_name": "TestExecuteAuthorizedSinglePhaseFullFlashSyncFailure",
+      "platforms": ["linux-amd64", "linux-arm64"],
+      "invariant": "The operation cannot report success or synchronized completion and the target remains conservatively marked as possibly modified."
+    },
+    {
+      "id": "ffu-readback-mismatch",
+      "boundary": "readback-verification",
+      "component": "authenticated FFU restore",
+      "failure_mode": "readback differs from the authenticated write plan after write and sync",
+      "phase": "post-mutation",
+      "status": "automated",
+      "test_file": "internal/ffu/restore_executor_linux_test.go",
+      "test_name": "TestExecuteAuthorizedSinglePhaseFullFlashReadbackMismatch",
+      "platforms": ["linux-amd64", "linux-arm64"],
+      "invariant": "The result is written-but-unverified, success remains false, and the mismatch is retained as final evidence."
+    },
+    {
+      "id": "acquisition-catalog-rollback",
+      "boundary": "trust-metadata-rollback",
+      "component": "verified acquisition channel",
+      "failure_mode": "the remote catalog version moves backwards after a newer version was accepted",
+      "phase": "pre-publication",
+      "status": "automated",
+      "test_file": "internal/acquisition/channel_test.go",
+      "test_name": "TestRefreshChannelCachesAndRejectsRollback",
+      "platforms": ["linux-amd64", "linux-arm64"],
+      "invariant": "Rollback metadata is rejected and the previously accepted channel state remains authoritative."
+    },
+    {
+      "id": "acquisition-state-symlink-substitution",
+      "boundary": "path-substitution",
+      "component": "verified acquisition channel state",
+      "failure_mode": "the state destination is replaced by a symbolic link to an outside file",
+      "phase": "pre-publication",
+      "status": "automated",
+      "test_file": "internal/acquisition/channel_test.go",
+      "test_name": "TestChannelRejectsDisabledConfigurationAndStateSymlink",
+      "platforms": ["linux-amd64", "linux-arm64"],
+      "invariant": "The symlink destination is refused and the outside file remains byte-for-byte unchanged."
+    },
+    {
+      "id": "physical-power-removal",
+      "boundary": "physical-power-loss",
+      "component": "whole-device destructive workflows",
+      "failure_mode": "electrical power is removed during partition, filesystem, payload, synchronization, or verification stages",
+      "phase": "physical-only",
+      "status": "physical-only",
+      "test_file": "",
+      "test_name": "",
+      "platforms": ["physical-arm64", "physical-x86_64"],
+      "invariant": "The application must not claim software simulation proves electrical power-loss behavior; recovery state and subsequent refusal behavior require recorded hardware evidence."
+    },
+    {
+      "id": "physical-firmware-boot-after-interruption",
+      "boundary": "firmware-boot-after-interruption",
+      "component": "created USB media",
+      "failure_mode": "firmware is asked to boot media after an interrupted destructive operation",
+      "phase": "physical-only",
+      "status": "physical-only",
+      "test_file": "",
+      "test_name": "",
+      "platforms": ["physical-arm64", "physical-x86_64"],
+      "invariant": "Boot outcome, firmware messaging, and recovery behavior are recorded as physical qualification and are never inferred from unit or loop-device tests."
+    }
+  ],
+  "residual_software_gaps": [
+    {
+      "id": "gap-acquisition-cache-commit",
+      "boundary": "acquisition-cache-commit",
+      "component": "verified acquisition channel cache",
+      "failure_mode": "interruption between root history, catalog, and accepted-state publication",
+      "reason": "Rollback and path-substitution checks exist, but the multi-file durable commit sequence is not yet exercised at every publication and directory-sync boundary.",
+      "planned_test_kind": "package-internal publication hook with directory snapshot assertions"
+    },
+    {
+      "id": "gap-drive-backup-publication",
+      "boundary": "drive-backup-publication",
+      "component": "raw, VHD, VHDX, and ISO drive backup",
+      "failure_mode": "copy, conversion, verification, synchronization, or no-replace publication fails after temporary output creation",
+      "reason": "Current operation contracts cover verification and no-replace behavior, but a single executable matrix does not yet inject every temporary-output and final-publication failure.",
+      "planned_test_kind": "package-internal writer, sync, verifier, and publisher fault seams"
+    },
+    {
+      "id": "gap-partition-filesystem-mutation",
+      "boundary": "partition-filesystem-mutation",
+      "component": "raw imaging, Windows media, FreeDOS, and non-bootable formatting",
+      "failure_mode": "interruption after partition-table mutation, filesystem creation, payload copy, or final sync",
+      "reason": "Privileged loop qualification covers successful invariants, but deterministic injected interruption at each destructive boundary remains incomplete.",
+      "planned_test_kind": "bounded privileged loop-device interruption cases plus package-level fault seams"
+    },
+    {
+      "id": "gap-persistence-materialization",
+      "boundary": "persistence-materialization",
+      "component": "persistent live USB creation",
+      "failure_mode": "persistence partition creation, filesystem initialization, or boot-configuration patching fails after mutation",
+      "reason": "Compatibility and successful creation are covered, but post-mutation failure classification and cleanup need an explicit matrix.",
+      "planned_test_kind": "package-internal materializer and patcher failure seams with conservative result assertions"
+    },
+    {
+      "id": "gap-helper-process-cleanup",
+      "boundary": "helper-process-cleanup",
+      "component": "GTK-launched privileged and read-only helpers",
+      "failure_mode": "the helper exits, hangs, is cancelled, or its process group is terminated while descriptors and temporary state are live",
+      "reason": "Individual dialogs pin process-group cancellation contracts, but cross-workflow cleanup and retained-evidence behavior are not yet represented by one executable qualification set.",
+      "planned_test_kind": "subprocess fixtures covering SIGTERM, SIGKILL escalation, bounded output, descriptor closure, and temporary-state ownership"
+    }
+  ]
+}
