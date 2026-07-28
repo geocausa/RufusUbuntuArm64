@@ -218,8 +218,8 @@ func CreateExtracted(ctx context.Context, isoPath, devicePath string, opts Extra
 	if err := safety.VerifyOpenDevice(target, opts.ExpectedDeviceID, opts.TargetSize); err != nil {
 		return result, err
 	}
-	if err := syscall.Flock(int(target.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return result, fmt.Errorf("another writer appears to be using %s: %w", devicePath, err)
+	if err := acquireExtractedTargetLock(ctx, target, devicePath); err != nil {
+		return result, err
 	}
 	targetLocked = true
 	stableTargetPath := fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), target.Fd())
