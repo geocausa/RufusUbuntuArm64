@@ -1,6 +1,7 @@
 package acquisition
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,7 +50,7 @@ func TestRefreshChannelRefusesStaleCatalogAfterRootPublicationInterruption(t *te
 	statePath := filepath.Join(cacheDir, "state.json")
 	before := mustReadFile(t, statePath)
 
-	result, err := RefreshChannel(t.Context(), configPath, ChannelOptions{CacheDir: cacheDir, Now: now, Offline: true})
+	result, err := RefreshChannel(context.Background(), configPath, ChannelOptions{CacheDir: cacheDir, Now: now, Offline: true})
 	if err == nil || result != nil {
 		t.Fatalf("stale catalog under advanced root was accepted: result=%#v err=%v", result, err)
 	}
@@ -89,7 +90,7 @@ func TestRefreshChannelRecoversForwardAfterCatalogPublicationInterruption(t *tes
 		CatalogVersion: 1, CatalogSHA256: catalogV1.SHA256, AcceptedAt: now.Format(time.RFC3339),
 	})
 
-	result, err := RefreshChannel(t.Context(), configPath, ChannelOptions{
+	result, err := RefreshChannel(context.Background(), configPath, ChannelOptions{
 		CacheDir: cacheDir, Now: now.Add(-time.Hour), Offline: true,
 	})
 	if err != nil {
@@ -140,7 +141,7 @@ func TestRefreshChannelRefusesStateAheadOfCatalogAfterStatePublicationInterrupti
 	stateBefore := mustReadFile(t, statePath)
 	catalogBefore := mustReadFile(t, catalogPath)
 
-	result, err := RefreshChannel(t.Context(), configPath, ChannelOptions{CacheDir: cacheDir, Now: now, Offline: true})
+	result, err := RefreshChannel(context.Background(), configPath, ChannelOptions{CacheDir: cacheDir, Now: now, Offline: true})
 	if err == nil || result != nil || !strings.Contains(err.Error(), "catalog rollback") {
 		t.Fatalf("state-ahead interruption was accepted: result=%#v err=%v", result, err)
 	}
@@ -187,7 +188,7 @@ func TestRefreshChannelRejectsTruncatedCacheWithoutRewritingState(t *testing.T) 
 			statePath := filepath.Join(cacheDir, "state.json")
 			before := mustReadFile(t, statePath)
 
-			result, err := RefreshChannel(t.Context(), configPath, ChannelOptions{CacheDir: cacheDir, Now: now, Offline: true})
+			result, err := RefreshChannel(context.Background(), configPath, ChannelOptions{CacheDir: cacheDir, Now: now, Offline: true})
 			if err == nil || result != nil {
 				t.Fatalf("truncated %s cache was accepted: result=%#v err=%v", test.name, result, err)
 			}
