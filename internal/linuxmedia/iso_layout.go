@@ -49,10 +49,10 @@ func PlanISOImageLayout(targetSize, sectorSize, requiredBytes uint64) (ISOImageL
 		return ISOImageLayout{}, fmt.Errorf("target size %d is not aligned to logical sector size %d", targetSize, sectorSize)
 	}
 	if requiredBytes == 0 {
-		return ISOImageLayout{}, errors.New("Linux ISO media tree is empty")
+		return ISOImageLayout{}, errors.New("linux ISO media tree is empty")
 	}
 	if requiredBytes > ^uint64(0)-minimumISOImageHeadroom {
-		return ISOImageLayout{}, errors.New("Linux ISO media size overflows the FAT32 capacity calculation")
+		return ISOImageLayout{}, errors.New("linux ISO media size overflows the FAT32 capacity calculation")
 	}
 
 	totalLBAs := targetSize / sectorSize
