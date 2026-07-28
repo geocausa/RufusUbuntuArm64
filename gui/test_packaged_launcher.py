@@ -20,7 +20,8 @@ class PackagedLauncherTests(unittest.TestCase):
 
         pin_calls = []
         format_install_calls = []
-        iso_install_calls = []
+        iso_backup_install_calls = []
+        iso_write_install_calls = []
         fake_gi = types.ModuleType("gi")
         fake_gi.require_version = lambda namespace, version: pin_calls.append((namespace, version))
 
@@ -38,12 +39,20 @@ class PackagedLauncherTests(unittest.TestCase):
                 self.assertEqual(pin_calls, [("Gtk", "3.0")])
                 self.assertEqual(format_install_calls, [True])
                 module = types.ModuleType(name)
-                module.install_drive_backup_iso = lambda: iso_install_calls.append(True)
+                module.install_drive_backup_iso = lambda: iso_backup_install_calls.append(True)
+                return module
+            if name == "rufusarm64_iso_write_mode":
+                self.assertEqual(pin_calls, [("Gtk", "3.0")])
+                self.assertEqual(format_install_calls, [True])
+                self.assertEqual(iso_backup_install_calls, [True])
+                module = types.ModuleType(name)
+                module.install_iso_write_mode = lambda: iso_write_install_calls.append(True)
                 return module
             if name == "rufusarm64_integrated":
                 self.assertEqual(pin_calls, [("Gtk", "3.0")])
                 self.assertEqual(format_install_calls, [True])
-                self.assertEqual(iso_install_calls, [True])
+                self.assertEqual(iso_backup_install_calls, [True])
+                self.assertEqual(iso_write_install_calls, [True])
                 module = types.ModuleType(name)
                 module.run_rufusarm64 = lambda argv: 0
                 return module
@@ -58,7 +67,8 @@ class PackagedLauncherTests(unittest.TestCase):
             self.assertEqual(stopped.exception.code, 0)
             self.assertEqual(pin_calls, [("Gtk", "3.0")])
             self.assertEqual(format_install_calls, [True])
-            self.assertEqual(iso_install_calls, [True])
+            self.assertEqual(iso_backup_install_calls, [True])
+            self.assertEqual(iso_write_install_calls, [True])
         finally:
             builtins.__import__ = original_import
             sys.argv = original_argv

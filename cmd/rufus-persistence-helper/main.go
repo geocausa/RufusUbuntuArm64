@@ -1,9 +1,9 @@
 //go:build linux
 
-// rufus-persistence-helper is the narrow privileged entry point used by the
-// graphical persistent-live-media wizard. It accepts only the identity-bound
-// source and target selected before authentication and delegates the actual
-// destructive work to the existing hardened linuxmedia.CreatePersistent engine.
+// rufus-persistence-helper is the narrow package-owned privileged entry point
+// used by the graphical Linux-media workflows. It accepts only the
+// identity-bound source and target selected before authentication and delegates
+// destructive work to the hardened linuxmedia engines.
 package main
 
 import (
@@ -75,12 +75,13 @@ func main() {
 
 func run(args []string) error {
 	flags := flag.NewFlagSet("rufus-persistence-helper", flag.ContinueOnError)
+	operation := flags.String("operation", "persistence", "Linux media operation: persistence or iso")
 	imagePath := flags.String("image", "", "identity-bound plain Linux ISOHybrid image")
 	expectedSourceText := flags.String("expected-source-identity", "", "source identity captured before authentication")
 	devicePath := flags.String("device", "", "whole removable target disk")
 	expectedTargetIdentity := flags.String("expected-identity", "", "target identity captured before authentication")
 	persistenceSizeText := flags.String("persistence-size", "0", "persistent ext4 size; zero uses remaining capacity")
-	volumeLabel := flags.String("volume-label", "RUFUS-LIVE", "FAT32 boot volume label")
+	volumeLabel := flags.String("volume-label", "RUFUS-LIVE", "FAT32 volume label")
 	cancelFile := flags.String("cancel-file", "", "per-user cancellation marker")
 	jsonProgress := flags.Bool("json-progress", false, "emit JSON lines")
 	yes := flags.Bool("yes", false, "confirm the graphical application already obtained explicit erase consent")
@@ -89,16 +90,20 @@ func run(args []string) error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("persistence helper does not accept positional arguments")
+		return errors.New("linux media helper does not accept positional arguments")
+	}
+	selectedOperation := strings.ToLower(strings.TrimSpace(*operation))
+	if selectedOperation != "persistence" && selectedOperation != "iso" {
+		return errors.New("--operation must be persistence or iso")
 	}
 	if strings.TrimSpace(*imagePath) == "" || strings.TrimSpace(*expectedSourceText) == "" || strings.TrimSpace(*devicePath) == "" || strings.TrimSpace(*expectedTargetIdentity) == "" {
 		return errors.New("--image, --expected-source-identity, --device, and --expected-identity are required")
 	}
 	if !*jsonProgress || !*yes || strings.TrimSpace(*cancelFile) == "" {
-		return errors.New("the graphical persistence helper requires --json-progress, --yes, and a trusted --cancel-file")
+		return errors.New("the graphical Linux media helper requires --json-progress, --yes, and a trusted --cancel-file")
 	}
 	if os.Getenv("PKEXEC_UID") == "" {
-		return errors.New("the graphical persistence helper must be launched through pkexec")
+		return errors.New("the graphical Linux media helper must be launched through pkexec")
 	}
 	if err := safety.RequireRoot(); err != nil {
 		return err
@@ -114,6 +119,14 @@ func run(args []string) error {
 	persistenceSize, err := persistence.ParseSize(*persistenceSizeText)
 	if err != nil {
 		return fmt.Errorf("parse --persistence-size: %w", err)
+	}
+	if selectedOperation == "iso" {
+		if persistenceSize != 0 {
+			return errors.New("ISO Image mode does not accept a persistence size")
+		}
+		if *runtimeUEFIValidation {
+			return errors.New("ISO Image mode does not install the persistence runtime validator")
+		}
 	}
 	absoluteImage, err := filepath.Abs(*imagePath)
 	if err != nil {
@@ -194,7 +207,11 @@ func run(args []string) error {
 	}
 
 	out := &emitter{json: *jsonProgress}
-	preflightMessage := fmt.Sprintf("Persistent live media: %s; target: %s", filepath.Base(resolvedImage), resolvedTarget)
+	operationLabel := "Persistent live media"
+	if selectedOperation == "iso" {
+		operationLabel = "ISO Image mode"
+	}
+	preflightMessage := fmt.Sprintf("%s: %s; target: %s", operationLabel, filepath.Base(resolvedImage), resolvedTarget)
 	out.event(jsonEvent{Event: "preflight", Stage: "preflight", Message: preflightMessage})
 
 	// Byte-counted copy and hashing stages already emit frequent progress. For
@@ -223,22 +240,7 @@ func run(args []string) error {
 		}
 	}()
 
-	result, err := linuxmedia.CreatePersistent(ctx, resolvedImage, resolvedTarget, linuxmedia.PersistentCreateOptions{
-		TargetSize:                      target.Size,
-		ExpectedDeviceID:                kernelDeviceID,
-		ExpectedSource:                  expectedSource,
-		Architecture:                    runtime.GOARCH,
-		PersistenceSize:                 persistenceSize,
-		VolumeLabel:                     *volumeLabel,
-		CreatorVersion:                  "RufusArm64 " + version,
-		BeforeDestructive:               targetCheck,
-		RuntimeUEFIValidation:           *runtimeUEFIValidation,
-		RuntimeUEFILoaderPath:           packagedRuntimeUEFILoaderPath,
-		RuntimeUEFILoaderSHA256:         packagedRuntimeUEFILoaderSHA256,
-		RuntimeUEFILoaderSourceCommit:   packagedRuntimeUEFILoaderCommit,
-		RuntimeUEFILoaderProvenance:     packagedRuntimeUEFILoaderProvenance,
-		RuntimeUEFIUnsignedAcknowledged: *runtimeUEFIValidation,
-	}, func(event linuxmedia.PersistentEvent) {
+	forwardEvent := func(event linuxmedia.PersistentEvent) {
 		heartbeatMu.Lock()
 		heartbeat = event
 		if event.Stage == "qualification" {
@@ -267,7 +269,50 @@ func run(args []string) error {
 			message = strings.TrimSpace(message + " " + event.Path)
 		}
 		out.event(jsonEvent{Event: eventName, Stage: event.Stage, Message: message, Done: event.Done, Total: event.Total})
-	})
+	}
+
+	if selectedOperation == "iso" {
+		result, err := linuxmedia.CreateExtracted(ctx, resolvedImage, resolvedTarget, linuxmedia.ExtractedCreateOptions{
+			TargetSize:        target.Size,
+			ExpectedDeviceID:  kernelDeviceID,
+			ExpectedSource:    expectedSource,
+			Architecture:      runtime.GOARCH,
+			VolumeLabel:       *volumeLabel,
+			BeforeDestructive: targetCheck,
+		}, forwardEvent)
+		stopHeartbeat()
+		if err != nil {
+			return err
+		}
+		if err := safety.RereadPartitionTable(resolvedTarget); err != nil {
+			out.event(jsonEvent{Event: "log", Stage: "warning", Message: fmt.Sprintf("Warning: %v", err)})
+		}
+		out.event(jsonEvent{
+			Event:   "log",
+			Stage:   "verification",
+			Message: fmt.Sprintf("ISO Image mode source SHA-256 %s; verified UEFI fallback %s.", result.SourceSHA256, result.UEFIBootPath),
+			Hash:    result.SourceSHA256,
+		})
+		out.event(jsonEvent{Event: "complete", Stage: "complete", Message: "ISO Image mode USB created and verified."})
+		return nil
+	}
+
+	result, err := linuxmedia.CreatePersistent(ctx, resolvedImage, resolvedTarget, linuxmedia.PersistentCreateOptions{
+		TargetSize:                      target.Size,
+		ExpectedDeviceID:                kernelDeviceID,
+		ExpectedSource:                  expectedSource,
+		Architecture:                    runtime.GOARCH,
+		PersistenceSize:                 persistenceSize,
+		VolumeLabel:                     *volumeLabel,
+		CreatorVersion:                  "RufusArm64 " + version,
+		BeforeDestructive:               targetCheck,
+		RuntimeUEFIValidation:           *runtimeUEFIValidation,
+		RuntimeUEFILoaderPath:           packagedRuntimeUEFILoaderPath,
+		RuntimeUEFILoaderSHA256:         packagedRuntimeUEFILoaderSHA256,
+		RuntimeUEFILoaderSourceCommit:   packagedRuntimeUEFILoaderCommit,
+		RuntimeUEFILoaderProvenance:     packagedRuntimeUEFILoaderProvenance,
+		RuntimeUEFIUnsignedAcknowledged: *runtimeUEFIValidation,
+	}, forwardEvent)
 	stopHeartbeat()
 	if err != nil {
 		return err
