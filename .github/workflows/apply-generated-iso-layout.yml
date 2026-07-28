@@ -1,0 +1,140 @@
+name: Apply generated ISO layout source
+
+on:
+  workflow_run:
+    workflows: ['Generate ISO layout patch artifact']
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  apply:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'parity/iso-layout-options' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download exact generator artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: iso-layout-generated
+          path: artifact
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate and extract bounded source tree
+        env:
+          EXPECTED_HEAD: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import tarfile
+
+          root = Path('artifact')
+          archive = root / 'iso-layout-generated.tar'
+          checksum = root / 'iso-layout-generated.tar.sha256'
+          if not archive.is_file() or not checksum.is_file():
+              raise SystemExit('generator artifact is incomplete')
+          words = checksum.read_text(encoding='utf-8').strip().split()
+          if len(words) < 1 or len(words[0]) != 64:
+              raise SystemExit('generator checksum record is malformed')
+          actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+          if actual != words[0].lower():
+              raise SystemExit('generator tar checksum mismatch')
+
+          expected = {
+              '.github/workflows/iso-image-loop-qualification.yml',
+              'CHANGELOG.md',
+              'cmd/rufus-persistence-helper/main.go',
+              'docs/iso-image-mode.md',
+              'docs/iso-layout-options-plan.md',
+              'docs/upstream-rufus-parity.json',
+              'gui/rufusarm64_iso_write_mode.py',
+              'gui/test_iso_layout_options.py',
+              'internal/linuxmedia/extracted.go',
+              'internal/linuxmedia/extracted_gpt_loop_test.go',
+              'internal/linuxmedia/extracted_layout_options.go',
+              'internal/linuxmedia/extracted_layout_options_test.go',
+              'internal/linuxmedia/extracted_loop_test.go',
+          }
+          staging = Path('staging')
+          staging.mkdir(mode=0o700)
+          total = 0
+          with tarfile.open(archive, mode='r:') as tar:
+              members = tar.getmembers()
+              names = [member.name for member in members]
+              if len(names) != len(set(names)) or set(names) != expected:
+                  raise SystemExit(f'unexpected generator paths: {sorted(set(names) ^ expected)}')
+              for member in members:
+                  path = Path(member.name)
+                  if path.is_absolute() or '..' in path.parts or not member.isfile():
+                      raise SystemExit(f'unsafe generator member: {member.name}')
+                  if member.size < 0 or member.size > 256 * 1024:
+                      raise SystemExit(f'generator member size is unsafe: {member.name}')
+                  total += member.size
+              if total > 2 * 1024 * 1024:
+                  raise SystemExit('generator source tree is unexpectedly large')
+              for member in members:
+                  source = tar.extractfile(member)
+                  if source is None:
+                      raise SystemExit(f'cannot read generator member: {member.name}')
+                  target = staging / member.name
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  data = source.read()
+                  if len(data) != member.size:
+                      raise SystemExit(f'short generator member: {member.name}')
+                  target.write_bytes(data)
+                  target.chmod(0o644)
+          PY
+
+      - name: Check out exact feature branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: parity/iso-layout-options
+          path: work
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Require artifact and branch heads to match
+        working-directory: work
+        env:
+          EXPECTED_HEAD: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+
+      - name: Publish generated source without executing it
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          staging = Path('staging')
+          work = Path('work')
+          for source in sorted(staging.rglob('*')):
+              if not source.is_file():
+                  continue
+              relative = source.relative_to(staging)
+              target = work / relative
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(source, target)
+              target.chmod(0o644)
+          generator = work / '.github/workflows/generate-iso-layout-artifact.yml'
+          if generator.exists():
+              generator.unlink()
+          PY
+
+      - name: Commit exact feature tree
+        working-directory: work
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'Generated source already matches the feature branch.'
+            exit 0
+          fi
+          git commit -m 'iso: add reviewed MBR/GPT layout options'
+          git push origin HEAD:parity/iso-layout-options
