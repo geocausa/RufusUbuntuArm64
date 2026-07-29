@@ -1,0 +1,57 @@
+name: Cleanup Windows CA 2023 temporary automation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cleanup-windows-ca2023-temporary
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'parity/windows-ca2023-bootloaders'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: parity/windows-ca2023-bootloaders
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - name: Remove all one-use CA 2023 automation and qualify product tree
+        run: |
+          set -euo pipefail
+          git rm -- \
+            .github/scripts/apply-ca2023-core-fix.py \
+            .github/scripts/apply-ca2023-go-integration.py \
+            .github/scripts/apply-ca2023-gui-hardening.py \
+            .github/scripts/fix-ca2023-evidence-tests.py \
+            .github/scripts/apply-ca2023-final-polish.py \
+            .github/workflows/apply-ca2023-core.yml \
+            .github/workflows/apply-ca2023-go-integration.yml \
+            .github/workflows/apply-ca2023-gui-hardening.yml \
+            .github/workflows/audit-uefintfs-ca2023.yml \
+            .github/workflows/apply-ca2023-final-polish.yml \
+            .github/workflows/cleanup-ca2023-temporary.yml
+          go test ./internal/windowsconfig ./internal/windowsmedia ./cmd/rufus-linux
+          python3 -m compileall -q gui
+          (
+            cd gui
+            python3 -m unittest test_windows_ca2023.py test_windows_skusi_policy.py test_iso_layout_options.py test_source_structure.py
+          )
+          test -z "$(git diff --name-only --diff-filter=ACMRTUXB)"
+      - name: Publish clean product-only head
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "ci: remove CA 2023 one-use automation"
+          git push origin HEAD:parity/windows-ca2023-bootloaders
