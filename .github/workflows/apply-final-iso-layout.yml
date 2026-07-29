@@ -98,7 +98,7 @@ jobs:
         working-directory: work
         run: test "$(git rev-parse HEAD)" = 'f9086e823ca6086bddc4675810a3f74536ed4a29'
 
-      - name: Publish exact files without executing generated source
+      - name: Publish exact non-workflow files without executing generated source
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -106,20 +106,20 @@ jobs:
 
           staging = Path('staging')
           work = Path('work')
+          workflow_path = Path('.github/workflows/iso-image-loop-qualification.yml')
           for source in sorted(staging.rglob('*')):
               if not source.is_file():
                   continue
               relative = source.relative_to(staging)
+              if relative == workflow_path:
+                  continue
               target = work / relative
               target.parent.mkdir(parents=True, exist_ok=True)
               shutil.copyfile(source, target)
               target.chmod(0o644)
-          generator = work / '.github/workflows/generate-iso-layout-artifact.yml'
-          if generator.exists():
-              generator.unlink()
           PY
 
-      - name: Commit atomic feature update
+      - name: Commit atomic non-workflow feature update
         working-directory: work
         run: |
           git config user.name github-actions[bot]
@@ -129,4 +129,4 @@ jobs:
           git commit -m 'iso: add reviewed MBR/GPT layout options'
           git push origin HEAD:parity/iso-layout-options
 
-# The workflow is intentionally updated once after installation to create its eligible push event.
+# Workflow-file publication is intentionally performed through the repository connector after this bounded push.
