@@ -1,0 +1,56 @@
+name: Apply Windows CA 2023 final polish
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-windows-ca2023-final-polish
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'parity/windows-ca2023-bootloaders'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: parity/windows-ca2023-bootloaders
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - name: Apply and qualify final product polish
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/apply-ca2023-final-polish.py
+          gofmt -w internal/windowsmedia/ca2023.go
+          go test ./internal/windowsconfig ./internal/windowsmedia ./cmd/rufus-linux
+          python3 -m compileall -q gui
+          (
+            cd gui
+            python3 -m unittest test_windows_ca2023.py test_windows_skusi_policy.py test_iso_layout_options.py test_source_structure.py
+          )
+      - name: Publish one atomic product commit
+        run: |
+          set -euo pipefail
+          paths=(
+            internal/windowsmedia/ca2023.go
+            gui/rufusarm64_logic.py
+            gui/rufusarm64.py
+          )
+          if git diff --quiet -- "${paths[@]}"; then
+            echo "CA 2023 final polish is already applied and qualified."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${paths[@]}"
+          git commit -m "windowsmedia: clarify CA 2023 evidence boundaries"
+          git push origin HEAD:parity/windows-ca2023-bootloaders
