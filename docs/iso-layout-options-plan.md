@@ -1,17 +1,18 @@
 # ISO Image mode layout parity
 
-This branch expands the bounded Linux ISO Image mode beyond its initial fixed MBR/FAT32 layout while keeping DD Image mode immutable.
+This tranche expands the bounded Linux ISO Image mode while preserving DD semantics.
 
-Planned exact scope:
+Delivered scope:
 
 - MBR or GPT for compatible ARM64 UEFI ISO Image mode;
-- UEFI target fixed by validated media architecture;
-- FAT32 filesystem with reviewed cluster sizes;
-- editable FAT32 volume label reset when the selected image changes;
-- exact option binding through confirmation, privileged helper, diagnostics, tests, and loop-device qualification;
-- DD mode continues to preserve the source image byte-for-byte and ignores ISO extraction layout choices.
+- UEFI target and FAT32 filesystem remain capability-bound;
+- 4, 8, 16, or 32 KiB FAT32 clusters;
+- editable FAT32 label with per-image state and reset from stale Windows labels;
+- exact binding through confirmation, package-owned privileged helper, diagnostics, result evidence, and settings;
+- primary/backup GPT write and readback verification;
+- unit tests and real detached/reopened loop-device qualification for MBR and GPT;
+- DD mode continues to preserve the source image byte-for-byte and ignores extraction layout controls.
 
-The reviewed applicator is ready; this branch update triggers its bounded same-repository run.
-The validated workflow-run publisher is now installed; this update requests the final read-only generation pass.
+Remaining parity includes separately reviewed Linux NTFS/UEFI:NTFS extraction and any broader target-system/filesystem choices. Physical firmware boot remains tracked in #399.
 
 Refs #289.

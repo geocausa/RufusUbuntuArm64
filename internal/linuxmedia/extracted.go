@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -36,6 +37,8 @@ type ExtractedCreateOptions struct {
 	ExpectedSource     sourcefile.Identity
 	Architecture       string
 	VolumeLabel        string
+	PartitionScheme    string
+	ClusterSize        uint64
 	WorkDirectory      string
 	BeforeDestructive  func(source *os.File) error
 	ManifestMaxEntries int
@@ -43,10 +46,12 @@ type ExtractedCreateOptions struct {
 }
 
 type ExtractedCreateResult struct {
-	Layout       ExtractedLayout `json:"layout"`
-	Manifest     Manifest        `json:"manifest"`
-	SourceSHA256 string          `json:"source_sha256"`
-	UEFIBootPath string          `json:"uefi_boot_path"`
+	Layout          ExtractedLayout `json:"layout"`
+	Manifest        Manifest        `json:"manifest"`
+	SourceSHA256    string          `json:"source_sha256"`
+	UEFIBootPath    string          `json:"uefi_boot_path"`
+	PartitionScheme string          `json:"partition_scheme"`
+	ClusterSize     uint64          `json:"cluster_size"`
 }
 
 // PlanExtractedLayout creates a conventional one-partition FAT32 MBR layout for
@@ -251,6 +256,14 @@ func CreateExtracted(ctx context.Context, isoPath, devicePath string, opts Extra
 	if err != nil {
 		return result, err
 	}
+	partitionScheme, err := normalizeExtractedPartitionScheme(opts.PartitionScheme)
+	if err != nil {
+		return result, err
+	}
+	clusterBytes, err := normalizeExtractedClusterSize(opts.ClusterSize, sectorSize)
+	if err != nil {
+		return result, err
+	}
 
 	workRoot := opts.WorkDirectory
 	if workRoot == "" {
@@ -316,7 +329,7 @@ func CreateExtracted(ctx context.Context, isoPath, devicePath string, opts Extra
 		mountedISO = true
 	}
 
-	sendPersistent(emit, PersistentEvent{Stage: "inspect", Message: "Checking ISO Image mode UEFI, FAT32, filename, and capacity compatibility…"})
+	sendPersistent(emit, PersistentEvent{Stage: "inspect", Message: fmt.Sprintf("Checking ISO Image mode %s/UEFI/FAT32, cluster, filename, and capacity compatibility…", strings.ToUpper(partitionScheme))})
 	manifest, err := Inspect(ctx, sourceRoot, Options{
 		Architecture: opts.Architecture,
 		RequireUEFI:  true,
@@ -327,19 +340,24 @@ func CreateExtracted(ctx context.Context, isoPath, devicePath string, opts Extra
 	if err != nil {
 		return result, fmt.Errorf("ISO Image mode is not supported for this image: %w", err)
 	}
-	fat32Bytes, err := EstimateFAT32Bytes(manifest)
+	fat32Bytes, err := EstimateFAT32BytesForCluster(manifest, clusterBytes)
 	if err != nil {
 		return result, err
 	}
-	layout, err := PlanExtractedLayout(opts.TargetSize, sectorSize, fat32Bytes)
+	layout, err := PlanExtractedLayoutForScheme(opts.TargetSize, sectorSize, fat32Bytes, partitionScheme)
 	if err != nil {
+		return result, err
+	}
+	if err := validateExtractedFAT32Capacity(layout.Partition.SizeBytes, clusterBytes); err != nil {
 		return result, err
 	}
 	result = ExtractedCreateResult{
-		Layout:       layout,
-		Manifest:     manifest,
-		SourceSHA256: hex.EncodeToString(sourceDigest[:]),
-		UEFIBootPath: manifest.UEFIBootPath,
+		Layout:          layout,
+		Manifest:        manifest,
+		SourceSHA256:    hex.EncodeToString(sourceDigest[:]),
+		UEFIBootPath:    manifest.UEFIBootPath,
+		PartitionScheme: partitionScheme,
+		ClusterSize:     clusterBytes,
 	}
 
 	if sourceLease != nil {
@@ -376,14 +394,14 @@ func CreateExtracted(ctx context.Context, isoPath, devicePath string, opts Extra
 	}
 
 	targetChanged = true
-	sendPersistent(emit, PersistentEvent{Stage: "partition", Message: "Creating one writable FAT32 partition for ISO Image mode…"})
+	sendPersistent(emit, PersistentEvent{Stage: "partition", Message: fmt.Sprintf("Creating one writable %s/UEFI/FAT32 partition for ISO Image mode…", strings.ToUpper(partitionScheme))})
 	if err := runPersistent(ctx, emit, "wipefs", "--all", "--force", "--", stableTargetPath); err != nil {
 		return result, err
 	}
 	if err := checkTarget(); err != nil {
 		return result, err
 	}
-	if err := WriteExtractedMBR(target, layout); err != nil {
+	if err := WriteExtractedPartitionTable(target, layout, partitionScheme, label); err != nil {
 		return result, err
 	}
 	if err := persistentRereadPartitionTable(ctx, stableTargetPath, emit); err != nil {
@@ -416,7 +434,7 @@ func CreateExtracted(ctx context.Context, isoPath, devicePath string, opts Extra
 		returnErr = finishPersistentFile(returnErr, partitionFile, true, "ISO Image mode partition")
 	}()
 	partitionFDPath := "/proc/self/fd/3"
-	clusterSectors := fat32ClusterBytes / sectorSize
+	clusterSectors := clusterBytes / sectorSize
 	sendPersistent(emit, PersistentEvent{Stage: "format", Message: fmt.Sprintf("Formatting the ISO Image mode partition as FAT32 (%s)…", label)})
 	if err := runPersistentFileUnlocked(ctx, emit, partitionFile, "mkfs.vfat", "-F", "32", "-s", strconv.FormatUint(clusterSectors, 10), "-n", label, partitionFDPath); err != nil {
 		return result, fmt.Errorf("format ISO Image mode partition: %w", err)
@@ -492,6 +510,6 @@ func CreateExtracted(ctx context.Context, isoPath, devicePath string, opts Extra
 		}
 		mountedISO = false
 	}
-	sendPersistent(emit, PersistentEvent{Stage: "complete", Message: "ISO Image mode USB created and verified."})
+	sendPersistent(emit, PersistentEvent{Stage: "complete", Message: fmt.Sprintf("ISO Image mode USB created and verified (%s/UEFI/FAT32, %d-byte clusters).", strings.ToUpper(partitionScheme), clusterBytes)})
 	return result, nil
 }

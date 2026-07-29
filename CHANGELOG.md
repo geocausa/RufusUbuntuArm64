@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Expanded Linux ISO Image mode with exact MBR/GPT selection, reviewed FAT32 cluster sizes, an editable per-ISO label that resets when the image changes, and option-bound confirmation, diagnostics, GPT metadata readback, and real reopened-loop qualification.
+- Kept UEFI and FAT32 capability-bound and kept DD Image mode immutable; Linux NTFS/UEFI:NTFS extraction and broader filesystem/target-system parity remain planned.
+
 ## 0.15.0 — 2026-07-28
 
 - Added a Rufus-style **ISO Image mode / DD Image mode** choice for suitable Linux ISOHybrid images, with ISO Image mode selected as the recommended default and the existing byte-for-byte DD path retained as an explicit alternative.

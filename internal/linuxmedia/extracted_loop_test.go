@@ -18,7 +18,7 @@ import (
 	"github.com/geocausa/RufusArm64/internal/sourcefile"
 )
 
-func TestCreateExtractedOnRealLoopDevice(t *testing.T) {
+func TestCreateExtractedOnRealLoopDeviceMBR(t *testing.T) {
 	if os.Getenv("RUFUS_REAL_EXTRACTED_TEST") != "1" {
 		t.Skip("set RUFUS_REAL_EXTRACTED_TEST=1 to exercise a real loop device")
 	}
