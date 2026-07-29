@@ -18,7 +18,7 @@ func TestInspectWindowsCA2023CapabilityPrefersSetupIndexTwo(t *testing.T) {
 	originalPath := inspectWindowsCA2023WIMPath
 	originalWIM := windowsCA2023WIMExecutable
 	inspectWindowsCA2023Metadata = func(context.Context, string) (windowsconfig.MediaMetadata, error) {
-		return windowsconfig.MediaMetadata{ImageCount: 2}, nil
+		return windowsconfig.MediaMetadata{ImageCount: 2, Architecture: "arm64"}, nil
 	}
 	windowsCA2023WIMExecutable = func() (string, error) { return "fake-wimlib", nil }
 	var indexes []int
@@ -54,7 +54,7 @@ func TestInspectWindowsCA2023CapabilityFallsBackToIndexOne(t *testing.T) {
 	originalPath := inspectWindowsCA2023WIMPath
 	originalWIM := windowsCA2023WIMExecutable
 	inspectWindowsCA2023Metadata = func(context.Context, string) (windowsconfig.MediaMetadata, error) {
-		return windowsconfig.MediaMetadata{ImageCount: 2}, nil
+		return windowsconfig.MediaMetadata{ImageCount: 2, Architecture: "arm64"}, nil
 	}
 	windowsCA2023WIMExecutable = func() (string, error) { return "fake-wimlib", nil }
 	inspectWindowsCA2023WIMPath = func(_ context.Context, _, _ string, index int, path string) (bool, error) {
@@ -102,7 +102,7 @@ func TestStageApplyAndVerifyWindowsCA2023(t *testing.T) {
 	writeCA2023TestFile(t, filepath.Join(isoRoot, "EFI", "BOOT", "BOOTAA64.EFI"), "old-fallback")
 	writeCA2023TestFile(t, filepath.Join(isoRoot, "bootmgr.efi"), "old-bootmgr")
 	writeCA2023TestFile(t, filepath.Join(isoRoot, "EFI", "Microsoft", "Boot", "Fonts", "segmono_boot.ttf"), "old-font")
-	plan, err := StageWindowsCA2023(context.Background(), "boot.wim", isoRoot, t.TempDir(), WindowsCA2023Capability{Available: true, ImageIndex: 2})
+	plan, err := StageWindowsCA2023(context.Background(), "boot.wim", isoRoot, t.TempDir(), WindowsCA2023Capability{Available: true, ImageIndex: 2, Architecture: "arm64"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestStageWindowsCA2023RejectsNonCA2023Signer(t *testing.T) {
 	isoRoot := t.TempDir()
 	writeCA2023TestFile(t, filepath.Join(isoRoot, "EFI", "BOOT", "BOOTAA64.EFI"), "old")
 	writeCA2023TestFile(t, filepath.Join(isoRoot, "bootmgr.efi"), "old")
-	_, err := StageWindowsCA2023(context.Background(), "boot.wim", isoRoot, t.TempDir(), WindowsCA2023Capability{Available: true, ImageIndex: 2})
+	_, err := StageWindowsCA2023(context.Background(), "boot.wim", isoRoot, t.TempDir(), WindowsCA2023Capability{Available: true, ImageIndex: 2, Architecture: "arm64"})
 	if err == nil || !strings.Contains(err.Error(), "certificate-chain evidence") {
 		t.Fatalf("signer error = %v", err)
 	}

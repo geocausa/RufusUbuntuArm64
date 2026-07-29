@@ -107,6 +107,8 @@ func AnalyzeCapabilities(ctx context.Context, isoPath string, expectedSource sou
 		staged, stageErr := StageWindowsCA2023(ctx, plan.BootWIMPath, mountPath, workDir, ca2023)
 		if stageErr != nil {
 			ca2023 = WindowsCA2023Capability{Reason: fmt.Sprintf("Windows UEFI CA 2023 bootloader validation failed: %v", stageErr)}
+		} else if architectureErr := validateWindowsCA2023Architecture(metadata, staged); architectureErr != nil {
+			ca2023 = WindowsCA2023Capability{Reason: architectureErr.Error()}
 		} else {
 			ca2023 = summarizeWindowsCA2023Capability(ca2023, staged)
 		}

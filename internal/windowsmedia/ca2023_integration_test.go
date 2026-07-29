@@ -22,7 +22,7 @@ func qualifiedCA2023Metadata() windowsconfig.MediaMetadata {
 }
 
 func TestValidateWindowsCA2023Selection(t *testing.T) {
-	capability := WindowsCA2023Capability{Available: true, ImageIndex: 2}
+	capability := WindowsCA2023Capability{Available: true, ImageIndex: 2, Architecture: "arm64"}
 	if err := validateWindowsCA2023Selection(qualifiedCA2023Metadata(), capability, "uefi", "fat32"); err != nil {
 		t.Fatalf("qualified selection rejected: %v", err)
 	}
