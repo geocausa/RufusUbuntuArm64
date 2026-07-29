@@ -24,8 +24,8 @@ type ExtractedDispatchOptions struct {
 // ExtractedDispatchResult contains exactly one selected creation result.
 type ExtractedDispatchResult struct {
 	Selection ExtractedFilesystemSelection `json:"selection"`
-	FAT32     *ExtractedCreateResult        `json:"fat32,omitempty"`
-	NTFS      *ExtractedNTFSCreateResult    `json:"ntfs,omitempty"`
+	FAT32     *ExtractedCreateResult       `json:"fat32,omitempty"`
+	NTFS      *ExtractedNTFSCreateResult   `json:"ntfs,omitempty"`
 }
 
 // CreateExtractedSelected dispatches the existing FAT32 path or the separate

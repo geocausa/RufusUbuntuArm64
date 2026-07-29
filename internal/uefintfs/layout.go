@@ -19,13 +19,13 @@ const (
 	SchemeMBR = "mbr"
 	SchemeGPT = "gpt"
 
-	oneMiB              = uint64(1024 * 1024)
-	minimumLayoutBytes  = uint64(16 * 1024 * 1024)
-	gptHeaderBytes      = 92
-	gptEntryBytes       = 128
-	gptEntryCount       = 128
-	gptNoDriveLetter    = uint64(1) << 63
-	mbrDataPartition    = byte(0x07)
+	oneMiB               = uint64(1024 * 1024)
+	minimumLayoutBytes   = uint64(16 * 1024 * 1024)
+	gptHeaderBytes       = 92
+	gptEntryBytes        = 128
+	gptEntryCount        = 128
+	gptNoDriveLetter     = uint64(1) << 63
+	mbrDataPartition     = byte(0x07)
 	mbrUEFINTFSPartition = byte(0xef)
 )
 
