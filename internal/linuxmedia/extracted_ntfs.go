@@ -24,15 +24,15 @@ import (
 // ExtractedNTFSCreateResult is the exact evidence returned by the separate
 // guarded Linux NTFS/UEFI:NTFS creation path.
 type ExtractedNTFSCreateResult struct {
-	Plan            ExtractedMediaPlan `json:"plan"`
-	Manifest        Manifest           `json:"manifest"`
-	SourceSHA256    string             `json:"source_sha256"`
-	UEFIBootPath    string             `json:"uefi_boot_path"`
-	UEFINTFSPath    string             `json:"uefi_ntfs_path"`
-	UEFINTFSSHA256  string             `json:"uefi_ntfs_sha256"`
-	UEFINTFSSize    uint64             `json:"uefi_ntfs_size"`
-	DataPartition   string             `json:"data_partition"`
-	BootPartition   string             `json:"boot_partition"`
+	Plan           ExtractedMediaPlan `json:"plan"`
+	Manifest       Manifest           `json:"manifest"`
+	SourceSHA256   string             `json:"source_sha256"`
+	UEFIBootPath   string             `json:"uefi_boot_path"`
+	UEFINTFSPath   string             `json:"uefi_ntfs_path"`
+	UEFINTFSSHA256 string             `json:"uefi_ntfs_sha256"`
+	UEFINTFSSize   uint64             `json:"uefi_ntfs_size"`
+	DataPartition  string             `json:"data_partition"`
+	BootPartition  string             `json:"boot_partition"`
 }
 
 // CreateExtractedNTFS implements the privileged NTFS half of Linux ISO Image
@@ -256,6 +256,7 @@ func CreateExtractedNTFS(ctx context.Context, isoPath, devicePath string, opts E
 			if err := sourceLease.Check(); err != nil {
 				return err
 			}
+		}
 		if err := sourcefile.VerifyPinned(isoFile, opts.ExpectedSource); err != nil {
 			return err
 		}
