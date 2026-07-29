@@ -57,12 +57,26 @@ func TestValidateWindowsCA2023SelectionBindsInstallAndBootWIMArchitecture(t *tes
 	}
 }
 
-func TestInspectWindowsCA2023CapabilityRejectsUnsupportedBootArchitecture(t *testing.T) {
-	original := inspectWindowsCA2023Metadata
+func TestInspectWindowsCA2023CapabilityRejectsUnsupportedBootArchitectureBeforePathProbing(t *testing.T) {
+	originalMetadata := inspectWindowsCA2023Metadata
+	originalExecutable := windowsCA2023WIMExecutable
+	originalPath := inspectWindowsCA2023WIMPath
 	inspectWindowsCA2023Metadata = func(context.Context, string) (windowsconfig.MediaMetadata, error) {
 		return windowsconfig.MediaMetadata{ImageCount: 2, Architecture: "riscv64"}, nil
 	}
-	t.Cleanup(func() { inspectWindowsCA2023Metadata = original })
+	windowsCA2023WIMExecutable = func() (string, error) {
+		t.Fatal("unsupported boot.wim architecture reached WIM executable lookup")
+		return "", nil
+	}
+	inspectWindowsCA2023WIMPath = func(context.Context, string, string, int, string) (bool, error) {
+		t.Fatal("unsupported boot.wim architecture reached replacement-path probing")
+		return false, nil
+	}
+	t.Cleanup(func() {
+		inspectWindowsCA2023Metadata = originalMetadata
+		windowsCA2023WIMExecutable = originalExecutable
+		inspectWindowsCA2023WIMPath = originalPath
+	})
 
 	capability, err := InspectWindowsCA2023Capability(context.Background(), "boot.wim")
 	if err != nil {
