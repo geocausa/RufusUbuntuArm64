@@ -5,6 +5,7 @@ package windowsmedia
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/geocausa/RufusArm64/internal/windowsconfig"
 )
@@ -46,6 +47,13 @@ func PrepareCustomizationsForMetadata(metadata windowsconfig.MediaMetadata, answ
 	}
 	result.AnswerFile = answer
 	return result, nil
+}
+
+func validateCustomizationTargetSystem(options windowsconfig.Options, targetSystem string) error {
+	if options.ApplySkuSiPolicy && strings.ToLower(strings.TrimSpace(targetSystem)) != "uefi" {
+		return fmt.Errorf("SkuSiPolicy deployment requires a resolved UEFI Windows target; BIOS/CSM media has no EFI System Partition")
+	}
+	return nil
 }
 
 // customizationPreparer keeps the writer integration testable without invoking
