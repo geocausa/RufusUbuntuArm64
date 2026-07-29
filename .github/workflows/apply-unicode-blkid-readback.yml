@@ -5,6 +5,7 @@ on:
     branches: [parity/unicode-volume-labels]
     paths:
       - scripts/apply_unicode_blkid_readback.py
+      - scripts/run_unicode_readback_applicator.py
       - .github/workflows/apply-unicode-blkid-readback.yml
 
 permissions:
@@ -27,7 +28,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Apply guarded readback correction
-        run: python3 scripts/apply_unicode_blkid_readback.py
+        run: python3 scripts/run_unicode_readback_applicator.py
       - name: Format and test affected contracts
         run: |
           set -euo pipefail
@@ -38,7 +39,7 @@ jobs:
             internal/windowsmedia/windowsmedia.go \
             internal/windowsmedia/windowsmedia_test.go
           go test ./internal/nonbootable ./internal/linuxmedia ./internal/windowsmedia ./internal/volumelabel
-          (cd gui && python3 -m unittest test_logic.py test_iso_write_mode.py)
+          (cd gui && python3 -m unittest test_logic.py test_iso_write_mode.py test_persistence_logic.py)
       - name: Publish product-only branch head
         env:
           BRANCH: parity/unicode-volume-labels
@@ -46,6 +47,7 @@ jobs:
           set -euo pipefail
           rm -f \
             scripts/apply_unicode_blkid_readback.py \
+            scripts/run_unicode_readback_applicator.py \
             .github/workflows/apply-unicode-blkid-readback.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
