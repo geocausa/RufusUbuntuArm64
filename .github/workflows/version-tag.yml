@@ -5,11 +5,12 @@ on:
     branches: [main]
     paths:
       - VERSION
-      - CHANGELOG.md
       - docs/release-*.md
       - packaging/io.github.geocausa.RufusArm64.metainfo.xml
       - .github/workflows/version-tag.yml
       - .github/workflows/release.yml
+      - scripts/canonical_tag_decision.py
+      - scripts/test_canonical_tag_decision.py
 
 permissions:
   contents: write
@@ -29,7 +30,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Validate the canonical release commit
+      - name: Validate the canonical release state
         id: version
         env:
           GH_TOKEN: ${{ github.token }}
@@ -38,6 +39,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           python3 scripts/check-version-sync.py
           python3 scripts/check-release-runtime-integrity.py
+          python3 scripts/test_canonical_tag_decision.py
           version="$(tr -d '\r\n' < VERSION)"
           tag="v${version}"
           test -f "docs/release-${version}.md"
@@ -45,19 +47,30 @@ jobs:
             gh api "/repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/${tag}" \
               --jq ".[] | select(.ref == \"refs/tags/${tag}\") | .object.sha"
           )"
-          if [[ -n "${existing}" ]]; then
-            test "${existing}" = "${GITHUB_SHA}" || {
-              echo "Refusing to move existing ${tag} from ${existing} to ${GITHUB_SHA}" >&2
+          decision="$(python3 scripts/canonical_tag_decision.py \
+            --current-sha "${GITHUB_SHA}" \
+            --existing-sha "${existing}")"
+          case "${decision}" in
+            create)
+              gh api --method POST "/repos/${GITHUB_REPOSITORY}/git/refs" \
+                -f ref="refs/tags/${tag}" \
+                -f sha="${GITHUB_SHA}" >/dev/null
+              echo "Created immutable canonical tag ${tag} at ${GITHUB_SHA}."
+              echo "created=true" >> "${GITHUB_OUTPUT}"
+              ;;
+            already-current)
+              echo "${tag} already points to the canonical release commit; no new dispatch is needed."
+              echo "created=false" >> "${GITHUB_OUTPUT}"
+              ;;
+            already-released)
+              echo "${tag} remains immutable at ${existing}; ${GITHUB_SHA} is post-release development and will not move or redispatch it."
+              echo "created=false" >> "${GITHUB_OUTPUT}"
+              ;;
+            *)
+              echo "Unexpected canonical-tag decision: ${decision}" >&2
               exit 1
-            }
-            echo "${tag} already points to the canonical release commit; no new dispatch is needed."
-            echo "created=false" >> "${GITHUB_OUTPUT}"
-          else
-            gh api --method POST "/repos/${GITHUB_REPOSITORY}/git/refs" \
-              -f ref="refs/tags/${tag}" \
-              -f sha="${GITHUB_SHA}" >/dev/null
-            echo "created=true" >> "${GITHUB_OUTPUT}"
-          fi
+              ;;
+          esac
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
       - name: Dispatch the audited release workflow at the new tag
