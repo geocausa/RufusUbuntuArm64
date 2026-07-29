@@ -38,6 +38,10 @@ func TestValidateWindowsCA2023ArchitectureRejectsMissingEvidence(t *testing.T) {
 	if err := validateWindowsCA2023Architecture(windowsconfig.MediaMetadata{}, &WindowsCA2023Plan{Architecture: "arm64"}); err == nil {
 		t.Fatal("missing install architecture unexpectedly accepted")
 	}
+	capability := WindowsCA2023Capability{Available: true, ImageIndex: 2}
+	if err := validateWindowsCA2023Selection(qualifiedArchitectureMetadata(), capability, "uefi", "fat32"); err == nil || !strings.Contains(err.Error(), "architecture evidence") {
+		t.Fatalf("missing boot.wim architecture evidence unexpectedly accepted: %v", err)
+	}
 }
 
 func TestValidateWindowsCA2023SelectionBindsInstallAndBootWIMArchitecture(t *testing.T) {
