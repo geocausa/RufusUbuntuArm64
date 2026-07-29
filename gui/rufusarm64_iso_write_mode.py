@@ -10,6 +10,7 @@ from rufusarm64_logic import inspect_source_identity, normalize_volume_label
 
 ISO_HELPER = "/usr/lib/rufusarm64/rufusarm64-persistence-helper"
 DEFAULT_ISO_PARTITION_SCHEME = "mbr"
+DEFAULT_ISO_FILESYSTEM = "auto"
 DEFAULT_ISO_CLUSTER_SIZE = "4096"
 DEFAULT_ISO_VOLUME_LABEL = "RUFUS-LIVE"
 _pending_iso_window = None
@@ -38,6 +39,15 @@ def normalize_iso_partition_scheme(value):
     return value
 
 
+def normalize_iso_filesystem(value):
+    value = str(value or DEFAULT_ISO_FILESYSTEM).strip().lower()
+    if value in {"automatic", ""}:
+        value = "auto"
+    if value not in {"auto", "fat32", "ntfs"}:
+        raise ValueError("ISO Image mode filesystem must be Automatic, FAT32, or NTFS.")
+    return value
+
+
 def normalize_iso_cluster_size(value):
     value = str(value or DEFAULT_ISO_CLUSTER_SIZE).strip().lower()
     if value in {"", "auto", "0"}:
@@ -45,6 +55,12 @@ def normalize_iso_cluster_size(value):
     if value not in {"4096", "8192", "16384", "32768"}:
         raise ValueError("ISO Image mode cluster size must be 4 KiB, 8 KiB, 16 KiB, or 32 KiB.")
     return value
+
+
+def normalize_iso_volume_label(value, filesystem):
+    filesystem = normalize_iso_filesystem(filesystem)
+    label_filesystem = "ntfs" if filesystem == "ntfs" else "fat32"
+    return normalize_volume_label(value or DEFAULT_ISO_VOLUME_LABEL, label_filesystem)
 
 
 def iso_source_state(previous_source, selected_source, current_label):
@@ -55,11 +71,15 @@ def iso_source_state(previous_source, selected_source, current_label):
     return selected or str(previous_source or ""), label
 
 
-def iso_layout_summary(partition_scheme, cluster_size, volume_label):
+def iso_layout_summary(partition_scheme, filesystem, cluster_size, volume_label):
     scheme = normalize_iso_partition_scheme(partition_scheme).upper()
+    filesystem = normalize_iso_filesystem(filesystem)
     cluster = int(normalize_iso_cluster_size(cluster_size)) // 1024
-    label = normalize_volume_label(volume_label or DEFAULT_ISO_VOLUME_LABEL, "fat32")
-    return f"{scheme} / UEFI / FAT32 / {cluster} KiB clusters / label {label}"
+    label = normalize_iso_volume_label(volume_label, filesystem)
+    filesystem_text = filesystem.upper()
+    if filesystem == "auto":
+        filesystem_text = "Automatic (FAT32 preferred)"
+    return f"{scheme} / UEFI / {filesystem_text} / {cluster} KiB clusters / label {label}"
 
 
 def build_iso_write_command(
@@ -71,6 +91,7 @@ def build_iso_write_command(
     cancel_path,
     volume_label=DEFAULT_ISO_VOLUME_LABEL,
     partition_scheme=DEFAULT_ISO_PARTITION_SCHEME,
+    filesystem=DEFAULT_ISO_FILESYSTEM,
     cluster_size=DEFAULT_ISO_CLUSTER_SIZE,
 ):
     """Build the narrow identity-bound privileged ISO Image mode command."""
@@ -79,6 +100,7 @@ def build_iso_write_command(
         raise ValueError("ISO Image mode requires authentication, an image, a USB identity, and a cancellation channel.")
     resolved_image, source_identity = inspect_source_identity(values[2])
     scheme = normalize_iso_partition_scheme(partition_scheme)
+    selected_filesystem = normalize_iso_filesystem(filesystem)
     cluster = normalize_iso_cluster_size(cluster_size)
     return [
         values[0],
@@ -94,9 +116,11 @@ def build_iso_write_command(
         "--expected-identity",
         values[4],
         "--volume-label",
-        normalize_volume_label(volume_label, "fat32"),
+        normalize_iso_volume_label(volume_label, selected_filesystem),
         "--partition-scheme",
         scheme,
+        "--filesystem",
+        selected_filesystem,
         "--cluster-size",
         cluster,
         "--cancel-file",
@@ -140,15 +164,15 @@ class ISOHybridWriteModeDialog(Gtk.Dialog):
         )
         self.iso_mode.set_active(True)
         self.iso_mode.set_tooltip_text(
-            "Create a conventional writable FAT32 USB using the reviewed MBR/GPT and cluster settings."
+            "Create a conventional writable USB using reviewed MBR/GPT and Automatic/FAT32/NTFS settings."
         )
         box.pack_start(self.iso_mode, False, False, 0)
 
         iso_detail = Gtk.Label(
             label=(
-                "Creates one conventional writable FAT32 partition, extracts the ISO files, and verifies every copied file by SHA-256. "
-                "Partition scheme, cluster size, and label come from the visible ISO-mode controls. UEFI and FAT32 remain capability-bound. "
-                "All checks finish before the USB is erased."
+                "Creates a conventional writable data partition, extracts the ISO files, and verifies every copied file by SHA-256. "
+                "Automatic prefers FAT32 and uses NTFS with the verified UEFI:NTFS boot partition only when FAT32 is incompatible. "
+                "Partition scheme, filesystem, cluster size, and label come from the visible ISO-mode controls. All checks finish before the USB is erased."
             )
         )
         iso_detail.set_xalign(0)
@@ -194,12 +218,14 @@ def install_iso_write_mode():
     original_start = window_class.start
     original_save_settings = window_class.save_settings
     original_partition_changed = window_class.partition_changed
+    original_filesystem_changed = window_class.filesystem_changed
     original_build_writer_command = rufusarm64.build_writer_command
 
     def update_iso_note(window):
         try:
             summary = iso_layout_summary(
                 window.partition_combo.get_active_id(),
+                window.filesystem_combo.get_active_id(),
                 window.cluster_combo.get_active_id(),
                 window.volume_label.get_text(),
             )
@@ -208,6 +234,7 @@ def install_iso_write_mode():
             return
         window.layout_note.set_text(
             "ISO Image mode: " + summary + ". MBR is broadly compatible with removable-media UEFI; GPT is the modern alternative. "
+            "Automatic prefers FAT32 and selects NTFS/UEFI:NTFS only when the complete media tree requires it. "
             "DD Image mode ignores these controls and preserves the source image exactly."
         )
 
@@ -233,12 +260,15 @@ def install_iso_write_mode():
         window.iso_partition_scheme = normalize_iso_partition_scheme(
             window.settings.get("iso_partition_scheme", DEFAULT_ISO_PARTITION_SCHEME)
         )
+        window.iso_filesystem = normalize_iso_filesystem(
+            window.settings.get("iso_filesystem", DEFAULT_ISO_FILESYSTEM)
+        )
         window.iso_cluster_size = normalize_iso_cluster_size(
             window.settings.get("iso_cluster_size", DEFAULT_ISO_CLUSTER_SIZE)
         )
         try:
-            window.iso_volume_label = normalize_volume_label(
-                window.settings.get("iso_volume_label", DEFAULT_ISO_VOLUME_LABEL), "fat32"
+            window.iso_volume_label = normalize_iso_volume_label(
+                window.settings.get("iso_volume_label", DEFAULT_ISO_VOLUME_LABEL), window.iso_filesystem
             )
         except ValueError:
             window.iso_volume_label = DEFAULT_ISO_VOLUME_LABEL
@@ -260,16 +290,21 @@ def install_iso_write_mode():
         try:
             window.partition_combo.set_active_id(window.iso_partition_scheme)
             window.target_system_combo.set_active_id("uefi")
-            window.filesystem_combo.set_active_id("fat32")
+            window.filesystem_combo.set_active_id(window.iso_filesystem)
             window.cluster_combo.set_active_id(window.iso_cluster_size)
-            window.volume_label.set_max_length(11)
-            window.volume_label.set_text(window.iso_volume_label)
+            window.volume_label.set_max_length(32 if window.iso_filesystem == "ntfs" else 11)
+            window.volume_label.set_text(
+                normalize_iso_volume_label(window.iso_volume_label, window.iso_filesystem)
+            )
+        except ValueError:
+            window.iso_volume_label = DEFAULT_ISO_VOLUME_LABEL
+            window.volume_label.set_text(DEFAULT_ISO_VOLUME_LABEL)
         finally:
             window._iso_settings_suspended = False
         editable = not window.busy
         window.partition_combo.set_sensitive(editable)
         window.target_system_combo.set_sensitive(False)
-        window.filesystem_combo.set_sensitive(False)
+        window.filesystem_combo.set_sensitive(editable)
         window.cluster_combo.set_sensitive(editable)
         window.volume_label.set_sensitive(editable)
         for widget in (
@@ -293,7 +328,7 @@ def install_iso_write_mode():
         elif hybrid_mode_available(info):
             window.mode_value.set_text(
                 "ISOHybrid image: ISO Image mode (recommended/default) and DD Image mode are available. "
-                "ISO mode supports reviewed MBR/GPT and FAT32 cluster choices."
+                "ISO mode supports reviewed MBR/GPT and Automatic/FAT32/NTFS choices."
             )
             apply_iso_controls(window)
         return result
@@ -310,6 +345,28 @@ def install_iso_write_mode():
             update_iso_note(window)
         return result
 
+    def integrated_filesystem_changed(window, *args):
+        result = original_filesystem_changed(window, *args)
+        if not (hybrid_mode_available(window.inspection) or _pending_iso_window is window):
+            return result
+        try:
+            selected = normalize_iso_filesystem(window.filesystem_combo.get_active_id())
+        except ValueError:
+            return result
+        window.iso_filesystem = selected
+        window._iso_settings_suspended = True
+        try:
+            window.volume_label.set_max_length(32 if selected == "ntfs" else 11)
+            window.iso_volume_label = normalize_iso_volume_label(window.volume_label.get_text(), selected)
+            window.volume_label.set_text(window.iso_volume_label)
+        except ValueError:
+            window.iso_volume_label = DEFAULT_ISO_VOLUME_LABEL
+            window.volume_label.set_text(DEFAULT_ISO_VOLUME_LABEL)
+        finally:
+            window._iso_settings_suspended = False
+        update_iso_note(window)
+        return result
+
     def integrated_save_settings(window):
         iso_active = hybrid_mode_available(window.inspection) or _pending_iso_window is window
         if not iso_active:
@@ -318,9 +375,11 @@ def install_iso_write_mode():
             return original_save_settings(window)
 
         window.iso_partition_scheme = normalize_iso_partition_scheme(window.partition_combo.get_active_id())
+        window.iso_filesystem = normalize_iso_filesystem(window.filesystem_combo.get_active_id())
         window.iso_cluster_size = normalize_iso_cluster_size(window.cluster_combo.get_active_id())
-        window.iso_volume_label = normalize_volume_label(window.volume_label.get_text(), "fat32")
+        window.iso_volume_label = normalize_iso_volume_label(window.volume_label.get_text(), window.iso_filesystem)
         window.settings["iso_partition_scheme"] = window.iso_partition_scheme
+        window.settings["iso_filesystem"] = window.iso_filesystem
         window.settings["iso_cluster_size"] = window.iso_cluster_size
         window.settings["iso_volume_label"] = window.iso_volume_label
 
@@ -348,7 +407,6 @@ def install_iso_write_mode():
             window._iso_settings_suspended = False
 
     def integrated_build_writer_command(*args, **kwargs):
-        global _pending_iso_window
         window = _pending_iso_window
         if window is None:
             return original_build_writer_command(*args, **kwargs)
@@ -365,6 +423,7 @@ def install_iso_write_mode():
             args[6],
             window.volume_label.get_text(),
             window.partition_combo.get_active_id(),
+            window.filesystem_combo.get_active_id(),
             window.cluster_combo.get_active_id(),
         )
 
@@ -388,10 +447,12 @@ def install_iso_write_mode():
         if choice == "iso":
             try:
                 window.iso_partition_scheme = normalize_iso_partition_scheme(window.partition_combo.get_active_id())
+                window.iso_filesystem = normalize_iso_filesystem(window.filesystem_combo.get_active_id())
                 window.iso_cluster_size = normalize_iso_cluster_size(window.cluster_combo.get_active_id())
-                window.iso_volume_label = normalize_volume_label(window.volume_label.get_text(), "fat32")
+                window.iso_volume_label = normalize_iso_volume_label(window.volume_label.get_text(), window.iso_filesystem)
                 layout_summary = iso_layout_summary(
                     window.iso_partition_scheme,
+                    window.iso_filesystem,
                     window.iso_cluster_size,
                     window.iso_volume_label,
                 )
@@ -432,7 +493,7 @@ def install_iso_write_mode():
             result = original_start(window, *args)
             if choice == "iso" and window.active_job == "writer":
                 window.active_mode = "linux-iso"
-                window.active_filesystem = "fat32"
+                window.active_filesystem = window.iso_filesystem
                 window.active_verify_requested = True
             return result
         finally:
@@ -446,6 +507,7 @@ def install_iso_write_mode():
     window_class.__init__ = integrated_init
     window_class.update_layout = integrated_update_layout
     window_class.partition_changed = integrated_partition_changed
+    window_class.filesystem_changed = integrated_filesystem_changed
     window_class.save_settings = integrated_save_settings
     window_class.start = integrated_start
     window_class._iso_write_mode_installed = True
