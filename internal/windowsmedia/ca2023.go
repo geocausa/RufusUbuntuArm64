@@ -79,7 +79,7 @@ var (
 func resolveWindowsCA2023Root(path string) (string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return "", errors.New("Windows CA 2023 ISO root is empty")
+		return "", errors.New("windows CA 2023 ISO root is empty")
 	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
@@ -94,7 +94,7 @@ func resolveWindowsCA2023Root(path string) (string, error) {
 		return "", err
 	}
 	if !info.IsDir() {
-		return "", errors.New("Windows CA 2023 ISO root is not a directory")
+		return "", errors.New("windows CA 2023 ISO root is not a directory")
 	}
 	return resolved, nil
 }
@@ -106,41 +106,41 @@ func validateWindowsCA2023Selection(metadata windowsconfig.MediaMetadata, capabi
 		if reason == "" {
 			reason = "available only for positively identified Windows 11 client media"
 		}
-		return fmt.Errorf("Windows UEFI CA 2023 bootloaders are unavailable: %s", reason)
+		return fmt.Errorf("windows UEFI CA 2023 bootloaders are unavailable: %s", reason)
 	}
 	if !capability.Available {
 		reason := strings.TrimSpace(capability.Reason)
 		if reason == "" {
 			reason = "a complete boot.wim _EX replacement set was not proven"
 		}
-		return fmt.Errorf("Windows UEFI CA 2023 bootloaders are unavailable: %s", reason)
+		return fmt.Errorf("windows UEFI CA 2023 bootloaders are unavailable: %s", reason)
 	}
 	installArchitecture := normalizeWIMArchitecture(metadata.Architecture)
 	if installArchitecture == "" || capability.Architecture == "" {
-		return errors.New("Windows UEFI CA 2023 architecture evidence is missing or unsupported")
+		return errors.New("windows UEFI CA 2023 architecture evidence is missing or unsupported")
 	}
 	if installArchitecture != capability.Architecture {
-		return fmt.Errorf("Windows installation payload architecture %s does not match boot.wim CA 2023 architecture %s", installArchitecture, capability.Architecture)
+		return fmt.Errorf("windows installation payload architecture %s does not match boot.wim CA 2023 architecture %s", installArchitecture, capability.Architecture)
 	}
 	if strings.ToLower(strings.TrimSpace(targetSystem)) != "uefi" {
-		return errors.New("Windows UEFI CA 2023 bootloader replacement requires a resolved UEFI target")
+		return errors.New("windows UEFI CA 2023 bootloader replacement requires a resolved UEFI target")
 	}
 	if strings.ToLower(strings.TrimSpace(filesystem)) != "fat32" {
-		return errors.New("Windows UEFI CA 2023 bootloader replacement currently requires FAT32; the pinned UEFI:NTFS first-stage image carries embedded certificate-chain evidence identifying Microsoft UEFI CA 2011 and cannot be represented as CA 2023-only media")
+		return errors.New("windows UEFI CA 2023 bootloader replacement currently requires FAT32; the pinned UEFI:NTFS first-stage image carries embedded certificate-chain evidence identifying Microsoft UEFI CA 2011 and cannot be represented as CA 2023-only media")
 	}
 	return nil
 }
 
 func validateWindowsCA2023Architecture(metadata windowsconfig.MediaMetadata, plan *WindowsCA2023Plan) error {
 	if plan == nil {
-		return errors.New("Windows UEFI CA 2023 replacement plan is missing")
+		return errors.New("windows UEFI CA 2023 replacement plan is missing")
 	}
 	installArchitecture := normalizeWIMArchitecture(metadata.Architecture)
 	if installArchitecture == "" {
-		return errors.New("Windows installation payload architecture is missing or unsupported")
+		return errors.New("windows installation payload architecture is missing or unsupported")
 	}
 	if installArchitecture != plan.Architecture {
-		return fmt.Errorf("Windows installation payload architecture %s does not match staged boot.wim CA 2023 architecture %s", installArchitecture, plan.Architecture)
+		return fmt.Errorf("windows installation payload architecture %s does not match staged boot.wim CA 2023 architecture %s", installArchitecture, plan.Architecture)
 	}
 	return nil
 }
@@ -165,10 +165,10 @@ func summarizeWindowsCA2023Capability(capability WindowsCA2023Capability, plan *
 // bounded fallback for unofficial single-index media.
 func InspectWindowsCA2023Capability(ctx context.Context, bootWIMPath string) (WindowsCA2023Capability, error) {
 	if ctx == nil {
-		return WindowsCA2023Capability{}, errors.New("Windows CA 2023 capability context is nil")
+		return WindowsCA2023Capability{}, errors.New("windows CA 2023 capability context is nil")
 	}
 	if strings.TrimSpace(bootWIMPath) == "" {
-		return WindowsCA2023Capability{}, errors.New("Windows CA 2023 boot.wim path is empty")
+		return WindowsCA2023Capability{}, errors.New("windows CA 2023 boot.wim path is empty")
 	}
 	metadata, err := inspectWindowsCA2023Metadata(ctx, bootWIMPath)
 	if err != nil {
@@ -215,14 +215,14 @@ func InspectWindowsCA2023Capability(ctx context.Context, bootWIMPath string) (Wi
 // replacement set before the destructive boundary. The caller owns workRoot.
 func StageWindowsCA2023(ctx context.Context, bootWIMPath, isoRoot, workRoot string, capability WindowsCA2023Capability) (*WindowsCA2023Plan, error) {
 	if ctx == nil {
-		return nil, errors.New("Windows CA 2023 staging context is nil")
+		return nil, errors.New("windows CA 2023 staging context is nil")
 	}
 	if !capability.Available || (capability.ImageIndex != 1 && capability.ImageIndex != 2) {
 		reason := strings.TrimSpace(capability.Reason)
 		if reason == "" {
 			reason = "complete CA 2023 boot assets were not proven"
 		}
-		return nil, fmt.Errorf("Windows CA 2023 bootloaders are unavailable: %s", reason)
+		return nil, fmt.Errorf("windows CA 2023 bootloaders are unavailable: %s", reason)
 	}
 	isoRoot, err := resolveWindowsCA2023Root(isoRoot)
 	if err != nil {
@@ -385,7 +385,7 @@ func ca2023Architecture(machine uint16) (string, string, error) {
 
 func addWindowsCA2023Asset(plan *WindowsCA2023Plan, isoRoot, sourcePath, destination string, requireOriginal bool) error {
 	if plan == nil {
-		return errors.New("Windows CA 2023 plan is nil")
+		return errors.New("windows CA 2023 plan is nil")
 	}
 	clean, err := cleanCA2023Destination(destination)
 	if err != nil {

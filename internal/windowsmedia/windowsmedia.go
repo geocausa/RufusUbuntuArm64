@@ -1084,7 +1084,7 @@ func finalizePlan(plan *mediaPlan) error {
 	otherBytes := plan.OtherBytes
 	if plan.CA2023 != nil {
 		if plan.CA2023.OriginalBytes > otherBytes {
-			return errors.New("Windows CA 2023 original replacement total exceeds the inspected media total")
+			return errors.New("windows CA 2023 original replacement total exceeds the inspected media total")
 		}
 		otherBytes -= plan.CA2023.OriginalBytes
 		var err error
