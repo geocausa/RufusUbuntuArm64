@@ -808,6 +808,8 @@ def build_writer_command(
     target_system = normalize_target_system(target_system)
     if target_system == "bios" and partition_scheme == "gpt":
         raise ValueError("BIOS/CSM cannot be combined with the GPT partition scheme.")
+    if options.get("apply_sku_si_policy") and target_system == "bios":
+        raise ValueError("SkuSiPolicy deployment requires a UEFI Windows target.")
     command = [
         pkexec,
         helper,
@@ -856,6 +858,8 @@ def build_writer_command(
         command.append("--win-reduce-data-collection")
     if options.get("quality_of_life"):
         command.append("--win-quality-of-life")
+    if options.get("apply_sku_si_policy"):
+        command.append("--win-apply-sku-si-policy")
     if options.get("disable_bitlocker"):
         command.append("--win-disable-bitlocker")
     if options.get("use_regional_settings"):

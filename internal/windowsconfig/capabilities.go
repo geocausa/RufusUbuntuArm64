@@ -11,12 +11,14 @@ import (
 // fail-closed capability profile. ImageCount and EditionNames describe the
 // complete bounded edition set that agreed on those identity facts.
 type MediaMetadata struct {
-	ProductName      string   `json:"product_name,omitempty"`
-	Version          string   `json:"version,omitempty"`
-	Architecture     string   `json:"architecture,omitempty"`
-	InstallationType string   `json:"installation_type,omitempty"`
-	ImageCount       int      `json:"image_count,omitempty"`
-	EditionNames     []string `json:"edition_names,omitempty"`
+	ProductName               string   `json:"product_name,omitempty"`
+	Version                   string   `json:"version,omitempty"`
+	Architecture              string   `json:"architecture,omitempty"`
+	InstallationType          string   `json:"installation_type,omitempty"`
+	ImageCount                int      `json:"image_count,omitempty"`
+	EditionNames              []string `json:"edition_names,omitempty"`
+	SkuSiPolicyAvailable      bool     `json:"sku_si_policy_available"`
+	SkuSiPolicyUnavailableWhy string   `json:"sku_si_policy_unavailable_reason,omitempty"`
 }
 
 // OptionCapability explains whether one setup option is safe for the detected
@@ -41,6 +43,7 @@ type CapabilityProfile struct {
 	DisableBitLocker     OptionCapability `json:"disable_bitlocker"`
 	LoadDrivers          OptionCapability `json:"load_drivers"`
 	QualityOfLife        OptionCapability `json:"quality_of_life"`
+	ApplySkuSiPolicy     OptionCapability `json:"apply_sku_si_policy"`
 	Locale               OptionCapability `json:"locale"`
 	TimeZone             OptionCapability `json:"time_zone"`
 }
@@ -93,10 +96,20 @@ func Capabilities(metadata MediaMetadata) CapabilityProfile {
 	if family == "client" && generation == "11" {
 		profile.BypassHardwareChecks = generic
 		profile.BypassOnlineAccount = generic
+		if metadata.SkuSiPolicyAvailable {
+			profile.ApplySkuSiPolicy = generic
+		} else {
+			reason := strings.TrimSpace(metadata.SkuSiPolicyUnavailableWhy)
+			if reason == "" {
+				reason = "SkuSiPolicy.p7b was not found in every Windows installation image"
+			}
+			profile.ApplySkuSiPolicy = OptionCapability{Reason: reason}
+		}
 	} else {
 		reason := "Available only for positively identified Windows 11 client media"
 		profile.BypassHardwareChecks = OptionCapability{Reason: reason}
 		profile.BypassOnlineAccount = OptionCapability{Reason: reason}
+		profile.ApplySkuSiPolicy = OptionCapability{Reason: reason}
 	}
 	return profile
 }
@@ -126,6 +139,7 @@ func ValidateForMedia(metadata MediaMetadata, options Options) error {
 		{options.DisableBitLocker, "BitLocker suppression", profile.DisableBitLocker},
 		{options.LoadDrivers, "driver loading", profile.LoadDrivers},
 		{options.QualityOfLife, "Quality of Life policy", profile.QualityOfLife},
+		{options.ApplySkuSiPolicy, "SkuSiPolicy deployment", profile.ApplySkuSiPolicy},
 		{strings.TrimSpace(options.Locale) != "", "locale", profile.Locale},
 		{strings.TrimSpace(options.TimeZone) != "", "time zone", profile.TimeZone},
 	}
@@ -147,6 +161,7 @@ func disabledProfile(profile CapabilityProfile, reason string) CapabilityProfile
 	profile.DisableBitLocker = disabled
 	profile.LoadDrivers = disabled
 	profile.QualityOfLife = disabled
+	profile.ApplySkuSiPolicy = disabled
 	profile.Locale = disabled
 	profile.TimeZone = disabled
 	return profile

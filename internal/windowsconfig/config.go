@@ -22,12 +22,13 @@ type Options struct {
 	DisableBitLocker     bool
 	LoadDrivers          bool
 	QualityOfLife        bool
+	ApplySkuSiPolicy     bool
 	Locale               string
 	TimeZone             string
 }
 
 func (o Options) Enabled() bool {
-	return o.BypassHardwareChecks || o.BypassOnlineAccount || strings.TrimSpace(o.LocalAccount) != "" || o.ReduceDataCollection || o.DisableBitLocker || o.LoadDrivers || o.QualityOfLife || strings.TrimSpace(o.Locale) != "" || strings.TrimSpace(o.TimeZone) != ""
+	return o.BypassHardwareChecks || o.BypassOnlineAccount || strings.TrimSpace(o.LocalAccount) != "" || o.ReduceDataCollection || o.DisableBitLocker || o.LoadDrivers || o.QualityOfLife || o.ApplySkuSiPolicy || strings.TrimSpace(o.Locale) != "" || strings.TrimSpace(o.TimeZone) != ""
 }
 
 var validLocale = regexp.MustCompile(`^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$`)
@@ -173,7 +174,7 @@ func Generate(architecture string, o Options) ([]byte, error) {
 		b.WriteString("      </RunSynchronous>\n    </component>\n  </settings>\n")
 	}
 
-	shellComponent := o.BypassOnlineAccount || o.ReduceDataCollection || strings.TrimSpace(o.LocalAccount) != "" || o.QualityOfLife || timeZone != ""
+	shellComponent := o.BypassOnlineAccount || o.ReduceDataCollection || strings.TrimSpace(o.LocalAccount) != "" || o.QualityOfLife || o.ApplySkuSiPolicy || timeZone != ""
 	if shellComponent || locale != "" {
 		b.WriteString("  <settings pass=\"oobeSystem\">\n")
 		if shellComponent {
@@ -199,7 +200,7 @@ func Generate(architecture string, o Options) ([]byte, error) {
 				b.WriteString("            <Group>Administrators</Group>\n            <Password><Value>UABhAHMAcwB3AG8AcgBkAA==</Value><PlainText>false</PlainText></Password>\n")
 				b.WriteString("          </LocalAccount>\n        </LocalAccounts>\n      </UserAccounts>\n")
 			}
-			if username != "" || o.QualityOfLife {
+			if username != "" || o.QualityOfLife || o.ApplySkuSiPolicy {
 				b.WriteString("      <FirstLogonCommands>\n")
 				order := 1
 				if username != "" {
@@ -207,6 +208,14 @@ func Generate(architecture string, o Options) ([]byte, error) {
 					fmt.Fprintf(&b, "        <SynchronousCommand wcm:action=\"add\"><Order>%d</Order><CommandLine>net user &quot;%s&quot; /logonpasswordchg:yes</CommandLine></SynchronousCommand>\n", order, escaped)
 					order++
 					fmt.Fprintf(&b, "        <SynchronousCommand wcm:action=\"add\"><Order>%d</Order><CommandLine>net accounts /maxpwage:unlimited</CommandLine></SynchronousCommand>\n", order)
+					order++
+				}
+				if o.ApplySkuSiPolicy {
+					// Use the installed system's own policy, matching Rufus's safety
+					// boundary. Delayed expansion preserves the copy result while the
+					// ESP is unmounted even when copying fails.
+					command := `cmd.exe /V:ON /C "mountvol S: /S && (copy /Y %WINDIR%\System32\SecureBootUpdates\SkuSiPolicy.p7b S:\EFI\Microsoft\Boot\SkuSiPolicy.p7b & set rc=!ERRORLEVEL! & mountvol S: /D & exit /B !rc!)"`
+					fmt.Fprintf(&b, "        <SynchronousCommand wcm:action=\"add\"><Order>%d</Order><CommandLine>%s</CommandLine><Description>Apply the installed Windows SkuSiPolicy to the EFI System Partition</Description></SynchronousCommand>\n", order, escapeText(command))
 					order++
 				}
 				if o.QualityOfLife {

@@ -17,7 +17,7 @@ type CustomizationPreparation struct {
 	AnswerFile   []byte                          `json:"-"`
 }
 
-var inspectCustomizationWIMMetadata = InspectWIMMetadata
+var inspectCustomizationWIMMetadata = InspectWIMSetupMetadata
 
 // PrepareCustomizations reads bounded metadata from a Windows installation
 // image, validates every selected setup option against that media, and only

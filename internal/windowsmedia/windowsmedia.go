@@ -320,6 +320,9 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		plan.DriverFolder = driverRoot
 	}
 	customizations := opts.Customizations
+	if customizations.ApplySkuSiPolicy && targetSystem != "uefi" {
+		return errors.New("SkuSiPolicy deployment requires a resolved UEFI Windows target; BIOS/CSM media has no EFI System Partition")
+	}
 	customizations.LoadDrivers = plan.DriverFolder != ""
 	plan.AnswerFile, err = preparePlanAnswerFile(ctx, plan, customizations, PrepareCustomizations)
 	if err != nil {
