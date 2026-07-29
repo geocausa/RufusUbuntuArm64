@@ -82,9 +82,10 @@ func run(args []string) error {
 	devicePath := flags.String("device", "", "whole removable target disk")
 	expectedTargetIdentity := flags.String("expected-identity", "", "target identity captured before authentication")
 	persistenceSizeText := flags.String("persistence-size", "0", "persistent ext4 size; zero uses remaining capacity")
-	volumeLabel := flags.String("volume-label", "RUFUS-LIVE", "FAT32 volume label")
+	volumeLabel := flags.String("volume-label", "RUFUS-LIVE", "ISO Image mode data-filesystem volume label")
 	partitionScheme := flags.String("partition-scheme", "", "ISO Image mode partition scheme: mbr or gpt")
-	clusterSizeText := flags.String("cluster-size", "0", "ISO Image mode FAT32 cluster size in bytes")
+	filesystem := flags.String("filesystem", "", "ISO Image mode filesystem: auto, fat32, or ntfs")
+	clusterSizeText := flags.String("cluster-size", "0", "ISO Image mode filesystem cluster size in bytes")
 	cancelFile := flags.String("cancel-file", "", "per-user cancellation marker")
 	jsonProgress := flags.Bool("json-progress", false, "emit JSON lines")
 	yes := flags.Bool("yes", false, "confirm the graphical application already obtained explicit erase consent")
@@ -124,6 +125,7 @@ func run(args []string) error {
 		return fmt.Errorf("parse --persistence-size: %w", err)
 	}
 	selectedPartitionScheme := strings.ToLower(strings.TrimSpace(*partitionScheme))
+	selectedFilesystem := strings.ToLower(strings.TrimSpace(*filesystem))
 	clusterSize, err := strconv.ParseUint(strings.TrimSpace(*clusterSizeText), 10, 64)
 	if err != nil {
 		return fmt.Errorf("parse --cluster-size: %w", err)
@@ -141,6 +143,16 @@ func run(args []string) error {
 		if selectedPartitionScheme != "mbr" && selectedPartitionScheme != "gpt" {
 			return errors.New("--partition-scheme must be mbr or gpt for ISO Image mode")
 		}
+		// Preserve older graphical callers until they explicitly pass the new
+		// selector. The updated GTK path uses Automatic by default.
+		if selectedFilesystem == "" {
+			selectedFilesystem = "fat32"
+		}
+		switch selectedFilesystem {
+		case "auto", "fat32", "ntfs":
+		default:
+			return errors.New("--filesystem must be auto, fat32, or ntfs for ISO Image mode")
+		}
 		if clusterSize == 0 {
 			clusterSize = 4096
 		}
@@ -149,8 +161,8 @@ func run(args []string) error {
 		default:
 			return errors.New("--cluster-size must be 4096, 8192, 16384, or 32768 for ISO Image mode")
 		}
-	} else if selectedPartitionScheme != "" || clusterSize != 0 {
-		return errors.New("--partition-scheme and --cluster-size are accepted only for ISO Image mode")
+	} else if selectedPartitionScheme != "" || selectedFilesystem != "" || clusterSize != 0 {
+		return errors.New("--partition-scheme, --filesystem, and --cluster-size are accepted only for ISO Image mode")
 	}
 	absoluteImage, err := filepath.Abs(*imagePath)
 	if err != nil {
@@ -237,7 +249,11 @@ func run(args []string) error {
 	}
 	preflightMessage := fmt.Sprintf("%s: %s; target: %s", operationLabel, filepath.Base(resolvedImage), resolvedTarget)
 	if selectedOperation == "iso" {
-		preflightMessage = fmt.Sprintf("%s; layout: %s/UEFI/FAT32; cluster: %d bytes", preflightMessage, strings.ToUpper(selectedPartitionScheme), clusterSize)
+		filesystemLabel := strings.ToUpper(selectedFilesystem)
+		if selectedFilesystem == "auto" {
+			filesystemLabel = "AUTOMATIC (FAT32 preferred)"
+		}
+		preflightMessage = fmt.Sprintf("%s; layout: %s/UEFI/%s; cluster: %d bytes", preflightMessage, strings.ToUpper(selectedPartitionScheme), filesystemLabel, clusterSize)
 	}
 	out.event(jsonEvent{Event: "preflight", Stage: "preflight", Message: preflightMessage})
 
@@ -299,15 +315,18 @@ func run(args []string) error {
 	}
 
 	if selectedOperation == "iso" {
-		result, err := linuxmedia.CreateExtracted(ctx, resolvedImage, resolvedTarget, linuxmedia.ExtractedCreateOptions{
-			TargetSize:        target.Size,
-			ExpectedDeviceID:  kernelDeviceID,
-			ExpectedSource:    expectedSource,
-			Architecture:      runtime.GOARCH,
-			VolumeLabel:       *volumeLabel,
-			PartitionScheme:   selectedPartitionScheme,
-			ClusterSize:       clusterSize,
-			BeforeDestructive: targetCheck,
+		result, err := linuxmedia.CreateExtractedSelected(ctx, resolvedImage, resolvedTarget, linuxmedia.ExtractedDispatchOptions{
+			ExtractedCreateOptions: linuxmedia.ExtractedCreateOptions{
+				TargetSize:        target.Size,
+				ExpectedDeviceID:  kernelDeviceID,
+				ExpectedSource:    expectedSource,
+				Architecture:      runtime.GOARCH,
+				VolumeLabel:       *volumeLabel,
+				PartitionScheme:   selectedPartitionScheme,
+				ClusterSize:       clusterSize,
+				BeforeDestructive: targetCheck,
+			},
+			Filesystem: selectedFilesystem,
 		}, forwardEvent)
 		stopHeartbeat()
 		if err != nil {
@@ -316,13 +335,32 @@ func run(args []string) error {
 		if err := safety.RereadPartitionTable(resolvedTarget); err != nil {
 			out.event(jsonEvent{Event: "log", Stage: "warning", Message: fmt.Sprintf("Warning: %v", err)})
 		}
-		out.event(jsonEvent{
-			Event:   "log",
-			Stage:   "verification",
-			Message: fmt.Sprintf("ISO Image mode source SHA-256 %s; verified UEFI fallback %s; layout %s/UEFI/FAT32; cluster %d bytes.", result.SourceSHA256, result.UEFIBootPath, strings.ToUpper(result.PartitionScheme), result.ClusterSize),
-			Hash:    result.SourceSHA256,
-		})
-		out.event(jsonEvent{Event: "complete", Stage: "complete", Message: "ISO Image mode USB created and verified."})
+		selected := strings.ToUpper(string(result.Selection.Selected))
+		switch result.Selection.Selected {
+		case linuxmedia.ExtractedFilesystemFAT32:
+			if result.FAT32 == nil {
+				return errors.New("ISO Image mode FAT32 dispatch returned no result")
+			}
+			out.event(jsonEvent{
+				Event:   "log",
+				Stage:   "verification",
+				Message: fmt.Sprintf("ISO Image mode source SHA-256 %s; verified UEFI fallback %s; layout %s/UEFI/%s; cluster %d bytes.", result.FAT32.SourceSHA256, result.FAT32.UEFIBootPath, strings.ToUpper(result.FAT32.PartitionScheme), selected, result.FAT32.ClusterSize),
+				Hash:    result.FAT32.SourceSHA256,
+			})
+		case linuxmedia.ExtractedFilesystemNTFS:
+			if result.NTFS == nil {
+				return errors.New("ISO Image mode NTFS dispatch returned no result")
+			}
+			out.event(jsonEvent{
+				Event:   "log",
+				Stage:   "verification",
+				Message: fmt.Sprintf("ISO Image mode source SHA-256 %s; verified UEFI fallback %s; layout %s/UEFI/%s; cluster %d bytes; UEFI:NTFS SHA-256 %s.", result.NTFS.SourceSHA256, result.NTFS.UEFIBootPath, strings.ToUpper(result.NTFS.Plan.PartitionScheme), selected, result.NTFS.Plan.ClusterSize, result.NTFS.UEFINTFSSHA256),
+				Hash:    result.NTFS.SourceSHA256,
+			})
+		default:
+			return fmt.Errorf("unexpected ISO Image mode filesystem result %q", result.Selection.Selected)
+		}
+		out.event(jsonEvent{Event: "complete", Stage: "complete", Message: fmt.Sprintf("ISO Image mode USB created and verified (%s).", selected)})
 		return nil
 	}
 
