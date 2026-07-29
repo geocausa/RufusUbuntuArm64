@@ -30,5 +30,6 @@ run_audit() {
 run_audit staticcheck staticcheck ./...
 run_audit govulncheck govulncheck ./...
 run_audit actionlint actionlint
+run_audit canonical-tag-decision python3 scripts/test_canonical_tag_decision.py
 
 exit "${status}"
