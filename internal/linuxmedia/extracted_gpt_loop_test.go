@@ -4,6 +4,7 @@ package linuxmedia
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -116,9 +117,9 @@ func TestCreateExtractedOnRealLoopDeviceGPT(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	blkidOutput, err := exec.Command("blkid", "-p", "-o", "export", partitionPath).CombinedOutput()
+	blkidOutput, err := waitForExtractedBlkid(partitionPath, 10*time.Second)
 	if err != nil {
-		t.Fatalf("inspect completed FAT32 partition: %v: %s", err, strings.TrimSpace(string(blkidOutput)))
+		t.Fatalf("inspect completed FAT32 partition: %v", err)
 	}
 	metadata := string(blkidOutput)
 	if !strings.Contains(metadata, "TYPE=vfat") || !strings.Contains(metadata, "LABEL=RUFUS-GPT") {
@@ -137,4 +138,18 @@ func TestCreateExtractedOnRealLoopDeviceGPT(t *testing.T) {
 		t.Fatalf("unmount completed GPT media: %v: %s", err, strings.TrimSpace(string(output)))
 	}
 	mounted = false
+}
+
+func waitForExtractedBlkid(partitionPath string, timeout time.Duration) ([]byte, error) {
+	deadline := time.Now().Add(timeout)
+	var lastOutput []byte
+	var lastErr error
+	for time.Now().Before(deadline) {
+		lastOutput, lastErr = exec.Command("blkid", "-p", "-o", "export", partitionPath).CombinedOutput()
+		if lastErr == nil && len(strings.TrimSpace(string(lastOutput))) != 0 {
+			return lastOutput, nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return nil, fmt.Errorf("blkid did not recognize %s before timeout: %v: %s", partitionPath, lastErr, strings.TrimSpace(string(lastOutput)))
 }
