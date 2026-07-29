@@ -1,6 +1,6 @@
 {
   "schema": 2,
-  "generated_on": "2026-07-28",
+  "generated_on": "2026-07-29",
   "upstream": {
     "repository": "pbatard/rufus",
     "version": "4.15",
@@ -10,7 +10,7 @@
   "project": {
     "repository": "geocausa/RufusUbuntuArm64",
     "baseline": "main",
-    "baseline_commit": "78850300e2681f015b0ae90c10356094fc5daeca",
+    "baseline_commit": "a359f4251451c66f5e838bd23d72a26d8e71c5af",
     "target_milestone": "1.0",
     "windows_to_go_policy": "deferred-maybe"
   },
@@ -39,7 +39,7 @@
       "id": "linux-iso-image-mode",
       "upstream_feature": "Choose ISO Image mode or DD Image mode for ISOHybrid media",
       "status": "partial",
-      "notes": "Suitable Linux ISOHybrid media receive an explicit Rufus-style choice with ISO Image mode recommended by default and DD retained as the exact-clone alternative. ISO mode now binds reviewed MBR/GPT, FAT32 cluster, and volume-label choices through confirmation, the privileged helper, diagnostics, metadata readback, copied-file verification, filesystem checking, flushing, and real reopened-loop qualification. UEFI and FAT32 remain capability-bound; Linux NTFS/UEFI:NTFS extraction and broader target-system/filesystem parity remain planned, and physical firmware boot remains release-qualification evidence.",
+      "notes": "Suitable ARM64 UEFI Linux ISOHybrid media receive an explicit Rufus-style choice with ISO Image mode recommended by default and DD retained as the immutable exact-clone alternative. ISO Image mode exposes Automatic, FAT32, or NTFS; Automatic prefers FAT32 and selects NTFS only when the complete inspected tree is FAT32-incompatible. Reviewed MBR/GPT, 4/8/16/32 KiB cluster, and per-image label choices are bound through confirmation, the privileged helper, diagnostics, result evidence, copied-file SHA-256 verification, filesystem checking, flushing, and real detached-and-reopened loop qualification. NTFS uses one data partition plus the exact pinned 1 MiB UEFI:NTFS boot image with shared Windows/Linux layout and metadata handling. BIOS/CSM or dual-mode Linux extraction, NTFS persistence, broader bootloader adaptation, and physical firmware boot qualification remain outside this bounded path.",
       "upstream_sources": [
         "src/format.c",
         "src/iso.c"
@@ -49,7 +49,7 @@
       "id": "windows-install-media",
       "upstream_feature": "Create Windows installation drives",
       "status": "implemented",
-      "notes": "GPT/MBR, UEFI, x86 BIOS/CSM, FAT32, NTFS, WIM splitting, UEFI:NTFS, setup options, and driver staging are implemented through Linux-native tooling.",
+      "notes": "GPT/MBR, UEFI, x86 BIOS/CSM, FAT32, NTFS, WIM splitting, UEFI:NTFS, setup options, and driver staging are implemented through Linux-native tooling. Windows and Linux NTFS media share the pinned UEFI:NTFS geometry and metadata implementation.",
       "upstream_sources": [
         "src/format.c",
         "src/iso.c",
@@ -142,7 +142,7 @@
       "id": "filesystems",
       "upstream_feature": "Format FAT/FAT32/NTFS/UDF/exFAT/ReFS/ext2/ext3",
       "status": "partial",
-      "notes": "FAT32, NTFS, and ext4 persistence paths are implemented. exFAT, UDF, and selected ext workflows remain planned. ReFS has no verified Linux-native formatter and is not portable today.",
+      "notes": "The dedicated guarded non-bootable formatter implements FAT32, exFAT, NTFS, ext2, ext3, and ext4 through MBR/GPT planning, trusted formatter resolution, exact label and geometry checks, read-only post-format verification, and real loop qualification. FAT32, NTFS, and ext4 also serve applicable boot or persistence workflows. FAT16 and UDF creation remain planned; ReFS has no verified Linux-native formatter and is not portable today.",
       "upstream_sources": [
         "src/format.c",
         "src/fat32.c",
@@ -173,7 +173,7 @@
       "id": "uefi-ntfs-architectures",
       "upstream_feature": "Provide UEFI:NTFS boot support across firmware architectures",
       "status": "partial",
-      "notes": "Verified x86, x86-64, and ARM64 UEFI:NTFS assets are integrated. Upstream Rufus 4.15 adds RISC-V64 support, which remains planned and is outside current ARM64 qualification.",
+      "notes": "Verified x86, x86-64, and ARM64 UEFI:NTFS assets are integrated. The exact pinned image is now shared by Windows installation and Linux NTFS ISO Image mode. Upstream Rufus 4.15 adds RISC-V64 support, which remains planned and is outside current ARM64 qualification.",
       "upstream_sources": [
         "res/uefi/uefi-ntfs/",
         "ChangeLog.txt"
