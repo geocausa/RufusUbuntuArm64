@@ -30,7 +30,12 @@ jobs:
         run: |
           set -euo pipefail
           python3 .github/scripts/apply-ca2023-gui-hardening.py
-          gofmt -w internal/windowsmedia/ca2023.go internal/windowsmedia/ca2023_integration_test.go internal/windowsmedia/windowsmedia.go
+          python3 .github/scripts/fix-ca2023-evidence-tests.py
+          gofmt -w \
+            internal/windowsmedia/ca2023.go \
+            internal/windowsmedia/ca2023_test.go \
+            internal/windowsmedia/ca2023_integration_test.go \
+            internal/windowsmedia/windowsmedia.go
           go test ./internal/windowsconfig ./internal/windowsmedia ./cmd/rufus-linux
           python3 -m compileall -q gui
           (
@@ -46,6 +51,7 @@ jobs:
           set -euo pipefail
           paths=(
             internal/windowsmedia/ca2023.go
+            internal/windowsmedia/ca2023_test.go
             internal/windowsmedia/ca2023_integration_test.go
             internal/windowsmedia/windowsmedia.go
             gui/rufusarm64_logic.py
