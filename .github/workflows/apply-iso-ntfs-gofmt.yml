@@ -1,0 +1,44 @@
+name: Apply ISO NTFS gofmt
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-iso-ntfs-gofmt
+  cancel-in-progress: false
+
+jobs:
+  format:
+    if: >-
+      github.event.pull_request.number == 408 &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'parity/linux-iso-ntfs'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: parity/linux-iso-ntfs
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - name: Format and test the affected packages
+        run: |
+          gofmt -w internal/linuxmedia/extracted_dispatch.go internal/uefintfs/layout.go
+          go test ./internal/linuxmedia ./internal/uefintfs
+      - name: Publish one atomic formatting commit
+        run: |
+          if git diff --quiet -- internal/linuxmedia/extracted_dispatch.go internal/uefintfs/layout.go; then
+            echo "Files are already formatted."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add internal/linuxmedia/extracted_dispatch.go internal/uefintfs/layout.go
+          git commit -m "style: gofmt ISO NTFS sources"
+          git push origin HEAD:parity/linux-iso-ntfs
