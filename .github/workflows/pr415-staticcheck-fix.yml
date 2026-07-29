@@ -1,0 +1,67 @@
+name: Fix PR 415 CA 2023 error style
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-pr415-ca2023-error-style
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: parity/windows-ca2023-bootloaders
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - name: Correct lowercase error strings and verify
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('internal/windowsmedia/ca2023.go')
+          text = path.read_text(encoding='utf-8')
+          replacements = {
+              'errors.New("Windows CA 2023 ISO root is empty")': 'errors.New("windows CA 2023 ISO root is empty")',
+              'errors.New("Windows CA 2023 ISO root is not a directory")': 'errors.New("windows CA 2023 ISO root is not a directory")',
+              'fmt.Errorf("Windows UEFI CA 2023 bootloaders are unavailable: %s", reason)': 'fmt.Errorf("windows UEFI CA 2023 bootloaders are unavailable: %s", reason)',
+              'errors.New("Windows UEFI CA 2023 architecture evidence is missing or unsupported")': 'errors.New("windows UEFI CA 2023 architecture evidence is missing or unsupported")',
+          }
+          expected = {
+              'errors.New("Windows CA 2023 ISO root is empty")': 1,
+              'errors.New("Windows CA 2023 ISO root is not a directory")': 1,
+              'fmt.Errorf("Windows UEFI CA 2023 bootloaders are unavailable: %s", reason)': 2,
+              'errors.New("Windows UEFI CA 2023 architecture evidence is missing or unsupported")': 1,
+          }
+          for old, new in replacements.items():
+              count = text.count(old)
+              if count != expected[old]:
+                  raise SystemExit(f'expected {expected[old]} occurrences of {old!r}, found {count}')
+              text = text.replace(old, new)
+          path.write_text(text, encoding='utf-8')
+          PY
+          gofmt -w internal/windowsmedia/ca2023.go
+          audit_bin="${RUNNER_TEMP}/audit-tools"
+          mkdir -p "${audit_bin}"
+          GOBIN="${audit_bin}" go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          "${audit_bin}/staticcheck" ./internal/windowsmedia/...
+          go test ./internal/windowsmedia ./internal/windowsconfig ./cmd/rufus-linux
+      - name: Publish style-only product commit
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add internal/windowsmedia/ca2023.go
+          git commit -m "windowsmedia: normalize CA 2023 error strings"
+          git push origin HEAD:parity/windows-ca2023-bootloaders
