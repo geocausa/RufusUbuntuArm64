@@ -43,11 +43,12 @@ func TestFAT32RejectsNonPortableInput(t *testing.T) {
 	}
 }
 
-func TestNTFSPreservesUnicodeAndCase(t *testing.T) {
+func TestNTFSPreservesUnicodeCaseAndPunctuation(t *testing.T) {
 	for _, value := range []string{
 		"Rufus_日本",
 		"MiXeD Case",
 		"Δίσκος-2026",
+		`Rufus:*?/\\|<>"`,
 		strings.Repeat("😀", 16),
 	} {
 		got, err := NTFS(value, "")
@@ -61,11 +62,10 @@ func TestNTFSPreservesUnicodeAndCase(t *testing.T) {
 	}
 }
 
-func TestNTFSRejectsInvalidOnDiskLabels(t *testing.T) {
+func TestNTFSRejectsAmbiguousOrInvalidLabels(t *testing.T) {
 	for _, value := range []string{
 		" leading",
 		"trailing ",
-		"BAD/NAME",
 		"BAD\nNAME",
 		strings.Repeat("😀", 17),
 		strings.Repeat("x", 33),
