@@ -26,7 +26,7 @@ func FAT32(value, fallback string) (string, error) {
 	}
 	value = strings.ToUpper(value)
 	if len([]byte(value)) > fat32MaxBytes {
-		return "", fmt.Errorf("FAT32 volume label must contain at most %d ASCII bytes", fat32MaxBytes)
+		return "", fmt.Errorf("FAT32 volume label must contain at most %d bytes of ASCII", fat32MaxBytes)
 	}
 	for _, character := range value {
 		if !((character >= 'A' && character <= 'Z') ||
