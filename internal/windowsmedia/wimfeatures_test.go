@@ -62,7 +62,7 @@ func TestSkuSiPolicyProbeFailureDisablesOnlyThatOption(t *testing.T) {
 		Version:          "10.0.26100",
 		Architecture:     "arm64",
 		InstallationType: "Client",
-		ImageCount:        1,
+		ImageCount:       1,
 	})
 	profile := windowsconfig.Capabilities(metadata)
 	if profile.ApplySkuSiPolicy.Enabled || !strings.Contains(profile.ApplySkuSiPolicy.Reason, "policy probe unavailable") {
