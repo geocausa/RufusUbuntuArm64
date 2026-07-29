@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -82,7 +83,7 @@ func TestCreateExtractedNTFSOrchestratesVerifiedUEFIMedia(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Plan != plan || result.UEFIBootPath != "EFI/BOOT/BOOTAA64.EFI" || result.UEFINTFSSHA256 != uefintfs.ImageSHA256 || len(result.SourceSHA256) != 64 {
+	if !reflect.DeepEqual(result.Plan, plan) || result.UEFIBootPath != "EFI/BOOT/BOOTAA64.EFI" || result.UEFINTFSSHA256 != uefintfs.ImageSHA256 || len(result.SourceSHA256) != 64 {
 		t.Fatalf("unexpected result: %#v", result)
 	}
 	for _, path := range []string{
@@ -127,9 +128,22 @@ func TestCreateExtractedNTFSRejectsAlteredAssetBeforeTargetMutation(t *testing.T
 	}
 	const targetSize = uint64(256 * 1024 * 1024)
 	targetPath := filepath.Join(t.TempDir(), "target.img")
-	writeLinuxTestFile(t, targetPath, "unchanged-target")
-	before, err := os.ReadFile(targetPath)
+	truncateLinuxTestFile(t, targetPath, targetSize)
+	const sentinelOffset = int64(8 * 1024 * 1024)
+	sentinel := []byte("unchanged-target")
+	target, err := os.OpenFile(targetPath, os.O_RDWR, 0)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := target.WriteAt(sentinel, sentinelOffset); err != nil {
+		target.Close()
+		t.Fatal(err)
+	}
+	if err := target.Sync(); err != nil {
+		target.Close()
+		t.Fatal(err)
+	}
+	if err := target.Close(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -153,11 +167,19 @@ func TestCreateExtractedNTFSRejectsAlteredAssetBeforeTargetMutation(t *testing.T
 	if err == nil || !strings.Contains(err.Error(), "SHA-256 mismatch") {
 		t.Fatalf("asset refusal error = %v", err)
 	}
-	after, readErr := os.ReadFile(targetPath)
-	if readErr != nil {
-		t.Fatal(readErr)
+	target, err = os.Open(targetPath)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if string(after) != string(before) {
+	after := make([]byte, len(sentinel))
+	if _, err := target.ReadAt(after, sentinelOffset); err != nil {
+		target.Close()
+		t.Fatal(err)
+	}
+	if err := target.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(sentinel) {
 		t.Fatal("target changed after UEFI:NTFS asset refusal")
 	}
 }
