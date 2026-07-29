@@ -42,8 +42,9 @@ func (i ImageInfo) Recognized() bool {
 }
 
 // InspectImage performs a small, read-only preflight inspection. It does not
-// claim to prove that media will boot; it rejects files that have neither a
-// coherent disk-image layout nor an aligned optical-filesystem signature.
+// claim to prove that media will boot; it reports coherent disk layouts, aligned
+// optical filesystems, and explicitly supported direct-filesystem superblocks.
+// Destructive mode selection separately decides which evidence is sufficient.
 func InspectImage(path string) (ImageInfo, error) {
 	file, err := os.Open(path)
 	if err != nil {
