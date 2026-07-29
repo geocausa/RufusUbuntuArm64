@@ -1,0 +1,398 @@
+name: Publish RufusArm64 0.15.0-rc2 prerelease
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: publish-rufusarm64-0.15.0-rc2
+  cancel-in-progress: false
+
+env:
+  PRODUCT_COMMIT: d218da974a5483a2c3265f02c4392bda0ff97307
+  DEPENDENCY_SOURCE_COMMIT: 0dec4bef354b646543e9703f4c1492a5ae9c7766
+  OPS_BRANCH: ops/publish-0.15.0-rc2
+  RELEASE_TAG: 0.15.0-rc2
+  RELEASE_VERSION: 0.15.0-rc2
+  VERSION: 0.15.0~rc2
+  RUFUS_ALLOW_NONRELEASE_VERSION: '1'
+  DEPENDENCY_RUN_ID: '30437866531'
+  ISO_LOOP_RUN_ID: '30437866494'
+  RELEASE_CONTRACT_RUN_ID: '30437866465'
+  WIM_ARTIFACT: wimlib-arm64
+  WIM_ARTIFACT_DIGEST: sha256:5da6c5b1581c971876e47c1fd1728c6abe6b7c57a9d143bbcb8a95e7dc918dd3
+  UEFI_ARTIFACT: uefi-md5sum-arm64
+  UEFI_ARTIFACT_DIGEST: sha256:898368089fea559c39cd96a8743cd0dc6f4d99c056b88d8ae3ce8e94c5d62466
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'geocausa/RufusUbuntuArm64' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ops/publish-0.15.0-rc2'
+    name: Build, verify, tag, and publish prerelease
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: d218da974a5483a2c3265f02c4392bda0ff97307
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Verify exact release-candidate source and version policy
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${PRODUCT_COMMIT}"
+          test "$(tr -d '\r\n' < VERSION)" = '0.15.0'
+          dpkg --validate-version "${VERSION}"
+          dpkg --compare-versions 0.15.0~rc1 lt "${VERSION}"
+          dpkg --compare-versions "${VERSION}" lt 0.15.0
+          test -f docs/hardware-checklist-0.15.0.md
+          test -f docs/release-0.15.0.md
+          test -f docs/iso-image-mode.md
+          grep -Fq 'ISO Image mode (Recommended)' docs/release-0.15.0.md
+          grep -Fq 'Automatic' docs/iso-image-mode.md
+          grep -Fq 'NTFS' docs/iso-image-mode.md
+          grep -Fq 'UEFI:NTFS' docs/iso-image-mode.md
+
+      - name: Prove merged product tree matches the exact tested head
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "${DEPENDENCY_SOURCE_COMMIT}"
+          test "$(git rev-parse "${PRODUCT_COMMIT}^{tree}")" = \
+            "$(git rev-parse "${DEPENDENCY_SOURCE_COMMIT}^{tree}")"
+
+      - name: Authenticate prerequisite jobs, loop qualification, and artifact archives
+        run: |
+          set -euo pipefail
+
+          authenticate_run() {
+            local run_id="$1"
+            local endpoint="repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
+            test "$(gh api "${endpoint}" --jq '.head_sha')" = "${DEPENDENCY_SOURCE_COMMIT}"
+            test "$(gh api "${endpoint}" --jq '.conclusion')" = 'success'
+          }
+
+          authenticate_run "${DEPENDENCY_RUN_ID}"
+          authenticate_run "${ISO_LOOP_RUN_ID}"
+          authenticate_run "${RELEASE_CONTRACT_RUN_ID}"
+
+          jobs_endpoint="repos/${GITHUB_REPOSITORY}/actions/runs/${DEPENDENCY_RUN_ID}/jobs?per_page=100"
+          test "$(gh api "${jobs_endpoint}" --jq '.jobs[] | select(.name == "Build bundled WIM engine") | .conclusion')" = 'success'
+          test "$(gh api "${jobs_endpoint}" --jq '.jobs[] | select(.name == "Reproduce ARM64 uefi-md5sum loader") | .conclusion')" = 'success'
+          test "$(gh api "${jobs_endpoint}" --jq '.jobs[] | select(.name == "Native ARM64 execution") | .conclusion')" = 'success'
+          test "$(gh api "${jobs_endpoint}" --jq '.jobs[] | select(.name == "Audit and package") | .conclusion')" = 'success'
+
+          loop_jobs="repos/${GITHUB_REPOSITORY}/actions/runs/${ISO_LOOP_RUN_ID}/jobs?per_page=100"
+          test "$(gh api "${loop_jobs}" --jq '.jobs[] | select(.name == "MBR/GPT FAT32 and NTFS extracted-media qualification") | .conclusion')" = 'success'
+
+          artifacts_endpoint="repos/${GITHUB_REPOSITORY}/actions/runs/${DEPENDENCY_RUN_ID}/artifacts?per_page=100"
+          test "$(gh api "${artifacts_endpoint}" --jq ".artifacts[] | select(.name == \"${WIM_ARTIFACT}\") | .digest")" = "${WIM_ARTIFACT_DIGEST}"
+          test "$(gh api "${artifacts_endpoint}" --jq ".artifacts[] | select(.name == \"${UEFI_ARTIFACT}\") | .digest")" = "${UEFI_ARTIFACT_DIGEST}"
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ env.WIM_ARTIFACT }}
+          path: vendor/wimlib
+          github-token: ${{ github.token }}
+          run-id: ${{ env.DEPENDENCY_RUN_ID }}
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ env.UEFI_ARTIFACT }}
+          path: vendor/uefi-md5sum/arm64
+          github-token: ${{ github.token }}
+          run-id: ${{ env.DEPENDENCY_RUN_ID }}
+
+      - name: Verify downloaded prerequisite contents
+        run: |
+          set -euo pipefail
+          (
+            cd vendor/wimlib/source
+            sha256sum -c wimlib-1.14.5-source.tar.gz.sha256
+          )
+          (
+            cd vendor/uefi-md5sum/arm64
+            sha256sum -c bootaa64.efi.sha256
+            sha256sum -c uefi-md5sum-v1.2-source.tar.gz.sha256
+          )
+
+      - name: Install package and validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs \
+            ntfs-3g gdisk file genisoimage qemu-utils qemu-user-static
+
+      - name: Run complete prerelease test and package contract
+        run: |
+          set -euo pipefail
+          mkdir -p dist/prerelease-logs
+          set -o pipefail
+          ./scripts/test.sh 2>&1 | tee dist/prerelease-logs/test-and-package.log
+
+      - name: Confirm prerelease package reproducibility
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          bash ./scripts/reproducible-package.sh 2>&1 | tee dist/prerelease-logs/reproducible-package.log
+
+      - name: Verify package identity and build deterministic release assets
+        id: assets
+        run: |
+          set -euo pipefail
+          package="dist/rufusarm64_${VERSION}_arm64.deb"
+          checksum="${package}.sha256"
+          test -f "${package}"
+          test -f "${checksum}"
+          (
+            cd dist
+            sha256sum -c "$(basename "${checksum}")"
+          )
+          test "$(dpkg-deb -f "${package}" Version)" = "${VERSION}"
+          test "$(dpkg-deb -f "${package}" Architecture)" = 'arm64'
+          dpkg-deb -f "${package}" Depends | grep -Fq 'ntfs-3g'
+
+          package_root="$(mktemp -d)"
+          trap 'rm -rf "${package_root}"' EXIT
+          dpkg-deb -x "${package}" "${package_root}"
+          for binary in \
+            rufusarm64-helper \
+            rufusarm64-persistence-helper \
+            rufusarm64-device-qualify \
+            rufusarm64-device-backup \
+            rufusarm64-nonbootable-format \
+            rufusarm64-freedos-format; do
+            file "${package_root}/usr/lib/rufusarm64/${binary}" | grep -F 'ARM aarch64'
+          done
+          for binary in \
+            rufusarm64-helper \
+            rufusarm64-device-qualify \
+            rufusarm64-device-backup; do
+            test "$(qemu-aarch64-static "${package_root}/usr/lib/rufusarm64/${binary}" version)" = "${VERSION}"
+          done
+          grep -Fxq "VERSION = \"${VERSION}\"" \
+            "${package_root}/usr/lib/rufusarm64/rufusarm64.py"
+          grep -Fq 'Write in ISO Image mode (Recommended)' \
+            "${package_root}/usr/lib/rufusarm64/rufusarm64_iso_write_mode.py"
+          grep -Fq 'Automatic' \
+            "${package_root}/usr/lib/rufusarm64/rufusarm64_iso_write_mode.py"
+          grep -Fq 'NTFS' \
+            "${package_root}/usr/lib/rufusarm64/rufusarm64_iso_write_mode.py"
+          grep -Fq 'Write in DD Image mode' \
+            "${package_root}/usr/lib/rufusarm64/rufusarm64_iso_write_mode.py"
+          cmp \
+            "${package_root}/usr/lib/rufusarm64/bootaa64-uefi-md5sum.efi" \
+            vendor/uefi-md5sum/arm64/bootaa64.efi
+          cmp \
+            "${package_root}/usr/lib/rufusarm64/uefi-ntfs.img" \
+            vendor/uefi-ntfs/uefi-ntfs.img
+
+          source_name="RufusArm64-${RELEASE_VERSION}-source.tar.gz"
+          git archive --format=tar --prefix="RufusArm64-${RELEASE_VERSION}/" "${PRODUCT_COMMIT}" | gzip -n > "dist/${source_name}"
+          (
+            cd dist
+            sha256sum "${source_name}" > "${source_name}.sha256"
+          )
+
+          package_sha="$(sha256sum "${package}" | awk '{print $1}')"
+          source_sha="$(sha256sum "dist/${source_name}" | awk '{print $1}')"
+          evidence="dist/RELEASE-EVIDENCE-${RELEASE_VERSION}.json"
+          python3 - "${evidence}" "${package_sha}" "${source_sha}" <<'PY'
+          import json
+          import os
+          import sys
+
+          path, package_sha, source_sha = sys.argv[1:]
+          evidence = {
+              'schema': 1,
+              'release': os.environ['RELEASE_VERSION'],
+              'tag': os.environ['RELEASE_TAG'],
+              'debian_version': os.environ['VERSION'],
+              'supersedes_prerelease': '0.15.0-rc1',
+              'product_commit': os.environ['PRODUCT_COMMIT'],
+              'dependency_source_commit': os.environ['DEPENDENCY_SOURCE_COMMIT'],
+              'dependency_artifact_run_id': os.environ['DEPENDENCY_RUN_ID'],
+              'iso_loop_run_id': os.environ['ISO_LOOP_RUN_ID'],
+              'release_contract_run_id': os.environ['RELEASE_CONTRACT_RUN_ID'],
+              'dependency_artifacts': {
+                  'wimlib': {
+                      'name': os.environ['WIM_ARTIFACT'],
+                      'archive_digest': os.environ['WIM_ARTIFACT_DIGEST'],
+                  },
+                  'uefi_md5sum': {
+                      'name': os.environ['UEFI_ARTIFACT'],
+                      'archive_digest': os.environ['UEFI_ARTIFACT_DIGEST'],
+                  },
+              },
+              'package': f"rufusarm64_{os.environ['VERSION']}_arm64.deb",
+              'package_sha256': package_sha,
+              'source_archive': f"RufusArm64-{os.environ['RELEASE_VERSION']}-source.tar.gz",
+              'source_sha256': source_sha,
+              'prerelease': True,
+              'qualification': {
+                  'software_ci': 'passed',
+                  'native_arm64': 'passed',
+                  'reopened_loop_mbr_fat32': 'passed',
+                  'reopened_loop_gpt_fat32': 'passed',
+                  'reopened_loop_mbr_ntfs': 'passed',
+                  'reopened_loop_gpt_ntfs': 'passed',
+                  'physical_iso_image_mode_boot': 'pending-checklist',
+              },
+              'boundaries': {
+                  'iso_image_mode': 'bounded-arm64-uefi-isohybrid-auto-fat32-ntfs-mbr-gpt',
+                  'dd_image_mode': 'explicit-byte-for-byte-alternative',
+                  'ntfs_persistence': 'unimplemented',
+                  'bios_or_dual_linux_extraction': 'unimplemented',
+                  'ffu_restore': 'experimental-single-store-v1-physical-qualification-pending',
+                  'ffu_capture': 'unimplemented',
+                  'uefi_integrity_loader': 'unsigned-secure-boot-not-established',
+                  'universal_hardware_compatibility': 'unclaimed',
+              },
+          }
+          with open(path, 'w', encoding='utf-8') as handle:
+              json.dump(evidence, handle, indent=2, sort_keys=True)
+              handle.write('\n')
+          PY
+          python3 -m json.tool "${evidence}" >/dev/null
+          git diff --exit-code
+
+          echo "package=${package}" >> "${GITHUB_OUTPUT}"
+          echo "checksum=${checksum}" >> "${GITHUB_OUTPUT}"
+          echo "source=dist/${source_name}" >> "${GITHUB_OUTPUT}"
+          echo "source_checksum=dist/${source_name}.sha256" >> "${GITHUB_OUTPUT}"
+          echo "evidence=${evidence}" >> "${GITHUB_OUTPUT}"
+          echo "package_sha=${package_sha}" >> "${GITHUB_OUTPUT}"
+          echo "source_sha=${source_sha}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create or authenticate the immutable prerelease tag
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            git fetch --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+            test "$(git rev-list -n1 "refs/tags/${RELEASE_TAG}")" = "${PRODUCT_COMMIT}"
+          else
+            git tag -a "${RELEASE_TAG}" "${PRODUCT_COMMIT}" \
+              -m "RufusArm64 ${RELEASE_VERSION} prerelease from ${PRODUCT_COMMIT}"
+            git push origin "refs/tags/${RELEASE_TAG}"
+          fi
+
+      - name: Publish or authenticate the GitHub prerelease
+        id: release
+        run: |
+          set -euo pipefail
+          notes="dist/RELEASE-NOTES-${RELEASE_VERSION}.md"
+          cat > "${notes}" <<EOF
+          # RufusArm64 ${RELEASE_VERSION}
+
+          This is the public **0.15.0 prerelease candidate** for physical ARM64 ISO Image mode qualification. It supersedes 0.15.0-rc1 for the expanded Linux NTFS/UEFI:NTFS path.
+
+          - Product commit: \`${PRODUCT_COMMIT}\`
+          - Debian package version: \`${VERSION}\` (sorts after rc1 and before stable \`0.15.0\`)
+          - Package SHA-256: \`${{ steps.assets.outputs.package_sha }}\`
+          - Source SHA-256: \`${{ steps.assets.outputs.source_sha }}\`
+          - Publication workflow: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Authenticated CI run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${DEPENDENCY_RUN_ID}
+          - Authenticated ISO loop run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${ISO_LOOP_RUN_ID}
+
+          ## Main candidate changes
+
+          - Adds **Automatic**, **FAT32**, and **NTFS** choices to bounded ARM64 UEFI Linux ISO Image mode.
+          - Automatic prefers FAT32 and chooses NTFS only when the complete inspected tree is FAT32-incompatible.
+          - Adds MBR and GPT NTFS layouts with one NTFS data partition plus the exact verified 1 MiB UEFI:NTFS boot image.
+          - Shares UEFI:NTFS asset admission, partition planning, backup-first GPT publication, writing, and complete readback between Windows and Linux media.
+          - Verifies every copied file, checks NTFS without repair, compares the full boot partition, flushes the target, and retains exact source/target identity and cancellation boundaries.
+          - Retains DD Image mode as the immutable byte-for-byte alternative.
+
+          ## Software qualification
+
+          Exact-head Go, UEFI, FreeDOS, formatter, static/vulnerability, native ARM64, package, and byte-for-byte reproducibility gates passed. Real privileged qualification created MBR/FAT32, GPT/FAT32, MBR/NTFS, and GPT/NTFS media; each completed backing image was detached and reopened before independent checks.
+
+          ## Physical qualification boundary
+
+          Physical Surface Pro 11 firmware boot remains pending under \`docs/hardware-checklist-0.15.0.md\` and issue #399. This candidate does not claim universal firmware, Secure Boot, distribution, controller, flash-health, or vendor compatibility. NTFS persistence and BIOS/dual-mode Linux extraction remain outside this candidate.
+
+          FFU restoration remains experimental and physical FFU qualification is still pending authentic supported material and suitable disposable hardware. FFU capture is not implemented. The optional package-owned UEFI integrity loader remains unsigned, so Secure Boot compatibility is not established.
+
+          Verify the Debian package with its adjacent SHA-256 sidecar before installation.
+          EOF
+
+          assets=(
+            "${{ steps.assets.outputs.package }}"
+            "${{ steps.assets.outputs.checksum }}"
+            "${{ steps.assets.outputs.source }}"
+            "${{ steps.assets.outputs.source_checksum }}"
+            "${{ steps.assets.outputs.evidence }}"
+          )
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.id')"
+            test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --jq '.prerelease')" = 'true'
+            test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" --jq '.target_commitish')" = "${PRODUCT_COMMIT}"
+            existing="$(mktemp -d)"
+            trap 'rm -rf "${existing}"' EXIT
+            asset_names="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100" --jq '.[].name')"
+            for asset in "${assets[@]}"; do
+              name="$(basename "${asset}")"
+              if grep -Fxq "${name}" <<<"${asset_names}"; then
+                gh release download "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --pattern "${name}" --dir "${existing}"
+                cmp "${asset}" "${existing}/${name}"
+              else
+                gh release upload "${RELEASE_TAG}" "${asset}" --repo "${GITHUB_REPOSITORY}"
+              fi
+            done
+          else
+            gh release create "${RELEASE_TAG}" "${assets[@]}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --verify-tag \
+              --prerelease \
+              --target "${PRODUCT_COMMIT}" \
+              --title "RufusArm64 ${RELEASE_VERSION}" \
+              --notes-file "${notes}"
+          fi
+          release_url="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.html_url')"
+          test -n "${release_url}"
+          echo "url=${release_url}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload publication logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: prerelease-logs-${{ github.run_id }}
+          path: dist/prerelease-logs/
+          if-no-files-found: warn
+
+      - name: Record publication and close the operational PR
+        if: success()
+        run: |
+          set -euo pipefail
+          body=$(cat <<EOF
+          Published RufusArm64 ${RELEASE_VERSION} from immutable product commit \`${PRODUCT_COMMIT}\`.
+
+          - Release: ${{ steps.release.outputs.url }}
+          - Debian package: \`rufusarm64_${VERSION}_arm64.deb\`
+          - Package SHA-256: \`${{ steps.assets.outputs.package_sha }}\`
+          - Source SHA-256: \`${{ steps.assets.outputs.source_sha }}\`
+          - Publication run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Dependency CI run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${DEPENDENCY_RUN_ID}
+          - ISO loop run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${ISO_LOOP_RUN_ID}
+
+          This operational workflow is intentionally not merged into the product branch.
+          EOF
+          )
+          gh pr comment "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --body "${body}"
+          gh pr close "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}"
