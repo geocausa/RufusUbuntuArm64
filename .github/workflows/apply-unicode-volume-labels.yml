@@ -5,6 +5,7 @@ on:
     branches: [parity/unicode-volume-labels]
     paths:
       - scripts/apply_unicode_volume_labels.py
+      - scripts/run_unicode_volume_label_applicator.py
       - .github/workflows/apply-unicode-volume-labels.yml
 
 permissions:
@@ -27,7 +28,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Apply guarded source changes
-        run: python3 scripts/apply_unicode_volume_labels.py
+        run: python3 scripts/run_unicode_volume_label_applicator.py
       - name: Format and test affected contracts
         run: |
           set -euo pipefail
@@ -39,7 +40,7 @@ jobs:
             internal/linuxmedia/create.go \
             internal/linuxmedia/extracted_plan.go \
             internal/linuxmedia/extracted_plan_test.go \
-            internal/linuxmedia/extracted_loop_test.go \
+            internal/linuxmedia/extracted_ntfs_loop_test.go \
             internal/nonbootable/plan.go \
             internal/nonbootable/plan_test.go \
             internal/nonbootable/backend_loop_test.go
@@ -50,7 +51,10 @@ jobs:
           BRANCH: parity/unicode-volume-labels
         run: |
           set -euo pipefail
-          rm -f scripts/apply_unicode_volume_labels.py .github/workflows/apply-unicode-volume-labels.yml
+          rm -f \
+            scripts/apply_unicode_volume_labels.py \
+            scripts/run_unicode_volume_label_applicator.py \
+            .github/workflows/apply-unicode-volume-labels.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
