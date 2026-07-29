@@ -4,10 +4,13 @@ package windowsmedia
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/geocausa/RufusArm64/internal/windowsconfig"
 )
 
 func TestInspectWIMPathInEveryImageRequiresEveryEdition(t *testing.T) {
@@ -44,5 +47,28 @@ func TestInspectWIMPathReportsOperationalFailure(t *testing.T) {
 	_, err := inspectWIMPath(context.Background(), tool, "install.wim", 1, skuSiPolicyWIMPath)
 	if err == nil || !strings.Contains(err.Error(), "corrupt wim") {
 		t.Fatalf("operational error = %v", err)
+	}
+}
+
+func TestSkuSiPolicyProbeFailureDisablesOnlyThatOption(t *testing.T) {
+	original := inspectSkuSiPolicyInEveryImage
+	inspectSkuSiPolicyInEveryImage = func(context.Context, string, int, string) (bool, error) {
+		return false, errors.New("policy probe unavailable")
+	}
+	t.Cleanup(func() { inspectSkuSiPolicyInEveryImage = original })
+
+	metadata := enrichSkuSiPolicyMetadata(context.Background(), "install.wim", windowsconfig.MediaMetadata{
+		ProductName:      "Windows 11 Pro",
+		Version:          "10.0.26100",
+		Architecture:     "arm64",
+		InstallationType: "Client",
+		ImageCount:        1,
+	})
+	profile := windowsconfig.Capabilities(metadata)
+	if profile.ApplySkuSiPolicy.Enabled || !strings.Contains(profile.ApplySkuSiPolicy.Reason, "policy probe unavailable") {
+		t.Fatalf("policy capability = %#v", profile.ApplySkuSiPolicy)
+	}
+	if !profile.LocalAccount.Enabled || !profile.DisableBitLocker.Enabled || !profile.BypassHardwareChecks.Enabled {
+		t.Fatalf("unrelated capabilities were suppressed: %#v", profile)
 	}
 }
