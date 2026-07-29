@@ -1,3 +1,4 @@
+# One-use product publisher; removes itself after focused tests pass.
 name: Fix Windows CA 2023 architecture binding
 
 on:
