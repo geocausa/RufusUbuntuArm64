@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf16"
+
+	"github.com/geocausa/RufusArm64/internal/uefintfs"
 )
 
 type partitionLayout struct {
@@ -84,11 +86,23 @@ func writeSinglePartitionGPT(target *os.File, targetSize, sectorSize uint64, lab
 	return layout.Data, err
 }
 
-// writeUEFINTFSGPT creates Rufus-compatible UEFI:NTFS media: one Microsoft
-// Basic Data partition for NTFS setup files and a small trailing Basic Data
-// partition named UEFI:NTFS that receives Rufus's FAT driver image.
+// writeUEFINTFSGPT creates Rufus-compatible UEFI:NTFS media through the same
+// shared planner and backup-first metadata writer used by Linux ISO Image mode.
 func writeUEFINTFSGPT(target *os.File, targetSize, sectorSize uint64, label string, bootImageSize uint64) (diskLayout, error) {
-	return writeGPT(target, targetSize, sectorSize, label, true, bootImageSize)
+	if target == nil {
+		return diskLayout{}, errors.New("nil GPT target")
+	}
+	if bootImageSize != uefintfs.ImageSize {
+		return diskLayout{}, fmt.Errorf("UEFI:NTFS image size %d does not match the pinned shared image size %d", bootImageSize, uefintfs.ImageSize)
+	}
+	shared, err := uefintfs.PlanLayout(uefintfs.SchemeGPT, targetSize, sectorSize)
+	if err != nil {
+		return diskLayout{}, err
+	}
+	if err := uefintfs.WriteLayout(target, shared, label); err != nil {
+		return diskLayout{}, err
+	}
+	return windowsDiskLayoutFromShared(shared), nil
 }
 
 func writeGPT(target gptTarget, targetSize, sectorSize uint64, label string, uefiNTFS bool, bootImageSize uint64) (diskLayout, error) {

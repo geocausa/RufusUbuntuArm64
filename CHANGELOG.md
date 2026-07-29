@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- Expanded Linux ISO Image mode with exact MBR/GPT selection, reviewed FAT32 cluster sizes, an editable per-ISO label that resets when the image changes, and option-bound confirmation, diagnostics, GPT metadata readback, and real reopened-loop qualification.
-- Kept UEFI and FAT32 capability-bound and kept DD Image mode immutable; Linux NTFS/UEFI:NTFS extraction and broader filesystem/target-system parity remain planned.
+- Expanded Linux ISO Image mode with Automatic/FAT32/NTFS selection, reviewed MBR/GPT and 4/8/16/32 KiB cluster choices, filesystem-specific labels, and exact option binding through confirmation, the privileged helper, diagnostics, and result evidence.
+- Added a shared pinned UEFI:NTFS implementation for Windows and Linux media, guarded NTFS path-policy inspection, complete copied-file and boot-partition readback, and detached-and-reopened MBR/GPT FAT32/NTFS loop qualification while keeping DD Image mode immutable. BIOS/dual-mode Linux extraction, NTFS persistence, and physical firmware boot remain separately bounded.
 
 ## 0.15.0 — 2026-07-28
 
