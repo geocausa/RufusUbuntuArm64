@@ -9,10 +9,10 @@
   },
   "project": {
     "repository": "geocausa/RufusUbuntuArm64",
-    "baseline": "main",
-    "baseline_commit": "081f2890f753798bc8fa00e1e19f121a82907ded",
+    "product_baseline": "main",
+    "product_baseline_commit": "081f2890f753798bc8fa00e1e19f121a82907ded",
     "software_tested_commit": "e76924a0df01489a4d8636c6740b75a3495bcf9f",
-    "software_tested_tree_equivalent_to_baseline": true,
+    "software_tested_tree_equivalent_to_product_baseline": true,
     "software_ci_run": 30441679056,
     "physical_candidate": {
       "tag": "0.15.0-rc2",
