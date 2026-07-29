@@ -1,0 +1,114 @@
+name: Fix Windows CA 2023 architecture binding
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'parity/windows-ca2023-bootloaders'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: parity/windows-ca2023-bootloaders
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - name: Bind install payload architecture to staged boot files
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new, label):
+              text = path.read_text(encoding='utf-8')
+              if new in text:
+                  return
+              if old not in text:
+                  raise SystemExit(f'missing {label} anchor in {path}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          ca = Path('internal/windowsmedia/ca2023.go')
+          marker = '''func summarizeWindowsCA2023Capability(capability WindowsCA2023Capability, plan *WindowsCA2023Plan) WindowsCA2023Capability {
+'''
+          helper = '''func validateWindowsCA2023Architecture(metadata windowsconfig.MediaMetadata, plan *WindowsCA2023Plan) error {
+	if plan == nil {
+		return errors.New("Windows UEFI CA 2023 replacement plan is missing")
+	}
+	installArchitecture := normalizeWIMArchitecture(metadata.Architecture)
+	if installArchitecture == "" {
+		return errors.New("Windows installation payload architecture is missing or unsupported")
+	}
+	if installArchitecture != plan.Architecture {
+		return fmt.Errorf("Windows installation payload architecture %s does not match staged boot.wim CA 2023 architecture %s", installArchitecture, plan.Architecture)
+	}
+	return nil
+}
+
+'''
+          text = ca.read_text(encoding='utf-8')
+          if helper.strip() not in text:
+              if marker not in text:
+                  raise SystemExit('missing CA 2023 architecture helper insertion anchor')
+              ca.write_text(text.replace(marker, helper + marker, 1), encoding='utf-8')
+
+          analysis = Path('internal/windowsmedia/analysis.go')
+          replace_once(
+              analysis,
+              '''		if stageErr != nil {
+			ca2023 = WindowsCA2023Capability{Reason: fmt.Sprintf("Windows UEFI CA 2023 bootloader validation failed: %v", stageErr)}
+		} else {
+			ca2023 = summarizeWindowsCA2023Capability(ca2023, staged)
+		}
+''',
+              '''		if stageErr != nil {
+			ca2023 = WindowsCA2023Capability{Reason: fmt.Sprintf("Windows UEFI CA 2023 bootloader validation failed: %v", stageErr)}
+		} else if architectureErr := validateWindowsCA2023Architecture(metadata, staged); architectureErr != nil {
+			ca2023 = WindowsCA2023Capability{Reason: architectureErr.Error()}
+		} else {
+			ca2023 = summarizeWindowsCA2023Capability(ca2023, staged)
+		}
+''',
+              'analysis architecture refusal',
+          )
+
+          writer = Path('internal/windowsmedia/windowsmedia.go')
+          replace_once(
+              writer,
+              '''		staged, stageErr := StageWindowsCA2023(ctx, plan.BootWIMPath, isoMount, workDir, capability)
+		if stageErr != nil {
+			return fmt.Errorf("stage Windows UEFI CA 2023 bootloaders before erasing the USB: %w", stageErr)
+		}
+		if selectedDBX != nil {
+''',
+              '''		staged, stageErr := StageWindowsCA2023(ctx, plan.BootWIMPath, isoMount, workDir, capability)
+		if stageErr != nil {
+			return fmt.Errorf("stage Windows UEFI CA 2023 bootloaders before erasing the USB: %w", stageErr)
+		}
+		if architectureErr := validateWindowsCA2023Architecture(metadata, staged); architectureErr != nil {
+			return architectureErr
+		}
+		if selectedDBX != nil {
+''',
+              'writer architecture refusal',
+          )
+          PY
+          gofmt -w internal/windowsmedia/ca2023.go internal/windowsmedia/analysis.go internal/windowsmedia/windowsmedia.go
+          go test ./internal/windowsmedia ./internal/windowsconfig ./cmd/rufus-linux
+          git rm .github/workflows/fix-ca2023-architecture-binding.yml
+      - name: Publish product-only architecture binding
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add internal/windowsmedia/ca2023.go internal/windowsmedia/analysis.go internal/windowsmedia/windowsmedia.go
+          git commit -m "windowsmedia: bind CA 2023 assets to install architecture"
+          git push origin HEAD:parity/windows-ca2023-bootloaders
