@@ -15,6 +15,7 @@ class WindowsCA2023StructureTests(unittest.TestCase):
     def setUpClass(cls):
         cls.source = (GUI_ROOT / "rufusarm64.py").read_text(encoding="utf-8")
         cls.logic = (GUI_ROOT / "rufusarm64_logic.py").read_text(encoding="utf-8")
+        cls.cli = (REPOSITORY_ROOT / "cmd" / "rufus-linux" / "main.go").read_text(encoding="utf-8")
         tree = ast.parse(cls.source, filename="rufusarm64.py")
         cls.methods = {
             (class_node.name, node.name): ast.get_source_segment(cls.source, node) or ""
@@ -41,6 +42,11 @@ class WindowsCA2023StructureTests(unittest.TestCase):
         self.assertIn('self.last_ca2023_manifest = ""', start)
         self.assertIn("manifest SHA-256", handle)
         self.assertIn("verify_ca_2023", handle)
+
+    def test_user_visible_text_does_not_overclaim_signature_verification(self):
+        combined = "\n".join((self.source, self.logic, self.cli))
+        self.assertNotIn("CA 2023-signed", combined)
+        self.assertIn("embedded certificate-chain evidence", self.cli)
 
     def test_temporary_ca2023_automation_is_absent(self):
         forbidden = []
