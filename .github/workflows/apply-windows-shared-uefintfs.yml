@@ -34,12 +34,12 @@ jobs:
           go test ./internal/uefintfs ./internal/windowsmedia
       - name: Publish one atomic source commit
         run: |
-          if git diff --quiet -- internal/windowsmedia/windowsmedia.go; then
+          if git diff --quiet -- internal/windowsmedia/windowsmedia.go CHANGELOG.md; then
             echo "Shared source transformation is already present."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add internal/windowsmedia/windowsmedia.go
+          git add internal/windowsmedia/windowsmedia.go CHANGELOG.md
           git commit -m "windowsmedia: share UEFI:NTFS asset handling"
           git push origin HEAD:parity/linux-iso-ntfs
