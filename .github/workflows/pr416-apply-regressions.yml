@@ -1,0 +1,183 @@
+name: Apply PR 416 regression fixes
+
+on:
+  push:
+    branches:
+      - parity/rufus-4.15-regressions
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-pr416-regressions
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: parity/rufus-4.15-regressions
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.22.x'
+      - name: Apply guarded production fixes
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new, count=1):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f'{path}: expected {count} occurrences of guarded anchor, found {actual}')
+              p.write_text(text.replace(old, new), encoding='utf-8')
+
+          replace(
+              'internal/imaging/inspect.go',
+              '''type ImageInfo struct {\n\tHasMBR          bool\n\tHasGPT          bool\n\tHasISO9660      bool\n\tHasUDF          bool\n\tHasMBRPartition bool\n}\n\nfunc (i ImageInfo) HasOpticalFilesystem() bool { return i.HasISO9660 || i.HasUDF }\n''',
+              '''type ImageInfo struct {\n\tHasMBR          bool\n\tHasGPT          bool\n\tHasISO9660      bool\n\tHasUDF          bool\n\tHasSquashFS     bool\n\tHasMBRPartition bool\n}\n\nfunc (i ImageInfo) HasOpticalFilesystem() bool { return i.HasISO9660 || i.HasUDF }\n\n// HasDirectFilesystem reports a filesystem superblock found directly at byte\n// zero. It is recognition evidence, not proof that the file is a complete disk\n// image or bootable medium.\nfunc (i ImageInfo) HasDirectFilesystem() bool { return i.HasSquashFS }\n''')
+          replace(
+              'internal/imaging/inspect.go',
+              '''func (i ImageInfo) Recognized() bool {\n\treturn i.HasOpticalFilesystem() || i.LooksLikeRawBootMedia()\n}\n''',
+              '''func (i ImageInfo) Recognized() bool {\n\treturn i.HasOpticalFilesystem() || i.LooksLikeRawBootMedia() || i.HasDirectFilesystem()\n}\n''')
+          replace(
+              'internal/imaging/inspect.go',
+              '''\theader = header[:n]\n\tinspectMBR(header, fileSectors, &info)\n''',
+              '''\theader = header[:n]\n\tif len(header) >= 4 && string(header[:4]) == "hsqs" {\n\t\tinfo.HasSquashFS = true\n\t}\n\tinspectMBR(header, fileSectors, &info)\n''')
+
+          replace(
+              'cmd/rufus-linux/main.go',
+              '''\tif !inspection.Recognized() && !forceRaw {\n\t\treturn "", errors.New("the selected file is not a recognized ISOHybrid, GPT, or MBR disk image; refusing to write an arbitrary or damaged file")\n\t}\n''',
+              '''\tif inspection.HasSquashFS && !inspection.LooksLikeRawBootMedia() && !forceRaw {\n\t\treturn "", errors.New("the selected file is a recognized SquashFS filesystem image but not a complete ISOHybrid, GPT, or MBR disk image; refusing automatic raw writing (use --force-raw only for a deliberate filesystem-byte copy)")\n\t}\n\tif !inspection.Recognized() && !forceRaw {\n\t\treturn "", errors.New("the selected file is not a recognized ISOHybrid, GPT, MBR, or supported direct-filesystem image; refusing to write an arbitrary or damaged file")\n\t}\n''')
+
+          replace(
+              'internal/imaging/imaging.go',
+              '''\t\t\twn, writeErr := writeFull(dst, buf[:n])\n''',
+              '''\t\t\twn, writeErr := writeFullContext(ctx, dst, buf[:n])\n''')
+          replace(
+              'internal/imaging/imaging.go',
+              '''func writeFull(w io.Writer, p []byte) (int, error) {\n\ttotal := 0\n\tfor total < len(p) {\n\t\tn, err := w.Write(p[total:])\n\t\ttotal += n\n\t\tif err != nil {\n\t\t\treturn total, err\n\t\t}\n\t\tif n == 0 {\n\t\t\treturn total, io.ErrShortWrite\n\t\t}\n\t}\n\treturn total, nil\n}\n''',
+              '''func writeFull(w io.Writer, p []byte) (int, error) {\n\treturn writeFullContext(context.Background(), w, p)\n}\n\n// writeFullContext checks cancellation before every partial-write attempt.\n// This preserves immediate cancellation even if a writer repeatedly accepts\n// only part of a buffer without returning an error.\nfunc writeFullContext(ctx context.Context, w io.Writer, p []byte) (int, error) {\n\tif ctx == nil {\n\t\treturn 0, errors.New("write context is nil")\n\t}\n\ttotal := 0\n\tfor total < len(p) {\n\t\tif err := ctx.Err(); err != nil {\n\t\t\treturn total, context.Cause(ctx)\n\t\t}\n\t\tn, err := w.Write(p[total:])\n\t\tif n < 0 || n > len(p)-total {\n\t\t\treturn total, io.ErrShortWrite\n\t\t}\n\t\ttotal += n\n\t\tif err != nil {\n\t\t\treturn total, err\n\t\t}\n\t\tif n == 0 {\n\t\t\treturn total, io.ErrShortWrite\n\t\t}\n\t}\n\treturn total, nil\n}\n''')
+
+          replace(
+              'gui/rufusarm64_persistence_logic.py',
+              '''def build_analyze_command(pkexec, helper, image, source_identity, target_size, persistence_gib, cancel_path):\n''',
+              '''def runtime_validation_sensitive(busy, device_refreshing, plan_ready):\n    """Return whether the development runtime-validation option may be changed."""\n    values = (busy, device_refreshing, plan_ready)\n    if any(not isinstance(value, bool) for value in values):\n        raise ValueError("Runtime-validation enablement requires explicit boolean state.")\n    return not busy and not device_refreshing and plan_ready\n\n\ndef build_analyze_command(pkexec, helper, image, source_identity, target_size, persistence_gib, cancel_path):\n''')
+          replace(
+              'gui/rufusarm64_persistence.py',
+              '''    normalize_plan,\n    technical_plan_summary,\n''',
+              '''    normalize_plan,\n    runtime_validation_sensitive,\n    technical_plan_summary,\n''')
+          replace(
+              'gui/rufusarm64_persistence.py',
+              '''        self.runtime_uefi_validation.set_sensitive(\n            not busy and not self.device_refreshing and self.plan is not None and self.plan_key is not None\n        )\n''',
+              '''        self.runtime_uefi_validation.set_sensitive(runtime_validation_sensitive(\n            bool(busy), bool(self.device_refreshing), self.plan is not None and self.plan_key is not None\n        ))\n''')
+          replace(
+              'gui/rufusarm64_persistence.py',
+              '''                self.create_button.set_sensitive(True)\n                self.runtime_uefi_validation.set_sensitive(True)\n''',
+              '''                self.create_button.set_sensitive(True)\n                self.runtime_uefi_validation.set_sensitive(runtime_validation_sensitive(\n                    bool(self.busy), bool(self.device_refreshing), self.plan is not None and self.plan_key is not None\n                ))\n''')
+
+          replace(
+              'internal/windowsmedia/limits.go',
+              '''\tmaxWindowsMediaEntries = 300000\n\tmaxDriverFolderEntries = 100000\n''',
+              '''\tmaxWindowsMediaEntries = 300000\n\tmaxDriverFolderEntries = 100000\n\tmaxWindowsSplitParts   = 1024\n''')
+          replace(
+              'internal/windowsmedia/windowsmedia.go',
+              '''func inspectMountedISO(root string) (mediaPlan, error) {\n\tbootWIMPath, ok := findRelativeCaseInsensitive(root, "sources/boot.wim")\n\tif !ok {\n''',
+              '''func inspectMountedISO(root string) (mediaPlan, error) {\n\tbootWIMPath, ok, err := findUniqueRelativeCaseInsensitive(root, "sources/boot.wim")\n\tif err != nil {\n\t\treturn mediaPlan{}, err\n\t}\n\tif !ok {\n''')
+          replace(
+              'internal/windowsmedia/windowsmedia.go',
+              '''\tinstallWIM, hasWIM := findRelativeCaseInsensitive(root, "sources/install.wim")\n\tinstallESD, hasESD := findRelativeCaseInsensitive(root, "sources/install.esd")\n\texistingSplitFiles, err := findExistingSplitFiles(root)\n''',
+              '''\tinstallWIM, hasWIM, err := findUniqueRelativeCaseInsensitive(root, "sources/install.wim")\n\tif err != nil {\n\t\treturn mediaPlan{}, err\n\t}\n\tinstallESD, hasESD, err := findUniqueRelativeCaseInsensitive(root, "sources/install.esd")\n\tif err != nil {\n\t\treturn mediaPlan{}, err\n\t}\n\texistingSplitFiles, err := findExistingSplitFiles(root)\n''')
+          replace(
+              'internal/windowsmedia/windowsmedia.go',
+              '''\t\tif middle != "" {\n\t\t\tif _, err := fmt.Sscan(middle, &index); err != nil || index < 2 || fmt.Sprintf("%d", index) != middle {\n\t\t\t\treturn nil, fmt.Errorf("invalid split Windows image filename: %s", entry.Name())\n\t\t\t}\n\t\t}\n''',
+              '''\t\tif middle != "" {\n\t\t\tif _, err := fmt.Sscan(middle, &index); err != nil || index < 2 || fmt.Sprintf("%d", index) != middle {\n\t\t\t\treturn nil, fmt.Errorf("invalid split Windows image filename: %s", entry.Name())\n\t\t\t}\n\t\t}\n\t\tif index > maxWindowsSplitParts {\n\t\t\treturn nil, fmt.Errorf("split Windows image part %d exceeds the supported limit of %d parts", index, maxWindowsSplitParts)\n\t\t}\n''')
+          replace(
+              'internal/windowsmedia/analysis.go',
+              '''func capabilityPayloadFacts(plan mediaPlan) (string, int, error) {\n\tif len(plan.ExistingSplitFiles) > 0 {\n\t\treturn "SWM", len(plan.ExistingSplitFiles), nil\n\t}\n\tswitch strings.ToLower(filepath.Ext(plan.InstallPath)) {\n''',
+              '''func capabilityPayloadFacts(plan mediaPlan) (string, int, error) {\n\thasSplit := len(plan.ExistingSplitFiles) > 0\n\thasStandalone := strings.TrimSpace(plan.InstallPath) != ""\n\tif hasSplit && hasStandalone {\n\t\treturn "", 0, errors.New("windows media plan contains conflicting standalone and split installation payloads")\n\t}\n\tif hasSplit {\n\t\tif len(plan.ExistingSplitFiles) > maxWindowsSplitParts {\n\t\t\treturn "", 0, fmt.Errorf("windows media plan contains %d split parts; the supported limit is %d", len(plan.ExistingSplitFiles), maxWindowsSplitParts)\n\t\t}\n\t\treturn "SWM", len(plan.ExistingSplitFiles), nil\n\t}\n\tswitch strings.ToLower(filepath.Ext(plan.InstallPath)) {\n''')
+          PY
+          cat > internal/windowsmedia/path_lookup.go <<'EOF'
+          //go:build linux
+
+          package windowsmedia
+
+          import (
+          	"errors"
+          	"fmt"
+          	"os"
+          	"path/filepath"
+          	"strings"
+          )
+
+          // findUniqueRelativeCaseInsensitive resolves one security-critical media
+          // path while refusing case-colliding aliases, symlinks, and wrong file
+          // types. ISO filesystems are case-insensitive in common Windows media,
+          // but extracted test trees can otherwise hide ambiguous payloads.
+          func findUniqueRelativeCaseInsensitive(root, relative string) (string, bool, error) {
+          	parts := strings.Split(filepath.ToSlash(relative), "/")
+          	current := root
+          	for index, wanted := range parts {
+          		entries, err := os.ReadDir(current)
+          		if errors.Is(err, os.ErrNotExist) {
+          			return "", false, nil
+          		}
+          		if err != nil {
+          			return "", false, fmt.Errorf("read Windows media path %s: %w", filepath.ToSlash(relative), err)
+          		}
+          		var match os.DirEntry
+          		for _, entry := range entries {
+          			if !strings.EqualFold(entry.Name(), wanted) {
+          				continue
+          			}
+          			if match != nil {
+          				return "", false, fmt.Errorf("ambiguous case-insensitive Windows media path %s: %s and %s", filepath.ToSlash(relative), match.Name(), entry.Name())
+          			}
+          			match = entry
+          		}
+          		if match == nil {
+          			return "", false, nil
+          		}
+          		if match.Type()&os.ModeSymlink != 0 {
+          			return "", false, fmt.Errorf("security-critical Windows media path is a symbolic link: %s", filepath.ToSlash(relative))
+          		}
+          		last := index == len(parts)-1
+          		if !last && !match.IsDir() {
+          			return "", false, fmt.Errorf("Windows media path component is not a directory: %s", filepath.ToSlash(relative))
+          		}
+          		if last && match.IsDir() {
+          			return "", false, fmt.Errorf("security-critical Windows media path is not a regular file: %s", filepath.ToSlash(relative))
+          		}
+          		current = filepath.Join(current, match.Name())
+          	}
+          	info, err := os.Lstat(current)
+          	if err != nil {
+          		return "", false, fmt.Errorf("inspect Windows media path %s: %w", filepath.ToSlash(relative), err)
+          	}
+          	if !info.Mode().IsRegular() {
+          		return "", false, fmt.Errorf("security-critical Windows media path is not a regular file: %s", filepath.ToSlash(relative))
+          	}
+          	return current, true, nil
+          }
+          EOF
+          gofmt -w internal/imaging/inspect.go internal/imaging/imaging.go internal/windowsmedia/analysis.go internal/windowsmedia/limits.go internal/windowsmedia/windowsmedia.go internal/windowsmedia/path_lookup.go
+          python3 -m py_compile gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py
+          go test ./internal/imaging ./internal/windowsmedia ./cmd/rufus-linux
+      - name: Publish product changes and remove applicator
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/pr416-apply-regressions.yml
+          git add internal/imaging/inspect.go internal/imaging/imaging.go cmd/rufus-linux/main.go \
+            gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py \
+            internal/windowsmedia/analysis.go internal/windowsmedia/limits.go \
+            internal/windowsmedia/windowsmedia.go internal/windowsmedia/path_lookup.go
+          git commit -m "regressions: harden media recognition and cancellation"
+          git push origin HEAD:parity/rufus-4.15-regressions
