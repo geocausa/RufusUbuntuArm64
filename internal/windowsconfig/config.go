@@ -33,9 +33,34 @@ func (o Options) Enabled() bool {
 var validLocale = regexp.MustCompile(`^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$`)
 var validTimeZone = regexp.MustCompile(`^[A-Za-z0-9 _+().-]{1,64}$`)
 
-var reservedUsers = map[string]struct{}{
-	"administrator": {}, "guest": {}, "defaultaccount": {}, "wdagutilityaccount": {},
-	"helpassistant": {}, "krbtgt": {}, "local": {}, "none": {}, "system": {},
+// reservedUsers mirrors Rufus's localized built-in account-name guard.
+// Windows Setup must not be asked to create an account that collides with a
+// localized Administrator account or another reserved system account.
+var reservedUsers = []string{
+	"Administrator",
+	"Järjestelmänvalvoja",
+	"Administrateur",
+	"Rendszergazda",
+	"Administrador",
+	"Администратор",
+	"Administratör",
+	"Guest",
+	"DefaultAccount",
+	"WDAGUtilityAccount",
+	"HelpAssistant",
+	"KRBTGT",
+	"Local",
+	"NONE",
+	"SYSTEM",
+}
+
+func isReservedWindowsUsername(value string) bool {
+	for _, reserved := range reservedUsers {
+		if strings.EqualFold(value, reserved) {
+			return true
+		}
+	}
+	return false
 }
 
 func Validate(o Options) error {
@@ -51,7 +76,7 @@ func Validate(o Options) error {
 			}
 			return errors.New("local account name may contain only letters, numbers, spaces, periods, underscores, hyphens, and apostrophes")
 		}
-		if _, reserved := reservedUsers[strings.ToLower(username)]; reserved {
+		if isReservedWindowsUsername(username) {
 			return fmt.Errorf("%q is a reserved Windows account name", username)
 		}
 	}
