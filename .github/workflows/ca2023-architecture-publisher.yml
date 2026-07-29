@@ -40,7 +40,9 @@ jobs:
           gofmt -w \
             internal/windowsmedia/ca2023.go \
             internal/windowsmedia/analysis.go \
-            internal/windowsmedia/ca2023_architecture_test.go
+            internal/windowsmedia/ca2023_architecture_test.go \
+            internal/windowsmedia/ca2023_integration_test.go \
+            internal/windowsmedia/ca2023_test.go
           go test ./internal/windowsmedia ./internal/windowsconfig ./cmd/rufus-linux
       - name: Restore branch workflows and publish the product-only commit
         working-directory: product
@@ -55,6 +57,8 @@ jobs:
             .github/workflows/ci.yml \
             internal/windowsmedia/analysis.go \
             internal/windowsmedia/ca2023.go \
-            internal/windowsmedia/ca2023_architecture_test.go
+            internal/windowsmedia/ca2023_architecture_test.go \
+            internal/windowsmedia/ca2023_integration_test.go \
+            internal/windowsmedia/ca2023_test.go
           git commit -m "windowsmedia: bind CA 2023 assets across image architectures"
           git push origin HEAD:parity/windows-ca2023-bootloaders
