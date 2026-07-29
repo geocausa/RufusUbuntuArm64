@@ -1,6 +1,6 @@
 # Rufus 4.15 regression tranche
 
-This tranche closes bounded parity regressions against pinned upstream Rufus 4.15 commit `6d8fbf98305ff37eb531c45cbd6ff44563c53917`.
+This tranche closes bounded parity regressions against pinned upstream Rufus 4.15 commit `6d8fbf98305ff37eb531c45cbd6ff44563c53917`. Rufus's `GetFsName()` behavior in `src/drive.c` is the direct SquashFS-detection reference; Linux-native safety policy remains independently enforced.
 
 Delivered software boundary:
 
