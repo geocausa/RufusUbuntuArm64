@@ -47,12 +47,12 @@ type WindowsCA2023Asset struct {
 
 // WindowsCA2023Plan is the immutable pre-erasure replacement evidence.
 type WindowsCA2023Plan struct {
-	ImageIndex       int                    `json:"image_index"`
-	Architecture     string                 `json:"architecture"`
-	Assets           []WindowsCA2023Asset   `json:"assets"`
-	ReplacementBytes uint64                 `json:"replacement_bytes"`
-	OriginalBytes    uint64                 `json:"original_bytes"`
-	ManifestSHA256   string                 `json:"manifest_sha256"`
+	ImageIndex       int                  `json:"image_index"`
+	Architecture     string               `json:"architecture"`
+	Assets           []WindowsCA2023Asset `json:"assets"`
+	ReplacementBytes uint64               `json:"replacement_bytes"`
+	OriginalBytes    uint64               `json:"original_bytes"`
+	ManifestSHA256   string               `json:"manifest_sha256"`
 	replacements     map[string]struct{}
 }
 
@@ -65,9 +65,33 @@ type windowsCA2023PEEvidence struct {
 var (
 	inspectWindowsCA2023Metadata = InspectWIMMetadata
 	inspectWindowsCA2023WIMPath  = inspectWIMPath
-	extractWindowsCA2023Paths     = extractWindowsCA2023
-	inspectWindowsCA2023PE        = inspectCA2023PE
+	windowsCA2023WIMExecutable   = wimlibExecutable
+	extractWindowsCA2023Paths    = extractWindowsCA2023
+	inspectWindowsCA2023PE       = inspectCA2023PE
 )
+
+func resolveWindowsCA2023Root(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", errors.New("Windows CA 2023 ISO root is empty")
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", errors.New("Windows CA 2023 ISO root is not a directory")
+	}
+	return resolved, nil
+}
 
 // InspectWindowsCA2023Capability checks only the two boot.wim indexes used by
 // Windows Setup. Index 2 is preferred, matching upstream Rufus; index 1 is the
@@ -93,10 +117,14 @@ func InspectWindowsCA2023Capability(ctx context.Context, bootWIMPath string) (Wi
 	if len(indexes) == 0 {
 		return WindowsCA2023Capability{Reason: "boot.wim contains no usable Windows Setup image"}, nil
 	}
+	executable, err := windowsCA2023WIMExecutable()
+	if err != nil {
+		return WindowsCA2023Capability{}, err
+	}
 	for _, index := range indexes {
 		complete := true
 		for _, path := range []string{windowsCA2023BootmgfwPath, windowsCA2023BootmgrPath, windowsCA2023FontsPath} {
-			available, pathErr := inspectWindowsCA2023WIMPath(ctx, mustWIMExecutable(), bootWIMPath, index, path)
+			available, pathErr := inspectWindowsCA2023WIMPath(ctx, executable, bootWIMPath, index, path)
 			if pathErr != nil {
 				return WindowsCA2023Capability{}, fmt.Errorf("inspect boot.wim image %d path %s: %w", index, path, pathErr)
 			}
@@ -112,14 +140,6 @@ func InspectWindowsCA2023Capability(ctx context.Context, bootWIMPath string) (Wi
 	return WindowsCA2023Capability{Reason: "boot.wim does not contain a complete Windows/Boot/EFI_EX and Windows/Boot/Fonts_EX replacement set in Setup index 2 or fallback index 1"}, nil
 }
 
-func mustWIMExecutable() string {
-	path, err := wimlibExecutable()
-	if err != nil {
-		return ""
-	}
-	return path
-}
-
 // StageWindowsCA2023 extracts, validates, hashes, and capacity-binds the exact
 // replacement set before the destructive boundary. The caller owns workRoot.
 func StageWindowsCA2023(ctx context.Context, bootWIMPath, isoRoot, workRoot string, capability WindowsCA2023Capability) (*WindowsCA2023Plan, error) {
@@ -133,7 +153,7 @@ func StageWindowsCA2023(ctx context.Context, bootWIMPath, isoRoot, workRoot stri
 		}
 		return nil, fmt.Errorf("Windows CA 2023 bootloaders are unavailable: %s", reason)
 	}
-	isoRoot, err := resolveRoot(isoRoot)
+	isoRoot, err := resolveWindowsCA2023Root(isoRoot)
 	if err != nil {
 		return nil, fmt.Errorf("resolve Windows ISO root for CA 2023 staging: %w", err)
 	}
