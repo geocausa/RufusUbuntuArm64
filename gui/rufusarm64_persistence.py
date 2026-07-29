@@ -22,6 +22,7 @@ from rufusarm64_persistence_logic import (
     normalize_boot_label,
     normalize_persistence_gib,
     normalize_plan,
+    runtime_validation_sensitive,
     technical_plan_summary,
     user_plan_summary,
     completion_checklist,
@@ -295,9 +296,9 @@ class Window(Gtk.ApplicationWindow):
         self.job = job if busy else ""
         for widget in (self.image, self.target, self.size, self.volume_label):
             widget.set_sensitive(not busy)
-        self.runtime_uefi_validation.set_sensitive(
-            not busy and not self.device_refreshing and self.plan is not None and self.plan_key is not None
-        )
+        self.runtime_uefi_validation.set_sensitive(runtime_validation_sensitive(
+            bool(busy), bool(self.device_refreshing), self.plan is not None and self.plan_key is not None
+        ))
         self.refresh_button.set_sensitive(not busy and not self.device_refreshing)
         self.analyze_button.set_sensitive(not busy and not self.device_refreshing)
         self.create_button.set_sensitive(
@@ -364,7 +365,9 @@ class Window(Gtk.ApplicationWindow):
                 self.summary.set_text(text)
                 self.append_log(technical_plan_summary(plan, human_bytes))
                 self.create_button.set_sensitive(True)
-                self.runtime_uefi_validation.set_sensitive(True)
+                self.runtime_uefi_validation.set_sensitive(runtime_validation_sensitive(
+                    bool(self.busy), bool(self.device_refreshing), self.plan is not None and self.plan_key is not None
+                ))
                 self.progress.set_fraction(1)
                 self.progress.set_text("Compatibility confirmed")
                 self.detail.set_text("Creation is enabled for this exact source identity, USB identity, capacity, and persistence size.")

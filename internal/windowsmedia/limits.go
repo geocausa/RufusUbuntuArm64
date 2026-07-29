@@ -7,6 +7,7 @@ import "fmt"
 const (
 	maxWindowsMediaEntries = 300000
 	maxDriverFolderEntries = 100000
+	maxWindowsSplitParts   = 1024
 )
 
 func checkedAdd(label string, values ...uint64) (uint64, error) {

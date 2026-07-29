@@ -796,7 +796,10 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 }
 
 func inspectMountedISO(root string) (mediaPlan, error) {
-	bootWIMPath, ok := findRelativeCaseInsensitive(root, "sources/boot.wim")
+	bootWIMPath, ok, err := findUniqueRelativeCaseInsensitive(root, "sources/boot.wim")
+	if err != nil {
+		return mediaPlan{}, err
+	}
 	if !ok {
 		return mediaPlan{}, errors.New("this is not a supported Windows installation ISO: sources/boot.wim was not found")
 	}
@@ -821,8 +824,14 @@ func inspectMountedISO(root string) (mediaPlan, error) {
 		return mediaPlan{}, errors.New("the ISO has no standard UEFI fallback loader and no root bootmgr file")
 	}
 
-	installWIM, hasWIM := findRelativeCaseInsensitive(root, "sources/install.wim")
-	installESD, hasESD := findRelativeCaseInsensitive(root, "sources/install.esd")
+	installWIM, hasWIM, err := findUniqueRelativeCaseInsensitive(root, "sources/install.wim")
+	if err != nil {
+		return mediaPlan{}, err
+	}
+	installESD, hasESD, err := findUniqueRelativeCaseInsensitive(root, "sources/install.esd")
+	if err != nil {
+		return mediaPlan{}, err
+	}
 	existingSplitFiles, err := findExistingSplitFiles(root)
 	if err != nil {
 		return mediaPlan{}, err
@@ -1176,6 +1185,9 @@ func findExistingSplitFiles(root string) ([]string, error) {
 			if _, err := fmt.Sscan(middle, &index); err != nil || index < 2 || fmt.Sprintf("%d", index) != middle {
 				return nil, fmt.Errorf("invalid split Windows image filename: %s", entry.Name())
 			}
+		}
+		if index > maxWindowsSplitParts {
+			return nil, fmt.Errorf("split Windows image part %d exceeds the supported limit of %d parts", index, maxWindowsSplitParts)
 		}
 		if previous, exists := parts[index]; exists {
 			return nil, fmt.Errorf("duplicate split Windows image parts: %s and %s", previous, entry.Name())
