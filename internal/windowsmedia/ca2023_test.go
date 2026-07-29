@@ -91,7 +91,7 @@ func TestStageApplyAndVerifyWindowsCA2023(t *testing.T) {
 		return nil
 	}
 	inspectWindowsCA2023PE = func(path string) (windowsCA2023PEEvidence, error) {
-		return windowsCA2023PEEvidence{Machine: 0xaa64, AuthenticodeSHA256: filepath.Base(path), WindowsCA2023Signed: true}, nil
+		return windowsCA2023PEEvidence{Machine: 0xaa64, AuthenticodeSHA256: filepath.Base(path), WindowsCA2023CertificateEvidence: true}, nil
 	}
 	t.Cleanup(func() {
 		extractWindowsCA2023Paths = originalExtract
@@ -145,7 +145,7 @@ func TestStageWindowsCA2023RejectsNonCA2023Signer(t *testing.T) {
 		return nil
 	}
 	inspectWindowsCA2023PE = func(string) (windowsCA2023PEEvidence, error) {
-		return windowsCA2023PEEvidence{Machine: 0xaa64, WindowsCA2023Signed: false}, nil
+		return windowsCA2023PEEvidence{Machine: 0xaa64, WindowsCA2023CertificateEvidence: false}, nil
 	}
 	t.Cleanup(func() {
 		extractWindowsCA2023Paths = originalExtract
@@ -155,7 +155,7 @@ func TestStageWindowsCA2023RejectsNonCA2023Signer(t *testing.T) {
 	writeCA2023TestFile(t, filepath.Join(isoRoot, "EFI", "BOOT", "BOOTAA64.EFI"), "old")
 	writeCA2023TestFile(t, filepath.Join(isoRoot, "bootmgr.efi"), "old")
 	_, err := StageWindowsCA2023(context.Background(), "boot.wim", isoRoot, t.TempDir(), WindowsCA2023Capability{Available: true, ImageIndex: 2})
-	if err == nil || !strings.Contains(err.Error(), "not both signed") {
+	if err == nil || !strings.Contains(err.Error(), "certificate-chain evidence") {
 		t.Fatalf("signer error = %v", err)
 	}
 }

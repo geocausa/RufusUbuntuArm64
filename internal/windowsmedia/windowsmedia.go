@@ -347,7 +347,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		plan.CA2023 = staged
 		send(emit, Event{
 			Stage:   "windows_ca_2023",
-			Message: fmt.Sprintf("Qualified %d Windows UEFI CA 2023 replacement files from boot.wim index %d for %s; firmware must trust Windows UEFI CA 2023.", len(staged.Assets), staged.ImageIndex, strings.ToUpper(staged.Architecture)),
+			Message: fmt.Sprintf("Qualified %d Windows UEFI CA 2023 replacement files with embedded CA 2023 certificate-chain evidence from boot.wim index %d for %s; firmware must trust Windows UEFI CA 2023.", len(staged.Assets), staged.ImageIndex, strings.ToUpper(staged.Architecture)),
 			Hash:    staged.ManifestSHA256,
 		})
 	}
@@ -515,6 +515,9 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		if err := opts.BeforeDestructive(isoFile); err != nil {
 			return fmt.Errorf("target safety check: %w", err)
 		}
+	}
+	if err := verifyWindowsCA2023Staging(plan.CA2023); err != nil {
+		return fmt.Errorf("revalidate staged Windows UEFI CA 2023 assets immediately before erasing the USB: %w", err)
 	}
 	targetChanged = true
 	send(emit, Event{Stage: "partition", Message: fmt.Sprintf("Creating a %s partition table…", strings.ToUpper(scheme))})

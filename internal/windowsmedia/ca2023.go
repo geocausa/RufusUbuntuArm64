@@ -63,9 +63,9 @@ type WindowsCA2023Plan struct {
 }
 
 type windowsCA2023PEEvidence struct {
-	Machine             uint16
-	AuthenticodeSHA256  string
-	WindowsCA2023Signed bool
+	Machine                          uint16
+	AuthenticodeSHA256               string
+	WindowsCA2023CertificateEvidence bool
 }
 
 var (
@@ -226,8 +226,8 @@ func StageWindowsCA2023(ctx context.Context, bootWIMPath, isoRoot, workRoot stri
 	if err != nil {
 		return nil, fmt.Errorf("inspect staged CA 2023 bootmgr_EX.efi: %w", err)
 	}
-	if !bootmgfwEvidence.WindowsCA2023Signed || !bootmgrEvidence.WindowsCA2023Signed {
-		return nil, errors.New("staged _EX bootloaders are not both signed through Windows UEFI CA 2023")
+	if !bootmgfwEvidence.WindowsCA2023CertificateEvidence || !bootmgrEvidence.WindowsCA2023CertificateEvidence {
+		return nil, errors.New("staged _EX bootloaders do not both carry embedded certificate-chain evidence identifying Windows UEFI CA 2023")
 	}
 	if bootmgfwEvidence.Machine != bootmgrEvidence.Machine {
 		return nil, fmt.Errorf("staged CA 2023 bootloader architectures disagree: bootmgfw=0x%x bootmgr=0x%x", bootmgfwEvidence.Machine, bootmgrEvidence.Machine)
@@ -339,7 +339,7 @@ func inspectCA2023PE(path string) (windowsCA2023PEEvidence, error) {
 			break
 		}
 	}
-	return windowsCA2023PEEvidence{Machine: hash.Machine, AuthenticodeSHA256: hash.SHA256, WindowsCA2023Signed: ca2023}, nil
+	return windowsCA2023PEEvidence{Machine: hash.Machine, AuthenticodeSHA256: hash.SHA256, WindowsCA2023CertificateEvidence: ca2023}, nil
 }
 
 func ca2023Architecture(machine uint16) (string, string, error) {
@@ -428,6 +428,18 @@ func (plan *WindowsCA2023Plan) Replaces(relative string) bool {
 	}
 	_, ok := plan.replacements[strings.ToLower(filepath.ToSlash(filepath.Clean(relative)))]
 	return ok
+}
+
+func verifyWindowsCA2023Staging(plan *WindowsCA2023Plan) error {
+	if plan == nil {
+		return nil
+	}
+	for _, asset := range plan.Assets {
+		if err := verifyStagedWindowsCA2023Asset(asset); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func verifyStagedWindowsCA2023Asset(asset WindowsCA2023Asset) error {
@@ -537,12 +549,42 @@ func prepareCA2023Destination(root, relative string) (string, error) {
 	return destination, nil
 }
 
+func existingCA2023Destination(root, relative string) (string, error) {
+	clean, err := cleanCA2023Destination(relative)
+	if err != nil {
+		return "", err
+	}
+	rootInfo, err := os.Lstat(root)
+	if err != nil {
+		return "", err
+	}
+	if rootInfo.Mode()&os.ModeSymlink != 0 || !rootInfo.IsDir() {
+		return "", errors.New("CA 2023 readback root is not a real directory")
+	}
+	current := root
+	parts := strings.Split(filepath.ToSlash(clean), "/")
+	for _, part := range parts[:len(parts)-1] {
+		current = filepath.Join(current, part)
+		info, statErr := os.Lstat(current)
+		if statErr != nil {
+			return "", fmt.Errorf("stat CA 2023 readback parent %s: %w", current, statErr)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return "", fmt.Errorf("CA 2023 readback parent is not a real directory: %s", current)
+		}
+	}
+	return filepath.Join(root, clean), nil
+}
+
 func verifyWindowsCA2023(root string, plan *WindowsCA2023Plan) error {
 	if plan == nil {
 		return nil
 	}
 	for _, asset := range plan.Assets {
-		destination := filepath.Join(root, filepath.FromSlash(asset.Destination))
+		destination, err := existingCA2023Destination(root, asset.Destination)
+		if err != nil {
+			return err
+		}
 		info, err := os.Lstat(destination)
 		if err != nil {
 			return fmt.Errorf("stat CA 2023 replacement %s: %w", asset.Destination, err)

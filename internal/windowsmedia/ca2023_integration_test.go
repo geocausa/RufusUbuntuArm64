@@ -118,3 +118,45 @@ func fmtDigest(value [32]byte) string {
 	}
 	return string(out)
 }
+
+func TestVerifyWindowsCA2023StagingRejectsChangedAssetBeforeErase(t *testing.T) {
+	staged := filepath.Join(t.TempDir(), "bootmgfw_EX.efi")
+	if err := os.WriteFile(staged, []byte("first"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := fileSHA256(staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &WindowsCA2023Plan{Assets: []WindowsCA2023Asset{{
+		Destination: "EFI/BOOT/BOOTAA64.EFI",
+		Size:        5,
+		SHA256:      fmtDigest(digest),
+		sourcePath:  staged,
+	}}}
+	if err := os.WriteFile(staged, []byte("later"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyWindowsCA2023Staging(plan); err == nil || !strings.Contains(err.Error(), "changed") {
+		t.Fatalf("expected final pre-erasure staging refusal, got %v", err)
+	}
+}
+
+func TestVerifyWindowsCA2023RejectsSymlinkedReadbackParent(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "EFI"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "EFI", "BOOT")); err != nil {
+		t.Fatal(err)
+	}
+	plan := &WindowsCA2023Plan{Assets: []WindowsCA2023Asset{{
+		Destination: "EFI/BOOT/BOOTAA64.EFI",
+		Size:        1,
+		SHA256:      strings.Repeat("0", 64),
+	}}}
+	if err := verifyWindowsCA2023(root, plan); err == nil || !strings.Contains(err.Error(), "not a real directory") {
+		t.Fatalf("expected symlinked readback-parent refusal, got %v", err)
+	}
+}

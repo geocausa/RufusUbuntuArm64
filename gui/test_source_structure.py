@@ -194,7 +194,7 @@ class SourceStructureTests(unittest.TestCase):
         for fragment in ("normalize_windows_capability_analysis", "unavailable_windows_capability_analysis"):
             if fragment not in window.get("analyze_windows_capabilities", ""):
                 failures.append(f"RufusWindow.analyze_windows_capabilities lacks {fragment!r}")
-        for fragment in ("apply_option_capability", "bypass_hardware_checks", "bypass_online_account", "local_account"):
+        for fragment in ("apply_option_capability", "bypass_hardware_checks", "bypass_online_account", "local_account", "use_windows_ca_2023_bootloaders", "selected_filesystem"):
             if fragment not in dialog.get("apply_capabilities", ""):
                 failures.append(f"WindowsOptionsDialog.apply_capabilities lacks {fragment!r}")
         self.assertEqual(failures, [], "\n" + "\n".join(failures))
