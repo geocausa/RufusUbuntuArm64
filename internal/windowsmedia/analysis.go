@@ -25,6 +25,8 @@ type CapabilityAnalysis struct {
 	BIOSCapable            bool                            `json:"bios_capable"`
 	DefaultPartitionScheme string                          `json:"default_partition_scheme"`
 	DefaultTargetSystem    string                          `json:"default_target_system"`
+	DefaultFilesystem      string                          `json:"default_filesystem"`
+	WindowsCA2023          WindowsCA2023Capability         `json:"windows_ca_2023"`
 	PayloadKind            string                          `json:"payload_kind"`
 	PayloadParts           int                             `json:"payload_parts"`
 }
@@ -82,6 +84,10 @@ func AnalyzeCapabilities(ctx context.Context, isoPath string, expectedSource sou
 	if err != nil {
 		return CapabilityAnalysis{}, err
 	}
+	defaultFilesystem, err := resolveFilesystem("auto", validateFATCompatibility(mountPath, plan))
+	if err != nil {
+		return CapabilityAnalysis{}, err
+	}
 	payloadKind, payloadParts, err := capabilityPayloadFacts(plan)
 	if err != nil {
 		return CapabilityAnalysis{}, err
@@ -94,6 +100,20 @@ func AnalyzeCapabilities(ctx context.Context, isoPath string, expectedSource sou
 	if err != nil {
 		return CapabilityAnalysis{}, fmt.Errorf("inspect Windows setup capabilities: %w", err)
 	}
+	ca2023, caErr := InspectWindowsCA2023Capability(ctx, plan.BootWIMPath)
+	if caErr != nil {
+		ca2023 = WindowsCA2023Capability{Reason: fmt.Sprintf("Windows UEFI CA 2023 bootloader inspection failed: %v", caErr)}
+	} else if ca2023.Available {
+		staged, stageErr := StageWindowsCA2023(ctx, plan.BootWIMPath, mountPath, workDir, ca2023)
+		if stageErr != nil {
+			ca2023 = WindowsCA2023Capability{Reason: fmt.Sprintf("Windows UEFI CA 2023 bootloader validation failed: %v", stageErr)}
+		} else {
+			ca2023 = summarizeWindowsCA2023Capability(ca2023, staged)
+		}
+	}
+	metadata.WindowsCA2023Available = ca2023.Available
+	metadata.WindowsCA2023UnavailableWhy = ca2023.Reason
+	metadata.WindowsCA2023ImageIndex = ca2023.ImageIndex
 	return CapabilityAnalysis{
 		Metadata:               metadata,
 		Capabilities:           windowsconfig.Capabilities(metadata),
@@ -102,6 +122,8 @@ func AnalyzeCapabilities(ctx context.Context, isoPath string, expectedSource sou
 		BIOSCapable:            plan.HasBIOS,
 		DefaultPartitionScheme: defaultScheme,
 		DefaultTargetSystem:    defaultTarget,
+		DefaultFilesystem:      defaultFilesystem,
+		WindowsCA2023:          ca2023,
 		PayloadKind:            payloadKind,
 		PayloadParts:           payloadParts,
 	}, nil

@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/geocausa/RufusArm64/internal/secureboot"
+	"github.com/geocausa/RufusArm64/internal/windowsconfig"
 )
 
 const (
@@ -31,9 +32,14 @@ const (
 // WindowsCA2023Capability is read-only evidence that one boot.wim image carries
 // the complete Rufus-compatible Windows UEFI CA 2023 replacement set.
 type WindowsCA2023Capability struct {
-	Available  bool   `json:"available"`
-	ImageIndex int    `json:"image_index,omitempty"`
-	Reason     string `json:"reason,omitempty"`
+	Available        bool   `json:"available"`
+	ImageIndex       int    `json:"image_index,omitempty"`
+	Architecture     string `json:"architecture,omitempty"`
+	AssetCount       int    `json:"asset_count,omitempty"`
+	ReplacementBytes uint64 `json:"replacement_bytes,omitempty"`
+	OriginalBytes    uint64 `json:"original_bytes,omitempty"`
+	ManifestSHA256   string `json:"manifest_sha256,omitempty"`
+	Reason           string `json:"reason,omitempty"`
 }
 
 // WindowsCA2023Asset binds one staged, hashed source file to one exact relative
@@ -91,6 +97,46 @@ func resolveWindowsCA2023Root(path string) (string, error) {
 		return "", errors.New("Windows CA 2023 ISO root is not a directory")
 	}
 	return resolved, nil
+}
+
+func validateWindowsCA2023Selection(metadata windowsconfig.MediaMetadata, capability WindowsCA2023Capability, targetSystem, filesystem string) error {
+	profile := windowsconfig.Capabilities(metadata)
+	if !profile.Recognized || profile.Generation != "11" || profile.Family != "client" {
+		reason := strings.TrimSpace(profile.Reason)
+		if reason == "" {
+			reason = "available only for positively identified Windows 11 client media"
+		}
+		return fmt.Errorf("Windows UEFI CA 2023 bootloaders are unavailable: %s", reason)
+	}
+	if !capability.Available {
+		reason := strings.TrimSpace(capability.Reason)
+		if reason == "" {
+			reason = "a complete boot.wim _EX replacement set was not proven"
+		}
+		return fmt.Errorf("Windows UEFI CA 2023 bootloaders are unavailable: %s", reason)
+	}
+	if strings.ToLower(strings.TrimSpace(targetSystem)) != "uefi" {
+		return errors.New("Windows UEFI CA 2023 bootloader replacement requires a resolved UEFI target")
+	}
+	if strings.ToLower(strings.TrimSpace(filesystem)) != "fat32" {
+		return errors.New("Windows UEFI CA 2023 bootloader replacement currently requires FAT32; the pinned UEFI:NTFS first-stage image is signed through Microsoft UEFI CA 2011 and cannot be represented as CA 2023-only media")
+	}
+	return nil
+}
+
+func summarizeWindowsCA2023Capability(capability WindowsCA2023Capability, plan *WindowsCA2023Plan) WindowsCA2023Capability {
+	if plan == nil {
+		return capability
+	}
+	capability.Available = true
+	capability.ImageIndex = plan.ImageIndex
+	capability.Architecture = plan.Architecture
+	capability.AssetCount = len(plan.Assets)
+	capability.ReplacementBytes = plan.ReplacementBytes
+	capability.OriginalBytes = plan.OriginalBytes
+	capability.ManifestSHA256 = plan.ManifestSHA256
+	capability.Reason = ""
+	return capability
 }
 
 // InspectWindowsCA2023Capability checks only the two boot.wim indexes used by
@@ -384,12 +430,33 @@ func (plan *WindowsCA2023Plan) Replaces(relative string) bool {
 	return ok
 }
 
+func verifyStagedWindowsCA2023Asset(asset WindowsCA2023Asset) error {
+	info, err := os.Lstat(asset.sourcePath)
+	if err != nil {
+		return fmt.Errorf("restat staged CA 2023 asset %s: %w", asset.Destination, err)
+	}
+	if !info.Mode().IsRegular() || uint64(info.Size()) != asset.Size {
+		return fmt.Errorf("staged CA 2023 asset %s changed type or size after pre-erasure validation", asset.Destination)
+	}
+	digest, err := fileSHA256(asset.sourcePath)
+	if err != nil {
+		return fmt.Errorf("rehash staged CA 2023 asset %s: %w", asset.Destination, err)
+	}
+	if hex.EncodeToString(digest[:]) != asset.SHA256 {
+		return fmt.Errorf("staged CA 2023 asset %s changed after pre-erasure validation", asset.Destination)
+	}
+	return nil
+}
+
 func applyWindowsCA2023(ctx context.Context, root string, plan *WindowsCA2023Plan, progress func(uint64)) error {
 	if plan == nil {
 		return nil
 	}
 	for _, asset := range plan.Assets {
 		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := verifyStagedWindowsCA2023Asset(asset); err != nil {
 			return err
 		}
 		destination, err := prepareCA2023Destination(root, asset.Destination)
