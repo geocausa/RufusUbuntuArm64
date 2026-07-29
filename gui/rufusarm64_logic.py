@@ -112,17 +112,26 @@ WINDOWS_TIME_ZONES = {
     "Pacific/Auckland": "New Zealand Standard Time",
 }
 
-RESERVED_USERS = {
-    "administrator",
-    "guest",
-    "defaultaccount",
-    "wdagutilityaccount",
-    "helpassistant",
-    "krbtgt",
-    "local",
-    "none",
-    "system",
-}
+# Keep this table aligned with Rufus's localized built-in account-name guard.
+# casefold() gives the Python UI the same Unicode-insensitive behaviour as the
+# Go generator's strings.EqualFold enforcement.
+RESERVED_USERS = frozenset(name.casefold() for name in (
+    "Administrator",
+    "Järjestelmänvalvoja",
+    "Administrateur",
+    "Rendszergazda",
+    "Administrador",
+    "Администратор",
+    "Administratör",
+    "Guest",
+    "DefaultAccount",
+    "WDAGUtilityAccount",
+    "HelpAssistant",
+    "KRBTGT",
+    "Local",
+    "NONE",
+    "SYSTEM",
+))
 
 
 def human_bytes(value):
@@ -211,7 +220,7 @@ def validate_local_username(value):
         raise ValueError(
             "Local account names may contain only letters, numbers, spaces, periods, underscores, hyphens, and apostrophes."
         )
-    if value.lower() in RESERVED_USERS:
+    if value.casefold() in RESERVED_USERS:
         raise ValueError(f'"{value}" is a reserved Windows account name.')
     return value
 

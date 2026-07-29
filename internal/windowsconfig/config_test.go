@@ -42,7 +42,24 @@ func TestGenerateZeroOptions(t *testing.T) {
 }
 
 func TestValidateUsername(t *testing.T) {
-	bad := []string{"Administrator", "a/b", "Geo & Co", "percent%name", "caret^name", "bang!name", " leading", "trailing ", strings.Repeat("x", 21), "trailing."}
+	bad := []string{
+		"Administrator",
+		"ADMINISTRATEUR",
+		"JÄRJESTELMÄNVALVOJA",
+		"Rendszergazda",
+		"Administrador",
+		"АДМИНИСТРАТОР",
+		"Administratör",
+		"a/b",
+		"Geo & Co",
+		"percent%name",
+		"caret^name",
+		"bang!name",
+		" leading",
+		"trailing ",
+		strings.Repeat("x", 21),
+		"trailing.",
+	}
 	for _, name := range bad {
 		if err := Validate(Options{LocalAccount: name}); err == nil {
 			t.Fatalf("accepted %q", name)
