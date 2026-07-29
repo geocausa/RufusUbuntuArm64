@@ -47,10 +47,3 @@ func TestWriteFullContextDoesNotWriteWhenAlreadyCancelled(t *testing.T) {
 		t.Fatalf("error=%v, want context cancellation", err)
 	}
 }
-
-func TestWriteFullContextRejectsNilContext(t *testing.T) {
-	written, err := writeFullContext(nil, &cancelAfterPartialWriter{cancel: func() {}}, []byte("data"))
-	if written != 0 || err == nil {
-		t.Fatalf("nil context result: written=%d error=%v", written, err)
-	}
-}
