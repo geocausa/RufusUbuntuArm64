@@ -110,8 +110,9 @@
 - Privileged loop qualification, native ARM64 execution, Go 1.22 compatibility, static/vulnerability audit, and reproducible Debian packaging
 - FFU capture and production physical FFU support remain unimplemented or unqualified
 
-## 0.15 — ISO Image mode parity tranche (software completed; physical qualification pending)
+## 0.15 — ISO Image mode parity tranche (completed)
 
+- Software implementation is complete for the bounded tranche; physical firmware qualification remains pending.
 - Rufus-style ISO Image mode versus DD Image mode choice for suitable ARM64 UEFI Linux ISOHybrid media
 - ISO Image mode selected as the recommended default, with explicit immutable exact-clone DD fallback
 - Automatic, FAT32, or NTFS selection; Automatic prefers FAT32 and selects NTFS only when complete-tree inspection requires it
