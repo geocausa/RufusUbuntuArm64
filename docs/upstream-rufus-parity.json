@@ -38,8 +38,8 @@
     {
       "id": "linux-iso-image-mode",
       "upstream_feature": "Choose ISO Image mode or DD Image mode for ISOHybrid media",
-      "status": "implemented",
-      "notes": "Suitable Linux ISOHybrid media receive an explicit Rufus-style choice with ISO Image mode recommended by default and DD retained as the exact-clone alternative. ISO mode uses identity-bound MBR/FAT32 extraction, native fallback UEFI validation, bounded complete-tree inspection, transactional copy, SHA-256 readback, filesystem checking, flushing, cancellable locking, and real reopened-loop qualification. Physical firmware boot remains release-qualification evidence.",
+      "status": "partial",
+      "notes": "Suitable Linux ISOHybrid media receive an explicit Rufus-style choice with ISO Image mode recommended by default and DD retained as the exact-clone alternative. ISO mode now binds reviewed MBR/GPT, FAT32 cluster, and volume-label choices through confirmation, the privileged helper, diagnostics, metadata readback, copied-file verification, filesystem checking, flushing, and real reopened-loop qualification. UEFI and FAT32 remain capability-bound; Linux NTFS/UEFI:NTFS extraction and broader target-system/filesystem parity remain planned, and physical firmware boot remains release-qualification evidence.",
       "upstream_sources": [
         "src/format.c",
         "src/iso.c"

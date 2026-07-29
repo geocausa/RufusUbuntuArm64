@@ -9,7 +9,7 @@ The choice appears only when read-only inspection identifies an ISOHybrid image 
 
 ## What ISO Image mode does
 
-ISO Image mode creates one conventional, writable FAT32 partition and extracts the supported ISO media tree onto it. The first implementation tranche is deliberately bounded to media that can be represented safely as ARM64 UEFI/FAT32 removable media.
+ISO Image mode creates one conventional, writable FAT32 partition and extracts the supported ISO media tree onto it. Compatible ARM64 UEFI media can use a reviewed MBR or GPT layout, a safe FAT32 cluster size, and an editable FAT32 label. UEFI and FAT32 remain capability-bound rather than cosmetic choices.
 
 Before erasing the USB, the privileged helper:
 
@@ -21,9 +21,13 @@ Before erasing the USB, the privileged helper:
 6. checks FAT32 filename, case-collision, symlink, single-file-size, total-size, and target-capacity constraints; and
 7. revalidates the selected source and target immediately before the destructive boundary.
 
-Only after those checks pass does it create an active MBR FAT32-LBA partition, format it through a held partition descriptor, copy each file transactionally, hash every copied file back from the USB, run a read-only FAT32 consistency check, and flush the device.
+Only after those checks pass does it create the selected MBR FAT32-LBA or GPT EFI System Partition layout, format it through a held partition descriptor with the reviewed cluster size and label, copy each file transactionally, hash every copied file back from the USB, run a read-only FAT32 consistency check, and flush the device. Primary and backup GPT metadata are both written and read back when GPT is selected.
 
 Ordinary ISO Image mode does **not** modify boot configuration or enable persistence. Persistent live media remains a separate explicit workflow.
+
+## Visible layout choices
+
+For compatible Linux ISOHybrid media, the main window exposes MBR or GPT and 4, 8, 16, or 32 KiB FAT32 clusters. The FAT32 label is editable and resets to `RUFUS-LIVE` when a different image is selected, preventing a stale Windows label from leaking into Linux media. Target system remains UEFI and filesystem remains FAT32 until separately reviewed boot paths justify broader choices. DD Image mode ignores all extraction-layout controls.
 
 ## When ISO Image mode is refused
 

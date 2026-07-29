@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   loop-qualification:
-    name: MBR/FAT32 extracted-media qualification
+    name: MBR/GPT FAT32 extracted-media qualification
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -38,7 +38,7 @@ jobs:
           set -o pipefail
           sudo env RUFUS_REAL_EXTRACTED_TEST="${RUFUS_REAL_EXTRACTED_TEST}" \
             "${RUNNER_TEMP}/iso-image-loop.test" \
-            -test.run '^TestCreateExtractedOnRealLoopDevice$' \
+            -test.run '^TestCreateExtractedOnRealLoopDevice(MBR|GPT)?$' \
             -test.v 2>&1 | tee dist/audit-logs/iso-image-loop.log
       - name: Upload ISO Image mode loop transcript
         if: always()

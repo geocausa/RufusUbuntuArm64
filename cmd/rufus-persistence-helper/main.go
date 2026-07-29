@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -82,6 +83,8 @@ func run(args []string) error {
 	expectedTargetIdentity := flags.String("expected-identity", "", "target identity captured before authentication")
 	persistenceSizeText := flags.String("persistence-size", "0", "persistent ext4 size; zero uses remaining capacity")
 	volumeLabel := flags.String("volume-label", "RUFUS-LIVE", "FAT32 volume label")
+	partitionScheme := flags.String("partition-scheme", "", "ISO Image mode partition scheme: mbr or gpt")
+	clusterSizeText := flags.String("cluster-size", "0", "ISO Image mode FAT32 cluster size in bytes")
 	cancelFile := flags.String("cancel-file", "", "per-user cancellation marker")
 	jsonProgress := flags.Bool("json-progress", false, "emit JSON lines")
 	yes := flags.Bool("yes", false, "confirm the graphical application already obtained explicit erase consent")
@@ -120,6 +123,11 @@ func run(args []string) error {
 	if err != nil {
 		return fmt.Errorf("parse --persistence-size: %w", err)
 	}
+	selectedPartitionScheme := strings.ToLower(strings.TrimSpace(*partitionScheme))
+	clusterSize, err := strconv.ParseUint(strings.TrimSpace(*clusterSizeText), 10, 64)
+	if err != nil {
+		return fmt.Errorf("parse --cluster-size: %w", err)
+	}
 	if selectedOperation == "iso" {
 		if persistenceSize != 0 {
 			return errors.New("ISO Image mode does not accept a persistence size")
@@ -127,6 +135,22 @@ func run(args []string) error {
 		if *runtimeUEFIValidation {
 			return errors.New("ISO Image mode does not install the persistence runtime validator")
 		}
+		if selectedPartitionScheme == "" {
+			selectedPartitionScheme = "mbr"
+		}
+		if selectedPartitionScheme != "mbr" && selectedPartitionScheme != "gpt" {
+			return errors.New("--partition-scheme must be mbr or gpt for ISO Image mode")
+		}
+		if clusterSize == 0 {
+			clusterSize = 4096
+		}
+		switch clusterSize {
+		case 4096, 8192, 16384, 32768:
+		default:
+			return errors.New("--cluster-size must be 4096, 8192, 16384, or 32768 for ISO Image mode")
+		}
+	} else if selectedPartitionScheme != "" || clusterSize != 0 {
+		return errors.New("--partition-scheme and --cluster-size are accepted only for ISO Image mode")
 	}
 	absoluteImage, err := filepath.Abs(*imagePath)
 	if err != nil {
@@ -212,6 +236,9 @@ func run(args []string) error {
 		operationLabel = "ISO Image mode"
 	}
 	preflightMessage := fmt.Sprintf("%s: %s; target: %s", operationLabel, filepath.Base(resolvedImage), resolvedTarget)
+	if selectedOperation == "iso" {
+		preflightMessage = fmt.Sprintf("%s; layout: %s/UEFI/FAT32; cluster: %d bytes", preflightMessage, strings.ToUpper(selectedPartitionScheme), clusterSize)
+	}
 	out.event(jsonEvent{Event: "preflight", Stage: "preflight", Message: preflightMessage})
 
 	// Byte-counted copy and hashing stages already emit frequent progress. For
@@ -278,6 +305,8 @@ func run(args []string) error {
 			ExpectedSource:    expectedSource,
 			Architecture:      runtime.GOARCH,
 			VolumeLabel:       *volumeLabel,
+			PartitionScheme:   selectedPartitionScheme,
+			ClusterSize:       clusterSize,
 			BeforeDestructive: targetCheck,
 		}, forwardEvent)
 		stopHeartbeat()
@@ -290,7 +319,7 @@ func run(args []string) error {
 		out.event(jsonEvent{
 			Event:   "log",
 			Stage:   "verification",
-			Message: fmt.Sprintf("ISO Image mode source SHA-256 %s; verified UEFI fallback %s.", result.SourceSHA256, result.UEFIBootPath),
+			Message: fmt.Sprintf("ISO Image mode source SHA-256 %s; verified UEFI fallback %s; layout %s/UEFI/FAT32; cluster %d bytes.", result.SourceSHA256, result.UEFIBootPath, strings.ToUpper(result.PartitionScheme), result.ClusterSize),
 			Hash:    result.SourceSHA256,
 		})
 		out.event(jsonEvent{Event: "complete", Stage: "complete", Message: "ISO Image mode USB created and verified."})
