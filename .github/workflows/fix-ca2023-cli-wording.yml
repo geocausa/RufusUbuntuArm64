@@ -1,0 +1,58 @@
+name: Fix Windows CA 2023 CLI evidence wording
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'parity/windows-ca2023-bootloaders'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: parity/windows-ca2023-bootloaders
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+      - name: Correct evidence wording and remove this workflow
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('cmd/rufus-linux/main.go')
+          text = path.read_text(encoding='utf-8')
+          changes = [
+              (
+                  'replace qualified FAT32 removable-media boot files with the Windows UEFI CA 2023-signed set from boot.wim',
+                  'replace qualified FAT32 removable-media boot files with the Windows UEFI CA 2023 _EX set from boot.wim after embedded certificate-chain evidence checks',
+              ),
+              (
+                  'with a complete CA 2023-signed _EX set, and the completed USB will require firmware',
+                  'with a complete _EX set carrying embedded CA 2023 certificate-chain evidence, and the completed USB will require firmware',
+              ),
+          ]
+          for old, new in changes:
+              if old not in text:
+                  raise SystemExit(f'missing CLI wording anchor: {old}')
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          gofmt -w cmd/rufus-linux/main.go
+          go test ./cmd/rufus-linux ./internal/windowsmedia ./internal/windowsconfig
+          git rm .github/workflows/fix-ca2023-cli-wording.yml
+      - name: Publish product-only wording commit
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cmd/rufus-linux/main.go
+          git commit -m "cli: clarify CA 2023 certificate evidence"
+          git push origin HEAD:parity/windows-ca2023-bootloaders
