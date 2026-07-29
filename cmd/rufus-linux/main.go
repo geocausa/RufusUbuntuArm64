@@ -356,7 +356,7 @@ func runWrite(args []string) error {
 	winPrivacy := fs.Bool("win-reduce-data-collection", false, "reduce Windows setup data collection and recommendations")
 	winQualityOfLife := fs.Bool("win-quality-of-life", false, "remove bundled OneDrive setup, Outlook and Teams and apply Rufus Quality of Life policies")
 	winApplySkuSiPolicy := fs.Bool("win-apply-sku-si-policy", false, "apply the installed Windows SkuSiPolicy to its EFI System Partition on first logon")
-	winUseCA2023Bootloaders := fs.Bool("win-use-ca-2023-bootloaders", false, "replace qualified FAT32 removable-media boot files with the Windows UEFI CA 2023-signed set from boot.wim")
+	winUseCA2023Bootloaders := fs.Bool("win-use-ca-2023-bootloaders", false, "replace qualified FAT32 removable-media boot files with the Windows UEFI CA 2023 _EX set from boot.wim after embedded certificate-chain evidence checks")
 	winDisableBitLocker := fs.Bool("win-disable-bitlocker", false, "disable automatic Windows device encryption provisioning")
 	winLocale := fs.String("win-locale", "", "apply a Windows regional locale, such as en-GB")
 	winTimeZone := fs.String("win-timezone", "", "apply a Windows time-zone name")
@@ -559,7 +559,7 @@ func runWrite(args []string) error {
 	}
 	out.event(jsonEvent{Event: "preflight", Stage: "preflight", Message: fmt.Sprintf("Image: %s%s; target: %s (%s)", filepath.Base(originalImagePath), containerNote, resolved, humanBytes(dev.Size))})
 	if *winUseCA2023Bootloaders {
-		out.event(jsonEvent{Event: "preflight", Stage: "windows_ca_2023", Message: "Windows UEFI CA 2023 bootloader replacement was requested. The privileged writer will accept only Windows 11 client, UEFI, FAT32 media with a complete CA 2023-signed _EX set, and the completed USB will require firmware that trusts Windows UEFI CA 2023."})
+		out.event(jsonEvent{Event: "preflight", Stage: "windows_ca_2023", Message: "Windows UEFI CA 2023 bootloader replacement was requested. The privileged writer will accept only Windows 11 client, UEFI, FAT32 media with a complete _EX set carrying embedded CA 2023 certificate-chain evidence, and the completed USB will require firmware that trusts Windows UEFI CA 2023."})
 	}
 	mounts := device.MountedDescendants(dev)
 	if len(mounts) > 0 && *noUnmount {
