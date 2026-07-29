@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+
+	"github.com/geocausa/RufusArm64/internal/uefintfs"
 )
 
 const minimumMBRDiskBytes = uint64(8 * 1024 * 1024)
@@ -37,21 +39,17 @@ func writeUEFINTFSMBR(target *os.File, targetSize, sectorSize, bootImageSize uin
 	if target == nil {
 		return diskLayout{}, errors.New("nil MBR target")
 	}
-	layout, err := mbrUEFINTFSLayoutForSize(targetSize, sectorSize, bootImageSize)
+	if bootImageSize != uefintfs.ImageSize {
+		return diskLayout{}, fmt.Errorf("UEFI:NTFS image size %d does not match the pinned shared image size %d", bootImageSize, uefintfs.ImageSize)
+	}
+	shared, err := uefintfs.PlanLayout(uefintfs.SchemeMBR, targetSize, sectorSize)
 	if err != nil {
 		return diskLayout{}, err
 	}
-	if layout.Boot == nil {
-		return diskLayout{}, errors.New("missing MBR UEFI:NTFS boot layout")
-	}
-	parts := []mbrPartition{
-		{layout: layout.Data, bootable: true, partitionType: 0x07},
-		{layout: *layout.Boot, bootable: false, partitionType: 0xef},
-	}
-	if err := writeMBR(target, sectorSize, parts); err != nil {
+	if err := uefintfs.WriteLayout(target, shared, ""); err != nil {
 		return diskLayout{}, err
 	}
-	return layout, nil
+	return windowsDiskLayoutFromShared(shared), nil
 }
 
 type mbrPartition struct {
@@ -111,27 +109,26 @@ func mbrLayoutForSize(targetSize, sectorSize uint64) (partitionLayout, error) {
 }
 
 func mbrUEFINTFSLayoutForSize(targetSize, sectorSize, bootImageSize uint64) (diskLayout, error) {
-	if err := validateMBRGeometry(targetSize, sectorSize); err != nil {
+	if bootImageSize != uefintfs.ImageSize {
+		return diskLayout{}, fmt.Errorf("UEFI:NTFS image size %d does not match the pinned shared image size %d", bootImageSize, uefintfs.ImageSize)
+	}
+	shared, err := uefintfs.PlanLayout(uefintfs.SchemeMBR, targetSize, sectorSize)
+	if err != nil {
 		return diskLayout{}, err
 	}
-	if bootImageSize == 0 || bootImageSize%sectorSize != 0 {
-		return diskLayout{}, fmt.Errorf("UEFI:NTFS image size %d is not aligned to logical sector size %d", bootImageSize, sectorSize)
+	return windowsDiskLayoutFromShared(shared), nil
+}
+
+func windowsDiskLayoutFromShared(shared uefintfs.Layout) diskLayout {
+	data := partitionLayout{
+		PartitionStartBytes: shared.Data.StartBytes,
+		PartitionSizeBytes:  shared.Data.SizeBytes,
 	}
-	dataStartBytes := alignUp(oneMiB, sectorSize)
-	bootStartBytes := alignDown(targetSize-bootImageSize, oneMiB)
-	if bootStartBytes <= dataStartBytes {
-		return diskLayout{}, errors.New("target has insufficient space for MBR NTFS data and UEFI:NTFS boot partitions")
+	boot := partitionLayout{
+		PartitionStartBytes: shared.Boot.StartBytes,
+		PartitionSizeBytes:  shared.Boot.SizeBytes,
 	}
-	data := partitionLayout{PartitionStartBytes: dataStartBytes, PartitionSizeBytes: bootStartBytes - dataStartBytes}
-	boot := partitionLayout{PartitionStartBytes: bootStartBytes, PartitionSizeBytes: bootImageSize}
-	for _, part := range []partitionLayout{data, boot} {
-		start := part.PartitionStartBytes / sectorSize
-		size := part.PartitionSizeBytes / sectorSize
-		if start > uint64(^uint32(0)) || size > uint64(^uint32(0)) {
-			return diskLayout{}, errors.New("target is too large for an MBR UEFI:NTFS layout; use GPT")
-		}
-	}
-	return diskLayout{Data: data, Boot: &boot}, nil
+	return diskLayout{Data: data, Boot: &boot}
 }
 
 func validateMBRGeometry(targetSize, sectorSize uint64) error {
