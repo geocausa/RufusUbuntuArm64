@@ -320,6 +320,9 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		plan.DriverFolder = driverRoot
 	}
 	customizations := opts.Customizations
+	if err := validateCustomizationTargetSystem(customizations, targetSystem); err != nil {
+		return err
+	}
 	customizations.LoadDrivers = plan.DriverFolder != ""
 	plan.AnswerFile, err = preparePlanAnswerFile(ctx, plan, customizations, PrepareCustomizations)
 	if err != nil {

@@ -90,7 +90,7 @@ func AnalyzeCapabilities(ctx context.Context, isoPath string, expectedSource sou
 	if err != nil {
 		return CapabilityAnalysis{}, err
 	}
-	metadata, err := InspectWIMMetadata(ctx, payloadPath)
+	metadata, err := InspectWIMSetupMetadata(ctx, payloadPath)
 	if err != nil {
 		return CapabilityAnalysis{}, fmt.Errorf("inspect Windows setup capabilities: %w", err)
 	}

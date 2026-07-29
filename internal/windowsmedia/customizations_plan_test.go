@@ -57,3 +57,16 @@ func TestPreparePlanAnswerFileRejectsMissingPayloadForSelectedOptions(t *testing
 		t.Fatalf("error = %v, want missing payload path", err)
 	}
 }
+
+func TestValidateCustomizationTargetSystemRejectsSkuSiPolicyAfterAutoResolvesToBIOS(t *testing.T) {
+	options := windowsconfig.Options{ApplySkuSiPolicy: true}
+	if err := validateCustomizationTargetSystem(options, "bios"); err == nil || !strings.Contains(err.Error(), "requires a resolved UEFI") {
+		t.Fatalf("BIOS target error = %v", err)
+	}
+	if err := validateCustomizationTargetSystem(options, "UEFI"); err != nil {
+		t.Fatalf("UEFI target rejected: %v", err)
+	}
+	if err := validateCustomizationTargetSystem(windowsconfig.Options{}, "bios"); err != nil {
+		t.Fatalf("unselected policy affected BIOS media: %v", err)
+	}
+}

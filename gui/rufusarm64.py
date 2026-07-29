@@ -168,6 +168,7 @@ def unavailable_windows_capability_analysis(reason):
             "local_account": dict(disabled),
             "reduce_data_collection": dict(disabled),
             "quality_of_life": dict(disabled),
+            "apply_sku_si_policy": dict(disabled),
             "disable_bitlocker": dict(disabled),
             "load_drivers": dict(disabled),
             "locale": dict(disabled),
@@ -179,7 +180,7 @@ def unavailable_windows_capability_analysis(reason):
 class WindowsOptionsDialog(Gtk.Dialog):
     """Explicit opt-in Windows Setup customizations."""
 
-    def __init__(self, parent, previous=None, capability_analysis=None):
+    def __init__(self, parent, previous=None, capability_analysis=None, selected_target_system=DEFAULT_WINDOWS_TARGET_SYSTEM):
         super().__init__(title="Windows installation options", transient_for=parent, modal=True)
         self.add_button("Cancel", Gtk.ResponseType.CANCEL)
         self.add_button("Continue", Gtk.ResponseType.OK)
@@ -190,6 +191,9 @@ class WindowsOptionsDialog(Gtk.Dialog):
             "Windows setup capabilities have not been analyzed."
         )
         self.capabilities = self.capability_analysis.get("capabilities") or {}
+        self.selected_target_system = normalize_target_system(selected_target_system or DEFAULT_WINDOWS_TARGET_SYSTEM)
+        if self.selected_target_system == "auto":
+            self.selected_target_system = str(self.capability_analysis.get("default_target_system") or "").strip().lower()
 
         scroll = Gtk.ScrolledWindow()
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -261,6 +265,12 @@ class WindowsOptionsDialog(Gtk.Dialog):
             "Apply Rufus Quality of Life changes",
             "Removes bundled OneDrive setup, Outlook and Teams, and disables Copilot, web search, consumer-content suggestions and related Microsoft promotions.",
             previous.get("quality_of_life", False),
+        )
+        self.apply_sku_si_policy = self.check(
+            box,
+            "Apply the installed Windows SkuSiPolicy on first logon",
+            "For qualified Windows 11 UEFI media only. Uses the installed system's own policy and copies it to the EFI System Partition; no host policy file is accepted.",
+            previous.get("apply_sku_si_policy", False),
         )
         self.region_locale, self.region_timezone, self.region_iana = current_regional_settings()
         region_parts = []
@@ -338,6 +348,11 @@ class WindowsOptionsDialog(Gtk.Dialog):
         self.local_account_allowed = self.apply_option_capability(self.local_account, "local_account")
         self.apply_option_capability(self.reduce_data, "reduce_data_collection")
         self.apply_option_capability(self.quality_of_life, "quality_of_life")
+        sku_allowed = self.apply_option_capability(self.apply_sku_si_policy, "apply_sku_si_policy")
+        if sku_allowed and self.selected_target_system != "uefi":
+            self.apply_sku_si_policy.set_active(False)
+            self.apply_sku_si_policy.set_sensitive(False)
+            self.apply_sku_si_policy.set_tooltip_text("SkuSiPolicy deployment requires a UEFI target with an EFI System Partition.")
         self.apply_option_capability(self.disable_bitlocker, "disable_bitlocker")
         regional_keys = []
         if self.region_locale:
@@ -386,6 +401,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
             "local_user": local_user,
             "reduce_data_collection": self.reduce_data.get_active(),
             "quality_of_life": self.quality_of_life.get_active(),
+            "apply_sku_si_policy": self.apply_sku_si_policy.get_active(),
             "disable_bitlocker": self.disable_bitlocker.get_active(),
             "use_regional_settings": self.use_region.get_active(),
             "locale": self.region_locale if self.use_region.get_active() else "",
@@ -2229,7 +2245,7 @@ class RufusWindow(Gtk.ApplicationWindow):
 
     def choose_windows_options(self):
         self.windows_capability_analysis = self.analyze_windows_capabilities()
-        dialog = WindowsOptionsDialog(self, self.windows_options, self.windows_capability_analysis)
+        dialog = WindowsOptionsDialog(self, self.windows_options, self.windows_capability_analysis, self.target_system_combo.get_active_id() or DEFAULT_WINDOWS_TARGET_SYSTEM)
         while True:
             response = dialog.run()
             if response != Gtk.ResponseType.OK:
@@ -2316,6 +2332,7 @@ class RufusWindow(Gtk.ApplicationWindow):
                 (bool(options.get("local_user")), f"local account {options.get('local_user', '')}"),
                 (options.get("reduce_data_collection"), "reduced setup data collection"),
                 (options.get("quality_of_life"), "Quality of Life app removals and policies"),
+                (options.get("apply_sku_si_policy"), "installed-system SkuSiPolicy deployment to the EFI System Partition"),
                 (options.get("disable_bitlocker"), "automatic encryption disabled"),
                 (options.get("use_regional_settings"), "Ubuntu regional settings"),
             )
