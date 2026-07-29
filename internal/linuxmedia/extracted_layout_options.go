@@ -23,7 +23,7 @@ const (
 	// FAT32 reserves the upper 4 bits of a 32-bit cluster entry. Refuse a
 	// geometry whose theoretical cluster count already exceeds the largest
 	// valid FAT32 data-cluster number, before the target is erased.
-	maximumFAT32PartitionClusters = uint64(0x0ffffff5)
+	maximumFAT32PartitionClusters = uint64(0x0fffffef)
 )
 
 func normalizeExtractedPartitionScheme(value string) (string, error) {
