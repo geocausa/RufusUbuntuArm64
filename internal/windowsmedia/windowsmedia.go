@@ -32,6 +32,7 @@ import (
 	"github.com/geocausa/RufusArm64/internal/safety"
 	"github.com/geocausa/RufusArm64/internal/secureboot"
 	"github.com/geocausa/RufusArm64/internal/sourcefile"
+	"github.com/geocausa/RufusArm64/internal/uefintfs"
 	"github.com/geocausa/RufusArm64/internal/windowsconfig"
 )
 
@@ -41,8 +42,8 @@ const (
 	minimumFreeMargin     = uint64(256 * 1024 * 1024)
 	splitPartMiB          = "3500"
 	bundledWimlibPath     = "/usr/lib/rufusarm64/wimlib-imagex"
-	bundledUEFINTFSPath   = "/usr/lib/rufusarm64/uefi-ntfs.img"
-	uefiNTFSImageSHA256   = "72683fa1250eeea772d3399277b434d4e55ba8dd0dc926e52d817e701fc2eb9e"
+	bundledUEFINTFSPath   = uefintfs.BundledImage
+	uefiNTFSImageSHA256   = uefintfs.ImageSHA256
 	rufusDriverMarkerName = "RUFUSARM64.DRV"
 )
 
@@ -1442,102 +1443,35 @@ func ntfsFormatterExecutable() (string, error) {
 }
 
 func uefiNTFSImageFile() (string, uint64, error) {
-	candidates := make([]string, 0, 5)
-	if envPath := strings.TrimSpace(os.Getenv("RUFUSARM64_UEFI_NTFS_IMAGE")); envPath != "" {
-		candidates = append(candidates, envPath)
+	asset, err := uefintfs.Locate()
+	if err != nil {
+		return "", 0, err
 	}
-	if executable, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(executable), "uefi-ntfs.img"))
-	}
-	candidates = append(candidates, bundledUEFINTFSPath, filepath.Join("vendor", "uefi-ntfs", "uefi-ntfs.img"))
-	for _, candidate := range candidates {
-		info, err := os.Stat(candidate)
-		if err != nil || !info.Mode().IsRegular() {
-			continue
-		}
-		hash, err := fileSHA256(candidate)
-		if err != nil {
-			return "", 0, fmt.Errorf("verify UEFI:NTFS image: %w", err)
-		}
-		if fmt.Sprintf("%x", hash) != uefiNTFSImageSHA256 {
-			return "", 0, fmt.Errorf("refusing modified UEFI:NTFS image %s: SHA-256 mismatch", candidate)
-		}
-		return candidate, uint64(info.Size()), nil
-	}
-	return "", 0, errors.New("NTFS boot support is unavailable because the verified UEFI:NTFS image is missing")
+	return asset.Path(), asset.Size(), nil
 }
 
 func writeUEFINTFSPartitionImage(target *os.File, imagePath string, layout partitionLayout) error {
-	image, err := os.Open(imagePath)
+	asset, err := uefintfs.Open(imagePath)
 	if err != nil {
-		return fmt.Errorf("open UEFI:NTFS image: %w", err)
+		return fmt.Errorf("reverify UEFI:NTFS image before writing: %w", err)
 	}
-	defer image.Close()
-	info, err := image.Stat()
-	if err != nil {
-		return fmt.Errorf("stat UEFI:NTFS image: %w", err)
-	}
-	if uint64(info.Size()) != layout.PartitionSizeBytes {
-		return fmt.Errorf("UEFI:NTFS image is %d bytes but its partition is %d bytes", info.Size(), layout.PartitionSizeBytes)
-	}
-	writer := io.NewOffsetWriter(target, int64(layout.PartitionStartBytes))
-	written, err := io.CopyBuffer(writer, image, make([]byte, copyBufferSize))
-	if err != nil {
-		return fmt.Errorf("write UEFI:NTFS partition image: %w", err)
-	}
-	if uint64(written) != layout.PartitionSizeBytes {
-		return fmt.Errorf("short UEFI:NTFS image write: wrote %d of %d bytes", written, layout.PartitionSizeBytes)
-	}
-	if err := target.Sync(); err != nil {
-		return fmt.Errorf("flush UEFI:NTFS partition image: %w", err)
-	}
-
-	// Verify the bytes through the already-open whole-disk descriptor before we
-	// ask the kernel to re-read the partition table. This catches short, stale,
-	// or redirected writes even when the eventual partition node never appears.
-	expected, err := fileSHA256(imagePath)
-	if err != nil {
-		return fmt.Errorf("hash UEFI:NTFS source image: %w", err)
-	}
-	hash := sha256.New()
-	reader := io.NewSectionReader(target, int64(layout.PartitionStartBytes), int64(layout.PartitionSizeBytes))
-	if _, err := io.Copy(hash, reader); err != nil {
-		return fmt.Errorf("read back UEFI:NTFS partition image: %w", err)
-	}
-	if !bytes.Equal(expected[:], hash.Sum(nil)) {
-		return errors.New("UEFI:NTFS partition image verification failed: SHA-256 mismatch")
-	}
-	return nil
+	return uefintfs.WriteAndVerify(target, asset, uefintfs.Partition{
+		StartBytes: layout.PartitionStartBytes,
+		SizeBytes:  layout.PartitionSizeBytes,
+	})
 }
 
 func verifyUEFINTFSPartition(partitionPath, imagePath string) error {
-	// Hermetic integration tests use regular files as synthetic partition nodes.
-	// The whole-disk write path has already performed an exact section readback,
-	// while real operations always reach this function with a block device node.
+	// Hermetic integration tests use a regular file as a synthetic partition
+	// node. The whole-disk writer has already performed exact shared readback.
 	if info, err := os.Stat(partitionPath); err == nil && info.Mode().IsRegular() {
 		return nil
 	}
-	expected, err := fileSHA256(imagePath)
+	asset, err := uefintfs.Open(imagePath)
 	if err != nil {
-		return fmt.Errorf("hash UEFI:NTFS source image: %w", err)
+		return fmt.Errorf("reverify UEFI:NTFS image before partition comparison: %w", err)
 	}
-	imageInfo, err := os.Stat(imagePath)
-	if err != nil {
-		return err
-	}
-	partition, err := os.Open(partitionPath)
-	if err != nil {
-		return fmt.Errorf("open UEFI:NTFS boot partition: %w", err)
-	}
-	defer partition.Close()
-	hash := sha256.New()
-	if _, err := io.CopyN(hash, partition, imageInfo.Size()); err != nil {
-		return fmt.Errorf("read back UEFI:NTFS boot partition: %w", err)
-	}
-	if !bytes.Equal(expected[:], hash.Sum(nil)) {
-		return errors.New("UEFI:NTFS boot partition verification failed: SHA-256 mismatch")
-	}
-	return nil
+	return uefintfs.VerifyPartitionPath(partitionPath, asset)
 }
 
 func verifyDirectory(ctx context.Context, sourceRoot, destinationRoot string, emit EventFunc, plan *mediaPlan) error {
