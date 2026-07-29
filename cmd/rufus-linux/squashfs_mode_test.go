@@ -35,3 +35,14 @@ func TestSelectWriteModeKeepsSquashFSBackedDiskImageRaw(t *testing.T) {
 		t.Fatalf("SquashFS-backed disk mode=%q, want raw", mode)
 	}
 }
+
+func TestSelectWriteModePrefersValidatedOpticalEvidenceOverSystemAreaHint(t *testing.T) {
+	inspection := imaging.ImageInfo{HasSquashFS: true, HasISO9660: true}
+	mode, err := selectWriteMode("auto", inspection, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode != "windows" {
+		t.Fatalf("optical ISO with system-area hsqs hint mode=%q, want windows", mode)
+	}
+}
