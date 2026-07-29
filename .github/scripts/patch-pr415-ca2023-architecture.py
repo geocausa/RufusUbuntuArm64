@@ -11,6 +11,16 @@ def replace_once(path: Path, old: str, new: str, label: str) -> None:
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
+def replace_exact_count(path: Path, old: str, new: str, expected: int, label: str) -> None:
+    text = path.read_text(encoding="utf-8")
+    if text.count(new) == expected and old not in text:
+        return
+    count = text.count(old)
+    if count != expected:
+        raise SystemExit(f"expected {expected} {label} anchors in {path}, found {count}")
+    path.write_text(text.replace(old, new), encoding="utf-8")
+
+
 ca = Path("internal/windowsmedia/ca2023.go")
 replace_once(
     ca,
@@ -134,4 +144,29 @@ replace_once(
 \t\t}
 ''',
     "analysis architecture refusal",
+)
+
+ca_tests = Path("internal/windowsmedia/ca2023_test.go")
+replace_exact_count(
+    ca_tests,
+    'windowsconfig.MediaMetadata{ImageCount: 2}',
+    'windowsconfig.MediaMetadata{ImageCount: 2, Architecture: "arm64"}',
+    2,
+    "boot.wim metadata fixture",
+)
+replace_exact_count(
+    ca_tests,
+    'WindowsCA2023Capability{Available: true, ImageIndex: 2}',
+    'WindowsCA2023Capability{Available: true, ImageIndex: 2, Architecture: "arm64"}',
+    2,
+    "staging capability fixture",
+)
+
+integration_tests = Path("internal/windowsmedia/ca2023_integration_test.go")
+replace_exact_count(
+    integration_tests,
+    'WindowsCA2023Capability{Available: true, ImageIndex: 2}',
+    'WindowsCA2023Capability{Available: true, ImageIndex: 2, Architecture: "arm64"}',
+    1,
+    "selection capability fixture",
 )
