@@ -175,8 +175,12 @@ func InspectWindowsCA2023Capability(ctx context.Context, bootWIMPath string) (Wi
 		return WindowsCA2023Capability{}, fmt.Errorf("inspect boot.wim metadata: %w", err)
 	}
 	bootArchitecture := normalizeWIMArchitecture(metadata.Architecture)
-	if bootArchitecture == "" {
-		return WindowsCA2023Capability{Reason: "boot.wim architecture is missing or unsupported"}, nil
+	switch bootArchitecture {
+	case "arm64", "amd64", "x86":
+	case "":
+		return WindowsCA2023Capability{Reason: "boot.wim architecture is missing"}, nil
+	default:
+		return WindowsCA2023Capability{Reason: fmt.Sprintf("boot.wim architecture %q is unsupported for Windows UEFI CA 2023 replacement", bootArchitecture)}, nil
 	}
 	indexes := make([]int, 0, 2)
 	if metadata.ImageCount >= 2 {
