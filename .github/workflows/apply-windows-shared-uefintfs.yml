@@ -1,9 +1,8 @@
 name: Apply shared Windows UEFI NTFS source
 
 on:
-  push:
-    branches:
-      - parity/linux-iso-ntfs
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
@@ -14,6 +13,10 @@ concurrency:
 
 jobs:
   apply:
+    if: >-
+      github.event.pull_request.number == 408 &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'parity/linux-iso-ntfs'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
