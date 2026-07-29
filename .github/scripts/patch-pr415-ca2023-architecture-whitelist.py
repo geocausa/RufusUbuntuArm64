@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""One-use, fail-closed PR #415 architecture whitelist patch."""
 from pathlib import Path
 
 path = Path("internal/windowsmedia/ca2023.go")
