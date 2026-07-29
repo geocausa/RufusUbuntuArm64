@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from pathlib import Path
 import unittest
 
 from canonical_tag_decision import canonical_tag_decision
@@ -23,6 +24,14 @@ class CanonicalTagDecisionTests(unittest.TestCase):
             with self.subTest(current=current, existing=existing):
                 with self.assertRaisesRegex(ValueError, "40 hexadecimal"):
                     canonical_tag_decision(current, existing)
+
+    def test_workflow_excludes_ordinary_changelog_development(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github" / "workflows" / "version-tag.yml").read_text(encoding="utf-8")
+        self.assertNotIn("\n      - CHANGELOG.md\n", workflow)
+        self.assertIn("scripts/canonical_tag_decision.py", workflow)
+        self.assertIn("already-released)", workflow)
+        self.assertNotIn("Refusing to move existing", workflow)
 
 
 if __name__ == "__main__":
