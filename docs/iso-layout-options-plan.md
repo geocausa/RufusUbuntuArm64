@@ -12,5 +12,6 @@ Planned exact scope:
 - DD mode continues to preserve the source image byte-for-byte and ignores ISO extraction layout choices.
 
 The reviewed applicator is ready; this branch update triggers its bounded same-repository run.
+The validated workflow-run publisher is now installed; this update requests the final read-only generation pass.
 
 Refs #289.
