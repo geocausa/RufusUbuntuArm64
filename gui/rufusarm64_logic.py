@@ -5,6 +5,7 @@ import os
 import re
 import stat
 import tempfile
+import unicodedata
 
 def atomic_write_json(path, payload):
     """Durably replace an owner-only JSON file without following directory links."""
@@ -255,20 +256,35 @@ def validate_windows_timezone(value):
     return value
 
 
+def _utf16_code_units(value):
+    return len(value.encode("utf-16-le")) // 2
+
+
 def normalize_volume_label(value, filesystem="fat32"):
     filesystem = normalize_filesystem(filesystem)
-    label = (value or "RUFUSARM64").strip().upper() or "RUFUSARM64"
-    limit = 32 if filesystem == "ntfs" else 11
-    if len(label) > limit:
-        raise ValueError(f"The {filesystem.upper()} volume label must be {limit} characters or fewer.")
-    forbidden = '"*/:<>?\\|'
-    if filesystem != "ntfs":
-        forbidden += "+,.;=[]"
-    if any(ord(char) < 0x20 or ord(char) > 0x7E or char in forbidden for char in label):
-        raise ValueError(f"The volume label contains a character that {filesystem.upper()} does not support.")
+    raw = "" if value is None else str(value)
+    label = raw if raw != "" else "RUFUSARM64"
+    if label.strip() != label:
+        raise ValueError("The volume label must not have leading or trailing whitespace.")
+    if any(unicodedata.category(char) == "Cc" for char in label):
+        raise ValueError("The volume label must not contain control characters.")
+    if filesystem == "auto":
+        try:
+            return normalize_volume_label(label, "fat32")
+        except ValueError:
+            pass
+    if filesystem == "fat32":
+        label = label.upper()
+        if any(not ("A" <= char <= "Z" or "0" <= char <= "9" or char in " _-") for char in label):
+            raise ValueError("The FAT32 volume label may contain only ASCII letters, digits, spaces, underscore, or hyphen.")
+        if len(label.encode("ascii")) > 11:
+            raise ValueError("The FAT32 volume label must be 11 ASCII bytes or fewer.")
+        return label
+    if any(char in '"*/:<>?\\|' for char in label):
+        raise ValueError("The NTFS volume label contains an unsupported character.")
+    if _utf16_code_units(label) > 32:
+        raise ValueError("The NTFS volume label must be 32 UTF-16 code units or fewer.")
     return label
-
-
 
 
 def normalize_filesystem(value):

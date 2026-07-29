@@ -33,6 +33,7 @@ import (
 	"github.com/geocausa/RufusArm64/internal/secureboot"
 	"github.com/geocausa/RufusArm64/internal/sourcefile"
 	"github.com/geocausa/RufusArm64/internal/uefintfs"
+	"github.com/geocausa/RufusArm64/internal/volumelabel"
 	"github.com/geocausa/RufusArm64/internal/windowsconfig"
 )
 
@@ -1628,26 +1629,14 @@ func verifyDirectory(ctx context.Context, sourceRoot, destinationRoot string, em
 }
 
 func normalizeVolumeLabel(value, filesystem string) (string, error) {
-	label := strings.ToUpper(strings.TrimSpace(value))
-	if label == "" {
-		label = "RUFUSARM64"
+	switch strings.ToLower(strings.TrimSpace(filesystem)) {
+	case "fat32":
+		return volumelabel.FAT32(value, "RUFUSARM64")
+	case "ntfs":
+		return volumelabel.NTFS(value, "RUFUSARM64")
+	default:
+		return "", fmt.Errorf("unsupported filesystem %q for volume label", filesystem)
 	}
-	limit := 11
-	if filesystem == "ntfs" {
-		limit = 32
-	}
-	if len(label) > limit {
-		return "", fmt.Errorf("%s volume label must contain at most %d ASCII characters", strings.ToUpper(filesystem), limit)
-	}
-	for _, r := range label {
-		if r < 0x20 || r > 0x7e || strings.ContainsRune(`"*/:<>?\|`, r) {
-			return "", fmt.Errorf("%s volume label contains an unsupported character", strings.ToUpper(filesystem))
-		}
-		if filesystem == "fat32" && strings.ContainsRune(`+,.;=[]`, r) {
-			return "", errors.New("FAT32 volume label contains an unsupported character")
-		}
-	}
-	return label, nil
 }
 
 var wimPercentPattern = regexp.MustCompile(`\(([0-9]{1,3})%\)`)

@@ -14,6 +14,8 @@ import (
 	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/geocausa/RufusArm64/internal/volumelabel"
 )
 
 const (
@@ -77,7 +79,6 @@ type filesystemContract struct {
 	mbrType       string
 	maxLabelBytes int
 	maxLabelUTF16 int
-	fatLabel      bool
 	maxSize       uint64
 }
 
@@ -89,7 +90,6 @@ var filesystemContracts = map[string]filesystemContract{
 		gptType:       "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
 		mbrType:       "0c",
 		maxLabelBytes: 11,
-		fatLabel:      true,
 		maxSize:       maximumFAT32Size,
 	},
 	FilesystemExFAT: {
@@ -144,7 +144,7 @@ func BuildPlan(request Request) (Plan, error) {
 		return Plan{}, err
 	}
 	contract := filesystemContracts[filesystem]
-	label, err := normalizeLabel(request.Label, contract)
+	label, err := normalizeLabel(request.Label, filesystem, contract)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -262,7 +262,7 @@ func validatePlan(plan Plan) error {
 	if plan.PartitionType != expectedType {
 		return errors.New("plan partition type does not match the scheme and filesystem")
 	}
-	label, err := normalizeLabel(plan.Label, contract)
+	label, err := normalizeLabel(plan.Label, plan.Filesystem, contract)
 	if err != nil || label != plan.Label {
 		return errors.New("plan contains a non-canonical filesystem label")
 	}
@@ -313,7 +313,13 @@ func normalizeDevicePath(value string) (string, error) {
 	return path, nil
 }
 
-func normalizeLabel(value string, contract filesystemContract) (string, error) {
+func normalizeLabel(value, filesystem string, contract filesystemContract) (string, error) {
+	switch filesystem {
+	case FilesystemFAT32:
+		return volumelabel.FAT32(value, "")
+	case FilesystemNTFS:
+		return volumelabel.NTFS(value, "")
+	}
 	if !utf8.ValidString(value) {
 		return "", errors.New("filesystem label is not valid UTF-8")
 	}
@@ -323,14 +329,6 @@ func normalizeLabel(value string, contract filesystemContract) (string, error) {
 	for _, character := range value {
 		if unicode.IsControl(character) {
 			return "", errors.New("filesystem label must not contain control characters")
-		}
-	}
-	if contract.fatLabel {
-		value = strings.ToUpper(value)
-		for _, character := range value {
-			if !(character >= 'A' && character <= 'Z') && !(character >= '0' && character <= '9') && character != ' ' && character != '_' && character != '-' {
-				return "", errors.New("FAT32 label may contain only ASCII letters, digits, spaces, underscore, or hyphen")
-			}
 		}
 	}
 	if contract.maxLabelBytes != 0 && len([]byte(value)) > contract.maxLabelBytes {

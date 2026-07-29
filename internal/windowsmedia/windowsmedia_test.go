@@ -557,13 +557,30 @@ func TestCleanupNeverRemovesWorkDirWhileUSBMayStillBeMounted(t *testing.T) {
 }
 
 func TestNormalizeVolumeLabel(t *testing.T) {
-	label, err := normalizeVolumeLabel("win 11", "fat32")
-	if err != nil || label != "WIN 11" {
-		t.Fatalf("label=%q err=%v", label, err)
+	fat, err := normalizeVolumeLabel("win 11", "fat32")
+	if err != nil || fat != "WIN 11" {
+		t.Fatalf("FAT32 label=%q err=%v", fat, err)
 	}
-	for _, bad := range []string{"this-label-is-too-long", "BAD/NAME"} {
-		if _, err := normalizeVolumeLabel(bad, "fat32"); err == nil {
-			t.Fatalf("accepted invalid label %q", bad)
+	ntfs := "Rufus_日本"
+	got, err := normalizeVolumeLabel(ntfs, "ntfs")
+	if err != nil || got != ntfs {
+		t.Fatalf("NTFS label=%q err=%v", got, err)
+	}
+	if got, err := normalizeVolumeLabel(strings.Repeat("😀", 16), "ntfs"); err != nil || got != strings.Repeat("😀", 16) {
+		t.Fatalf("32-unit NTFS label=%q err=%v", got, err)
+	}
+	for _, test := range []struct {
+		filesystem string
+		label      string
+	}{
+		{filesystem: "fat32", label: "this-label-is-too-long"},
+		{filesystem: "fat32", label: "BAD/NAME"},
+		{filesystem: "fat32", label: "Rufus_日本"},
+		{filesystem: "ntfs", label: " leading"},
+		{filesystem: "ntfs", label: strings.Repeat("😀", 17)},
+	} {
+		if _, err := normalizeVolumeLabel(test.label, test.filesystem); err == nil {
+			t.Fatalf("accepted invalid %s label %q", test.filesystem, test.label)
 		}
 	}
 }

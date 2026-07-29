@@ -94,6 +94,23 @@ class ISOImageModeTests(unittest.TestCase):
         self.assertIn("--json-progress", command)
         self.assertIn("--yes", command)
 
+    def test_auto_label_preserves_unicode_until_helper_resolution(self):
+        with tempfile.TemporaryDirectory() as directory:
+            image = Path(directory) / "linux.iso"
+            image.write_bytes(b"identity-bound-test-image")
+            command = build_iso_write_command(
+                "pkexec",
+                "helper",
+                str(image),
+                "/dev/sdz",
+                "target-identity",
+                str(Path(directory) / "cancel"),
+                "Rufus_日本",
+                filesystem="auto",
+            )
+        self.assertEqual(command[command.index("--volume-label") + 1], "Rufus_日本")
+        self.assertEqual(command[command.index("--filesystem") + 1], "auto")
+
     def test_build_iso_write_command_rejects_missing_identity(self):
         with self.assertRaisesRegex(ValueError, "identity"):
             build_iso_write_command("pkexec", "helper", "/tmp/image.iso", "/dev/sdz", "", "/tmp/cancel")

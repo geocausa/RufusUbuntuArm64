@@ -23,6 +23,7 @@ import (
 	"github.com/geocausa/RufusArm64/internal/qualification"
 	"github.com/geocausa/RufusArm64/internal/safety"
 	"github.com/geocausa/RufusArm64/internal/sourcefile"
+	"github.com/geocausa/RufusArm64/internal/volumelabel"
 )
 
 type PersistentEvent struct {
@@ -548,22 +549,7 @@ func hashPersistentSource(ctx context.Context, file *os.File, expected sourcefil
 }
 
 func normalizePersistentLabel(value string) (string, error) {
-	value = strings.ToUpper(strings.TrimSpace(value))
-	if value == "" {
-		value = "RUFUS-LIVE"
-	}
-	if len(value) > 11 {
-		return "", errors.New("FAT32 boot volume label must be at most 11 characters")
-	}
-	for _, character := range []byte(value) {
-		if character < 0x20 || character > 0x7e {
-			return "", errors.New("FAT32 boot volume label must use printable ASCII")
-		}
-	}
-	if strings.ContainsAny(value, `"*+,./:;<=>?[\\]|`) {
-		return "", errors.New("FAT32 boot volume label contains an invalid character")
-	}
-	return value, nil
+	return volumelabel.FAT32(value, "RUFUS-LIVE")
 }
 
 func persistentBlockDeviceSize(ctx context.Context, path string) (uint64, error) {

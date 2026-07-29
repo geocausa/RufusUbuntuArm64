@@ -59,7 +59,7 @@ def normalize_iso_cluster_size(value):
 
 def normalize_iso_volume_label(value, filesystem):
     filesystem = normalize_iso_filesystem(filesystem)
-    label_filesystem = "ntfs" if filesystem == "ntfs" else "fat32"
+    label_filesystem = filesystem
     return normalize_volume_label(value or DEFAULT_ISO_VOLUME_LABEL, label_filesystem)
 
 
