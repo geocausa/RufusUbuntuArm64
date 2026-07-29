@@ -800,16 +800,34 @@ def build_writer_command(
     dbx_file="",
     quick_format=DEFAULT_QUICK_FORMAT,
     bad_block_check=DEFAULT_BAD_BLOCK_CHECK,
+    windows_capability_analysis=None,
 ):
     if not identity:
         raise ValueError("missing device identity")
     options = dict(windows_options or {})
+    analysis = dict(windows_capability_analysis or {})
     partition_scheme = normalize_partition_scheme(partition_scheme)
     target_system = normalize_target_system(target_system)
+    filesystem = normalize_filesystem(filesystem)
+    resolved_target_system = target_system
+    resolved_filesystem = filesystem
+    if resolved_target_system == "auto":
+        resolved_target_system = str(analysis.get("default_target_system") or "").strip().lower()
+    if resolved_filesystem == "auto":
+        resolved_filesystem = str(analysis.get("default_filesystem") or "").strip().lower()
     if target_system == "bios" and partition_scheme == "gpt":
         raise ValueError("BIOS/CSM cannot be combined with the GPT partition scheme.")
-    if options.get("apply_sku_si_policy") and target_system == "bios":
+    if options.get("apply_sku_si_policy") and resolved_target_system != "uefi":
         raise ValueError("SkuSiPolicy deployment requires a UEFI Windows target.")
+    if options.get("use_windows_ca_2023_bootloaders"):
+        capability = analysis.get("windows_ca_2023")
+        if not isinstance(capability, dict) or not capability.get("available"):
+            reason = capability.get("reason") if isinstance(capability, dict) else ""
+            raise ValueError(str(reason or "Windows UEFI CA 2023 bootloaders were not proven by the read-only media analysis."))
+        if resolved_target_system != "uefi":
+            raise ValueError("Windows UEFI CA 2023 bootloader replacement requires a UEFI target.")
+        if resolved_filesystem != "fat32":
+            raise ValueError("Windows UEFI CA 2023 bootloader replacement currently requires FAT32; the UEFI:NTFS first stage carries only CA 2011 certificate-chain evidence.")
     command = [
         pkexec,
         helper,
@@ -833,7 +851,7 @@ def build_writer_command(
         "--target-system",
         target_system,
         "--filesystem",
-        normalize_filesystem(filesystem),
+        filesystem,
         "--cluster-size",
         normalize_cluster_size(cluster_size),
     ]
@@ -860,6 +878,8 @@ def build_writer_command(
         command.append("--win-quality-of-life")
     if options.get("apply_sku_si_policy"):
         command.append("--win-apply-sku-si-policy")
+    if options.get("use_windows_ca_2023_bootloaders"):
+        command.append("--win-use-ca-2023-bootloaders")
     if options.get("disable_bitlocker"):
         command.append("--win-disable-bitlocker")
     if options.get("use_regional_settings"):

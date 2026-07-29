@@ -11,14 +11,17 @@ import (
 // fail-closed capability profile. ImageCount and EditionNames describe the
 // complete bounded edition set that agreed on those identity facts.
 type MediaMetadata struct {
-	ProductName               string   `json:"product_name,omitempty"`
-	Version                   string   `json:"version,omitempty"`
-	Architecture              string   `json:"architecture,omitempty"`
-	InstallationType          string   `json:"installation_type,omitempty"`
-	ImageCount                int      `json:"image_count,omitempty"`
-	EditionNames              []string `json:"edition_names,omitempty"`
-	SkuSiPolicyAvailable      bool     `json:"sku_si_policy_available"`
-	SkuSiPolicyUnavailableWhy string   `json:"sku_si_policy_unavailable_reason,omitempty"`
+	ProductName                 string   `json:"product_name,omitempty"`
+	Version                     string   `json:"version,omitempty"`
+	Architecture                string   `json:"architecture,omitempty"`
+	InstallationType            string   `json:"installation_type,omitempty"`
+	ImageCount                  int      `json:"image_count,omitempty"`
+	EditionNames                []string `json:"edition_names,omitempty"`
+	SkuSiPolicyAvailable        bool     `json:"sku_si_policy_available"`
+	SkuSiPolicyUnavailableWhy   string   `json:"sku_si_policy_unavailable_reason,omitempty"`
+	WindowsCA2023Available      bool     `json:"windows_ca_2023_available"`
+	WindowsCA2023UnavailableWhy string   `json:"windows_ca_2023_unavailable_reason,omitempty"`
+	WindowsCA2023ImageIndex     int      `json:"windows_ca_2023_image_index,omitempty"`
 }
 
 // OptionCapability explains whether one setup option is safe for the detected
@@ -31,21 +34,22 @@ type OptionCapability struct {
 // CapabilityProfile is the normalized eligibility decision shared by the CLI,
 // graphical interface, and answer-file generator.
 type CapabilityProfile struct {
-	Recognized           bool             `json:"recognized"`
-	Generation           string           `json:"generation,omitempty"`
-	Family               string           `json:"family,omitempty"`
-	Architecture         string           `json:"architecture,omitempty"`
-	Reason               string           `json:"reason,omitempty"`
-	BypassHardwareChecks OptionCapability `json:"bypass_hardware_checks"`
-	BypassOnlineAccount  OptionCapability `json:"bypass_online_account"`
-	LocalAccount         OptionCapability `json:"local_account"`
-	ReduceDataCollection OptionCapability `json:"reduce_data_collection"`
-	DisableBitLocker     OptionCapability `json:"disable_bitlocker"`
-	LoadDrivers          OptionCapability `json:"load_drivers"`
-	QualityOfLife        OptionCapability `json:"quality_of_life"`
-	ApplySkuSiPolicy     OptionCapability `json:"apply_sku_si_policy"`
-	Locale               OptionCapability `json:"locale"`
-	TimeZone             OptionCapability `json:"time_zone"`
+	Recognized                  bool             `json:"recognized"`
+	Generation                  string           `json:"generation,omitempty"`
+	Family                      string           `json:"family,omitempty"`
+	Architecture                string           `json:"architecture,omitempty"`
+	Reason                      string           `json:"reason,omitempty"`
+	BypassHardwareChecks        OptionCapability `json:"bypass_hardware_checks"`
+	BypassOnlineAccount         OptionCapability `json:"bypass_online_account"`
+	LocalAccount                OptionCapability `json:"local_account"`
+	ReduceDataCollection        OptionCapability `json:"reduce_data_collection"`
+	DisableBitLocker            OptionCapability `json:"disable_bitlocker"`
+	LoadDrivers                 OptionCapability `json:"load_drivers"`
+	QualityOfLife               OptionCapability `json:"quality_of_life"`
+	ApplySkuSiPolicy            OptionCapability `json:"apply_sku_si_policy"`
+	UseWindowsCA2023Bootloaders OptionCapability `json:"use_windows_ca_2023_bootloaders"`
+	Locale                      OptionCapability `json:"locale"`
+	TimeZone                    OptionCapability `json:"time_zone"`
 }
 
 // Capabilities derives a conservative setup-option profile. Windows 11-only
@@ -105,11 +109,21 @@ func Capabilities(metadata MediaMetadata) CapabilityProfile {
 			}
 			profile.ApplySkuSiPolicy = OptionCapability{Reason: reason}
 		}
+		if metadata.WindowsCA2023Available {
+			profile.UseWindowsCA2023Bootloaders = generic
+		} else {
+			reason := strings.TrimSpace(metadata.WindowsCA2023UnavailableWhy)
+			if reason == "" {
+				reason = "A complete, architecture-matched Windows UEFI CA 2023 bootloader set was not proven in boot.wim"
+			}
+			profile.UseWindowsCA2023Bootloaders = OptionCapability{Reason: reason}
+		}
 	} else {
 		reason := "Available only for positively identified Windows 11 client media"
 		profile.BypassHardwareChecks = OptionCapability{Reason: reason}
 		profile.BypassOnlineAccount = OptionCapability{Reason: reason}
 		profile.ApplySkuSiPolicy = OptionCapability{Reason: reason}
+		profile.UseWindowsCA2023Bootloaders = OptionCapability{Reason: reason}
 	}
 	return profile
 }
@@ -162,6 +176,7 @@ func disabledProfile(profile CapabilityProfile, reason string) CapabilityProfile
 	profile.LoadDrivers = disabled
 	profile.QualityOfLife = disabled
 	profile.ApplySkuSiPolicy = disabled
+	profile.UseWindowsCA2023Bootloaders = disabled
 	profile.Locale = disabled
 	profile.TimeZone = disabled
 	return profile

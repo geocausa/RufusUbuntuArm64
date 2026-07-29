@@ -356,6 +356,7 @@ func runWrite(args []string) error {
 	winPrivacy := fs.Bool("win-reduce-data-collection", false, "reduce Windows setup data collection and recommendations")
 	winQualityOfLife := fs.Bool("win-quality-of-life", false, "remove bundled OneDrive setup, Outlook and Teams and apply Rufus Quality of Life policies")
 	winApplySkuSiPolicy := fs.Bool("win-apply-sku-si-policy", false, "apply the installed Windows SkuSiPolicy to its EFI System Partition on first logon")
+	winUseCA2023Bootloaders := fs.Bool("win-use-ca-2023-bootloaders", false, "replace qualified FAT32 removable-media boot files with the Windows UEFI CA 2023 _EX set from boot.wim after embedded certificate-chain evidence checks")
 	winDisableBitLocker := fs.Bool("win-disable-bitlocker", false, "disable automatic Windows device encryption provisioning")
 	winLocale := fs.String("win-locale", "", "apply a Windows regional locale, such as en-GB")
 	winTimeZone := fs.String("win-timezone", "", "apply a Windows time-zone name")
@@ -515,7 +516,7 @@ func runWrite(args []string) error {
 		Locale:               *winLocale,
 		TimeZone:             *winTimeZone,
 	}
-	if selectedMode != "windows" && (winOptions.Enabled() || scheme != "auto" || targetSystemChoice != "auto" || filesystemChoice != "auto" || clusterSize != 0 || *driverFolder != "" || *dbxFile != "" || *fullFormat || *badBlockCheck) {
+	if selectedMode != "windows" && (winOptions.Enabled() || *winUseCA2023Bootloaders || scheme != "auto" || targetSystemChoice != "auto" || filesystemChoice != "auto" || clusterSize != 0 || *driverFolder != "" || *dbxFile != "" || *fullFormat || *badBlockCheck) {
 		return errors.New("windows partition and setup options can only be used with a supported Windows installation ISO")
 	}
 	if selectedMode == "linux-persistent" {
@@ -557,6 +558,9 @@ func runWrite(args []string) error {
 		containerNote = fmt.Sprintf(" [%s prepared as %s]", prepared.Kind, humanBytes(imageSize))
 	}
 	out.event(jsonEvent{Event: "preflight", Stage: "preflight", Message: fmt.Sprintf("Image: %s%s; target: %s (%s)", filepath.Base(originalImagePath), containerNote, resolved, humanBytes(dev.Size))})
+	if *winUseCA2023Bootloaders {
+		out.event(jsonEvent{Event: "preflight", Stage: "windows_ca_2023", Message: "Windows UEFI CA 2023 bootloader replacement was requested. The privileged writer will accept only Windows 11 client, UEFI, FAT32 media with a complete _EX set carrying embedded CA 2023 certificate-chain evidence, and the completed USB will require firmware that trusts Windows UEFI CA 2023."})
+	}
 	mounts := device.MountedDescendants(dev)
 	if len(mounts) > 0 && *noUnmount {
 		return errors.New("target has mounted filesystems")
@@ -662,22 +666,23 @@ func runWrite(args []string) error {
 	if selectedMode == "windows" {
 		out.event(jsonEvent{Event: "stage", Stage: "windows", Message: "Creating Windows installation media…"})
 		err := windowsmedia.Create(ctx, *imagePath, resolved, windowsmedia.Options{
-			TargetSize:        dev.Size,
-			Verify:            *verify,
-			ExpectedDeviceID:  kernelDeviceID,
-			ExpectedSource:    sourceIdentity,
-			RequireARM64:      runtime.GOARCH == "arm64" && !*allowForeignArchitecture && targetSystemChoice != "bios",
-			VolumeLabel:       *volumeLabel,
-			PartitionScheme:   scheme,
-			TargetSystem:      targetSystemChoice,
-			Filesystem:        filesystemChoice,
-			ClusterSize:       clusterSize,
-			DriverFolder:      *driverFolder,
-			DBXPath:           *dbxFile,
-			FullFormat:        *fullFormat,
-			BadBlockCheck:     *badBlockCheck,
-			Customizations:    winOptions,
-			BeforeDestructive: postWriteTargetCheck,
+			TargetSize:                  dev.Size,
+			Verify:                      *verify,
+			ExpectedDeviceID:            kernelDeviceID,
+			ExpectedSource:              sourceIdentity,
+			RequireARM64:                runtime.GOARCH == "arm64" && !*allowForeignArchitecture && targetSystemChoice != "bios",
+			VolumeLabel:                 *volumeLabel,
+			PartitionScheme:             scheme,
+			TargetSystem:                targetSystemChoice,
+			Filesystem:                  filesystemChoice,
+			ClusterSize:                 clusterSize,
+			DriverFolder:                *driverFolder,
+			DBXPath:                     *dbxFile,
+			FullFormat:                  *fullFormat,
+			BadBlockCheck:               *badBlockCheck,
+			UseWindowsCA2023Bootloaders: *winUseCA2023Bootloaders,
+			Customizations:              winOptions,
+			BeforeDestructive:           postWriteTargetCheck,
 		}, func(ev windowsmedia.Event) {
 			eventName := "stage"
 			if ev.Stage == "log" {
@@ -686,7 +691,7 @@ func runWrite(args []string) error {
 			if ev.Stage == "complete" {
 				eventName = "complete"
 			}
-			out.event(jsonEvent{Event: eventName, Stage: ev.Stage, Message: ev.Message, Done: ev.Done, Total: ev.Total})
+			out.event(jsonEvent{Event: eventName, Stage: ev.Stage, Message: ev.Message, Done: ev.Done, Total: ev.Total, Hash: ev.Hash})
 		})
 		if err != nil {
 			return err

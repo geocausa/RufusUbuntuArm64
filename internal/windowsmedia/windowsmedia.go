@@ -51,22 +51,23 @@ var rufusDriverMarker = []byte("RufusArm64 Windows PE driver source\r\n")
 
 // Options controls creation and post-write verification.
 type Options struct {
-	TargetSize        uint64
-	Verify            bool
-	ExpectedDeviceID  uint64
-	ExpectedSource    sourcefile.Identity
-	RequireARM64      bool
-	VolumeLabel       string
-	PartitionScheme   string
-	TargetSystem      string
-	Filesystem        string
-	ClusterSize       uint64
-	DriverFolder      string
-	DBXPath           string
-	FullFormat        bool
-	BadBlockCheck     bool
-	Customizations    windowsconfig.Options
-	BeforeDestructive func(source *os.File) error
+	TargetSize                  uint64
+	Verify                      bool
+	ExpectedDeviceID            uint64
+	ExpectedSource              sourcefile.Identity
+	RequireARM64                bool
+	VolumeLabel                 string
+	PartitionScheme             string
+	TargetSystem                string
+	Filesystem                  string
+	ClusterSize                 uint64
+	DriverFolder                string
+	DBXPath                     string
+	FullFormat                  bool
+	BadBlockCheck               bool
+	UseWindowsCA2023Bootloaders bool
+	Customizations              windowsconfig.Options
+	BeforeDestructive           func(source *os.File) error
 }
 
 // Event is a progress or status update suitable for a terminal or GUI.
@@ -75,6 +76,7 @@ type Event struct {
 	Message string
 	Done    uint64
 	Total   uint64
+	Hash    string
 }
 
 type EventFunc func(Event)
@@ -104,6 +106,7 @@ type mediaPlan struct {
 	Filesystem         string
 	DriverFolder       string
 	DriverBytes        uint64
+	CA2023             *WindowsCA2023Plan
 }
 
 // Create destroys devicePath and creates Windows installation media from
@@ -266,6 +269,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 	if targetSystem == "bios" && !plan.HasBIOS {
 		return errors.New("legacy BIOS/CSM Windows media requires a root bootmgr file and x86 or x86-64 boot metadata; Windows ARM64 boots through UEFI only")
 	}
+	var selectedDBX *secureboot.Database
 	if strings.TrimSpace(opts.DBXPath) != "" {
 		dbxPath, err := filepath.Abs(opts.DBXPath)
 		if err != nil {
@@ -278,6 +282,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		if err != nil {
 			return fmt.Errorf("read Secure Boot DBX: %w", err)
 		}
+		selectedDBX = database
 		send(emit, Event{Stage: "secure_boot", Message: "Checking Windows EFI boot files against the Secure Boot revocation database…"})
 		results, err := secureboot.ScanEFIDirectory(isoMount, database, 512)
 		if err != nil {
@@ -304,6 +309,47 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 	plan.NeedsSplit = filesystem == "fat32" && plan.InstallSize > fat32MaxFileSize
 	if filesystem == "ntfs" && fatCompatibilityErr != nil && strings.EqualFold(strings.TrimSpace(opts.Filesystem), "auto") {
 		send(emit, Event{Stage: "inspect", Message: fmt.Sprintf("Automatic filesystem selection chose NTFS because FAT32 is incompatible with this ISO: %v", fatCompatibilityErr)})
+	}
+	if opts.UseWindowsCA2023Bootloaders {
+		payloadPath, payloadErr := customizationImagePath(plan)
+		if payloadErr != nil {
+			return payloadErr
+		}
+		metadata, metadataErr := InspectWIMSetupMetadata(ctx, payloadPath)
+		if metadataErr != nil {
+			return fmt.Errorf("inspect Windows identity for CA 2023 bootloaders: %w", metadataErr)
+		}
+		capability, capabilityErr := InspectWindowsCA2023Capability(ctx, plan.BootWIMPath)
+		if capabilityErr != nil {
+			return fmt.Errorf("inspect Windows UEFI CA 2023 bootloader capability: %w", capabilityErr)
+		}
+		if err := validateWindowsCA2023Selection(metadata, capability, targetSystem, filesystem); err != nil {
+			return err
+		}
+		staged, stageErr := StageWindowsCA2023(ctx, plan.BootWIMPath, isoMount, workDir, capability)
+		if stageErr != nil {
+			return fmt.Errorf("stage Windows UEFI CA 2023 bootloaders before erasing the USB: %w", stageErr)
+		}
+		if selectedDBX != nil {
+			for _, asset := range staged.Assets {
+				if !strings.EqualFold(filepath.Ext(asset.Destination), ".efi") {
+					continue
+				}
+				checked := secureboot.CheckPEFile(asset.sourcePath, selectedDBX)
+				if checked.Error != "" {
+					return fmt.Errorf("check staged CA 2023 bootloader %s against DBX: %s", asset.Destination, checked.Error)
+				}
+				if checked.DirectHashRevoked || checked.X509CertificateRevoked {
+					return fmt.Errorf("staged CA 2023 bootloader %s is revoked by the selected Secure Boot DBX; nothing was erased", asset.Destination)
+				}
+			}
+		}
+		plan.CA2023 = staged
+		send(emit, Event{
+			Stage:   "windows_ca_2023",
+			Message: fmt.Sprintf("Qualified %d Windows UEFI CA 2023 replacement files with embedded CA 2023 certificate-chain evidence from boot.wim index %d for %s; firmware must trust Windows UEFI CA 2023.", len(staged.Assets), staged.ImageIndex, strings.ToUpper(staged.Architecture)),
+			Hash:    staged.ManifestSHA256,
+		})
 	}
 	if strings.TrimSpace(opts.DriverFolder) != "" {
 		driverRoot, err := filepath.Abs(opts.DriverFolder)
@@ -470,6 +516,9 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 			return fmt.Errorf("target safety check: %w", err)
 		}
 	}
+	if err := verifyWindowsCA2023Staging(plan.CA2023); err != nil {
+		return fmt.Errorf("revalidate staged Windows UEFI CA 2023 assets immediately before erasing the USB: %w", err)
+	}
 	targetChanged = true
 	send(emit, Event{Stage: "partition", Message: fmt.Sprintf("Creating a %s partition table…", strings.ToUpper(scheme))})
 	if err := runOnTarget("wipefs", "--all", "--force", "--", devicePath); err != nil {
@@ -606,7 +655,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		answerToExclude = plan.ExistingAnswerPath
 	}
 	if err := withExclusiveMount(ctx, partition, usbMount, func(copyCtx context.Context) error {
-		if err := copyTree(copyCtx, isoMount, usbMount, plan.InstallPath, answerToExclude, report); err != nil {
+		if err := copyTreeWithWindowsCA2023(copyCtx, isoMount, usbMount, plan.InstallPath, answerToExclude, plan.CA2023, report); err != nil {
 			return err
 		}
 		if plan.InstallPath != "" {
@@ -648,6 +697,12 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 			}
 			report(uint64(len(rufusDriverMarker)))
 		}
+		if plan.CA2023 != nil {
+			send(emit, Event{Stage: "windows_ca_2023", Message: "Replacing the reviewed removable-media boot files with the staged Windows UEFI CA 2023 set…", Total: plan.CA2023.ReplacementBytes, Hash: plan.CA2023.ManifestSHA256})
+			if err := applyWindowsCA2023(copyCtx, usbMount, plan.CA2023, report); err != nil {
+				return err
+			}
+		}
 		return nil
 	}); err != nil {
 		return err
@@ -668,21 +723,32 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		return fmt.Errorf("flush USB buffers: %w", err)
 	}
 
-	if opts.Verify {
+	if opts.Verify || plan.CA2023 != nil {
 		if err := checkTarget(); err != nil {
 			return err
 		}
-		send(emit, Event{Stage: "verify", Message: "Verifying copied setup files from the USB…"})
 		if err := run(ctx, emit, "mount", "-o", "ro,nosuid,nodev,noexec", "--", partition, usbMount); err != nil {
 			return err
 		}
 		mountedUSB = true
 		if err := withExclusiveMount(ctx, partition, usbMount, func(verifyCtx context.Context) error {
-			if err := verifyTree(verifyCtx, isoMount, usbMount, plan, emit); err != nil {
-				return err
+			if opts.Verify {
+				send(emit, Event{Stage: "verify", Message: "Verifying copied setup files from the USB…"})
+				if err := verifyTree(verifyCtx, isoMount, usbMount, plan, emit); err != nil {
+					return err
+				}
+				if plan.DriverFolder != "" {
+					if err := verifyDirectory(verifyCtx, plan.DriverFolder, filepath.Join(usbMount, "drivers"), emit, &plan); err != nil {
+						return err
+					}
+				}
 			}
-			if plan.DriverFolder != "" {
-				return verifyDirectory(verifyCtx, plan.DriverFolder, filepath.Join(usbMount, "drivers"), emit, &plan)
+			if plan.CA2023 != nil {
+				send(emit, Event{Stage: "verify_ca_2023", Message: "Reading back every Windows UEFI CA 2023 replacement from the USB…", Total: plan.CA2023.ReplacementBytes, Hash: plan.CA2023.ManifestSHA256})
+				if err := verifyWindowsCA2023(usbMount, plan.CA2023); err != nil {
+					return err
+				}
+				send(emit, Event{Stage: "verify_ca_2023", Message: "Windows UEFI CA 2023 replacement readback passed.", Done: plan.CA2023.ReplacementBytes, Total: plan.CA2023.ReplacementBytes, Hash: plan.CA2023.ManifestSHA256})
 			}
 			return nil
 		}); err != nil {
@@ -1016,6 +1082,17 @@ func finalizePlan(plan *mediaPlan) error {
 		installOutput = plan.SplitBytes
 	}
 	otherBytes := plan.OtherBytes
+	if plan.CA2023 != nil {
+		if plan.CA2023.OriginalBytes > otherBytes {
+			return errors.New("windows CA 2023 original replacement total exceeds the inspected media total")
+		}
+		otherBytes -= plan.CA2023.OriginalBytes
+		var err error
+		otherBytes, err = checkedAdd("Windows CA 2023 replacement total", otherBytes, plan.CA2023.ReplacementBytes)
+		if err != nil {
+			return err
+		}
+	}
 	if len(plan.AnswerFile) > 0 {
 		if plan.ExistingAnswerSize > otherBytes {
 			return errors.New("existing Windows answer file size exceeds the inspected media total")
@@ -1203,7 +1280,11 @@ func validateSplitParts(parts []string) (uint64, error) {
 }
 
 func copyTree(ctx context.Context, sourceRoot, destinationRoot, excludedPath, excludedAnswerPath string, progress func(uint64)) error {
-	return copyTreeWithOptions(ctx, sourceRoot, destinationRoot, excludedPath, excludedAnswerPath, false, progress)
+	return copyTreeWithPlan(ctx, sourceRoot, destinationRoot, excludedPath, excludedAnswerPath, false, nil, progress)
+}
+
+func copyTreeWithWindowsCA2023(ctx context.Context, sourceRoot, destinationRoot, excludedPath, excludedAnswerPath string, plan *WindowsCA2023Plan, progress func(uint64)) error {
+	return copyTreeWithPlan(ctx, sourceRoot, destinationRoot, excludedPath, excludedAnswerPath, false, plan, progress)
 }
 
 // copyTreeWithOptions copies a directory tree. When untrustedSource is true
@@ -1213,6 +1294,10 @@ func copyTree(ctx context.Context, sourceRoot, destinationRoot, excludedPath, ex
 // a symlink swapped in between validation and copy must not be able to place
 // root-readable files onto the world-readable USB filesystem.
 func copyTreeWithOptions(ctx context.Context, sourceRoot, destinationRoot, excludedPath, excludedAnswerPath string, untrustedSource bool, progress func(uint64)) error {
+	return copyTreeWithPlan(ctx, sourceRoot, destinationRoot, excludedPath, excludedAnswerPath, untrustedSource, nil, progress)
+}
+
+func copyTreeWithPlan(ctx context.Context, sourceRoot, destinationRoot, excludedPath, excludedAnswerPath string, untrustedSource bool, ca2023 *WindowsCA2023Plan, progress func(uint64)) error {
 	var rootHandle *os.File
 	if untrustedSource {
 		handle, err := openDirectoryNoFollow(sourceRoot)
@@ -1237,6 +1322,9 @@ func copyTreeWithOptions(ctx context.Context, sourceRoot, destinationRoot, exclu
 			return err
 		}
 		if relative == "." {
+			return nil
+		}
+		if ca2023 != nil && ca2023.Replaces(relative) {
 			return nil
 		}
 		destination := filepath.Join(destinationRoot, relative)
@@ -1274,6 +1362,9 @@ func copyTreeWithOptions(ctx context.Context, sourceRoot, destinationRoot, exclu
 
 func verifyTree(ctx context.Context, sourceRoot, destinationRoot string, plan mediaPlan, emit EventFunc) error {
 	total := plan.CopyBytes - plan.DriverBytes
+	if plan.CA2023 != nil {
+		total -= plan.CA2023.ReplacementBytes
+	}
 	var done uint64
 	err := filepath.WalkDir(sourceRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -1288,6 +1379,9 @@ func verifyTree(ctx context.Context, sourceRoot, destinationRoot string, plan me
 		relative, err := filepath.Rel(sourceRoot, path)
 		if err != nil {
 			return err
+		}
+		if plan.CA2023 != nil && plan.CA2023.Replaces(relative) {
+			return nil
 		}
 		destination := filepath.Join(destinationRoot, relative)
 		n, err := compareFiles(path, destination)

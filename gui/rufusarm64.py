@@ -143,13 +143,34 @@ def normalize_windows_capability_analysis(payload):
         raise ValueError("Windows capability analysis is missing metadata or capabilities.")
     default_scheme = str(payload.get("default_partition_scheme") or "").strip().lower()
     default_target = str(payload.get("default_target_system") or "").strip().lower()
+    default_filesystem = str(payload.get("default_filesystem") or "").strip().lower()
     if default_scheme not in {"gpt", "mbr"} or default_target not in {"uefi", "bios"}:
         raise ValueError("Windows capability analysis is missing a resolved automatic layout.")
+    if default_filesystem not in {"fat32", "ntfs"}:
+        raise ValueError("Windows capability analysis is missing a resolved automatic filesystem.")
+    ca2023 = payload.get("windows_ca_2023")
+    if not isinstance(ca2023, dict) or not isinstance(ca2023.get("available"), bool):
+        raise ValueError("Windows capability analysis is missing CA 2023 bootloader evidence.")
+    ca2023 = dict(ca2023)
+    ca2023["reason"] = str(ca2023.get("reason") or "")
+    if ca2023["available"]:
+        if int(ca2023.get("image_index") or 0) not in {1, 2}:
+            raise ValueError("Windows CA 2023 evidence has an invalid boot.wim image index.")
+        if str(ca2023.get("architecture") or "").strip().lower() not in {"arm64", "amd64", "x86"}:
+            raise ValueError("Windows CA 2023 evidence has an invalid architecture.")
+        if int(ca2023.get("asset_count") or 0) < 3:
+            raise ValueError("Windows CA 2023 evidence has an invalid replacement-file count.")
+        manifest = str(ca2023.get("manifest_sha256") or "").strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", manifest):
+            raise ValueError("Windows CA 2023 evidence has an invalid manifest SHA-256.")
+        ca2023["manifest_sha256"] = manifest
     normalized = dict(payload)
     normalized["metadata"] = metadata
     normalized["capabilities"] = capabilities
     normalized["default_partition_scheme"] = default_scheme
     normalized["default_target_system"] = default_target
+    normalized["default_filesystem"] = default_filesystem
+    normalized["windows_ca_2023"] = ca2023
     return normalized
 
 
@@ -160,6 +181,8 @@ def unavailable_windows_capability_analysis(reason):
         "metadata": {},
         "default_partition_scheme": "",
         "default_target_system": "",
+        "default_filesystem": "",
+        "windows_ca_2023": {"available": False, "reason": reason},
         "capabilities": {
             "recognized": False,
             "reason": reason,
@@ -169,6 +192,7 @@ def unavailable_windows_capability_analysis(reason):
             "reduce_data_collection": dict(disabled),
             "quality_of_life": dict(disabled),
             "apply_sku_si_policy": dict(disabled),
+            "use_windows_ca_2023_bootloaders": dict(disabled),
             "disable_bitlocker": dict(disabled),
             "load_drivers": dict(disabled),
             "locale": dict(disabled),
@@ -180,7 +204,7 @@ def unavailable_windows_capability_analysis(reason):
 class WindowsOptionsDialog(Gtk.Dialog):
     """Explicit opt-in Windows Setup customizations."""
 
-    def __init__(self, parent, previous=None, capability_analysis=None, selected_target_system=DEFAULT_WINDOWS_TARGET_SYSTEM):
+    def __init__(self, parent, previous=None, capability_analysis=None, selected_target_system=DEFAULT_WINDOWS_TARGET_SYSTEM, selected_filesystem=DEFAULT_WINDOWS_FILESYSTEM):
         super().__init__(title="Windows installation options", transient_for=parent, modal=True)
         self.add_button("Cancel", Gtk.ResponseType.CANCEL)
         self.add_button("Continue", Gtk.ResponseType.OK)
@@ -194,6 +218,9 @@ class WindowsOptionsDialog(Gtk.Dialog):
         self.selected_target_system = normalize_target_system(selected_target_system or DEFAULT_WINDOWS_TARGET_SYSTEM)
         if self.selected_target_system == "auto":
             self.selected_target_system = str(self.capability_analysis.get("default_target_system") or "").strip().lower()
+        self.selected_filesystem = normalize_filesystem(selected_filesystem or DEFAULT_WINDOWS_FILESYSTEM)
+        if self.selected_filesystem == "auto":
+            self.selected_filesystem = str(self.capability_analysis.get("default_filesystem") or "").strip().lower()
 
         scroll = Gtk.ScrolledWindow()
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -211,8 +238,9 @@ class WindowsOptionsDialog(Gtk.Dialog):
 
         intro = Gtk.Label(
             label=(
-                "Every option below is optional. RufusArm64 creates an autounattend.xml file on the USB; "
-                "the Windows ISO itself is not changed. Leave everything unchecked for standard Microsoft setup."
+                "Every option below is optional. Most setup choices create an autounattend.xml file. "
+                "The CA 2023 option instead replaces a bounded set of boot files on the completed USB from the selected ISO's own boot.wim. "
+                "The Windows ISO itself is never modified. Leave everything unchecked for standard Microsoft setup."
             )
         )
         intro.set_xalign(0)
@@ -271,6 +299,12 @@ class WindowsOptionsDialog(Gtk.Dialog):
             "Apply the installed Windows SkuSiPolicy on first logon",
             "For qualified Windows 11 UEFI media only. Uses the installed system's own policy and copies it to the EFI System Partition; no host policy file is accepted.",
             previous.get("apply_sku_si_policy", False),
+        )
+        self.use_ca_2023_bootloaders = self.check(
+            box,
+            "Use Windows UEFI CA 2023 bootloaders from this ISO",
+            "Available only when read-only analysis proves a complete architecture-matched _EX set in Windows 11 client boot.wim and the resolved layout is UEFI/FAT32. The target computer's firmware must trust Windows UEFI CA 2023.",
+            previous.get("use_windows_ca_2023_bootloaders", False),
         )
         self.region_locale, self.region_timezone, self.region_iana = current_regional_settings()
         region_parts = []
@@ -353,6 +387,15 @@ class WindowsOptionsDialog(Gtk.Dialog):
             self.apply_sku_si_policy.set_active(False)
             self.apply_sku_si_policy.set_sensitive(False)
             self.apply_sku_si_policy.set_tooltip_text("SkuSiPolicy deployment requires a UEFI target with an EFI System Partition.")
+        ca_allowed = self.apply_option_capability(self.use_ca_2023_bootloaders, "use_windows_ca_2023_bootloaders")
+        if ca_allowed and self.selected_target_system != "uefi":
+            self.use_ca_2023_bootloaders.set_active(False)
+            self.use_ca_2023_bootloaders.set_sensitive(False)
+            self.use_ca_2023_bootloaders.set_tooltip_text("Windows UEFI CA 2023 bootloader replacement requires a resolved UEFI target.")
+        elif ca_allowed and self.selected_filesystem != "fat32":
+            self.use_ca_2023_bootloaders.set_active(False)
+            self.use_ca_2023_bootloaders.set_sensitive(False)
+            self.use_ca_2023_bootloaders.set_tooltip_text("Windows UEFI CA 2023 bootloader replacement currently requires FAT32; the pinned UEFI:NTFS first stage carries only CA 2011 certificate-chain evidence.")
         self.apply_option_capability(self.disable_bitlocker, "disable_bitlocker")
         regional_keys = []
         if self.region_locale:
@@ -402,6 +445,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
             "reduce_data_collection": self.reduce_data.get_active(),
             "quality_of_life": self.quality_of_life.get_active(),
             "apply_sku_si_policy": self.apply_sku_si_policy.get_active(),
+            "use_windows_ca_2023_bootloaders": self.use_ca_2023_bootloaders.get_active(),
             "disable_bitlocker": self.disable_bitlocker.get_active(),
             "use_regional_settings": self.use_region.get_active(),
             "locale": self.region_locale if self.use_region.get_active() else "",
@@ -2245,7 +2289,13 @@ class RufusWindow(Gtk.ApplicationWindow):
 
     def choose_windows_options(self):
         self.windows_capability_analysis = self.analyze_windows_capabilities()
-        dialog = WindowsOptionsDialog(self, self.windows_options, self.windows_capability_analysis, self.target_system_combo.get_active_id() or DEFAULT_WINDOWS_TARGET_SYSTEM)
+        dialog = WindowsOptionsDialog(
+            self,
+            self.windows_options,
+            self.windows_capability_analysis,
+            self.target_system_combo.get_active_id() or DEFAULT_WINDOWS_TARGET_SYSTEM,
+            self.filesystem_combo.get_active_id() or DEFAULT_WINDOWS_FILESYSTEM,
+        )
         while True:
             response = dialog.run()
             if response != Gtk.ResponseType.OK:
@@ -2333,6 +2383,7 @@ class RufusWindow(Gtk.ApplicationWindow):
                 (options.get("reduce_data_collection"), "reduced setup data collection"),
                 (options.get("quality_of_life"), "Quality of Life app removals and policies"),
                 (options.get("apply_sku_si_policy"), "installed-system SkuSiPolicy deployment to the EFI System Partition"),
+                (options.get("use_windows_ca_2023_bootloaders"), "Windows UEFI CA 2023 boot-file replacement with mandatory SHA-256 readback; firmware CA 2023 trust required"),
                 (options.get("disable_bitlocker"), "automatic encryption disabled"),
                 (options.get("use_regional_settings"), "Ubuntu regional settings"),
             )
@@ -2369,6 +2420,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.active_job = "writer"
         self.cancel_requested = False
         self.last_status_key = None
+        self.last_ca2023_manifest = ""
         self.active_verify_requested = verify_requested
         self.active_mode = "linux-persistent" if persistence_requested else self.inspection.get("mode", "")
         self.active_filesystem = filesystem
@@ -2383,7 +2435,10 @@ class RufusWindow(Gtk.ApplicationWindow):
                 display_scheme = str(self.windows_capability_analysis.get("default_partition_scheme") or "auto")
             if target_system == "auto":
                 display_target = str(self.windows_capability_analysis.get("default_target_system") or "auto")
-            layout_summary = f"{display_scheme.upper()} / {display_target.upper()} / {filesystem.upper()} / {self.cluster_combo.get_active_text()} clusters"
+            display_filesystem = filesystem
+            if filesystem == "auto":
+                display_filesystem = str(self.windows_capability_analysis.get("default_filesystem") or "auto")
+            layout_summary = f"{display_scheme.upper()} / {display_target.upper()} / {display_filesystem.upper()} / {self.cluster_combo.get_active_text()} clusters"
         else:
             layout_summary = "From image / From image / From image"
         self.append_log(f"Layout: {layout_summary}")
@@ -2451,6 +2506,7 @@ class RufusWindow(Gtk.ApplicationWindow):
                     dbx_file,
                     quick_format,
                     bad_block_check,
+                    windows_capability_analysis=self.windows_capability_analysis,
                 )
         except ValueError as exc:
             self.active_job = ""
@@ -2503,6 +2559,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         total = int(event.get("total") or 0)
         done = int(event.get("done") or 0)
         rate = float(event.get("rate") or 0)
+        digest = str(event.get("sha256") or "").strip().lower()
         stage_key = event.get("stage") or "working"
         stage = stage_key.replace("_", " ").title()
 
@@ -2515,6 +2572,9 @@ class RufusWindow(Gtk.ApplicationWindow):
         elif message and status_key != self.last_status_key:
             self.append_log(message)
             self.last_status_key = status_key
+        if digest and stage_key in {"windows_ca_2023", "verify_ca_2023"} and digest != getattr(self, "last_ca2023_manifest", ""):
+            self.append_log("Windows UEFI CA 2023 replacement manifest SHA-256: " + digest)
+            self.last_ca2023_manifest = digest
 
         if total > 0:
             fraction = min(1.0, done / total)
