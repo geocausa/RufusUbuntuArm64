@@ -395,7 +395,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
         elif ca_allowed and self.selected_filesystem != "fat32":
             self.use_ca_2023_bootloaders.set_active(False)
             self.use_ca_2023_bootloaders.set_sensitive(False)
-            self.use_ca_2023_bootloaders.set_tooltip_text("Windows UEFI CA 2023 bootloader replacement currently requires FAT32; NTFS uses the pinned CA 2011-signed UEFI:NTFS first stage.")
+            self.use_ca_2023_bootloaders.set_tooltip_text("Windows UEFI CA 2023 bootloader replacement currently requires FAT32; the pinned UEFI:NTFS first stage carries only CA 2011 certificate-chain evidence.")
         self.apply_option_capability(self.disable_bitlocker, "disable_bitlocker")
         regional_keys = []
         if self.region_locale:
@@ -2420,6 +2420,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.active_job = "writer"
         self.cancel_requested = False
         self.last_status_key = None
+        self.last_ca2023_manifest = ""
         self.active_verify_requested = verify_requested
         self.active_mode = "linux-persistent" if persistence_requested else self.inspection.get("mode", "")
         self.active_filesystem = filesystem
@@ -2434,7 +2435,10 @@ class RufusWindow(Gtk.ApplicationWindow):
                 display_scheme = str(self.windows_capability_analysis.get("default_partition_scheme") or "auto")
             if target_system == "auto":
                 display_target = str(self.windows_capability_analysis.get("default_target_system") or "auto")
-            layout_summary = f"{display_scheme.upper()} / {display_target.upper()} / {filesystem.upper()} / {self.cluster_combo.get_active_text()} clusters"
+            display_filesystem = filesystem
+            if filesystem == "auto":
+                display_filesystem = str(self.windows_capability_analysis.get("default_filesystem") or "auto")
+            layout_summary = f"{display_scheme.upper()} / {display_target.upper()} / {display_filesystem.upper()} / {self.cluster_combo.get_active_text()} clusters"
         else:
             layout_summary = "From image / From image / From image"
         self.append_log(f"Layout: {layout_summary}")

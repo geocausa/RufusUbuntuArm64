@@ -119,7 +119,7 @@ func validateWindowsCA2023Selection(metadata windowsconfig.MediaMetadata, capabi
 		return errors.New("Windows UEFI CA 2023 bootloader replacement requires a resolved UEFI target")
 	}
 	if strings.ToLower(strings.TrimSpace(filesystem)) != "fat32" {
-		return errors.New("Windows UEFI CA 2023 bootloader replacement currently requires FAT32; the pinned UEFI:NTFS first-stage image is signed through Microsoft UEFI CA 2011 and cannot be represented as CA 2023-only media")
+		return errors.New("Windows UEFI CA 2023 bootloader replacement currently requires FAT32; the pinned UEFI:NTFS first-stage image carries embedded certificate-chain evidence identifying Microsoft UEFI CA 2011 and cannot be represented as CA 2023-only media")
 	}
 	return nil
 }
@@ -240,7 +240,7 @@ func StageWindowsCA2023(ctx context.Context, bootWIMPath, isoRoot, workRoot stri
 		return nil, fmt.Errorf("the ISO has no %s fallback loader for the staged %s CA 2023 bootloader", filepath.ToSlash(fallback), architecture)
 	}
 	if _, ok := findRelativeCaseInsensitive(isoRoot, "bootmgr.efi"); !ok {
-		return nil, errors.New("the ISO has no root bootmgr.efi to replace with the CA 2023-signed bootmgr_EX.efi")
+		return nil, errors.New("the ISO has no root bootmgr.efi to replace with the expected CA 2023 bootmgr_EX.efi")
 	}
 
 	plan := &WindowsCA2023Plan{

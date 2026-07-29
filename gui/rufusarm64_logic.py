@@ -827,7 +827,7 @@ def build_writer_command(
         if resolved_target_system != "uefi":
             raise ValueError("Windows UEFI CA 2023 bootloader replacement requires a UEFI target.")
         if resolved_filesystem != "fat32":
-            raise ValueError("Windows UEFI CA 2023 bootloader replacement currently requires FAT32; NTFS uses a CA 2011-signed UEFI:NTFS first stage.")
+            raise ValueError("Windows UEFI CA 2023 bootloader replacement currently requires FAT32; the UEFI:NTFS first stage carries only CA 2011 certificate-chain evidence.")
     command = [
         pkexec,
         helper,
