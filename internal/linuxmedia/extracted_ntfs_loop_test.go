@@ -18,11 +18,11 @@ import (
 )
 
 func TestCreateExtractedNTFSOnRealLoopDeviceMBR(t *testing.T) {
-	testCreateExtractedNTFSOnRealLoopDevice(t, "mbr", "Rufus-Été-MBR")
+	testCreateExtractedNTFSOnRealLoopDevice(t, "mbr", "Rufus:*?-Été-MBR")
 }
 
 func TestCreateExtractedNTFSOnRealLoopDeviceGPT(t *testing.T) {
-	testCreateExtractedNTFSOnRealLoopDevice(t, "gpt", "Rufus-Été-GPT")
+	testCreateExtractedNTFSOnRealLoopDevice(t, "gpt", "Rufus:*?-Été-GPT")
 }
 
 func testCreateExtractedNTFSOnRealLoopDevice(t *testing.T, scheme, label string) {

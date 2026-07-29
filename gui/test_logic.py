@@ -398,6 +398,7 @@ class LogicTests(unittest.TestCase):
     def test_volume_label(self):
         self.assertEqual(normalize_volume_label("Win 11"), "WIN 11")
         self.assertEqual(normalize_volume_label("Rufus_日本", "ntfs"), "Rufus_日本")
+        self.assertEqual(normalize_volume_label('Rufus:*?/\\|<>"', "ntfs"), 'Rufus:*?/\\|<>"')
         self.assertEqual(normalize_volume_label("Rufus_日本", "auto"), "Rufus_日本")
         self.assertEqual(normalize_volume_label("😀" * 16, "ntfs"), "😀" * 16)
         for value, filesystem in (

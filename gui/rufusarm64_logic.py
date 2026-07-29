@@ -280,8 +280,6 @@ def normalize_volume_label(value, filesystem="fat32"):
         if len(label.encode("ascii")) > 11:
             raise ValueError("The FAT32 volume label must be 11 ASCII bytes or fewer.")
         return label
-    if any(char in '"*/:<>?\\|' for char in label):
-        raise ValueError("The NTFS volume label contains an unsupported character.")
     if _utf16_code_units(label) > 32:
         raise ValueError("The NTFS volume label must be 32 UTF-16 code units or fewer.")
     return label

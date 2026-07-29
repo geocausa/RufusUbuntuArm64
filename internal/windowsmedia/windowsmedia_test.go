@@ -561,10 +561,11 @@ func TestNormalizeVolumeLabel(t *testing.T) {
 	if err != nil || fat != "WIN 11" {
 		t.Fatalf("FAT32 label=%q err=%v", fat, err)
 	}
-	ntfs := "Rufus_日本"
-	got, err := normalizeVolumeLabel(ntfs, "ntfs")
-	if err != nil || got != ntfs {
-		t.Fatalf("NTFS label=%q err=%v", got, err)
+	for _, ntfs := range []string{"Rufus_日本", `Rufus:*?/\\|<>"`} {
+		got, err := normalizeVolumeLabel(ntfs, "ntfs")
+		if err != nil || got != ntfs {
+			t.Fatalf("NTFS label=%q err=%v", got, err)
+		}
 	}
 	if got, err := normalizeVolumeLabel(strings.Repeat("😀", 16), "ntfs"); err != nil || got != strings.Repeat("😀", 16) {
 		t.Fatalf("32-unit NTFS label=%q err=%v", got, err)
