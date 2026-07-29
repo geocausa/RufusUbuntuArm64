@@ -22,22 +22,29 @@ type ImageInfo struct {
 	HasGPT          bool
 	HasISO9660      bool
 	HasUDF          bool
+	HasSquashFS     bool
 	HasMBRPartition bool
 }
 
 func (i ImageInfo) HasOpticalFilesystem() bool { return i.HasISO9660 || i.HasUDF }
+
+// HasDirectFilesystem reports a filesystem superblock found directly at byte
+// zero. It is recognition evidence, not proof that the file is a complete disk
+// image or bootable medium.
+func (i ImageInfo) HasDirectFilesystem() bool { return i.HasSquashFS }
 
 func (i ImageInfo) LooksLikeRawBootMedia() bool {
 	return i.HasGPT || (i.HasMBR && i.HasMBRPartition)
 }
 
 func (i ImageInfo) Recognized() bool {
-	return i.HasOpticalFilesystem() || i.LooksLikeRawBootMedia()
+	return i.HasOpticalFilesystem() || i.LooksLikeRawBootMedia() || i.HasDirectFilesystem()
 }
 
 // InspectImage performs a small, read-only preflight inspection. It does not
-// claim to prove that media will boot; it rejects files that have neither a
-// coherent disk-image layout nor an aligned optical-filesystem signature.
+// claim to prove that media will boot; it reports coherent disk layouts, aligned
+// optical filesystems, and explicitly supported direct-filesystem superblocks.
+// Destructive mode selection separately decides which evidence is sufficient.
 func InspectImage(path string) (ImageInfo, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -80,6 +87,9 @@ func InspectReaderAt(reader io.ReaderAt, size int64) (ImageInfo, error) {
 		return ImageInfo{}, fmt.Errorf("read image header: %w", err)
 	}
 	header = header[:n]
+	if len(header) >= 4 && string(header[:4]) == "hsqs" {
+		info.HasSquashFS = true
+	}
 	inspectMBR(header, fileSectors, &info)
 	if len(header) >= 1024 {
 		info.HasGPT = inspectGPT(reader, header[512:1024], fileSectors)

@@ -734,7 +734,7 @@ func copyPrepared(ctx context.Context, reader io.Reader, rawPath string, total, 
 			if maxSize > 0 && nextDone > maxSize {
 				return digest, fmt.Errorf("expanded image exceeds the selected target size of %s", humanInputBytes(maxSize))
 			}
-			if _, err := writeFull(writer, buffer[:n]); err != nil {
+			if _, err := writeFullContext(ctx, writer, buffer[:n]); err != nil {
 				return digest, fmt.Errorf("write prepared image: %w", err)
 			}
 			done = nextDone

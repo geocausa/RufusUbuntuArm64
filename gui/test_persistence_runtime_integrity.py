@@ -1,6 +1,6 @@
 import unittest
 
-from rufusarm64_persistence_logic import build_create_command
+from rufusarm64_persistence_logic import build_create_command, runtime_validation_sensitive
 
 
 class RuntimeIntegrityPersistenceLogicTests(unittest.TestCase):
@@ -33,6 +33,23 @@ class RuntimeIntegrityPersistenceLogicTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "explicit boolean"):
                     self.base_command(value)
 
+    def test_runtime_validation_enablement_requires_completed_analysis(self):
+        for busy in (False, True):
+            for refreshing in (False, True):
+                for plan_ready in (False, True):
+                    with self.subTest(busy=busy, refreshing=refreshing, plan_ready=plan_ready):
+                        expected = not busy and not refreshing and plan_ready
+                        self.assertEqual(
+                            runtime_validation_sensitive(busy, refreshing, plan_ready),
+                            expected,
+                        )
+
+    def test_runtime_validation_enablement_rejects_implicit_truthiness(self):
+        for values in ((0, False, True), (False, "", True), (False, False, 1), (None, False, True)):
+            with self.subTest(values=values):
+                with self.assertRaisesRegex(ValueError, "explicit boolean state"):
+                    runtime_validation_sensitive(*values)
+
 
 class RuntimeIntegrityGUISourceTests(unittest.TestCase):
     def test_guarded_unsigned_wording_and_no_asset_picker(self):
@@ -42,7 +59,7 @@ class RuntimeIntegrityGUISourceTests(unittest.TestCase):
         self.assertIn("Unsigned development loader — Secure Boot compatibility is not established", source)
         self.assertIn("EFI/BOOT/bootaa64_original.efi", source)
         self.assertIn("self.runtime_uefi_validation.set_sensitive(False)", source)
-        self.assertIn("self.runtime_uefi_validation.set_sensitive(True)", source)
+        self.assertIn("runtime_validation_sensitive(", source)
         self.assertIn("runtime_validation_requested", source)
         self.assertNotIn("Gtk.FileChooserButton(title=\"Choose an EFI", source)
         self.assertNotIn("runtime_uefi_loader_path", source)

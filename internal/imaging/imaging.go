@@ -292,7 +292,7 @@ func writeOpenImage(ctx context.Context, src *os.File, devicePath string, opts W
 		n, readErr := reader.Read(buf)
 		if n > 0 {
 			_, _ = writtenHash.Write(buf[:n])
-			wn, writeErr := writeFull(dst, buf[:n])
+			wn, writeErr := writeFullContext(ctx, dst, buf[:n])
 			if wn > 0 {
 				targetChanged = true
 			}
@@ -673,10 +673,22 @@ func emitProgress(progress ProgressFunc, tracker *rateTracker, done, total uint6
 	progress(Progress{Done: done, Total: total, BytesPerSec: rate, Elapsed: elapsed})
 }
 
-func writeFull(w io.Writer, p []byte) (int, error) {
+// writeFullContext checks cancellation before every partial-write attempt.
+// This preserves immediate cancellation even if a writer repeatedly accepts
+// only part of a buffer without returning an error.
+func writeFullContext(ctx context.Context, w io.Writer, p []byte) (int, error) {
+	if ctx == nil {
+		return 0, errors.New("write context is nil")
+	}
 	total := 0
 	for total < len(p) {
+		if err := ctx.Err(); err != nil {
+			return total, context.Cause(ctx)
+		}
 		n, err := w.Write(p[total:])
+		if n < 0 || n > len(p)-total {
+			return total, io.ErrShortWrite
+		}
 		total += n
 		if err != nil {
 			return total, err

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added guarded Windows UEFI CA 2023 bootloader replacement for qualified Windows 11 client UEFI/FAT32 media, with three-way architecture binding, staged certificate evidence, DBX checks, exact destination replacement, and mandatory SHA-256 readback; NTFS remains explicitly outside the CA 2023-only boundary.
+- Added direct SquashFS recognition without promoting a bare filesystem to automatic bootable-media status; strengthened WIM/ESD/SWM ambiguity and size bounds, GTK runtime-validation state tests, and cancellation between partial writes during raw and compressed-image preparation.
 - Added capability-gated Windows 11 SkuSiPolicy deployment for qualified UEFI installation media, using only the installed system's own policy and refusing BIOS/CSM, missing-policy, split-SWM, server, Windows 10, and unknown-media requests.
 - Expanded Linux ISO Image mode with Automatic/FAT32/NTFS selection, reviewed MBR/GPT and 4/8/16/32 KiB cluster choices, filesystem-specific labels, and exact option binding through confirmation, the privileged helper, diagnostics, and result evidence.
 - Added a shared pinned UEFI:NTFS implementation for Windows and Linux media, guarded NTFS path-policy inspection, complete copied-file and boot-partition readback, and detached-and-reopened MBR/GPT FAT32/NTFS loop qualification while keeping DD Image mode immutable. BIOS/dual-mode Linux extraction, NTFS persistence, and physical firmware boot remain separately bounded.

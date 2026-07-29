@@ -43,6 +43,14 @@ def normalize_persistence_gib(value):
     return amount
 
 
+def runtime_validation_sensitive(busy, device_refreshing, plan_ready):
+    """Return whether the development runtime-validation option may be changed."""
+    values = (busy, device_refreshing, plan_ready)
+    if any(not isinstance(value, bool) for value in values):
+        raise ValueError("Runtime-validation enablement requires explicit boolean state.")
+    return not busy and not device_refreshing and plan_ready
+
+
 def build_analyze_command(pkexec, helper, image, source_identity, target_size, persistence_gib, cancel_path):
     values = [str(value or "").strip() for value in (pkexec, helper, image, source_identity, cancel_path)]
     if not all(values):

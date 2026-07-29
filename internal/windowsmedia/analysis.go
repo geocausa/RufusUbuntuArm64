@@ -132,7 +132,15 @@ func AnalyzeCapabilities(ctx context.Context, isoPath string, expectedSource sou
 }
 
 func capabilityPayloadFacts(plan mediaPlan) (string, int, error) {
-	if len(plan.ExistingSplitFiles) > 0 {
+	hasSplit := len(plan.ExistingSplitFiles) > 0
+	hasStandalone := strings.TrimSpace(plan.InstallPath) != ""
+	if hasSplit && hasStandalone {
+		return "", 0, errors.New("windows media plan contains conflicting standalone and split installation payloads")
+	}
+	if hasSplit {
+		if len(plan.ExistingSplitFiles) > maxWindowsSplitParts {
+			return "", 0, fmt.Errorf("windows media plan contains %d split parts; the supported limit is %d", len(plan.ExistingSplitFiles), maxWindowsSplitParts)
+		}
 		return "SWM", len(plan.ExistingSplitFiles), nil
 	}
 	switch strings.ToLower(filepath.Ext(plan.InstallPath)) {
