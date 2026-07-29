@@ -169,7 +169,7 @@ func testCreateExtractedNTFSOnRealLoopDevice(t *testing.T, scheme, label string)
 		}
 	}
 
-	blkidOutput, err := exec.Command("blkid", "-p", "-o", "export", dataPartitionPath).CombinedOutput()
+	blkidOutput, err := exec.Command("blkid", "-p", "--no-encoding", "-o", "export", dataPartitionPath).CombinedOutput()
 	if err != nil {
 		t.Fatalf("inspect completed NTFS partition: %v: %s", err, strings.TrimSpace(string(blkidOutput)))
 	}

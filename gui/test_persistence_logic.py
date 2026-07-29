@@ -53,8 +53,11 @@ class PersistenceLogicTests(unittest.TestCase):
 
     def test_label_validation(self):
         self.assertEqual(normalize_boot_label("rufus-live"), "RUFUS-LIVE")
-        with self.assertRaises(ValueError):
-            normalize_boot_label("TOO-LONG-LABEL")
+        self.assertEqual(normalize_boot_label(""), "RUFUS-LIVE")
+        for value in ("TOO-LONG-LABEL", " rufus-live", "rufus-live ", "RUFUS/USB"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    normalize_boot_label(value)
 
     def test_wizard_source_compiles(self):
         py_compile.compile(os.path.join(os.path.dirname(__file__), "rufusarm64_persistence.py"), doraise=True)

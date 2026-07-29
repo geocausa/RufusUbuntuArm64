@@ -462,7 +462,7 @@ func filesystemCheck(filesystem, path string) (string, []string, error) {
 }
 
 func readBlkid(ctx context.Context, path string) (map[string]string, error) {
-	stdout, err := runCommand(ctx, nil, "blkid", "-p", "-o", "export", "--", path)
+	stdout, err := runCommand(ctx, nil, "blkid", "-p", "--no-encoding", "-o", "export", "--", path)
 	if err != nil {
 		return nil, err
 	}
