@@ -101,5 +101,64 @@ printf 'Rufus:*?-Été\\n'
 func TestRelayToolLineCompactsWimProgress(t *testing.T) {
 ''',
 )
+replace_once(
+    "internal/windowsmedia/windowsmedia_test.go",
+    '''\tmountState := filepath.Join(t.TempDir(), "mount.state")
+\tt.Setenv("RUFUS_TEST_MOUNT_STATE", mountState)
+''',
+    '''\tmountState := filepath.Join(t.TempDir(), "mount.state")
+\tt.Setenv("RUFUS_TEST_MOUNT_STATE", mountState)
+\tlabelState := filepath.Join(t.TempDir(), "label.state")
+\tt.Setenv("RUFUS_TEST_LABEL_STATE", labelState)
+''',
+)
+replace_once(
+    "internal/windowsmedia/windowsmedia_test.go",
+    '''printf '\\006\\000' | dd of="$RUFUS_TEST_PARTITION" bs=1 seek=50 conv=notrunc status=none
+exit 0
+`)
+''',
+    '''printf '\\006\\000' | dd of="$RUFUS_TEST_PARTITION" bs=1 seek=50 conv=notrunc status=none
+label=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in -n) shift; label="$1" ;; esac
+  shift
+done
+printf '%s' "$label" > "$RUFUS_TEST_LABEL_STATE"
+exit 0
+`)
+''',
+)
+replace_once(
+    "internal/windowsmedia/windowsmedia_test.go",
+    '''printf 'NTFS    ' | dd of="$RUFUS_TEST_PARTITION" bs=1 seek=3 conv=notrunc status=none
+exit 0
+`)
+\t}
+\tblockdevScript := `#!/bin/sh
+''',
+    '''printf 'NTFS    ' | dd of="$RUFUS_TEST_PARTITION" bs=1 seek=3 conv=notrunc status=none
+label=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in -L) shift; label="$1" ;; esac
+  shift
+done
+printf '%s' "$label" > "$RUFUS_TEST_LABEL_STATE"
+exit 0
+`)
+\t}
+\tblkidScript := `#!/bin/sh
+case " $* " in
+  *" --no-encoding "*) ;;
+  *) exit 42 ;;
+esac
+cat "$RUFUS_TEST_LABEL_STATE"
+printf '\\n'
+exit 0
+`
+\twriteExecutable(t, filepath.Join(directory, "blkid"), blkidScript)
+\tblockdevScript := `#!/bin/sh
+''',
+)
 
 print("Unicode blkid readback applied successfully")
