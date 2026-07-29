@@ -801,7 +801,7 @@ func selectWriteMode(requested string, inspection imaging.ImageInfo, forceRaw bo
 	if requested != "auto" && requested != "raw" && requested != "windows" && requested != "linux-persistent" {
 		return "", errors.New("mode must be auto, raw, windows, or linux-persistent")
 	}
-	if inspection.HasSquashFS && !inspection.LooksLikeRawBootMedia() && !forceRaw {
+	if inspection.HasSquashFS && !inspection.HasOpticalFilesystem() && !inspection.LooksLikeRawBootMedia() && !forceRaw {
 		return "", errors.New("the selected file is a recognized SquashFS filesystem image but not a complete ISOHybrid, GPT, or MBR disk image; refusing automatic raw writing (use --force-raw only for a deliberate filesystem-byte copy)")
 	}
 	if !inspection.Recognized() && !forceRaw {
