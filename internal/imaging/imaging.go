@@ -673,10 +673,6 @@ func emitProgress(progress ProgressFunc, tracker *rateTracker, done, total uint6
 	progress(Progress{Done: done, Total: total, BytesPerSec: rate, Elapsed: elapsed})
 }
 
-func writeFull(w io.Writer, p []byte) (int, error) {
-	return writeFullContext(context.Background(), w, p)
-}
-
 // writeFullContext checks cancellation before every partial-write attempt.
 // This preserves immediate cancellation even if a writer repeatedly accepts
 // only part of a buffer without returning an error.

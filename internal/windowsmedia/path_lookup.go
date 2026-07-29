@@ -43,7 +43,7 @@ func findUniqueRelativeCaseInsensitive(root, relative string) (string, bool, err
 		}
 		last := index == len(parts)-1
 		if !last && !match.IsDir() {
-			return "", false, fmt.Errorf("Windows media path component is not a directory: %s", filepath.ToSlash(relative))
+			return "", false, fmt.Errorf("windows media path component is not a directory: %s", filepath.ToSlash(relative))
 		}
 		if last && match.IsDir() {
 			return "", false, fmt.Errorf("security-critical Windows media path is not a regular file: %s", filepath.ToSlash(relative))
