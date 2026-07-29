@@ -16,26 +16,35 @@ import (
 
 const skuSiPolicyWIMPath = "/Windows/System32/SecureBootUpdates/SkuSiPolicy.p7b"
 
+var inspectSkuSiPolicyInEveryImage = inspectWIMPathInEveryImage
+
 // InspectWIMSetupMetadata combines bounded WIM identity metadata with the
-// capability evidence needed by optional Windows setup policies.
+// capability evidence needed by optional Windows setup policies. A failure in
+// the policy-only probe disables only that policy; it must not suppress
+// unrelated, metadata-qualified Windows setup options.
 func InspectWIMSetupMetadata(ctx context.Context, imagePath string) (windowsconfig.MediaMetadata, error) {
 	metadata, err := InspectWIMMetadata(ctx, imagePath)
 	if err != nil {
 		return windowsconfig.MediaMetadata{}, err
 	}
+	return enrichSkuSiPolicyMetadata(ctx, imagePath, metadata), nil
+}
+
+func enrichSkuSiPolicyMetadata(ctx context.Context, imagePath string, metadata windowsconfig.MediaMetadata) windowsconfig.MediaMetadata {
 	if strings.EqualFold(filepath.Ext(imagePath), ".swm") {
 		metadata.SkuSiPolicyUnavailableWhy = "SkuSiPolicy probing is not yet qualified for split SWM installation payloads"
-		return metadata, nil
+		return metadata
 	}
-	available, err := inspectWIMPathInEveryImage(ctx, imagePath, metadata.ImageCount, skuSiPolicyWIMPath)
+	available, err := inspectSkuSiPolicyInEveryImage(ctx, imagePath, metadata.ImageCount, skuSiPolicyWIMPath)
 	if err != nil {
-		return windowsconfig.MediaMetadata{}, fmt.Errorf("inspect SkuSiPolicy capability: %w", err)
+		metadata.SkuSiPolicyUnavailableWhy = "SkuSiPolicy evidence could not be verified: " + err.Error()
+		return metadata
 	}
 	metadata.SkuSiPolicyAvailable = available
 	if !available {
 		metadata.SkuSiPolicyUnavailableWhy = "SkuSiPolicy.p7b was not found in every Windows installation image"
 	}
-	return metadata, nil
+	return metadata
 }
 
 func inspectWIMPathInEveryImage(ctx context.Context, imagePath string, imageCount int, wimPath string) (bool, error) {
