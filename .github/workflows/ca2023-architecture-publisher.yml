@@ -1,8 +1,9 @@
 name: Publish PR 415 CA 2023 architecture binding
 
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -13,10 +14,6 @@ concurrency:
 
 jobs:
   publish:
-    if: >-
-      github.event.pull_request.number == 415 &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'parity/windows-ca2023-bootloaders'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
