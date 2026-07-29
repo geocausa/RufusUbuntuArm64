@@ -1,0 +1,50 @@
+name: Fix PR 416 optical priority
+
+on:
+  push:
+    branches:
+      - parity/rufus-4.15-regressions
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-pr416-optical-priority
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: parity/rufus-4.15-regressions
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.22.x'
+      - name: Preserve optical evidence priority and verify
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('cmd/rufus-linux/main.go')
+          text = path.read_text(encoding='utf-8')
+          old = 'if inspection.HasSquashFS && !inspection.LooksLikeRawBootMedia() && !forceRaw {'
+          new = 'if inspection.HasSquashFS && !inspection.HasOpticalFilesystem() && !inspection.LooksLikeRawBootMedia() && !forceRaw {'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one SquashFS mode anchor, found {text.count(old)}')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+          gofmt -w cmd/rufus-linux/main.go
+          go test ./cmd/rufus-linux ./internal/imaging
+      - name: Publish product-only correction
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/pr416-optical-priority-fix.yml
+          git add cmd/rufus-linux/main.go
+          git commit -m "cli: preserve optical media priority over SquashFS hint"
+          git push origin HEAD:parity/rufus-4.15-regressions
