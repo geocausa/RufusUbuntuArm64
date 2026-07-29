@@ -29,11 +29,10 @@ func FAT32(value, fallback string) (string, error) {
 		return "", fmt.Errorf("FAT32 volume label must contain at most %d ASCII bytes", fat32MaxBytes)
 	}
 	for _, character := range value {
-		if character < 0x20 || character > 0x7e {
-			return "", errors.New("FAT32 volume label must use printable ASCII")
-		}
-		if strings.ContainsRune(`"*+,./:;<=>?[\]|`, character) {
-			return "", errors.New("FAT32 volume label contains an unsupported character")
+		if !((character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			character == ' ' || character == '_' || character == '-') {
+			return "", errors.New("FAT32 volume label may contain only ASCII letters, digits, spaces, underscore, or hyphen")
 		}
 	}
 	return value, nil
