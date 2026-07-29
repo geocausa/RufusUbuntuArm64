@@ -28,6 +28,7 @@ jobs:
           go-version: '1.26.5'
       - name: Apply deterministic product changes
         run: |
+          python3 .github/scripts/fix-windows-skusi-applicator.py
           python3 .github/scripts/apply-windows-skusi-policy.py
           gofmt -w \
             internal/windowsconfig/config.go \
