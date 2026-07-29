@@ -39,16 +39,13 @@ func FAT32(value, fallback string) (string, error) {
 }
 
 // NTFS preserves the exact valid Unicode spelling and case. The on-disk limit
-// is measured in UTF-16 code units rather than UTF-8 bytes or Go runes.
+// is measured in UTF-16 code units rather than UTF-8 bytes or Go runes. NTFS
+// volume labels are not filenames, so filename-reserved punctuation remains
+// valid and is preserved.
 func NTFS(value, fallback string) (string, error) {
 	value = withFallback(value, fallback)
 	if err := validateExact(value, "NTFS"); err != nil {
 		return "", err
-	}
-	for _, character := range value {
-		if strings.ContainsRune(`"*/:<>?\|`, character) {
-			return "", errors.New("NTFS volume label contains an unsupported character")
-		}
 	}
 	if units := len(utf16.Encode([]rune(value))); units > ntfsMaxUTF16 {
 		return "", fmt.Errorf("NTFS volume label must contain at most %d UTF-16 code units", ntfsMaxUTF16)
