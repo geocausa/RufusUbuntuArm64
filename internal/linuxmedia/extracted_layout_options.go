@@ -20,6 +20,10 @@ const (
 	// FAT32 requires at least 65,525 data clusters. Reserve additional clusters
 	// for FAT and reserved-sector metadata so the pre-erasure check stays safe.
 	minimumFAT32PartitionClusters = uint64(70000)
+	// FAT32 reserves the upper 4 bits of a 32-bit cluster entry. Refuse a
+	// geometry whose theoretical cluster count already exceeds the largest
+	// valid FAT32 data-cluster number, before the target is erased.
+	maximumFAT32PartitionClusters = uint64(0x0ffffff5)
 )
 
 func normalizeExtractedPartitionScheme(value string) (string, error) {
@@ -132,8 +136,15 @@ func PlanExtractedLayoutForScheme(targetSize, sectorSize, copiedBytes uint64, sc
 }
 
 func validateExtractedFAT32Capacity(partitionBytes, clusterBytes uint64) error {
-	if clusterBytes == 0 || partitionBytes/clusterBytes < minimumFAT32PartitionClusters {
+	if clusterBytes == 0 {
+		return errors.New("the selected FAT32 cluster size is zero")
+	}
+	clusters := partitionBytes / clusterBytes
+	if clusters < minimumFAT32PartitionClusters {
 		return fmt.Errorf("the selected FAT32 cluster size %d leaves too few clusters on the target", clusterBytes)
+	}
+	if clusters > maximumFAT32PartitionClusters {
+		return fmt.Errorf("the selected FAT32 cluster size %d leaves too many clusters on the target; choose a larger cluster size", clusterBytes)
 	}
 	return nil
 }

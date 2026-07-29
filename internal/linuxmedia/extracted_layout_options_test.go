@@ -72,9 +72,12 @@ func TestWriteExtractedGPTWritesVerifiedEFIEntry(t *testing.T) {
 	}
 }
 
-func TestExtractedFAT32CapacityRejectsTooFewClusters(t *testing.T) {
+func TestExtractedFAT32CapacityRejectsInvalidClusterCounts(t *testing.T) {
 	if err := validateExtractedFAT32Capacity(128*1024*1024, 32768); err == nil {
-		t.Fatal("accepted a cluster size that cannot produce a valid FAT32 cluster count")
+		t.Fatal("accepted a cluster size that cannot produce the minimum FAT32 cluster count")
+	}
+	if err := validateExtractedFAT32Capacity((maximumFAT32PartitionClusters+1)*4096, 4096); err == nil {
+		t.Fatal("accepted a cluster size that exceeds the FAT32 cluster-number limit")
 	}
 	if err := validateExtractedFAT32Capacity(4*1024*1024*1024, 32768); err != nil {
 		t.Fatal(err)
