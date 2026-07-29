@@ -88,6 +88,8 @@ class ISOImageModeTests(unittest.TestCase):
         self.assertEqual(command[command.index("--device") + 1], "/dev/sdz")
         self.assertEqual(command[command.index("--expected-identity") + 1], "target-identity")
         self.assertEqual(command[command.index("--volume-label") + 1], "RUFUS-LIVE")
+        self.assertEqual(command[command.index("--filesystem") + 1], "auto")
+        self.assertEqual(command[command.index("--cluster-size") + 1], "4096")
         self.assertEqual(command[command.index("--cancel-file") + 1], str(cancel))
         self.assertIn("--json-progress", command)
         self.assertIn("--yes", command)
