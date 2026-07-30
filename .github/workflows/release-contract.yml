@@ -26,6 +26,7 @@ on:
       - scripts/check-release-runtime-integrity.py
       - scripts/check-published-release.py
       - scripts/build-release-metadata-draft.py
+      - scripts/verify-release-publication.sh
       - scripts/test-check-published-release.py
       - scripts/test-build-release-metadata-draft.py
       - scripts/build-uefi-md5sum-arm64.sh
@@ -56,6 +57,7 @@ on:
       - scripts/check-release-runtime-integrity.py
       - scripts/check-published-release.py
       - scripts/build-release-metadata-draft.py
+      - scripts/verify-release-publication.sh
       - scripts/test-check-published-release.py
       - scripts/test-build-release-metadata-draft.py
       - scripts/build-uefi-md5sum-arm64.sh
@@ -88,4 +90,4 @@ jobs:
           python3 scripts/check-release-runtime-integrity.py
           python3 scripts/test-check-published-release.py
           python3 scripts/test-build-release-metadata-draft.py
-          bash -n scripts/build-uefi-md5sum-arm64.sh scripts/build-deb.sh scripts/test.sh
+          bash -n scripts/build-uefi-md5sum-arm64.sh scripts/build-deb.sh scripts/verify-release-publication.sh scripts/test.sh

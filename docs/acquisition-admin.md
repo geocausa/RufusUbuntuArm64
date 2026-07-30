@@ -185,9 +185,18 @@ Release drafts are generated from an exact staged six-asset release inventory wi
   --root 2.root.json \
   --release release.json \
   --json
+
+./rufus-channel-admin verify release-assets \
+  --root 1.root.json \
+  --root 2.root.json \
+  --release release.json \
+  --asset-dir dist \
+  --expected-tag v0.15.0 \
+  --expected-commit 0123456789abcdef0123456789abcdef01234567 \
+  --json
 ```
 
-The release payload binds version, tag, commit, channel, exact asset names, byte counts, SHA-256 values, GitHub release URLs, and signed redirect hosts. The operator tool does not upload assets or install software. The complete security and deployment boundary is recorded in `docs/signed-release-updates.md`.
+The release payload binds version, tag, commit, channel, exact asset names, byte counts, SHA-256 values, GitHub release URLs, and signed redirect hosts. `verify release-assets` requires one owner-controlled directory to contain exactly that graph and refuses links, writable shared paths, replacement, and content drift while hashing. The operator tool does not upload assets or install software. The complete security and deployment boundary is recorded in `docs/signed-release-updates.md`.
 
 ## Create the public channel configuration
 
@@ -230,7 +239,21 @@ The destination must not already exist. The tool verifies the full chain, catalo
 
 Repeated runs with the same inputs produce byte-for-byte identical files.
 
-Upload only the final public directory. Verify the remote bytes and hashes after publication before activating or updating the packaged channel configuration.
+Upload only the final public directory. Before creating the canonical release tag, publish that reviewed directory on a separate immutable `release-metadata-v<version>` Git tag. Then manually dispatch **Publish canonical version tag** with the exact `VERSION`. The workflow verifies the metadata-only publication against the final `main` commit before creating `v<version>`; the release workflow checks the freshly reproduced staged assets before upload, and the read-only published-release workflow downloads and verifies them again.
+
+The same gate can be run locally:
+
+```text
+scripts/verify-release-publication.sh \
+  publication-v2 \
+  dist \
+  v0.15.0 \
+  0123456789abcdef0123456789abcdef01234567 \
+  packaging/acquisition/channel.json \
+  packaging/acquisition/1.root.json
+```
+
+Verify the remote bytes and hashes after publication before activating or updating the packaged channel configuration.
 
 ## Activation boundary
 

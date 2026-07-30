@@ -43,6 +43,7 @@ python3 -m py_compile \
   scripts/test-build-release-metadata-draft.py
 PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
 python3 scripts/test-build-release-metadata-draft.py
+bash -n scripts/verify-release-publication.sh
 
 native_dir="$(mktemp -d)"
 native_helper="${native_dir}/rufusarm64-helper"

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added fail-closed threshold-signed release publication enforcement: canonical tags are deferred until a reviewed metadata tag exists, staged and published asset directories are descriptor-bound and matched exactly to the signed tag, commit, sizes, and SHA-256 graph, and release workflows verify deterministic metadata before upload and again after publication.
 - Added guarded Windows UEFI CA 2023 bootloader replacement for qualified Windows 11 client UEFI/FAT32 media, with three-way architecture binding, staged certificate evidence, DBX checks, exact destination replacement, and mandatory SHA-256 readback; NTFS remains explicitly outside the CA 2023-only boundary.
 - Added direct SquashFS recognition without promoting a bare filesystem to automatic bootable-media status; strengthened WIM/ESD/SWM ambiguity and size bounds, GTK runtime-validation state tests, and cancellation between partial writes during raw and compressed-image preparation.
 - Added capability-gated Windows 11 SkuSiPolicy deployment for qualified UEFI installation media, using only the installed system's own policy and refusing BIOS/CSM, missing-policy, split-SWM, server, Windows 10, and unknown-media requests.

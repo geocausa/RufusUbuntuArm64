@@ -40,6 +40,9 @@ jobs:
           path: release-tree
           persist-credentials: false
           fetch-depth: 1
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
       - name: Bind checkout to the exact release tag commit
         run: |
           set -euo pipefail
@@ -74,6 +77,14 @@ jobs:
               exit 1
             }
           fi
+          echo "RELEASE_COMMIT=${commit_sha}" >> "${GITHUB_ENV}"
+      - name: Check out signed release metadata publication
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: release-metadata-${{ env.RELEASE_TAG }}
+          path: signed-release-metadata
+          persist-credentials: false
+          fetch-depth: 1
       - name: Download and validate the exact published asset graph
         run: |
           set -euo pipefail
@@ -94,4 +105,11 @@ jobs:
           (
             cd release-tree
             python3 "${validator}" "${release_json}" "${asset_dir}"
+            bash scripts/verify-release-publication.sh \
+              "${GITHUB_WORKSPACE}/signed-release-metadata" \
+              "${asset_dir}" \
+              "${RELEASE_TAG}" \
+              "${RELEASE_COMMIT}" \
+              packaging/acquisition/channel.json \
+              packaging/acquisition/1.root.json
           )

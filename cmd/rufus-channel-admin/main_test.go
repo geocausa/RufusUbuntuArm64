@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -191,6 +194,92 @@ func TestKeyIDAndEnabledConfigWorkflow(t *testing.T) {
 	}
 }
 
+func TestVerifyReleaseAssetsWorkflow(t *testing.T) {
+	now := time.Date(2026, 7, 30, 16, 0, 0, 0, time.UTC)
+	rootA, rootB := newOperatorSigner(1), newOperatorSigner(33)
+	catalog, releaseSigner := newOperatorSigner(65), newOperatorSigner(97)
+	directory := t.TempDir()
+	rootMetadata := operatorRootMetadataWithRelease(now, []operatorSigner{rootA, rootB}, catalog, releaseSigner)
+	rootPayload, _, err := acquisition.CanonicalizeRootDraft(mustJSON(t, rootMetadata), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootEnvelope, err := acquisition.AssembleMetadataEnvelope(rootPayload, []acquisition.DetachedMetadataSignature{
+		{KeyID: rootA.id, Signature: ed25519.Sign(rootA.private, rootPayload)},
+		{KeyID: rootB.id, Signature: ed25519.Sign(rootB.private, rootPayload)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootPath := filepath.Join(directory, "1.root.json")
+	if err := os.WriteFile(rootPath, rootEnvelope, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root, err := acquisition.VerifyBootstrapRoot(rootEnvelope, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	version, tag, commit := "0.16.0", "v0.16.0", strings.Repeat("a", 40)
+	files := map[string][]byte{
+		"RufusArm64-0.16.0-source.zip": []byte("source archive"),
+		"rufusarm64_0.16.0_arm64.deb":  []byte("Debian package"),
+	}
+	assets := make([]acquisition.ReleaseAsset, 0, len(files))
+	for name, contents := range files {
+		digest := sha256.Sum256(contents)
+		assets = append(assets, acquisition.ReleaseAsset{
+			Name: name, Size: uint64(len(contents)), SHA256: hex.EncodeToString(digest[:]),
+			URL: "https://github.com/geocausa/RufusUbuntuArm64/releases/download/" + tag + "/" + name,
+		})
+	}
+	sort.Slice(assets, func(i, j int) bool { return assets[i].Name < assets[j].Name })
+	releaseMetadata := acquisition.ReleaseMetadata{
+		Type: "release", Schema: acquisition.TrustSchemaVersion, Version: 5,
+		Generated: now.Add(-time.Minute).Format(time.RFC3339), Expires: now.Add(7 * 24 * time.Hour).Format(time.RFC3339),
+		Product: "RufusArm64", Repository: "geocausa/RufusUbuntuArm64", ReleaseVersion: version,
+		Tag: tag, Commit: commit, Channel: "stable", Assets: assets,
+	}
+	releasePayload, _, err := acquisition.CanonicalizeReleaseDraft(root, mustJSON(t, releaseMetadata), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseEnvelope, err := acquisition.AssembleMetadataEnvelope(releasePayload, []acquisition.DetachedMetadataSignature{{KeyID: releaseSigner.id, Signature: ed25519.Sign(releaseSigner.private, releasePayload)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	releasePath := filepath.Join(directory, "release.json")
+	if err := os.WriteFile(releasePath, releaseEnvelope, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assetDir := filepath.Join(directory, "assets")
+	if err := os.Mkdir(assetDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, contents := range files {
+		if err := os.WriteFile(filepath.Join(assetDir, name), contents, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	args := []string{
+		"verify", "release-assets", "--root", rootPath, "--release", releasePath,
+		"--asset-dir", assetDir, "--expected-tag", tag, "--expected-commit", commit,
+		"--now", now.Format(time.RFC3339), "--json",
+	}
+	if err := run(args); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assetDir, "unexpected"), []byte("extra"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(args); err == nil || !strings.Contains(err.Error(), "inventory mismatch") {
+		t.Fatalf("unexpected asset error = %v", err)
+	}
+	args[len(args)-4] = strings.Repeat("b", 40)
+	if err := run(args); err == nil {
+		t.Fatal("wrong expected commit was accepted")
+	}
+}
+
 func TestExecutableHasNoSecretKeyInterface(t *testing.T) {
 	if err := run([]string{"key-id", "--private-key", "forbidden"}); err == nil {
 		t.Fatal("a private-key option was unexpectedly accepted")
@@ -294,12 +383,14 @@ func TestPublicationDirectoryDeterministic(t *testing.T) {
 	}
 	releaseVersion := "0.16.0"
 	packageName := "rufusarm64_" + releaseVersion + "_arm64.deb"
+	packageContents := []byte("deterministic staged package bytes")
+	packageDigest := sha256.Sum256(packageContents)
 	releaseMetadata := acquisition.ReleaseMetadata{
 		Type: "release", Schema: acquisition.TrustSchemaVersion, Version: 4,
 		Generated: now.Add(-time.Minute).Format(time.RFC3339), Expires: now.Add(24 * time.Hour).Format(time.RFC3339),
 		Product: "RufusArm64", Repository: "geocausa/RufusUbuntuArm64", ReleaseVersion: releaseVersion,
 		Tag: "v" + releaseVersion, Commit: strings.Repeat("c", 40), Channel: "stable",
-		Assets: []acquisition.ReleaseAsset{{Name: packageName, Size: 4096, SHA256: strings.Repeat("cd", 32), URL: "https://github.com/geocausa/RufusUbuntuArm64/releases/download/v" + releaseVersion + "/" + packageName}},
+		Assets: []acquisition.ReleaseAsset{{Name: packageName, Size: uint64(len(packageContents)), SHA256: hex.EncodeToString(packageDigest[:]), URL: "https://github.com/geocausa/RufusUbuntuArm64/releases/download/v" + releaseVersion + "/" + packageName}},
 	}
 	releasePayload, _, err := acquisition.CanonicalizeReleaseDraft(root, mustJSON(t, releaseMetadata), now)
 	if err != nil {
@@ -383,6 +474,46 @@ func TestPublicationDirectoryDeterministic(t *testing.T) {
 	}
 	if summary["release_version"] != releaseVersion || summary["release_metadata_version"] != float64(4) {
 		t.Fatalf("publication summary does not bind release metadata: %+v", summary)
+	}
+	assetDir := filepath.Join(directory, "release-assets")
+	if err := os.Mkdir(assetDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assetDir, packageName), packageContents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("could not resolve repository root")
+	}
+	repositoryRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", ".."))
+	script := filepath.Join(repositoryRoot, "scripts", "verify-release-publication.sh")
+	command := exec.Command("bash", script, first, assetDir, "v"+releaseVersion, strings.Repeat("c", 40), filepath.Join(first, "channel.json"), filepath.Join(first, "1.root.json"))
+	command.Dir = repositoryRoot
+	command.Env = append(os.Environ(), "RELEASE_VERIFY_NOW="+now.Format(time.RFC3339))
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("verify signed publication: %v\n%s", err, output)
+	}
+	command = exec.Command("bash", script, first, "-", "v"+releaseVersion, strings.Repeat("c", 40), filepath.Join(first, "channel.json"), filepath.Join(first, "1.root.json"))
+	command.Dir = repositoryRoot
+	command.Env = append(os.Environ(), "RELEASE_VERIFY_NOW="+now.Format(time.RFC3339))
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("verify signed metadata-only publication: %v\n%s", err, output)
+	}
+	command = exec.Command("bash", script, first, "-", "v"+releaseVersion, strings.Repeat("d", 40), filepath.Join(first, "channel.json"), filepath.Join(first, "1.root.json"))
+	command.Dir = repositoryRoot
+	command.Env = append(os.Environ(), "RELEASE_VERIFY_NOW="+now.Format(time.RFC3339))
+	if output, err := command.CombinedOutput(); err == nil || !bytes.Contains(output, []byte("does not match")) {
+		t.Fatalf("wrong metadata-only commit was not refused: %v\n%s", err, output)
+	}
+	if err := os.WriteFile(filepath.Join(assetDir, packageName), []byte("substituted"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command = exec.Command("bash", script, first, assetDir, "v"+releaseVersion, strings.Repeat("c", 40), filepath.Join(first, "channel.json"), filepath.Join(first, "1.root.json"))
+	command.Dir = repositoryRoot
+	command.Env = append(os.Environ(), "RELEASE_VERIFY_NOW="+now.Format(time.RFC3339))
+	if output, err := command.CombinedOutput(); err == nil || !bytes.Contains(output, []byte("mismatch")) {
+		t.Fatalf("substituted signed publication asset was not refused: %v\n%s", err, output)
 	}
 }
 
