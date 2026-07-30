@@ -40,6 +40,8 @@ rufusarm64-cli \- inspect images and safely create bootable USB media on Linux
 .B sudo rufusarm64-cli qualify
 .RI "start|verify"
 .RI [ options ]
+.B rufusarm64-cli update verify --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--json]
+.br
 .SH DESCRIPTION
 .B rufusarm64-cli
 is the native helper and troubleshooting interface used by RufusArm64. It
@@ -156,6 +158,14 @@ Resumable mode retains only an owner-private partial bound to the signed image
 identity and rehashes it before reuse. Cancellation or failure never installs
 an unverified image. The production built-in channel remains disabled until
 reviewed public mirrors and offline trust metadata are provisioned.
+.SH VERIFIED RELEASE UPDATES
+.B update verify
+validates a threshold-signed release envelope through a supplied sequential root
+chain. It binds the release version, tag, commit, channel, exact asset names,
+sizes, SHA-256 digests, GitHub release URLs, and authorized signing key IDs.
+The command refuses expired metadata, metadata-version rollback, and release
+version downgrade. It is read-only and does not download or install software.
+
 .SH SECURE BOOT DBX
 .B dbx inspect
 parses one bounded, stable, non-empty regular file or the exact running firmware

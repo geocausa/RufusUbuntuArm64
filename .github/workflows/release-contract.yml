@@ -4,6 +4,13 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - cmd/rufus-channel-admin/**
+      - cmd/rufus-linux/main.go
+      - cmd/rufus-linux/main_test.go
+      - internal/acquisition/**
+      - docs/acquisition-admin.md
+      - docs/acquisition-channel.md
+      - docs/signed-release-updates.md
       - .github/workflows/release.yml
       - .github/workflows/release-contract.yml
       - .github/workflows/release-published.yml
@@ -18,13 +25,22 @@ on:
       - scripts/check-version-sync.py
       - scripts/check-release-runtime-integrity.py
       - scripts/check-published-release.py
+      - scripts/build-release-metadata-draft.py
       - scripts/test-check-published-release.py
+      - scripts/test-build-release-metadata-draft.py
       - scripts/build-uefi-md5sum-arm64.sh
       - scripts/build-deb.sh
       - scripts/test.sh
   push:
     branches: [main]
     paths:
+      - cmd/rufus-channel-admin/**
+      - cmd/rufus-linux/main.go
+      - cmd/rufus-linux/main_test.go
+      - internal/acquisition/**
+      - docs/acquisition-admin.md
+      - docs/acquisition-channel.md
+      - docs/signed-release-updates.md
       - .github/workflows/release.yml
       - .github/workflows/release-contract.yml
       - .github/workflows/release-published.yml
@@ -39,7 +55,9 @@ on:
       - scripts/check-version-sync.py
       - scripts/check-release-runtime-integrity.py
       - scripts/check-published-release.py
+      - scripts/build-release-metadata-draft.py
       - scripts/test-check-published-release.py
+      - scripts/test-build-release-metadata-draft.py
       - scripts/build-uefi-md5sum-arm64.sh
       - scripts/build-deb.sh
       - scripts/test.sh
@@ -63,8 +81,11 @@ jobs:
             scripts/check-version-sync.py \
             scripts/check-release-runtime-integrity.py \
             scripts/check-published-release.py \
-            scripts/test-check-published-release.py
+            scripts/build-release-metadata-draft.py \
+            scripts/test-check-published-release.py \
+            scripts/test-build-release-metadata-draft.py
           python3 scripts/check-version-sync.py
           python3 scripts/check-release-runtime-integrity.py
           python3 scripts/test-check-published-release.py
+          python3 scripts/test-build-release-metadata-draft.py
           bash -n scripts/build-uefi-md5sum-arm64.sh scripts/build-deb.sh scripts/test.sh

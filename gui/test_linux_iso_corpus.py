@@ -82,21 +82,17 @@ class LinuxISOCorpusTests(unittest.TestCase):
             "expected": expected,
         }
 
-    def test_manifest_tracks_required_distribution_families(self):
+    def test_manifest_tracks_bounded_representative_families(self):
         manifest = CORPUS.load_manifest(ROOT / "docs" / "linux-iso-corpus.json")
         families = {entry["family"] for entry in manifest["entries"]}
         for family in (
             "Ubuntu",
             "Debian",
-            "Linux Mint",
             "Fedora",
-            "Bazzite",
-            "Nobara",
             "openSUSE",
-            "Nutanix",
-            "umbrelOS",
         ):
             self.assertIn(family, families)
+        self.assertFalse(any(entry["qualification_state"] == "pending" for entry in manifest["entries"]))
         ubuntu = next(entry for entry in manifest["entries"] if entry["id"] == "ubuntu-26.04-desktop-arm64")
         self.assertEqual(ubuntu["qualification_state"], "qualified")
         self.assertEqual(ubuntu["expected"]["decision"], "iso-image-candidate")

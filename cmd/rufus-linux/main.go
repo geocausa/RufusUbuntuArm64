@@ -35,6 +35,18 @@ var version = "development"
 
 const defaultAcquisitionChannelConfig = "/usr/share/rufusarm64/acquisition/channel.json"
 
+type repeatedString []string
+
+func (values *repeatedString) String() string { return strings.Join(*values, ",") }
+func (values *repeatedString) Set(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return errors.New("value cannot be empty")
+	}
+	*values = append(*values, value)
+	return nil
+}
+
 const (
 	defaultWriteVerify            = false
 	defaultWindowsPartitionScheme = "auto"
@@ -97,6 +109,8 @@ func run(args []string) error {
 		return runUEFI(args[1:])
 	case "acquire":
 		return runAcquire(args[1:])
+	case "update":
+		return runUpdate(args[1:])
 	case "persistence":
 		return runPersistence(args[1:])
 	case "windows":
@@ -139,6 +153,7 @@ Usage:
   rufusarm64-cli acquire download --catalog FILE --signature FILE --public-key FILE --id ID [--output FILE]
   rufusarm64-cli acquire channel list [--offline] [--json]
   rufusarm64-cli acquire channel download --id ID [--output FILE] [--offline]
+  rufusarm64-cli update verify --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--json]
   rufusarm64-cli persistence plan --image FILE --media-root DIR --target-size SIZE [--size SIZE] [--json]
   sudo rufusarm64-cli persistence analyze --image FILE --expected-source-identity ID --target-size SIZE [--size SIZE] [--json]
   sudo rufusarm64-cli windows analyze --image FILE --expected-source-identity ID [--json]
@@ -149,6 +164,7 @@ Usage:
 
 Acquisition catalogs are accepted only after detached Ed25519 signature, expiry, URL, size, filename, and SHA-256 validation.
 The built-in channel additionally enforces threshold root/catalog signatures, key rotation, version rollback protection, and owner-only atomic trust state.
+Update verification authenticates threshold-signed release metadata and refuses metadata rollback or package-version downgrade; it never installs software.
 Persistence planning accepts mounted or extracted Ubuntu 20.04+ casper and Debian live-boot media trees.
 Automatic analysis mounts the selected plain ISOHybrid image privately and read-only; it never opens a target device.
 The experimental persistent writer is CLI-only, GPT/UEFI-only, and is never accepted by the graphical privileged path.
@@ -1659,6 +1675,68 @@ type acquireCatalogSummary struct {
 	Expires     string `json:"expires"`
 	Images      int    `json:"images"`
 	CatalogHash string `json:"catalog_sha256"`
+}
+
+func runUpdate(args []string) error {
+	if len(args) == 0 || args[0] != "verify" {
+		return errors.New("update requires verify")
+	}
+	return runUpdateVerify(args[1:])
+}
+
+func runUpdateVerify(args []string) error {
+	fs := flag.NewFlagSet("update verify", flag.ContinueOnError)
+	releasePath := fs.String("release", "", "threshold-signed release metadata envelope")
+	currentVersion := fs.String("current-version", version, "currently installed RufusArm64 version")
+	minimumMetadataVersion := fs.Int("minimum-metadata-version", 0, "lowest previously accepted release metadata version")
+	asJSON := fs.Bool("json", false, "output JSON")
+	var roots repeatedString
+	fs.Var(&roots, "root", "signed root metadata file in sequential order")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("update verify does not accept positional arguments")
+	}
+	if len(roots) == 0 || strings.TrimSpace(*releasePath) == "" {
+		return errors.New("update verify requires at least one --root and --release")
+	}
+	if *currentVersion == "development" || strings.TrimSpace(*currentVersion) == "" {
+		return errors.New("development builds require an explicit --current-version")
+	}
+	rootData := make([][]byte, 0, len(roots))
+	for _, path := range roots {
+		data, err := readLimitedRegularFile(path, acquisition.MaxRootMetadataBytes)
+		if err != nil {
+			return fmt.Errorf("read update root metadata: %w", err)
+		}
+		rootData = append(rootData, data)
+	}
+	trustedRoot, err := acquisition.VerifyRootChain(rootData, time.Now())
+	if err != nil {
+		return fmt.Errorf("verify update root chain: %w", err)
+	}
+	releaseData, err := readLimitedRegularFile(*releasePath, acquisition.MaxReleaseMetadataBytes)
+	if err != nil {
+		return fmt.Errorf("read release metadata: %w", err)
+	}
+	release, err := acquisition.VerifyReleaseMetadata(trustedRoot, releaseData, time.Now())
+	if err != nil {
+		return fmt.Errorf("verify release metadata: %w", err)
+	}
+	decision, err := acquisition.EvaluateRelease(*currentVersion, *minimumMetadataVersion, release)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return json.NewEncoder(os.Stdout).Encode(decision)
+	}
+	status := "Current version is up to date."
+	if decision.UpdateAvailable {
+		status = "A verified update is available."
+	}
+	fmt.Printf("%s\nCurrent: %s\nRelease: %s\nTag: %s\nCommit: %s\nMetadata version: %d\nPackage: %s\nSize: %s\nSHA-256: %s\nURL: %s\n", status, decision.CurrentVersion, decision.ReleaseVersion, decision.Tag, decision.Commit, decision.MetadataVersion, decision.Package.Name, humanBytes(decision.Package.Size), decision.Package.SHA256, decision.Package.URL)
+	return nil
 }
 
 func runAcquire(args []string) error {

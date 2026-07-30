@@ -344,3 +344,67 @@ func TestPublicationDirectoryDeterministic(t *testing.T) {
 		}
 	}
 }
+
+func operatorRootMetadataWithRelease(now time.Time, rootSigners []operatorSigner, catalog, release operatorSigner) acquisition.RootMetadata {
+	metadata := operatorRootMetadata(now, rootSigners, catalog)
+	metadata.Keys = append(metadata.Keys, acquisition.TrustKey{ID: release.id, Type: "ed25519", Public: base64.StdEncoding.EncodeToString(release.public)})
+	sort.Slice(metadata.Keys, func(i, j int) bool { return metadata.Keys[i].ID < metadata.Keys[j].ID })
+	metadata.Roles.Release = &acquisition.TrustRole{KeyIDs: []string{release.id}, Threshold: 1}
+	return metadata
+}
+
+func TestOfflineReleaseWorkflow(t *testing.T) {
+	now := time.Date(2026, 7, 30, 14, 0, 0, 0, time.UTC)
+	rootA, rootB := newOperatorSigner(1), newOperatorSigner(33)
+	catalog, releaseSigner := newOperatorSigner(65), newOperatorSigner(97)
+	directory := t.TempDir()
+	rootMetadata := operatorRootMetadataWithRelease(now, []operatorSigner{rootA, rootB}, catalog, releaseSigner)
+	rootPayload, _, err := acquisition.CanonicalizeRootDraft(mustJSON(t, rootMetadata), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootEnvelope, err := acquisition.AssembleMetadataEnvelope(rootPayload, []acquisition.DetachedMetadataSignature{
+		{KeyID: rootA.id, Signature: ed25519.Sign(rootA.private, rootPayload)},
+		{KeyID: rootB.id, Signature: ed25519.Sign(rootB.private, rootPayload)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootPath := filepath.Join(directory, "1.root.json")
+	if err := os.WriteFile(rootPath, rootEnvelope, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	version := "0.16.0"
+	packageName := "rufusarm64_" + version + "_arm64.deb"
+	releaseMetadata := acquisition.ReleaseMetadata{
+		Type: "release", Schema: acquisition.TrustSchemaVersion, Version: 1,
+		Generated: now.Add(-time.Minute).Format(time.RFC3339), Expires: now.Add(24 * time.Hour).Format(time.RFC3339),
+		Product: "RufusArm64", Repository: "geocausa/RufusUbuntuArm64", ReleaseVersion: version,
+		Tag: "v" + version, Commit: strings.Repeat("a", 40), Channel: "stable",
+		Assets: []acquisition.ReleaseAsset{{Name: packageName, Size: 4096, SHA256: strings.Repeat("ab", 32), URL: "https://github.com/geocausa/RufusUbuntuArm64/releases/download/v" + version + "/" + packageName}},
+	}
+	draftPath := filepath.Join(directory, "release-draft.json")
+	payloadPath := filepath.Join(directory, "release.payload.json")
+	manifestPath := filepath.Join(directory, "release.manifest.json")
+	envelopePath := filepath.Join(directory, "release.json")
+	if err := os.WriteFile(draftPath, mustJSON(t, releaseMetadata), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"payload", "release", "--root", rootPath, "--input", draftPath, "--output", payloadPath, "--manifest", manifestPath, "--now", now.Format(time.RFC3339)}); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(payloadPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sigPath := filepath.Join(directory, "release.sig")
+	if err := os.WriteFile(sigPath, ed25519.Sign(releaseSigner.private, payload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"envelope", "assemble", "--payload", payloadPath, "--signature", releaseSigner.id + "=" + sigPath, "--root", rootPath, "--output", envelopePath, "--now", now.Format(time.RFC3339)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"verify", "release", "--root", rootPath, "--release", envelopePath, "--now", now.Format(time.RFC3339), "--json"}); err != nil {
+		t.Fatal(err)
+	}
+}

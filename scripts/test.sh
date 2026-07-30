@@ -39,8 +39,10 @@ python3 -m py_compile \
   gui/rufusarm64_freedos.py gui/rufusarm64_freedos_dialog.py \
   gui/rufusarm64_integrated.py gui/rufusarm64_linux_compatibility.py \
   gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py \
-  scripts/linux_iso_corpus.py
+  scripts/linux_iso_corpus.py scripts/build-release-metadata-draft.py \
+  scripts/test-build-release-metadata-draft.py
 PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
+python3 scripts/test-build-release-metadata-draft.py
 
 native_dir="$(mktemp -d)"
 native_helper="${native_dir}/rufusarm64-helper"

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -607,4 +608,96 @@ func TestUEFIValidateRejectsConflictingSBATSources(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "at most one") {
 		t.Fatalf("conflicting SBAT source error = %v", err)
 	}
+}
+
+func TestUpdateVerifyAuthenticatedRelease(t *testing.T) {
+	now := time.Now().UTC()
+	makeSigner := func(seedByte byte) (string, ed25519.PublicKey, ed25519.PrivateKey) {
+		seed := make([]byte, ed25519.SeedSize)
+		for index := range seed {
+			seed[index] = seedByte + byte(index)
+		}
+		privateKey := ed25519.NewKeyFromSeed(seed)
+		publicKey := privateKey.Public().(ed25519.PublicKey)
+		return acquisition.PublicKeyID(publicKey), publicKey, privateKey
+	}
+	rootAID, rootAPub, rootAPriv := makeSigner(1)
+	rootBID, rootBPub, rootBPriv := makeSigner(33)
+	catalogID, catalogPub, _ := makeSigner(65)
+	releaseID, releasePub, releasePriv := makeSigner(97)
+	keys := []acquisition.TrustKey{
+		{ID: rootAID, Type: "ed25519", Public: base64.StdEncoding.EncodeToString(rootAPub)},
+		{ID: rootBID, Type: "ed25519", Public: base64.StdEncoding.EncodeToString(rootBPub)},
+		{ID: catalogID, Type: "ed25519", Public: base64.StdEncoding.EncodeToString(catalogPub)},
+		{ID: releaseID, Type: "ed25519", Public: base64.StdEncoding.EncodeToString(releasePub)},
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i].ID < keys[j].ID })
+	rootIDs := []string{rootAID, rootBID}
+	sort.Strings(rootIDs)
+	rootMetadata := acquisition.RootMetadata{
+		Type: "root", Schema: acquisition.TrustSchemaVersion, Version: 1,
+		Generated: now.Add(-time.Hour).Format(time.RFC3339), Expires: now.Add(30 * 24 * time.Hour).Format(time.RFC3339), Keys: keys,
+		Roles: acquisition.RootRoles{Root: acquisition.TrustRole{KeyIDs: rootIDs, Threshold: 2}, Catalog: acquisition.TrustRole{KeyIDs: []string{catalogID}, Threshold: 1}, Release: &acquisition.TrustRole{KeyIDs: []string{releaseID}, Threshold: 1}},
+	}
+	rootPayload, _, err := acquisition.CanonicalizeRootDraft(mustJSONBytes(t, rootMetadata), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootEnvelope, err := acquisition.AssembleMetadataEnvelope(rootPayload, []acquisition.DetachedMetadataSignature{{KeyID: rootAID, Signature: ed25519.Sign(rootAPriv, rootPayload)}, {KeyID: rootBID, Signature: ed25519.Sign(rootBPriv, rootPayload)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trustedRoot, err := acquisition.VerifyBootstrapRoot(rootEnvelope, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseVersion := "0.16.0"
+	packageName := "rufusarm64_" + releaseVersion + "_arm64.deb"
+	releaseMetadata := acquisition.ReleaseMetadata{
+		Type: "release", Schema: acquisition.TrustSchemaVersion, Version: 3,
+		Generated: now.Add(-time.Minute).Format(time.RFC3339), Expires: now.Add(24 * time.Hour).Format(time.RFC3339), Product: "RufusArm64", Repository: "geocausa/RufusUbuntuArm64",
+		ReleaseVersion: releaseVersion, Tag: "v" + releaseVersion, Commit: strings.Repeat("a", 40), Channel: "stable",
+		Assets: []acquisition.ReleaseAsset{{Name: packageName, Size: 4096, SHA256: strings.Repeat("ab", 32), URL: "https://github.com/geocausa/RufusUbuntuArm64/releases/download/v" + releaseVersion + "/" + packageName}},
+	}
+	releasePayload, _, err := acquisition.CanonicalizeReleaseDraft(trustedRoot, mustJSONBytes(t, releaseMetadata), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseEnvelope, err := acquisition.AssembleMetadataEnvelope(releasePayload, []acquisition.DetachedMetadataSignature{{KeyID: releaseID, Signature: ed25519.Sign(releasePriv, releasePayload)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := t.TempDir()
+	rootPath, releasePath := filepath.Join(directory, "1.root.json"), filepath.Join(directory, "release.json")
+	if err := os.WriteFile(rootPath, rootEnvelope, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(releasePath, releaseEnvelope, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := captureStdout(t, func() error {
+		return runUpdateVerify([]string{"--root", rootPath, "--release", releasePath, "--current-version", "0.15.0", "--minimum-metadata-version", "2", "--json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decision acquisition.UpdateDecision
+	if err := json.Unmarshal([]byte(output), &decision); err != nil {
+		t.Fatal(err)
+	}
+	if !decision.UpdateAvailable || decision.ReleaseVersion != releaseVersion || decision.MetadataVersion != 3 {
+		t.Fatalf("unexpected decision: %+v", decision)
+	}
+	if err := runUpdateVerify([]string{"--root", rootPath, "--release", releasePath, "--current-version", "0.17.0"}); err == nil || !strings.Contains(err.Error(), "downgrade") {
+		t.Fatalf("downgrade error = %v", err)
+	}
+}
+
+func mustJSONBytes(t *testing.T, value any) []byte {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }

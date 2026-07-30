@@ -79,9 +79,11 @@ Usage:
   rufus-channel-admin key-id --public-key FILE [--json]
   rufus-channel-admin payload root --input FILE --output FILE --manifest FILE [--now RFC3339]
   rufus-channel-admin payload catalog --root FILE [--root FILE...] --input FILE --output FILE --manifest FILE [--now RFC3339]
+  rufus-channel-admin payload release --root FILE [--root FILE...] --input FILE --output FILE --manifest FILE [--now RFC3339]
   rufus-channel-admin envelope assemble --payload FILE --signature KEYID=FILE [--signature KEYID=FILE...] [--root FILE...] --output FILE [--now RFC3339]
   rufus-channel-admin verify root --root FILE [--root FILE...] [--now RFC3339] [--json]
   rufus-channel-admin verify catalog --root FILE [--root FILE...] --catalog FILE [--now RFC3339] [--json]
+  rufus-channel-admin verify release --root FILE [--root FILE...] --release FILE [--now RFC3339] [--json]
   rufus-channel-admin channel-config --bootstrap-root FILE --root-url URL --catalog-url URL --host HOST [--host HOST...] --output FILE [--now RFC3339]
   rufus-channel-admin publish --root FILE [--root FILE...] --catalog FILE --config FILE --directory DIR [--now RFC3339]
 
@@ -117,13 +119,15 @@ func runKeyID(args []string) error {
 
 func runPayload(args []string) error {
 	if len(args) == 0 {
-		return errors.New("payload requires root or catalog")
+		return errors.New("payload requires root, catalog, or release")
 	}
 	switch args[0] {
 	case "root":
 		return runRootPayload(args[1:])
 	case "catalog":
 		return runCatalogPayload(args[1:])
+	case "release":
+		return runReleasePayload(args[1:])
 	default:
 		return fmt.Errorf("unknown payload type %q", args[0])
 	}
@@ -191,6 +195,40 @@ func runCatalogPayload(args []string) error {
 	return writePayloadAndManifest(*output, *manifestPath, payload, manifest, *force)
 }
 
+func runReleasePayload(args []string) error {
+	fs := flag.NewFlagSet("payload release", flag.ContinueOnError)
+	input := fs.String("input", "", "unsigned release metadata draft")
+	output := fs.String("output", "", "canonical payload output")
+	manifestPath := fs.String("manifest", "", "signing manifest output")
+	nowText := fs.String("now", "", "validation time in RFC3339")
+	force := fs.Bool("force", false, "replace existing output files")
+	var roots stringList
+	fs.Var(&roots, "root", "signed root metadata file in sequential order")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 || len(roots) == 0 || *input == "" || *output == "" || *manifestPath == "" {
+		return errors.New("payload release requires at least one --root plus --input, --output, and --manifest")
+	}
+	now, err := parseNow(*nowText)
+	if err != nil {
+		return err
+	}
+	root, err := readAndVerifyRootChain(roots, now)
+	if err != nil {
+		return err
+	}
+	data, err := readOperatorFile(*input, acquisition.MaxReleaseMetadataBytes)
+	if err != nil {
+		return err
+	}
+	payload, manifest, err := acquisition.CanonicalizeReleaseDraft(root, data, now)
+	if err != nil {
+		return err
+	}
+	return writePayloadAndManifest(*output, *manifestPath, payload, manifest, *force)
+}
+
 func runEnvelope(args []string) error {
 	if len(args) == 0 || args[0] != "assemble" {
 		return errors.New("envelope requires assemble")
@@ -249,13 +287,15 @@ func runEnvelope(args []string) error {
 
 func runVerify(args []string) error {
 	if len(args) == 0 {
-		return errors.New("verify requires root or catalog")
+		return errors.New("verify requires root, catalog, or release")
 	}
 	switch args[0] {
 	case "root":
 		return runVerifyRoot(args[1:])
 	case "catalog":
 		return runVerifyCatalog(args[1:])
+	case "release":
+		return runVerifyRelease(args[1:])
 	default:
 		return fmt.Errorf("unknown verification type %q", args[0])
 	}
@@ -324,6 +364,46 @@ func runVerifyCatalog(args []string) error {
 		"generated": catalog.Metadata.Generated, "expires": catalog.Metadata.Expires,
 		"sha256": catalog.SHA256, "signing_key_ids": catalog.SigningKeyIDs,
 		"images": len(catalog.Metadata.Images),
+	}
+	return printResult(result, *asJSON)
+}
+
+func runVerifyRelease(args []string) error {
+	fs := flag.NewFlagSet("verify release", flag.ContinueOnError)
+	releasePath := fs.String("release", "", "signed release envelope")
+	nowText := fs.String("now", "", "validation time in RFC3339")
+	asJSON := fs.Bool("json", false, "output JSON")
+	var roots stringList
+	fs.Var(&roots, "root", "signed root metadata file in sequential order")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 || len(roots) == 0 || *releasePath == "" {
+		return errors.New("verify release requires at least one --root and --release")
+	}
+	now, err := parseNow(*nowText)
+	if err != nil {
+		return err
+	}
+	root, err := readAndVerifyRootChain(roots, now)
+	if err != nil {
+		return err
+	}
+	data, err := readOperatorFile(*releasePath, acquisition.MaxReleaseMetadataBytes)
+	if err != nil {
+		return err
+	}
+	release, err := acquisition.VerifyReleaseMetadata(root, data, now)
+	if err != nil {
+		return err
+	}
+	result := map[string]any{
+		"root_version": root.Metadata.Version, "release_metadata_version": release.Metadata.Version,
+		"release_version": release.Metadata.ReleaseVersion, "tag": release.Metadata.Tag,
+		"commit": release.Metadata.Commit, "channel": release.Metadata.Channel,
+		"generated": release.Metadata.Generated, "expires": release.Metadata.Expires,
+		"sha256": release.SHA256, "signing_key_ids": release.SigningKeyIDs,
+		"assets": len(release.Metadata.Assets),
 	}
 	return printResult(result, *asJSON)
 }

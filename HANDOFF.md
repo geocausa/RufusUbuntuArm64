@@ -1,6 +1,6 @@
 # RufusArm64 development handoff
 
-Updated: 2026-07-30 14:26 Europe/London
+Updated: 2026-07-30 15:33 Europe/London
 
 This file is the durable restart point for ChatGPT/Connector2 development on
 `geocausa/RufusUbuntuArm64`. Read it before changing files or running a
@@ -127,68 +127,62 @@ Relevant project trackers:
 
 ## Current objective
 
-The official openSUSE Tumbleweed AArch64 DVD compatibility tranche is now
-qualified. Prepare the completed evidence for review/PR, or continue with the
-next distinct pending compatibility family without weakening the generic media
-rules established here.
+The bounded Linux ISO compatibility corpus is complete and PR #420 merged as
+`1c23e23a3fe005da23a550a6de53c2727049e457`. Do not resume speculative
+distribution-by-distribution qualification unless an exact artifact exposes a
+new generic media-layout rule. Linux Mint, Bazzite, Nobara, Nutanix and umbrelOS
+have been removed from the active manifest and moved to deferred long-tail
+coverage.
 
-Completed openSUSE evidence:
+The active tranche is signed release metadata and verified updates. Current
+branch: `release/product-completion`, based on merged `main`.
 
-- Immutable artifact:
-  `openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso`
-- Exact size: `4099753984` bytes
-- Signed SHA-256:
-  `be9ff4dae638029557f5cb9d8e1c55fcc50f9c8ad1253c3d2e401fffcc41f547`
-- Detached checksum signature accepted with the openSUSE Project Signing Key
-  fingerprint `AD48 5664 E901 B867 051A B15F 35A2 F86E 29B7 00A4`.
-- The complete artifact was downloaded, full-byte hashed, and renamed from the
-  non-admissible `.iso.download` suffix only after the exact signed hash passed.
-- Exact branch-built helper/analyser result: `dd-only`.
-- Exact profile: recognised plain raw/ISOHybrid media,
-  `hybrid-direct-write`, hybrid and optical, validated BIOS El Torito entry,
-  no validated UEFI entry, and no supported extraction bootloader.
-- The earlier sparse-probe prediction agreed with the complete artifact, but
-  qualification is based only on the complete signed image.
-- The production helper intentionally does not enumerate loop devices as normal
-  write targets; an attempted CLI loop qualification stopped before writing at
-  that safety boundary. Existing privileged loop invariants remain green in CI.
-- Physical target: `/dev/sda`, 31,914,983,424-byte removable Generic storage
-  device, stable identity
-  `84d18636c43baa4b9c72e73a8f53f7f3be7d13789f0b8d11ec0dd5189146b5be`.
-- Identity-bound dry run, automatic raw write, helper full-device verification,
-  independent SHA-256 readback, partition/layout inspection, and post-write
-  identity comparison all passed.
-- Physical readback SHA-256 exactly matched the signed source hash.
-- Resulting layout: DOS/MBR, 13.7 MiB bootable FAT32 partition at sector 2400,
-  followed by a 3.8 GiB Linux/ISO9660 partition; volume label
-  `openSUSE-Tumbleweed-DVD-aarch64`.
-- Local evidence:
-  `dist/audit-logs/local-corpus/opensuse-tumbleweed-exact-20260730.json`
-  and
-  `dist/audit-logs/local-corpus/physical-opensuse-tumbleweed-20260730.jsonl`.
-- Corpus version is `2026.07.30.4`; the entry is now `qualified` with exact
-  expected inspection/profile/decision fields.
-- Commit `87ab721` and all three associated GitHub Actions workflows were green
-  before the final qualification changes.
-- Final local validation is green: clean Go 1.22.12 compatibility in a private
-  mount namespace, pinned Go 1.26.5 static/audit checks, all 227 GUI tests,
-  complete isolated native package tests, deterministic UEFI-loader checks,
-  byte-for-byte reproducible Debian packaging, and the exact corpus with
-  openSUSE reported as `PASS ... dd-only`.
-- The package prerequisite was restored from the previously green local package
-  only after its pinned loader and source-bundle checksums passed; generated
-  vendor artifacts were removed before commit.
+Implemented foundation:
 
-Next sequence:
+- Root metadata may optionally authorize a dedicated threshold `release` role
+  without invalidating existing root/catalog-only metadata.
+- Strict release envelopes bind metadata version, expiry, product, repository,
+  semantic release version, exact tag, exact commit, stable/prerelease channel,
+  sorted immutable assets, HTTPS GitHub release URLs, sizes, SHA-256 digests and
+  signed redirect hosts.
+- Offline administration can canonicalize release drafts, emit signing
+  manifests, assemble externally produced Ed25519 signatures and verify the
+  completed release envelope. No private-key API was added.
+- `rufusarm64-cli update verify` verifies a sequential root chain and signed
+  release envelope, refuses expired trust, metadata rollback and version
+  downgrade, and reports the exact authenticated ARM64 package. It is read-only
+  and never downloads or installs software.
+- Focused adversarial tests cover threshold failure, payload tampering, expiry,
+  absent release authorization, wrong tag/commit/URL/digest, missing package,
+  unsorted assets, metadata rollback, version downgrade, offline operator flow
+  and end-user CLI verification.
+- Final local validation passed: clean Go 1.22.12 complete-suite execution in
+  an isolated mount namespace; Go 1.26.5 race, vet, staticcheck, actionlint and
+  govulncheck with no vulnerabilities; all Go and GUI tests; exact bounded ISO
+  corpus; native ARM64 package construction; pinned WIM/UEFI source checks; and
+  byte-for-byte reproducible Debian packaging. The temporary package prerequisite
+  was restored from a previously green package only after exact checksum checks
+  and was removed before commit.
 
-1. Commit and push the exact qualification evidence.
-2. Require all exact-head GitHub Actions workflows to pass.
-3. Open or update the review PR for this major qualification tranche.
-4. Do not claim firmware boot, installation success or Secure Boot behavior;
-   the evidence proves exact software classification and byte-for-byte physical
-   write/readback only.
-5. After review, select the next pending family: Linux Mint, Bazzite, Nobara,
-   Nutanix or umbrelOS.
+Remaining sequence:
+
+1. Finish documentation and workflow contract tests for signed release metadata.
+2. Add a deterministic release-draft generator that binds the six existing
+   release assets and exact tag commit.
+3. Define the offline key ceremony and committed root/envelope publication
+   layout; do not introduce CI-held private signing keys.
+4. Make future release publication refuse assets that do not match the committed
+   threshold-signed envelope.
+5. Add verified package download/readback using the signed asset record. Keep
+   package installation explicit and separate until rollback, privilege and
+   package-manager behavior are reviewed.
+6. Run Go 1.22 compatibility, pinned static/vulnerability checks, all GUI tests,
+   package/reproducibility tests and exact workflow-contract validation before
+   opening the review PR.
+
+The current sacrificial USB contains the exact verified openSUSE Tumbleweed
+AArch64 image. Do not overwrite it unless a new physical test is explicitly
+authorized and the device identity is freshly re-enumerated.
 
 ## Machine/toolchain state
 
