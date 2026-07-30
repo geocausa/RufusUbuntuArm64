@@ -1,4 +1,3 @@
-import ast
 import os
 import pathlib
 import struct
@@ -9,45 +8,20 @@ import unittest
 class LinuxCompatibilityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        source_path = pathlib.Path(__file__).with_name("rufusarm64_integrated.py")
+        source_path = pathlib.Path(__file__).with_name("rufusarm64_linux_compatibility.py")
         cls.source = source_path.read_text(encoding="utf-8")
-        tree = ast.parse(cls.source)
-        names = {
-            "ISO_SECTOR_SIZE",
-            "FIRST_ISO_DESCRIPTOR",
-            "LAST_ISO_DESCRIPTOR",
-            "MAX_BOOT_CATALOGUE_BYTES",
-            "MAX_BOOT_IMAGE_PROBE_BYTES",
-            "MAX_BOOT_ENTRIES",
-            "_read_at",
-            "_has_disk_layout",
-            "_iso_boot_catalogue",
-            "_valid_catalogue_validation",
-            "_platform_name",
-            "_catalogue_boot_entries",
-            "_bootloader_fingerprints",
-            "_snapshot_from_metadata",
-            "_source_snapshot",
-            "linux_compatibility_profile",
-            "enrich_linux_inspection",
-            "install_linux_compatibility",
-        }
-        body = []
-        for node in tree.body:
-            if isinstance(node, ast.Import) and any(alias.name in {"os", "stat", "struct"} for alias in node.names):
-                body.append(node)
-            elif isinstance(node, ast.Assign):
-                targets = {target.id for target in node.targets if isinstance(target, ast.Name)}
-                if targets & names:
-                    body.append(node)
-            elif isinstance(node, ast.FunctionDef) and node.name in names:
-                body.append(node)
-        namespace = {}
-        exec(compile(ast.Module(body=body, type_ignores=[]), str(source_path), "exec"), namespace)
-        cls.profile = staticmethod(namespace["linux_compatibility_profile"])
-        cls.enrich = staticmethod(namespace["enrich_linux_inspection"])
-        cls.snapshot = staticmethod(namespace["_source_snapshot"])
-        cls.install = staticmethod(namespace["install_linux_compatibility"])
+        cls.integration_source = pathlib.Path(__file__).with_name("rufusarm64_integrated.py").read_text(
+            encoding="utf-8"
+        )
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("rufusarm64_linux_compatibility_test", source_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        cls.profile = staticmethod(module.linux_compatibility_profile)
+        cls.enrich = staticmethod(module.enrich_linux_inspection)
+        cls.snapshot = staticmethod(module._source_snapshot)
+        cls.install = staticmethod(module.install_linux_compatibility)
 
     @staticmethod
     def _catalogue_validation(platform=0):
@@ -249,7 +223,7 @@ class LinuxCompatibilityTests(unittest.TestCase):
         self.assertIn("stat.S_ISREG", self.source)
         self.assertIn("_snapshot_from_metadata(resolved, os.fstat(descriptor))", self.source)
         self.assertIn("window_class._run_image_inspection = integrated_run_image_inspection", self.source)
-        self.assertIn("install_linux_compatibility(RufusWindow)", self.source)
+        self.assertIn("install_linux_compatibility(RufusWindow)", self.integration_source)
         self.assertNotIn("subprocess", self.source)
         self.assertNotIn("mount", self.source.lower())
         self.assertNotIn("pkexec", self.source.lower())
