@@ -131,6 +131,8 @@ install -Dm644 "${ROOT_DIR}/gui/rufusarm64_freedos_dialog.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_freedos_dialog.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_integrated.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_integrated.py"
+install -Dm644 "${ROOT_DIR}/gui/rufusarm64_linux_compatibility.py" \
+  "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_linux_compatibility.py"
 install -Dm755 "${ROOT_DIR}/gui/rufusarm64_persistence.py" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/rufusarm64_persistence.py"
 install -Dm644 "${ROOT_DIR}/gui/rufusarm64_persistence_logic.py" \
@@ -360,6 +362,10 @@ install -Dm644 "${ROOT_DIR}/docs/freedos-linux-backend.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-linux-backend.md"
 install -Dm644 "${ROOT_DIR}/docs/freedos-user-guide.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/freedos-user-guide.md"
+install -Dm644 "${ROOT_DIR}/docs/linux-iso-corpus.md" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/linux-iso-corpus.md"
+install -Dm644 "${ROOT_DIR}/docs/linux-iso-corpus.json" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/linux-iso-corpus.json"
 install -Dm644 "${ROOT_DIR}/NOTICE" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/NOTICE"
 install -Dm644 "${ROOT_DIR}/LICENSE" \

@@ -1,6 +1,6 @@
 {
   "schema": 3,
-  "generated_on": "2026-07-29",
+  "generated_on": "2026-07-30",
   "upstream": {
     "repository": "pbatard/rufus",
     "version": "4.15",
@@ -54,7 +54,7 @@
       "id": "linux-iso-image-mode",
       "upstream_feature": "Choose ISO Image mode or DD Image mode for ISOHybrid media",
       "status": "partial",
-      "notes": "Suitable ARM64 UEFI Linux ISOHybrid media receive an explicit Rufus-style choice with ISO Image mode recommended by default and DD retained as the immutable exact-clone alternative. ISO Image mode exposes Automatic, FAT32, or NTFS; Automatic prefers FAT32 and selects NTFS only when the complete inspected tree is FAT32-incompatible. Reviewed MBR/GPT, 4/8/16/32 KiB cluster, and per-image label choices are bound through confirmation, the privileged helper, diagnostics, result evidence, copied-file SHA-256 verification, filesystem checking, flushing, and real detached-and-reopened loop qualification. NTFS uses one data partition plus the exact pinned 1 MiB UEFI:NTFS boot image with shared Windows/Linux layout and metadata handling. BIOS/CSM or dual-mode Linux extraction, NTFS persistence, broader bootloader adaptation, and physical firmware qualification remain outside this bounded path. Physical qualification is pending under issue #410.",
+      "notes": "Suitable ARM64 UEFI Linux ISOHybrid media receive an explicit Rufus-style choice with ISO Image mode recommended by default and DD retained as the immutable exact-clone alternative. ISO Image mode exposes Automatic, FAT32, or NTFS; Automatic prefers FAT32 and selects NTFS only when the complete inspected tree is FAT32-incompatible. Reviewed MBR/GPT, 4/8/16/32 KiB cluster, and filesystem-specific label choices are bound through confirmation, the privileged helper, diagnostics, result evidence, copied-file SHA-256 verification, filesystem checking, flushing, and real detached-and-reopened loop qualification. NTFS uses one data partition plus the exact pinned 1 MiB UEFI:NTFS boot image with shared Windows/Linux layout and metadata handling. A versioned headless corpus binds Ubuntu 26.04 Desktop ARM64 and signed-checksum Debian 13.6.0 ARM64 netinst artifacts plus deterministic ISO-image, DD-only, and refusal fixtures. Physical write/readback passed on one Kingston USB-attached target for Ubuntu MBR/UEFI/NTFS and Debian GPT/UEFI/FAT32. BIOS/CSM or dual-mode Linux extraction, NTFS persistence, broader distribution coverage, firmware boot, Secure Boot behavior, and a representative hardware matrix remain outside this bounded path.",
       "upstream_sources": [
         "src/format.c",
         "src/iso.c"
@@ -157,7 +157,7 @@
       "id": "filesystems",
       "upstream_feature": "Format FAT/FAT32/NTFS/UDF/exFAT/ReFS/ext2/ext3",
       "status": "partial",
-      "notes": "The dedicated guarded non-bootable formatter implements FAT32, exFAT, NTFS, ext2, ext3, and ext4 through MBR/GPT planning, trusted formatter resolution, exact label and geometry checks, read-only post-format verification, and real loop qualification. FAT32, NTFS, and ext4 also serve applicable boot or persistence workflows. FAT16 and UDF creation remain planned; ReFS has no verified Linux-native formatter and is not portable today. NTFS Unicode-label parity remains an active audit-remediation item.",
+      "notes": "The dedicated guarded non-bootable formatter implements FAT32, exFAT, NTFS, ext2, ext3, and ext4 through MBR/GPT planning, trusted formatter resolution, filesystem-specific label and geometry checks, read-only post-format verification, and real loop qualification. FAT32, NTFS, and ext4 also serve applicable boot or persistence workflows. FAT32 retains conservative uppercase ASCII semantics; NTFS preserves exact valid Unicode and case through GUI, helper, physical format, and readback evidence. FAT16 and UDF creation remain planned; ReFS has no verified Linux-native formatter and is not portable today.",
       "upstream_sources": [
         "src/format.c",
         "src/fat32.c",

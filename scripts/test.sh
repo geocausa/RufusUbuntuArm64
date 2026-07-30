@@ -37,7 +37,9 @@ python3 -m py_compile \
   gui/rufusarm64_device_qualify.py gui/rufusarm64_device_qualify_dialog.py \
   gui/rufusarm64_nonbootable.py gui/rufusarm64_nonbootable_dialog.py \
   gui/rufusarm64_freedos.py gui/rufusarm64_freedos_dialog.py \
-  gui/rufusarm64_integrated.py gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py
+  gui/rufusarm64_integrated.py gui/rufusarm64_linux_compatibility.py \
+  gui/rufusarm64_persistence.py gui/rufusarm64_persistence_logic.py \
+  scripts/linux_iso_corpus.py
 PYTHONPATH=gui python3 -m unittest discover -s gui -p 'test_*.py'
 
 native_dir="$(mktemp -d)"
@@ -386,6 +388,9 @@ gzip -t "${extract_dir}/usr/share/doc/rufusarm64/changelog.gz"
 [[ -f "${extract_dir}/usr/share/doc/rufusarm64/persistence-user-guide.md" ]]
 [[ -f "${extract_dir}/usr/share/doc/rufusarm64/persistence-qualification.md" ]]
 [[ -f "${extract_dir}/usr/share/doc/rufusarm64/freedos-user-guide.md" ]]
+[[ -f "${extract_dir}/usr/share/doc/rufusarm64/linux-iso-corpus.md" ]]
+[[ -f "${extract_dir}/usr/share/doc/rufusarm64/linux-iso-corpus.json" ]]
+[[ -f "${extract_dir}/usr/lib/rufusarm64/rufusarm64_linux_compatibility.py" ]]
 [[ ! -e "${extract_dir}/usr/bin/rufus-channel-admin" ]]
 [[ ! -e "${extract_dir}/usr/lib/rufusarm64/rufus-channel-admin" ]]
 channel_config="${extract_dir}/usr/share/rufusarm64/acquisition/channel.json"
