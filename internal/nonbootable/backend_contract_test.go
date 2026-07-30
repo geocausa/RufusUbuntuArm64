@@ -5,7 +5,9 @@ package nonbootable
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -108,6 +110,7 @@ func TestFilesystemCheckCommandsAreReadOnly(t *testing.T) {
 		name string
 		args string
 	}{
+		FilesystemFAT16: {name: "fsck.vfat", args: "-n /dev/sdb1"},
 		FilesystemFAT32: {name: "fsck.vfat", args: "-n /dev/sdb1"},
 		FilesystemExFAT: {name: "fsck.exfat", args: "-n /dev/sdb1"},
 		FilesystemNTFS:  {name: "ntfsfix", args: "-n /dev/sdb1"},
@@ -121,6 +124,63 @@ func TestFilesystemCheckCommandsAreReadOnly(t *testing.T) {
 		if name != expected.name || strings.Join(args, " ") != expected.args {
 			t.Fatalf("%s check=%s %v, want %s %s", filesystem, name, args, expected.name, expected.args)
 		}
+	}
+}
+
+func TestDetectFATFilesystemUsesClusterCount(t *testing.T) {
+	tests := []struct {
+		name              string
+		total             uint32
+		sectorsPerCluster byte
+		reserved          uint16
+		fats              byte
+		rootEntries       uint16
+		fatSectors        uint32
+		want              string
+		wantErr           bool
+	}{
+		{name: "fat12 refused", total: 2880, sectorsPerCluster: 1, reserved: 1, fats: 2, rootEntries: 224, fatSectors: 9, wantErr: true},
+		{name: "fat16", total: 65536, sectorsPerCluster: 4, reserved: 1, fats: 2, rootEntries: 512, fatSectors: 128, want: FilesystemFAT16},
+		{name: "fat32", total: 1_000_000, sectorsPerCluster: 8, reserved: 32, fats: 2, rootEntries: 0, fatSectors: 1000, want: FilesystemFAT32},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			boot := make([]byte, 512)
+			binary.LittleEndian.PutUint16(boot[11:13], 512)
+			boot[13] = test.sectorsPerCluster
+			binary.LittleEndian.PutUint16(boot[14:16], test.reserved)
+			boot[16] = test.fats
+			binary.LittleEndian.PutUint16(boot[17:19], test.rootEntries)
+			if test.total <= 0xffff {
+				binary.LittleEndian.PutUint16(boot[19:21], uint16(test.total))
+			} else {
+				binary.LittleEndian.PutUint32(boot[32:36], test.total)
+			}
+			if test.rootEntries != 0 {
+				binary.LittleEndian.PutUint16(boot[22:24], uint16(test.fatSectors))
+			} else {
+				binary.LittleEndian.PutUint32(boot[36:40], test.fatSectors)
+			}
+			path := t.TempDir() + "/fat.img"
+			if err := os.WriteFile(path, boot, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			file, err := os.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer file.Close()
+			got, err := detectFATFilesystem(file)
+			if test.wantErr {
+				if err == nil {
+					t.Fatalf("got %q, want refusal", got)
+				}
+				return
+			}
+			if err != nil || got != test.want {
+				t.Fatalf("detectFATFilesystem() = %q, %v; want %q", got, err, test.want)
+			}
+		})
 	}
 }
 

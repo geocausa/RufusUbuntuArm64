@@ -25,6 +25,7 @@ const (
 	SchemeGPT = "gpt"
 	SchemeMBR = "mbr"
 
+	FilesystemFAT16 = "fat16"
 	FilesystemFAT32 = "fat32"
 	FilesystemExFAT = "exfat"
 	FilesystemNTFS  = "ntfs"
@@ -33,6 +34,7 @@ const (
 	alignmentBytes   = uint64(1024 * 1024)
 	tailReserveBytes = uint64(1024 * 1024)
 	minimumDriveSize = uint64(64 * 1024 * 1024)
+	maximumFAT16Size = uint64(4*1024*1024*1024 - 512)
 	maximumFAT32Size = uint64(2 * 1024 * 1024 * 1024 * 1024)
 )
 
@@ -83,6 +85,15 @@ type filesystemContract struct {
 }
 
 var filesystemContracts = map[string]filesystemContract{
+	FilesystemFAT16: {
+		display:       "FAT16",
+		mkfs:          "mkfs.vfat",
+		check:         "fsck.vfat",
+		gptType:       "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
+		mbrType:       "06",
+		maxLabelBytes: 11,
+		maxSize:       maximumFAT16Size,
+	},
 	FilesystemFAT32: {
 		display:       "FAT32",
 		mkfs:          "mkfs.vfat",
@@ -199,6 +210,8 @@ func NormalizeScheme(value string) (string, error) {
 // NormalizeFilesystem canonicalizes supported data-filesystem aliases.
 func NormalizeFilesystem(value string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "fat16":
+		return FilesystemFAT16, nil
 	case "fat", "fat32", "vfat":
 		return FilesystemFAT32, nil
 	case "exfat":
@@ -208,7 +221,7 @@ func NormalizeFilesystem(value string) (string, error) {
 	case "ext4":
 		return FilesystemExt4, nil
 	default:
-		return "", fmt.Errorf("filesystem must be FAT32, exFAT, NTFS, or ext4, not %q", value)
+		return "", fmt.Errorf("filesystem must be FAT16, FAT32, exFAT, NTFS, or ext4, not %q", value)
 	}
 }
 
@@ -315,7 +328,7 @@ func normalizeDevicePath(value string) (string, error) {
 
 func normalizeLabel(value, filesystem string, contract filesystemContract) (string, error) {
 	switch filesystem {
-	case FilesystemFAT32:
+	case FilesystemFAT16, FilesystemFAT32:
 		return volumelabel.FAT32(value, "")
 	case FilesystemNTFS:
 		return volumelabel.NTFS(value, "")
