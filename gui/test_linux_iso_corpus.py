@@ -35,7 +35,15 @@ class LinuxISOCorpusTests(unittest.TestCase):
                 if b"RufusArm64 corpus: deliberately unrecognized input" in data:
                     print("error: image is not usable: the selected file is not a recognized ISOHybrid, GPT, MBR, or supported direct-filesystem image", file=sys.stderr)
                     raise SystemExit(1)
-                recognized = len(data) >= 512 and data[510:512] == b"\\x55\\xaa"
+                has_mbr = len(data) >= 512 and data[510:512] == b"\\x55\\xaa"
+                has_iso = any(
+                    len(data) >= (sector + 1) * 2048
+                    and data[sector * 2048] == 1
+                    and data[sector * 2048 + 1 : sector * 2048 + 6] == b"CD001"
+                    and data[sector * 2048 + 6] == 1
+                    for sector in range(16, 65)
+                )
+                recognized = has_mbr or has_iso
                 print(json.dumps({
                     "mode": "raw" if recognized else "unknown",
                     "recognized": recognized,
@@ -111,6 +119,21 @@ class LinuxISOCorpusTests(unittest.TestCase):
                 },
             ),
             self.synthetic_entry(
+                "optical-uefi",
+                "optical-uefi.iso",
+                "optical-uefi-grub-v1",
+                262144,
+                "408e120504b52e6a23995cfd53e9f70d833dfab23f9acff7201d8d8ee5dca676",
+                "iso-image-candidate",
+                {
+                    "write_path": "optical-direct-write",
+                    "hybrid": False,
+                    "optical": True,
+                    "boot_methods": ["UEFI"],
+                    "bootloaders": ["GRUB"],
+                },
+            ),
+            self.synthetic_entry(
                 "bios",
                 "bios.iso",
                 "hybrid-bios-isolinux-v1",
@@ -140,7 +163,7 @@ class LinuxISOCorpusTests(unittest.TestCase):
         self.assertTrue(report["passed"], json.dumps(report, indent=2))
         self.assertEqual(
             [result["decision"] for result in report["results"]],
-            ["iso-image-candidate", "dd-only", "refuse"],
+            ["iso-image-candidate", "iso-image-candidate", "dd-only", "refuse"],
         )
 
     def test_pending_missing_requires_explicit_allowance(self):

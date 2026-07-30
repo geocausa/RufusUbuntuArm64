@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "corpus_version": "2026.07.30.1",
+  "corpus_version": "2026.07.30.2",
   "upstream_rufus": {
     "version": "4.15",
     "commit": "6d8fbf98305ff37eb531c45cbd6ff44563c53917"
   },
   "policy": {
-    "iso_image_candidate": "plain recognized hybrid media with a validated UEFI El Torito entry",
+    "iso_image_candidate": "plain recognized optical media with a validated UEFI El Torito entry; hybrid media may also retain an explicit DD choice, while optical-only media are ISO Image mode only",
     "dd_only": "recognized raw media outside the reviewed ISO extraction boundary",
     "refuse": "unrecognized, unsafe, prepared, non-raw, or inspector-refused input",
     "physical_boot_not_implied": true
@@ -74,6 +74,39 @@
         "profile": {
           "write_path": "hybrid-direct-write",
           "hybrid": true,
+          "optical": true,
+          "boot_methods": [
+            "UEFI"
+          ],
+          "bootloaders": [
+            "GRUB"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fixture-optical-uefi-grub",
+      "family": "Synthetic optical-only UEFI",
+      "architecture": "architecture-neutral fixture",
+      "filename": "fixture-optical-uefi-grub.iso",
+      "qualification_state": "qualified",
+      "source": {
+        "kind": "synthetic",
+        "project": "RufusArm64",
+        "generator": "optical-uefi-grub-v1"
+      },
+      "size": 262144,
+      "sha256": "408e120504b52e6a23995cfd53e9f70d833dfab23f9acff7201d8d8ee5dca676",
+      "expected": {
+        "decision": "iso-image-candidate",
+        "inspection": {
+          "recognized": true,
+          "mode": "raw",
+          "container_format": "plain"
+        },
+        "profile": {
+          "write_path": "optical-direct-write",
+          "hybrid": false,
           "optical": true,
           "boot_methods": [
             "UEFI"
@@ -220,15 +253,45 @@
       }
     },
     {
-      "id": "fedora-workstation-44-aarch64",
+      "id": "fedora-everything-44-aarch64-netinst",
       "family": "Fedora",
       "architecture": "aarch64",
-      "filename": "Fedora-Workstation-Live-44-1.1.aarch64.iso",
-      "qualification_state": "pending",
+      "filename": "Fedora-Everything-netinst-aarch64-44-1.7.iso",
+      "qualification_state": "qualified",
       "source": {
         "kind": "official",
         "project": "Fedora",
-        "url": "https://fedoraproject.org/workstation/download/"
+        "url": "https://download.fedoraproject.org/pub/fedora/linux/releases/44/Everything/aarch64/iso/",
+        "checksum_url": "https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Everything/aarch64/iso/Fedora-Everything-44-1.7-aarch64-CHECKSUM",
+        "keyring_url": "https://fedoraproject.org/fedora.gpg"
+      },
+      "size": 1247682560,
+      "sha256": "814801fbdda7492d9ee24dab8426c72b29f1635fe98d4ba675ede7e81189d57e",
+      "expected": {
+        "decision": "iso-image-candidate",
+        "inspection": {
+          "recognized": true,
+          "mode": "raw",
+          "container_format": "plain",
+          "windows_install_media": false
+        },
+        "profile": {
+          "write_path": "optical-direct-write",
+          "hybrid": false,
+          "optical": true,
+          "boot_methods": [
+            "UEFI"
+          ],
+          "bootloaders": [
+            "GRUB"
+          ]
+        }
+      },
+      "evidence": {
+        "checksum_signature": "Fedora 44 primary key DBFCF71C6D9F90A6 accepted by gpgv",
+        "software_inspection": "qualified after marker-bound Windows/optical classification regression",
+        "physical_write_readback": "passed on Kingston SNS4151S316G target: MBR/UEFI/FAT32, 4096-byte clusters, label FEDORA44, complete copied-file SHA-256 verification, fsck.fat, fallback EFI/BOOT/BOOTAA64.EFI, and detached read-only reopen",
+        "firmware_boot": "not established"
       }
     },
     {

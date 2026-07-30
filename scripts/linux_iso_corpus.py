@@ -228,8 +228,8 @@ def classify(inspection: dict[str, Any], profile: dict[str, Any]) -> str:
     if container not in {"", "plain"}:
         return "refuse"
     if (
-        profile.get("write_path") == "hybrid-direct-write"
-        and profile.get("hybrid") is True
+        profile.get("write_path") in {"hybrid-direct-write", "optical-direct-write"}
+        and profile.get("optical") is True
         and "UEFI" in (profile.get("boot_methods") or [])
     ):
         return "iso-image-candidate"
