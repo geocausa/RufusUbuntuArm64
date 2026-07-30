@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added guarded ext2 and ext3 data-only formatting with distinct formatter contracts, MBR/GPT Linux data partition types, read-only `e2fsck`, independent ext-superblock generation classification, GTK/CLI integration, and real loop-device qualification.
 - Added guarded FAT16 data-only formatting with MBR/GPT planning, a conservative below-4-GiB capacity boundary, canonical FAT labels, read-only checking, and independent FAT16-versus-FAT32 BPB verification.
 - Added fail-closed threshold-signed release publication enforcement: canonical tags are deferred until a reviewed metadata tag exists, staged and published asset directories are descriptor-bound and matched exactly to the signed tag, commit, sizes, and SHA-256 graph, and release workflows verify deterministic metadata before upload and again after publication.
 - Added guarded Windows UEFI CA 2023 bootloader replacement for qualified Windows 11 client UEFI/FAT32 media, with three-way architecture binding, staged certificate evidence, DBX checks, exact destination replacement, and mandatory SHA-256 readback; NTFS remains explicitly outside the CA 2023-only boundary.

@@ -114,6 +114,8 @@ func TestFilesystemCheckCommandsAreReadOnly(t *testing.T) {
 		FilesystemFAT32: {name: "fsck.vfat", args: "-n /dev/sdb1"},
 		FilesystemExFAT: {name: "fsck.exfat", args: "-n /dev/sdb1"},
 		FilesystemNTFS:  {name: "ntfsfix", args: "-n /dev/sdb1"},
+		FilesystemExt2:  {name: "e2fsck", args: "-f -n /dev/sdb1"},
+		FilesystemExt3:  {name: "e2fsck", args: "-f -n /dev/sdb1"},
 		FilesystemExt4:  {name: "e2fsck", args: "-f -n /dev/sdb1"},
 	}
 	for filesystem, expected := range tests {
@@ -124,6 +126,52 @@ func TestFilesystemCheckCommandsAreReadOnly(t *testing.T) {
 		if name != expected.name || strings.Join(args, " ") != expected.args {
 			t.Fatalf("%s check=%s %v, want %s %s", filesystem, name, args, expected.name, expected.args)
 		}
+	}
+}
+
+func TestDetectExtFilesystemUsesSuperblockFeatures(t *testing.T) {
+	tests := []struct {
+		name     string
+		compat   uint32
+		incompat uint32
+		readOnly uint32
+		magic    uint16
+		want     string
+		wantErr  bool
+	}{
+		{name: "ext2", compat: 0x38, incompat: 0x02, readOnly: 0x03, magic: 0xef53, want: FilesystemExt2},
+		{name: "ext3 journal", compat: 0x3c, incompat: 0x02, readOnly: 0x03, magic: 0xef53, want: FilesystemExt3},
+		{name: "ext4 extents", compat: 0x3c, incompat: 0x42, readOnly: 0x03, magic: 0xef53, want: FilesystemExt4},
+		{name: "ext4 metadata checksum", compat: 0x3c, incompat: 0x02, readOnly: 0x403, magic: 0xef53, want: FilesystemExt4},
+		{name: "invalid magic", magic: 0x1234, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			superblock := make([]byte, 1024+256)
+			binary.LittleEndian.PutUint16(superblock[1024+0x38:1024+0x3a], test.magic)
+			binary.LittleEndian.PutUint32(superblock[1024+0x5c:1024+0x60], test.compat)
+			binary.LittleEndian.PutUint32(superblock[1024+0x60:1024+0x64], test.incompat)
+			binary.LittleEndian.PutUint32(superblock[1024+0x64:1024+0x68], test.readOnly)
+			path := t.TempDir() + "/ext.img"
+			if err := os.WriteFile(path, superblock, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			file, err := os.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer file.Close()
+			got, err := detectExtFilesystem(file)
+			if test.wantErr {
+				if err == nil {
+					t.Fatalf("got %q, want refusal", got)
+				}
+				return
+			}
+			if err != nil || got != test.want {
+				t.Fatalf("detectExtFilesystem() = %q, %v; want %q", got, err, test.want)
+			}
+		})
 	}
 }
 
