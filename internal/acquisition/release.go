@@ -1,6 +1,7 @@
 package acquisition
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -55,6 +56,13 @@ type VerifiedRelease struct {
 	SHA256        string
 	SignedBytes   []byte
 	SigningKeyIDs []string
+	trusted       *releaseTrustSnapshot
+}
+
+type releaseTrustSnapshot struct {
+	metadata      ReleaseMetadata
+	sha256        string
+	signingKeyIDs []string
 }
 
 // UpdateDecision is a non-destructive comparison between the running version
@@ -104,7 +112,12 @@ func VerifyReleaseMetadata(root *VerifiedRoot, data []byte, now time.Time) (*Ver
 	if err != nil {
 		return nil, fmt.Errorf("verify release signatures: %w", err)
 	}
-	verified.SigningKeyIDs = keyIDs
+	verified.SigningKeyIDs = append([]string(nil), keyIDs...)
+	verified.trusted = &releaseTrustSnapshot{
+		metadata:      cloneReleaseMetadata(verified.Metadata),
+		sha256:        verified.SHA256,
+		signingKeyIDs: append([]string(nil), keyIDs...),
+	}
 	return verified, nil
 }
 
@@ -239,53 +252,129 @@ func validCommitSHA(value string) bool {
 
 // Package returns the exact package asset bound by this release.
 func (release *VerifiedRelease) Package() (ReleaseAsset, error) {
-	if release == nil {
-		return ReleaseAsset{}, errors.New("verified release is required")
+	snapshot, err := release.trustSnapshot()
+	if err != nil {
+		return ReleaseAsset{}, err
 	}
-	name := fmt.Sprintf("rufusarm64_%s_arm64.deb", release.Metadata.ReleaseVersion)
-	index := sort.Search(len(release.Metadata.Assets), func(index int) bool {
-		return release.Metadata.Assets[index].Name >= name
+	name := fmt.Sprintf("rufusarm64_%s_arm64.deb", snapshot.metadata.ReleaseVersion)
+	index := sort.Search(len(snapshot.metadata.Assets), func(index int) bool {
+		return snapshot.metadata.Assets[index].Name >= name
 	})
-	if index >= len(release.Metadata.Assets) || release.Metadata.Assets[index].Name != name {
+	if index >= len(snapshot.metadata.Assets) || snapshot.metadata.Assets[index].Name != name {
 		return ReleaseAsset{}, fmt.Errorf("verified release does not contain %s", name)
 	}
-	return release.Metadata.Assets[index], nil
+	return cloneReleaseAsset(snapshot.metadata.Assets[index]), nil
+}
+
+func (release *VerifiedRelease) trustSnapshot() (*releaseTrustSnapshot, error) {
+	if release == nil || release.trusted == nil {
+		return nil, errors.New("authenticated release metadata is required")
+	}
+	return release.trusted, nil
+}
+
+func cloneReleaseMetadata(metadata ReleaseMetadata) ReleaseMetadata {
+	cloned := metadata
+	cloned.Assets = make([]ReleaseAsset, len(metadata.Assets))
+	for index, asset := range metadata.Assets {
+		cloned.Assets[index] = cloneReleaseAsset(asset)
+	}
+	return cloned
+}
+
+func cloneReleaseAsset(asset ReleaseAsset) ReleaseAsset {
+	cloned := asset
+	cloned.RedirectHosts = append([]string(nil), asset.RedirectHosts...)
+	return cloned
 }
 
 // EvaluateRelease refuses metadata rollback and release-version downgrade before
 // reporting whether a newer authenticated package is available.
 func EvaluateRelease(currentVersion string, minimumMetadataVersion int, release *VerifiedRelease) (UpdateDecision, error) {
-	if release == nil {
-		return UpdateDecision{}, errors.New("verified release is required")
+	snapshot, err := release.trustSnapshot()
+	if err != nil {
+		return UpdateDecision{}, err
 	}
 	if minimumMetadataVersion < 0 {
 		return UpdateDecision{}, errors.New("minimum metadata version cannot be negative")
 	}
-	if release.Metadata.Version < minimumMetadataVersion {
-		return UpdateDecision{}, fmt.Errorf("release metadata rollback from accepted version %d to %d", minimumMetadataVersion, release.Metadata.Version)
+	if snapshot.metadata.Version < minimumMetadataVersion {
+		return UpdateDecision{}, fmt.Errorf("release metadata rollback from accepted version %d to %d", minimumMetadataVersion, snapshot.metadata.Version)
 	}
 	current, err := parseReleaseVersion(currentVersion)
 	if err != nil {
 		return UpdateDecision{}, fmt.Errorf("current version: %w", err)
 	}
-	candidate, err := parseReleaseVersion(release.Metadata.ReleaseVersion)
+	candidate, err := parseReleaseVersion(snapshot.metadata.ReleaseVersion)
 	if err != nil {
 		return UpdateDecision{}, fmt.Errorf("release version: %w", err)
 	}
 	comparison := compareVersionTriples(candidate, current)
 	if comparison < 0 {
-		return UpdateDecision{}, fmt.Errorf("release version downgrade from %s to %s", currentVersion, release.Metadata.ReleaseVersion)
+		return UpdateDecision{}, fmt.Errorf("release version downgrade from %s to %s", currentVersion, snapshot.metadata.ReleaseVersion)
 	}
 	packageAsset, err := release.Package()
 	if err != nil {
 		return UpdateDecision{}, err
 	}
 	return UpdateDecision{
-		CurrentVersion: currentVersion, ReleaseVersion: release.Metadata.ReleaseVersion,
-		MetadataVersion: release.Metadata.Version, UpdateAvailable: comparison > 0,
-		Tag: release.Metadata.Tag, Commit: release.Metadata.Commit, Channel: release.Metadata.Channel,
-		Package: packageAsset, MetadataSHA256: release.SHA256,
-		SigningKeyIDs: append([]string(nil), release.SigningKeyIDs...),
+		CurrentVersion: currentVersion, ReleaseVersion: snapshot.metadata.ReleaseVersion,
+		MetadataVersion: snapshot.metadata.Version, UpdateAvailable: comparison > 0,
+		Tag: snapshot.metadata.Tag, Commit: snapshot.metadata.Commit, Channel: snapshot.metadata.Channel,
+		Package: packageAsset, MetadataSHA256: snapshot.sha256,
+		SigningKeyIDs: append([]string(nil), snapshot.signingKeyIDs...),
+	}, nil
+}
+
+// ReleaseDownloadResult binds the published package bytes back to the exact
+// authenticated release metadata that authorized the transfer.
+type ReleaseDownloadResult struct {
+	ReleaseVersion  string         `json:"release_version"`
+	MetadataVersion int            `json:"metadata_version"`
+	MetadataSHA256  string         `json:"metadata_sha256"`
+	Tag             string         `json:"tag"`
+	Commit          string         `json:"commit"`
+	SigningKeyIDs   []string       `json:"signing_key_ids"`
+	Package         ReleaseAsset   `json:"package"`
+	Download        DownloadResult `json:"download"`
+}
+
+// DownloadReleasePackage reuses the reviewed acquisition downloader for the
+// exact ARM64 package bound by authenticated release metadata. It never installs
+// the downloaded package or requests privilege.
+func DownloadReleasePackage(ctx context.Context, release *VerifiedRelease, options DownloadOptions) (ReleaseDownloadResult, error) {
+	snapshot, err := release.trustSnapshot()
+	if err != nil {
+		return ReleaseDownloadResult{}, err
+	}
+	packageAsset, err := release.Package()
+	if err != nil {
+		return ReleaseDownloadResult{}, err
+	}
+	image := Image{
+		ID:            "rufusarm64-release",
+		Name:          "RufusArm64 release package",
+		Version:       snapshot.metadata.ReleaseVersion,
+		Architecture:  "arm64",
+		Filename:      packageAsset.Name,
+		URL:           packageAsset.URL,
+		SHA256:        packageAsset.SHA256,
+		Size:          packageAsset.Size,
+		RedirectHosts: append([]string(nil), packageAsset.RedirectHosts...),
+	}
+	download, err := Download(ctx, image, options)
+	if err != nil {
+		return ReleaseDownloadResult{}, fmt.Errorf("download authenticated release package: %w", err)
+	}
+	return ReleaseDownloadResult{
+		ReleaseVersion:  snapshot.metadata.ReleaseVersion,
+		MetadataVersion: snapshot.metadata.Version,
+		MetadataSHA256:  snapshot.sha256,
+		Tag:             snapshot.metadata.Tag,
+		Commit:          snapshot.metadata.Commit,
+		SigningKeyIDs:   append([]string(nil), snapshot.signingKeyIDs...),
+		Package:         packageAsset,
+		Download:        download,
 	}, nil
 }
 

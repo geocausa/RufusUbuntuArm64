@@ -1,6 +1,6 @@
 # Threshold-signed release metadata and verified updates
 
-Status: **verification foundation implemented; production signing and installation are not yet enabled**.
+Status: **verification and exact package download implemented; production signing and installation are not yet enabled**.
 
 RufusArm64 release assets were already reproducible and bound by published SHA-256 sidecars. That proves that downloaded bytes match release metadata served by GitHub, but it does not create an independent project-controlled publisher signature. This tranche reuses the acquisition channel's offline Ed25519 trust model for release metadata instead of introducing CI-held private keys or a second cryptographic format.
 
@@ -62,13 +62,28 @@ rufusarm64-cli update verify \
   --json
 ```
 
-The command verifies the complete root chain and release signature threshold, refuses metadata rollback and release-version downgrade, and returns the exact authenticated package record. `--minimum-metadata-version` represents the highest metadata version already accepted by a caller; persistent owner-only update state and network refresh remain a later tranche.
+The command verifies the complete root chain and release signature threshold, refuses metadata rollback and release-version downgrade, and returns the exact authenticated package record. `--minimum-metadata-version` represents the highest metadata version already accepted by a caller; persistent owner-only update state and automatic metadata refresh remain later tranches.
+
+A newer authenticated package can be downloaded without installation:
+
+```bash
+rufusarm64-cli update download \
+  --root 1.root.json \
+  --release release.json \
+  --current-version 0.15.0 \
+  --minimum-metadata-version 1 \
+  --output "$HOME/Downloads" \
+  --resume \
+  --json
+```
+
+The downloader receives the package record from an internal immutable snapshot created only after threshold verification. Mutating exported inspection fields after verification cannot alter the trusted version, package URL, size, SHA-256, metadata digest, or signer evidence used for the transfer. The existing acquisition writer then enforces signed redirect hosts, TLS policy, exact response/range semantics, bounded resumable partials, available space, cancellation, complete SHA-256 verification, atomic no-replace publication, directory synchronization, and verified reuse of an existing destination. A same-version or older release is refused before any network request.
 
 ## Deliberate exclusions
 
 This implementation does **not**:
 
-- download a package;
+- automatically discover or refresh release metadata from the network;
 - execute `dpkg`, `apt`, PackageKit or another installer;
 - request privilege;
 - replace the running application;
@@ -77,4 +92,4 @@ This implementation does **not**:
 - provide rollback after package installation;
 - make an AppImage or other portable-distribution claim.
 
-The next safe step is deterministic release-draft generation followed by a committed offline-signed envelope that the release workflow checks against freshly reproduced assets before publication. Verified download can follow using the already reviewed bounded/resumable acquisition writer. Installation remains a separate privileged package-management design.
+The next safe step is a committed offline-signed production root and release envelope that the release workflow checks against freshly reproduced assets before publication, followed by owner-only persistent rollback state and authenticated metadata refresh. Installation remains a separate privileged package-management design.

@@ -691,6 +691,48 @@ func TestUpdateVerifyAuthenticatedRelease(t *testing.T) {
 	if err := runUpdateVerify([]string{"--root", rootPath, "--release", releasePath, "--current-version", "0.17.0"}); err == nil || !strings.Contains(err.Error(), "downgrade") {
 		t.Fatalf("downgrade error = %v", err)
 	}
+
+	previousDownload := downloadReleasePackage
+	downloadCalled := false
+	downloadReleasePackage = func(ctx context.Context, release *acquisition.VerifiedRelease, options acquisition.DownloadOptions) (acquisition.ReleaseDownloadResult, error) {
+		downloadCalled = true
+		packageAsset, err := release.Package()
+		if err != nil {
+			return acquisition.ReleaseDownloadResult{}, err
+		}
+		if packageAsset.Name != packageName || options.Destination != directory || !options.Resume || options.Replace {
+			t.Fatalf("unexpected authenticated download request: package=%+v options=%+v", packageAsset, options)
+		}
+		return acquisition.ReleaseDownloadResult{
+			ReleaseVersion: releaseVersion, MetadataVersion: 3, MetadataSHA256: strings.Repeat("e", 64),
+			Tag: "v" + releaseVersion, Commit: strings.Repeat("a", 40), SigningKeyIDs: []string{releaseID}, Package: packageAsset,
+			Download: acquisition.DownloadResult{Path: filepath.Join(directory, packageName), URL: packageAsset.URL, SHA256: packageAsset.SHA256, Size: packageAsset.Size},
+		}, nil
+	}
+	t.Cleanup(func() { downloadReleasePackage = previousDownload })
+	downloadOutput, err := captureStdout(t, func() error {
+		return runUpdateDownload([]string{"--root", rootPath, "--release", releasePath, "--current-version", "0.15.0", "--minimum-metadata-version", "2", "--output", directory, "--resume", "--json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !downloadCalled {
+		t.Fatal("authenticated release downloader was not called")
+	}
+	var downloaded acquisition.ReleaseDownloadResult
+	if err := json.Unmarshal([]byte(downloadOutput), &downloaded); err != nil {
+		t.Fatalf("decode update download result: %v: %q", err, downloadOutput)
+	}
+	if downloaded.ReleaseVersion != releaseVersion || downloaded.Download.Path != filepath.Join(directory, packageName) {
+		t.Fatalf("unexpected update download result: %+v", downloaded)
+	}
+	downloadCalled = false
+	if err := runUpdateDownload([]string{"--root", rootPath, "--release", releasePath, "--current-version", releaseVersion, "--output", directory}); err == nil || !strings.Contains(err.Error(), "not newer") {
+		t.Fatalf("same-version download error = %v", err)
+	}
+	if downloadCalled {
+		t.Fatal("same-version metadata reached the downloader")
+	}
 }
 
 func mustJSONBytes(t *testing.T, value any) []byte {

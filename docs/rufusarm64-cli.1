@@ -42,6 +42,8 @@ rufusarm64-cli \- inspect images and safely create bootable USB media on Linux
 .RI [ options ]
 .B rufusarm64-cli update verify --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--json]
 .br
+.B rufusarm64-cli update download --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--output FILE] [--replace] [--resume] [--json-progress|--json]
+.br
 .SH DESCRIPTION
 .B rufusarm64-cli
 is the native helper and troubleshooting interface used by RufusArm64. It
@@ -164,7 +166,16 @@ validates a threshold-signed release envelope through a supplied sequential root
 chain. It binds the release version, tag, commit, channel, exact asset names,
 sizes, SHA-256 digests, GitHub release URLs, and authorized signing key IDs.
 The command refuses expired metadata, metadata-version rollback, and release
-version downgrade. It is read-only and does not download or install software.
+version downgrade.
+.PP
+.B update download
+requires the same authenticated metadata and additionally requires the signed
+release to be newer than the current version. It uses the bounded acquisition
+writer to enforce signed URL and redirect hosts, exact byte count, SHA-256,
+resumable partial identity, cancellation, available-space checks, atomic
+no-replace publication, directory synchronization, and verified reuse of an
+existing destination. It downloads only the exact ARM64 Debian package bound by
+the signed release metadata. It does not request privilege or install software.
 
 .SH SECURE BOOT DBX
 .B dbx inspect
