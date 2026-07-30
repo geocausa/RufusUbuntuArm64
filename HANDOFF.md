@@ -1,6 +1,6 @@
 # RufusArm64 development handoff
 
-Updated: 2026-07-30 12:14 Europe/London
+Updated: 2026-07-30 12:41 Europe/London
 
 This file is the durable restart point for ChatGPT/Connector2 development on
 `geocausa/RufusUbuntuArm64`. Read it before changing files or running a
@@ -144,7 +144,7 @@ Current progress:
 - Evidence files are under
   `/home/geoca/Downloads/opensuse-tumbleweed-aarch64-20260714/`. The resumable
   partial is named with the non-admissible `.iso.download` suffix and was
-  `154697728` bytes at this checkpoint.
+  `746684416` bytes at this checkpoint. No transfer process is currently running.
 - A bounded sparse range probe showed an MBR/ISO9660 hybrid with a BIOS El
   Torito entry and provisionally classified it as `dd-only`. This is not corpus
   qualification: the complete artifact still requires full-byte SHA-256
@@ -217,13 +217,21 @@ Previously qualified sacrificial target:
 - Last completed media: Fedora Everything 44 aarch64
 - Last known filesystem/label: FAT32, `FEDORA44`
 
-Current safety block observed on 2026-07-30:
+Current user-authorized sacrificial target, observed on 2026-07-30:
 
-- `/dev/sda` is now a different mounted 29.7 GiB `Generic STORAGE DEVICE`
-  with a FAT volume labelled `UBUNTUX1E`.
-- It does not match the qualified Kingston model, capacity or stable identity.
-- Physical writes are disabled until a sacrificial target is deliberately
-  selected, unmounted, enumerated and identity-bound again.
+- Whole device: `/dev/sda`
+- Model/vendor: `Generic STORAGE DEVICE`
+- Capacity: `31914983424` bytes (approximately 29.7 GiB)
+- Connection: removable USB 2.0 microSD card reader
+- Current filesystem/label: mounted FAT volume `UBUNTUX1E`
+- Stable identity from the branch-built helper:
+  `84d18636c43baa4b9c72e73a8f53f7f3be7d13789f0b8d11ec0dd5189146b5be`
+- The user explicitly designated this attached device as sacrificial. An
+  identity-bound destructive dry run passed against the qualified Ubuntu 26.04
+  ARM64 source without writing data.
+- Physical writing is permitted only after the intended source passes its exact
+  signed size/SHA-256 binding, the mounted child is unmounted, the device is
+  enumerated again, and the identity above still matches exactly.
 
 The internal system disk is not `/dev/sda`. Nevertheless, never assume target
 identity from the pathname alone. Before every destructive operation:
