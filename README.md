@@ -13,7 +13,7 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 - Windows installation media using GPT or MBR, UEFI or x86-family BIOS/CSM, and Automatic, FAT32, or NTFS selection.
 - Bounded Windows multi-edition reporting for WIM, ESD, and validated split SWM payloads before optional Setup customizations.
 - A guarded graphical persistent Ubuntu casper and Debian live-boot workflow.
-- A guarded **Restore / format…** workflow for verified data-only GPT/MBR media using FAT16, FAT32, exFAT, NTFS, ext2, ext3, or ext4.
+- A guarded **Restore / format…** workflow for verified data-only GPT/MBR media using FAT16, FAT32, exFAT, NTFS, UDF, ext2, ext3, or ext4.
 - Fast deterministic **FreeDOS…** media creation from checksum-pinned, source-retained FreeDOS 1.4 and FreeCOM payloads for x86 BIOS or UEFI Legacy/CSM systems, with required-extent write/readback rather than capacity-scaled whole-device cloning.
 - Explicit post-operation actions to create another USB or restore the exact completed target for ordinary storage.
 - Threshold-signed and local-signed image-catalog verification, storage preflight, cancellation, SHA-256 installation, and resumable private partials.
@@ -133,9 +133,9 @@ A passing report applies only to that exact image, USB, controller, firmware, Se
 
 ## Restore or format a USB for ordinary storage
 
-Select a removable target and choose **Restore / format…**. RufusArm64 calculates an unprivileged identity-bound plan for GPT or MBR and FAT16, FAT32, exFAT, NTFS, ext2, ext3, or ext4. It displays geometry, required tools, warnings, and an exact `FORMAT` phrase before administrator authentication.
+Select a removable target and choose **Restore / format…**. RufusArm64 calculates an unprivileged identity-bound plan for GPT or MBR and FAT16, FAT32, exFAT, NTFS, UDF, ext2, ext3, or ext4. It displays geometry, required tools, warnings, and an exact `FORMAT` phrase before administrator authentication.
 
-FAT16 is admitted only when the canonical whole-drive partition remains below 4 GiB; larger targets fail before erasure rather than being silently truncated. ext2, ext3, and ext4 are created through distinct package-resolved formatter contracts and independently classified from their ext superblock features after a read-only `e2fsck`. A successful report verifies the partition geometry and exact filesystem generation. It does not claim bootability. Cancellation before erasure leaves the drive unchanged; cancellation or failure after erasure reports changed incomplete media conservatively.
+FAT16 is admitted only when the canonical whole-drive partition remains below 4 GiB; larger targets fail before erasure rather than being silently truncated. UDF uses a fixed stable 2.01 hard-disk profile, exact logical-sector blocks, descriptor and `blkid` agreement, closed-integrity evidence, and a private read-only kernel mount because Linux has no general UDF repair checker. ext2, ext3, and ext4 are created through distinct package-resolved formatter contracts and independently classified from their ext superblock features after a read-only `e2fsck`. A successful report verifies the partition geometry and exact filesystem generation. It does not claim bootability. Cancellation before erasure leaves the drive unchanged; cancellation or failure after erasure reports changed incomplete media conservatively.
 
 ## Create FreeDOS media
 

@@ -27,7 +27,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            util-linux dosfstools exfatprogs ntfs-3g e2fsprogs
+            util-linux dosfstools exfatprogs ntfs-3g e2fsprogs udftools
       - name: Exercise every enabled filesystem on real loop devices
         env:
           RUFUS_REAL_BLOCK_TEST: '1'

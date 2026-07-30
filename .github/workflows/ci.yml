@@ -109,7 +109,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs genisoimage qemu-utils
+            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs udftools genisoimage qemu-utils
           audit_bin="${RUNNER_TEMP}/rufusarm64-audit-tools"
           mkdir -p "${audit_bin}"
           GOBIN="${audit_bin}" go install honnef.co/go/tools/cmd/staticcheck@v0.7.0

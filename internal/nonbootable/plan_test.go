@@ -108,6 +108,65 @@ func TestBuildPlanMBRExt4AndEmptyLabel(t *testing.T) {
 	}
 }
 
+func TestBuildPlanUDFUsesStableProfile(t *testing.T) {
+	request := baseRequest()
+	request.Scheme = SchemeMBR
+	request.Filesystem = FilesystemUDF
+	request.Label = "Rufus_日本"
+	plan, err := BuildPlan(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Filesystem != FilesystemUDF || plan.FilesystemDisplay != "UDF" || plan.PartitionType != "07" {
+		t.Fatalf("unexpected UDF plan: %#v", plan)
+	}
+	wantTools := []string{"sfdisk", "blockdev", "mkudffs", "udfinfo", "mount"}
+	if strings.Join(plan.RequiredTools, ",") != strings.Join(wantTools, ",") {
+		t.Fatalf("UDF tools = %#v", plan.RequiredTools)
+	}
+	if plan.Label != request.Label {
+		t.Fatalf("UDF label = %q, want %q", plan.Label, request.Label)
+	}
+	phrase, err := ConfirmationPhrase(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if phrase != "FORMAT /dev/sdb AS UDF USING MBR LABEL Rufus_日本" {
+		t.Fatalf("phrase = %q", phrase)
+	}
+}
+
+func TestUDFLabelEncodingBoundaries(t *testing.T) {
+	tests := []struct {
+		name  string
+		label string
+		want  string
+	}{
+		{name: "latin accepted", label: strings.Repeat("é", 126)},
+		{name: "latin too long", label: strings.Repeat("é", 127), want: "126 OSTA"},
+		{name: "wide accepted", label: strings.Repeat("日", 63)},
+		{name: "wide too long", label: strings.Repeat("日", 64), want: "63 OSTA"},
+		{name: "non BMP", label: "DATA😀", want: "Basic Multilingual Plane"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := baseRequest()
+			request.Filesystem = FilesystemUDF
+			request.Label = test.label
+			plan, err := BuildPlan(request)
+			if test.want == "" {
+				if err != nil || plan.Label != test.label {
+					t.Fatalf("BuildPlan() = %#v, %v", plan, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error=%v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestBuildPlanExtFamiliesUseLinuxDataPartitionTypes(t *testing.T) {
 	for _, filesystem := range []string{FilesystemExt2, FilesystemExt3, FilesystemExt4} {
 		t.Run(filesystem, func(t *testing.T) {
@@ -137,6 +196,7 @@ func TestFilesystemAliasesAndContracts(t *testing.T) {
 		"VFAT":  FilesystemFAT32,
 		"exfat": FilesystemExFAT,
 		"NTFS":  FilesystemNTFS,
+		"UDF":   FilesystemUDF,
 		"ext2":  FilesystemExt2,
 		"ext3":  FilesystemExt3,
 		"ext4":  FilesystemExt4,
@@ -158,6 +218,7 @@ func TestFilesystemAliasesAndContracts(t *testing.T) {
 		FilesystemFAT32: "FAT32",
 		FilesystemExFAT: "exFAT",
 		FilesystemNTFS:  "NTFS",
+		FilesystemUDF:   "UDF",
 		FilesystemExt2:  "ext2",
 		FilesystemExt3:  "ext3",
 		FilesystemExt4:  "ext4",
@@ -172,7 +233,11 @@ func TestFilesystemAliasesAndContracts(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", filesystem, err)
 		}
-		if plan.FilesystemDisplay != display || len(plan.RequiredTools) != 4 {
+		wantToolCount := 4
+		if filesystem == FilesystemUDF {
+			wantToolCount = 5
+		}
+		if plan.FilesystemDisplay != display || len(plan.RequiredTools) != wantToolCount {
 			t.Fatalf("%s plan = %#v", filesystem, plan)
 		}
 	}
@@ -190,7 +255,7 @@ func TestBuildPlanRejectsUnsafeOrUnsupportedInput(t *testing.T) {
 		{name: "unsupported sector", mutate: func(value *Request) { value.LogicalSectorSize = 1024 }, want: "512 or 4096"},
 		{name: "small device", mutate: func(value *Request) { value.DeviceSizeBytes = 32 * 1024 * 1024 }, want: "too small"},
 		{name: "scheme", mutate: func(value *Request) { value.Scheme = "apm" }, want: "GPT or MBR"},
-		{name: "filesystem", mutate: func(value *Request) { value.Filesystem = "btrfs" }, want: "FAT16, FAT32, exFAT, NTFS, ext2, ext3, or ext4"},
+		{name: "filesystem", mutate: func(value *Request) { value.Filesystem = "btrfs" }, want: "FAT16, FAT32, exFAT, NTFS, UDF, ext2, ext3, or ext4"},
 		{name: "fat punctuation", mutate: func(value *Request) { value.Label = "DATA!" }, want: "ASCII"},
 		{name: "fat too long", mutate: func(value *Request) { value.Label = "TWELVE CHARS" }, want: "11 bytes"},
 		{name: "leading space", mutate: func(value *Request) { value.Label = " DATA" }, want: "leading or trailing"},
