@@ -755,6 +755,67 @@ func TestUpdateVerifyAuthenticatedRelease(t *testing.T) {
 	}
 }
 
+func TestUpdateRefreshUsesPinnedChannelAndRollbackAcceptance(t *testing.T) {
+	previousRefresh := refreshReleaseChannel
+	previousAccept := acceptReleaseChannel
+	t.Cleanup(func() {
+		refreshReleaseChannel = previousRefresh
+		acceptReleaseChannel = previousAccept
+	})
+	channel := &acquisition.ReleaseChannelResult{
+		RootVersion: 2, RootExpires: "2026-12-01T00:00:00Z", RootSHA256: strings.Repeat("a", 64),
+		ReleaseMetadataVersion: 7, ReleaseGenerated: "2026-07-30T15:00:00Z", ReleaseExpires: "2026-08-01T15:00:00Z",
+		ReleaseVersion: "0.16.0", Tag: "v0.16.0", Commit: strings.Repeat("b", 40), Channel: "stable",
+		ReleaseSHA256: strings.Repeat("c", 64), SigningKeyIDs: []string{strings.Repeat("d", 64)},
+		Package:   acquisition.ReleaseAsset{Name: "rufusarm64_0.16.0_arm64.deb", Size: 4096, SHA256: strings.Repeat("e", 64), URL: "https://github.com/geocausa/RufusUbuntuArm64/releases/download/v0.16.0/rufusarm64_0.16.0_arm64.deb"},
+		FromCache: true, CacheDir: "/tmp/update-cache", ReleasePath: "/tmp/update-cache/release.json",
+	}
+	refreshCalled := false
+	refreshReleaseChannel = func(ctx context.Context, config string, options acquisition.ReleaseChannelOptions) (*acquisition.ReleaseChannelResult, error) {
+		refreshCalled = true
+		if ctx == nil || config != "/tmp/channel.json" || options.CacheDir != "/tmp/update-cache" || options.StatePath != "/tmp/update-state.json" || !options.Offline || !options.AllowCachedOnNetworkError {
+			t.Fatalf("unexpected refresh request: config=%q options=%+v", config, options)
+		}
+		return channel, nil
+	}
+	acceptCalled := false
+	acceptReleaseChannel = func(result *acquisition.ReleaseChannelResult, currentVersion string, options acquisition.UpdateStateOptions) (acquisition.UpdateStateResult, error) {
+		acceptCalled = true
+		if result != channel || currentVersion != "0.15.0" || options.Path != "/tmp/update-state.json" || options.MinimumMetadataVersion != 6 {
+			t.Fatalf("unexpected acceptance request: result=%p current=%q options=%+v", result, currentVersion, options)
+		}
+		decision := acquisition.UpdateDecision{
+			CurrentVersion: "0.15.0", ReleaseVersion: "0.16.0", MetadataVersion: 7, UpdateAvailable: true,
+			Tag: "v0.16.0", Commit: strings.Repeat("b", 40), Channel: "stable", Package: channel.Package,
+			MetadataSHA256: channel.ReleaseSHA256, SigningKeyIDs: append([]string(nil), channel.SigningKeyIDs...),
+			StatePath: "/tmp/update-state.json", AcceptedAt: "2026-07-30T15:00:00Z", RootVersion: 2, RootSHA256: channel.RootSHA256,
+		}
+		return acquisition.UpdateStateResult{Decision: decision, StatePath: decision.StatePath}, nil
+	}
+	output, err := captureStdout(t, func() error {
+		return runUpdateRefresh([]string{"--config", "/tmp/channel.json", "--cache-dir", "/tmp/update-cache", "--state-file", "/tmp/update-state.json", "--current-version", "0.15.0", "--minimum-metadata-version", "6", "--offline", "--json"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !refreshCalled || !acceptCalled {
+		t.Fatalf("refresh/accept calls = %t/%t", refreshCalled, acceptCalled)
+	}
+	var decoded updateRefreshOutput
+	if err := json.Unmarshal([]byte(output), &decoded); err != nil {
+		t.Fatalf("decode refresh output: %v: %q", err, output)
+	}
+	if decoded.Channel.ReleaseMetadataVersion != 7 || !decoded.Channel.FromCache || !decoded.Decision.UpdateAvailable || decoded.Decision.StatePath != "/tmp/update-state.json" {
+		t.Fatalf("unexpected refresh output: %+v", decoded)
+	}
+	if err := runUpdateRefresh([]string{"--config", "/tmp/channel.json"}); err == nil || !strings.Contains(err.Error(), "explicit --current-version") {
+		t.Fatalf("development version error = %v", err)
+	}
+	if err := runUpdateRefresh([]string{"unexpected"}); err == nil || !strings.Contains(err.Error(), "positional") {
+		t.Fatalf("positional argument error = %v", err)
+	}
+}
+
 func mustJSONBytes(t *testing.T, value any) []byte {
 	t.Helper()
 	data, err := json.Marshal(value)

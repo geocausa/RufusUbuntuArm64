@@ -172,6 +172,7 @@ func TestKeyIDAndEnabledConfigWorkflow(t *testing.T) {
 		"channel-config", "--bootstrap-root", rootPath,
 		"--root-url", "https://updates.example.com/roots/{version}.json",
 		"--catalog-url", "https://updates.example.com/catalog.json",
+		"--release-url", "https://updates.example.com/release.json",
 		"--host", "updates.example.com", "--output", configPath,
 		"--now", now.Format(time.RFC3339),
 	}); err != nil {
@@ -185,7 +186,7 @@ func TestKeyIDAndEnabledConfigWorkflow(t *testing.T) {
 	if err := json.Unmarshal(configData, &config); err != nil {
 		t.Fatal(err)
 	}
-	if !config.Enabled || config.BootstrapRoot != "1.root.json" {
+	if !config.Enabled || config.BootstrapRoot != "1.root.json" || config.ReleaseURL != "https://updates.example.com/release.json" {
 		t.Fatalf("unexpected channel config: %+v", config)
 	}
 }
@@ -246,9 +247,9 @@ func mustJSON(t *testing.T, value any) []byte {
 
 func TestPublicationDirectoryDeterministic(t *testing.T) {
 	now := time.Date(2026, 7, 16, 20, 0, 0, 0, time.UTC)
-	rootA, rootB, catalogSigner := newOperatorSigner(1), newOperatorSigner(33), newOperatorSigner(65)
+	rootA, rootB, catalogSigner, releaseSigner := newOperatorSigner(1), newOperatorSigner(33), newOperatorSigner(65), newOperatorSigner(97)
 	directory := t.TempDir()
-	rootMetadata := operatorRootMetadata(now, []operatorSigner{rootA, rootB}, catalogSigner)
+	rootMetadata := operatorRootMetadataWithRelease(now, []operatorSigner{rootA, rootB}, catalogSigner, releaseSigner)
 	rootPayload, _, err := acquisition.CanonicalizeRootDraft(mustJSON(t, rootMetadata), now)
 	if err != nil {
 		t.Fatal(err)
@@ -291,10 +292,32 @@ func TestPublicationDirectoryDeterministic(t *testing.T) {
 	if err := os.WriteFile(catalogPath, catalogEnvelope, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	releaseVersion := "0.16.0"
+	packageName := "rufusarm64_" + releaseVersion + "_arm64.deb"
+	releaseMetadata := acquisition.ReleaseMetadata{
+		Type: "release", Schema: acquisition.TrustSchemaVersion, Version: 4,
+		Generated: now.Add(-time.Minute).Format(time.RFC3339), Expires: now.Add(24 * time.Hour).Format(time.RFC3339),
+		Product: "RufusArm64", Repository: "geocausa/RufusUbuntuArm64", ReleaseVersion: releaseVersion,
+		Tag: "v" + releaseVersion, Commit: strings.Repeat("c", 40), Channel: "stable",
+		Assets: []acquisition.ReleaseAsset{{Name: packageName, Size: 4096, SHA256: strings.Repeat("cd", 32), URL: "https://github.com/geocausa/RufusUbuntuArm64/releases/download/v" + releaseVersion + "/" + packageName}},
+	}
+	releasePayload, _, err := acquisition.CanonicalizeReleaseDraft(root, mustJSON(t, releaseMetadata), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseEnvelope, err := acquisition.AssembleMetadataEnvelope(releasePayload, []acquisition.DetachedMetadataSignature{{KeyID: releaseSigner.id, Signature: ed25519.Sign(releaseSigner.private, releasePayload)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	releasePath := filepath.Join(directory, "release-envelope.json")
+	if err := os.WriteFile(releasePath, releaseEnvelope, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	configData, err := acquisition.CanonicalizeChannelConfig(acquisition.ChannelConfig{
 		Schema: acquisition.ChannelConfigSchema, Enabled: true, BootstrapRoot: "1.root.json",
 		RootURL:      "https://updates.example.com/{version}.root.json",
 		CatalogURL:   "https://updates.example.com/catalog.json",
+		ReleaseURL:   "https://updates.example.com/release.json",
 		AllowedHosts: []string{"updates.example.com"},
 	})
 	if err != nil {
@@ -308,9 +331,16 @@ func TestPublicationDirectoryDeterministic(t *testing.T) {
 	second := filepath.Join(directory, "publication-two")
 	arguments := func(output string) []string {
 		return []string{
-			"publish", "--root", rootPath, "--catalog", catalogPath, "--config", configPath,
+			"publish", "--root", rootPath, "--catalog", catalogPath, "--release", releasePath, "--config", configPath,
 			"--directory", output, "--now", now.Format(time.RFC3339),
 		}
+	}
+	missingRelease := []string{
+		"publish", "--root", rootPath, "--catalog", catalogPath, "--config", configPath,
+		"--directory", filepath.Join(directory, "missing-release"), "--now", now.Format(time.RFC3339),
+	}
+	if err := run(missingRelease); err == nil || !strings.Contains(err.Error(), "both release_url and --release") {
+		t.Fatalf("missing release publication error = %v", err)
 	}
 	if err := run(arguments(first)); err != nil {
 		t.Fatal(err)
@@ -318,7 +348,7 @@ func TestPublicationDirectoryDeterministic(t *testing.T) {
 	if err := run(arguments(second)); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"1.root.json", "catalog.json", "channel.json", "publication.json", "SHA256SUMS"} {
+	for _, name := range []string{"1.root.json", "catalog.json", "release.json", "channel.json", "publication.json", "SHA256SUMS"} {
 		firstData, err := os.ReadFile(filepath.Join(first, name))
 		if err != nil {
 			t.Fatal(err)
@@ -338,10 +368,21 @@ func TestPublicationDirectoryDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"1.root.json", "catalog.json", "channel.json", "publication.json"} {
+	for _, name := range []string{"1.root.json", "catalog.json", "release.json", "channel.json", "publication.json"} {
 		if !strings.Contains(string(checksums), "  "+name+"\n") {
 			t.Fatalf("SHA256SUMS does not include %s", name)
 		}
+	}
+	publicationData, err := os.ReadFile(filepath.Join(first, "publication.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var summary map[string]any
+	if err := json.Unmarshal(publicationData, &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary["release_version"] != releaseVersion || summary["release_metadata_version"] != float64(4) {
+		t.Fatalf("publication summary does not bind release metadata: %+v", summary)
 	}
 }
 

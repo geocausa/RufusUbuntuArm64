@@ -42,6 +42,8 @@ rufusarm64-cli \- inspect images and safely create bootable USB media on Linux
 .RI [ options ]
 .B rufusarm64-cli update verify --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--state-file FILE] [--json]
 .br
+.B rufusarm64-cli update refresh [--config FILE] [--cache-dir DIR] [--state-file FILE] [--current-version VERSION] [--minimum-metadata-version N] [--offline] [--json]
+.br
 .B rufusarm64-cli update download --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--state-file FILE] [--output FILE] [--replace] [--resume] [--json-progress|--json]
 .br
 .SH DESCRIPTION
@@ -177,6 +179,22 @@ and lock files use mode 0600, no-follow admission, single-link ownership checks,
 an exclusive process lock, atomic replacement, and directory synchronization.
 .B --minimum-metadata-version
 is an additional operator floor and cannot lower the persisted floor.
+.PP
+.B update refresh
+loads a package-owned pinned metadata-channel configuration, replays the cached
+root chain from the packaged bootstrap root, fetches sequential root rotations
+and the threshold-signed release envelope, and commits acceptance through the
+same rollback state used by local verification. The optional
+.B release_url
+uses the configured HTTPS host allowlist and the existing TLS 1.2+, redirect,
+compression, and byte-limit policy. Verified metadata is cached under the user
+cache directory with mode 0700 directories and mode 0600 files.
+.B --offline
+uses only an unexpired independently reverified cache. Network errors may fall
+back to that cache, but signature, expiry, rollback, substitution, and clock
+failures do not. Refresh and acceptance are bound to the same state path; the
+state and lock must remain outside the metadata cache and cannot overwrite the
+packaged configuration or bootstrap root. No package is downloaded or installed.
 .PP
 .B update download
 requires the same authenticated metadata and additionally requires the signed

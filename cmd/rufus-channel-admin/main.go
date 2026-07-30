@@ -84,8 +84,8 @@ Usage:
   rufus-channel-admin verify root --root FILE [--root FILE...] [--now RFC3339] [--json]
   rufus-channel-admin verify catalog --root FILE [--root FILE...] --catalog FILE [--now RFC3339] [--json]
   rufus-channel-admin verify release --root FILE [--root FILE...] --release FILE [--now RFC3339] [--json]
-  rufus-channel-admin channel-config --bootstrap-root FILE --root-url URL --catalog-url URL --host HOST [--host HOST...] --output FILE [--now RFC3339]
-  rufus-channel-admin publish --root FILE [--root FILE...] --catalog FILE --config FILE --directory DIR [--now RFC3339]
+  rufus-channel-admin channel-config --bootstrap-root FILE --root-url URL --catalog-url URL [--release-url URL] --host HOST [--host HOST...] --output FILE [--now RFC3339]
+  rufus-channel-admin publish --root FILE [--root FILE...] --catalog FILE [--release FILE] --config FILE --directory DIR [--now RFC3339]
 
 Output files are created atomically with owner-only permissions. Existing files
 are refused unless --force is supplied.
@@ -413,6 +413,7 @@ func runChannelConfig(args []string) error {
 	bootstrapRoot := fs.String("bootstrap-root", "", "signed bootstrap root envelope")
 	rootURL := fs.String("root-url", "", "versioned root URL containing {version}")
 	catalogURL := fs.String("catalog-url", "", "catalog metadata URL")
+	releaseURL := fs.String("release-url", "", "optional release metadata URL")
 	output := fs.String("output", "", "channel configuration output")
 	nowText := fs.String("now", "", "validation time in RFC3339")
 	force := fs.Bool("force", false, "replace an existing output file")
@@ -442,7 +443,8 @@ func runChannelConfig(args []string) error {
 	config := acquisition.ChannelConfig{
 		Schema: acquisition.ChannelConfigSchema, Enabled: true,
 		BootstrapRoot: "1.root.json", RootURL: *rootURL,
-		CatalogURL: *catalogURL, AllowedHosts: append([]string(nil), hosts...),
+		CatalogURL: *catalogURL, ReleaseURL: *releaseURL,
+		AllowedHosts: append([]string(nil), hosts...),
 	}
 	data, err := acquisition.CanonicalizeChannelConfig(config)
 	if err != nil {
@@ -454,6 +456,7 @@ func runChannelConfig(args []string) error {
 func runPublish(args []string) error {
 	fs := flag.NewFlagSet("publish", flag.ContinueOnError)
 	catalogPath := fs.String("catalog", "", "signed catalog envelope")
+	releasePath := fs.String("release", "", "optional signed release envelope")
 	configPath := fs.String("config", "", "enabled public channel configuration")
 	directory := fs.String("directory", "", "new publication directory")
 	nowText := fs.String("now", "", "validation time in RFC3339")
@@ -503,6 +506,9 @@ func runPublish(args []string) error {
 	if config.BootstrapRoot != "1.root.json" {
 		return fmt.Errorf("publication bootstrap_root must be %q", "1.root.json")
 	}
+	if (config.ReleaseURL == "") != (*releasePath == "") {
+		return errors.New("publication requires both release_url and --release, or neither")
+	}
 	if err := validatePublicationURLNames(config); err != nil {
 		return err
 	}
@@ -519,6 +525,22 @@ func runPublish(args []string) error {
 		return fmt.Errorf("canonicalize catalog: %w", err)
 	}
 	files["catalog.json"] = canonicalCatalog
+	var release *acquisition.VerifiedRelease
+	if *releasePath != "" {
+		releaseData, err := readOperatorFile(*releasePath, acquisition.MaxReleaseMetadataBytes)
+		if err != nil {
+			return err
+		}
+		release, err = acquisition.VerifyReleaseMetadata(sequence[len(sequence)-1], releaseData, now)
+		if err != nil {
+			return err
+		}
+		canonicalRelease, err := acquisition.CanonicalizeSignedEnvelope(releaseData)
+		if err != nil {
+			return fmt.Errorf("canonicalize release: %w", err)
+		}
+		files["release.json"] = canonicalRelease
+	}
 	files["channel.json"] = canonicalConfig
 	summary := map[string]any{
 		"schema": 1,
@@ -533,6 +555,11 @@ func runPublish(args []string) error {
 		"catalog_version":   catalog.Metadata.Version,
 		"catalog_sha256":    catalog.SHA256,
 		"catalog_images":    len(catalog.Metadata.Images),
+	}
+	if release != nil {
+		summary["release_metadata_version"] = release.Metadata.Version
+		summary["release_version"] = release.Metadata.ReleaseVersion
+		summary["release_sha256"] = release.SHA256
 	}
 	summaryBytes, err := json.MarshalIndent(summary, "", "  ")
 	if err != nil {
@@ -556,6 +583,15 @@ func validatePublicationURLNames(config acquisition.ChannelConfig) error {
 	}
 	if filepath.Base(catalogURL.Path) != "catalog.json" {
 		return errors.New("catalog_url path must end with catalog.json for the generated publication layout")
+	}
+	if config.ReleaseURL != "" {
+		releaseURL, err := url.Parse(config.ReleaseURL)
+		if err != nil {
+			return err
+		}
+		if filepath.Base(releaseURL.Path) != "release.json" {
+			return errors.New("release_url path must end with release.json for the generated publication layout")
+		}
 	}
 	return nil
 }

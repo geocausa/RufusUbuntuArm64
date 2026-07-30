@@ -38,6 +38,7 @@ type ChannelConfig struct {
 	BootstrapRoot string   `json:"bootstrap_root"`
 	RootURL       string   `json:"root_url"`
 	CatalogURL    string   `json:"catalog_url"`
+	ReleaseURL    string   `json:"release_url"`
 	AllowedHosts  []string `json:"allowed_hosts"`
 }
 
@@ -238,6 +239,7 @@ func validateChannelConfig(config ChannelConfig, allowLoopback bool) (ChannelCon
 	config.BootstrapRoot = strings.TrimSpace(config.BootstrapRoot)
 	config.RootURL = strings.TrimSpace(config.RootURL)
 	config.CatalogURL = strings.TrimSpace(config.CatalogURL)
+	config.ReleaseURL = strings.TrimSpace(config.ReleaseURL)
 	if config.Schema != ChannelConfigSchema {
 		return ChannelConfig{}, fmt.Errorf("unsupported channel configuration schema %d", config.Schema)
 	}
@@ -283,6 +285,11 @@ func validateChannelConfig(config ChannelConfig, allowLoopback bool) (ChannelCon
 	}
 	if err := validateChannelMetadataURL(config.CatalogURL, seen, allowLoopback); err != nil {
 		return ChannelConfig{}, fmt.Errorf("catalog_url: %w", err)
+	}
+	if config.ReleaseURL != "" {
+		if err := validateChannelMetadataURL(config.ReleaseURL, seen, allowLoopback); err != nil {
+			return ChannelConfig{}, fmt.Errorf("release_url: %w", err)
+		}
 	}
 	return config, nil
 }

@@ -27,13 +27,13 @@ The client stores the highest accepted root and catalog versions, their signed-p
 - a local clock that moves more than 24 hours behind the last accepted metadata time;
 - root validity periods above two years or catalog validity periods above 90 days.
 
-Verified root updates are published at the versioned `root_url` path containing one `{version}` token, fetched one version at a time, kept as a sequential cache, and replayed from the package-owned bootstrap root. This allows an installation that missed several rotations to verify every old/new threshold transition rather than trusting a version jump. The catalog and state are written through same-directory temporary files, `fsync`, atomic rename, and directory `fsync`. Files are mode `0600`; cache directories are descriptor-checked real directories with mode `0700`.
+Verified root updates are published at the versioned `root_url` path containing one `{version}` token, fetched one version at a time, kept as a sequential cache, and replayed from the package-owned bootstrap root. This allows an installation that missed several rotations to verify every old/new threshold transition rather than trusting a version jump. Catalog and release caches are separate owner-only directories, but both reuse the same root-chain verification and metadata transport. Metadata is written through same-directory temporary files, `fsync`, atomic rename, and directory `fsync`. Files are mode `0600`; cache directories are descriptor-checked real directories with mode `0700`.
 
-An unexpired cached catalog may be used when the network is unavailable. It is reverified against the complete root chain and rollback state before use. Expired metadata never receives an offline bypass.
+An unexpired cached catalog or release envelope may be used when the network is unavailable. Each is reverified against the complete root chain and its applicable rollback state before use. Expired metadata never receives an offline bypass.
 
 ## Network policy
 
-Root and catalog locations come from the package-owned channel configuration. Metadata downloads require HTTPS, use TLS 1.2 or newer, disable transparent compression, enforce strict byte limits, and permit redirects only to sorted allowlisted hosts. Private, loopback, local, multicast, and unspecified hosts are refused in production. CI network tests use only injected local TLS servers.
+Root, catalog, and optional release locations come from the package-owned channel configuration. Metadata downloads require HTTPS, use TLS 1.2 or newer, disable transparent compression, enforce strict byte limits, and permit redirects only to sorted allowlisted hosts. Private, loopback, local, multicast, and unspecified hosts are refused in production. CI network tests use only injected local TLS servers.
 
 Image payloads continue to use the existing signed URL, redirect-host, exact-size, cancellation, SHA-256, and atomic-install enforcement.
 
@@ -47,8 +47,8 @@ Image payloads continue to use the existing signed URL, redirect-host, exact-siz
 4. Generate separately controlled offline release-signing keys and choose a release threshold; routine CI must not hold these private keys.
 5. Review and threshold-sign root version 1, including only the roles that are operationally ready.
 6. Publish the public root envelope, channel configuration, and first threshold-signed catalog over the allowlisted HTTPS origin.
-7. Publish release metadata only after the exact reproducible assets, tag, and commit have been independently reviewed and signed offline.
-8. Replace the disabled package configuration and add the reviewed bootstrap `root.json` in a dedicated release PR.
+7. Add `release_url` only when the release role and operating ceremony are ready, then publish `release.json` only after the exact reproducible assets, tag, and commit have been independently reviewed and signed offline.
+8. Replace the disabled package configuration and add the reviewed bootstrap `1.root.json` in a dedicated release PR.
 
 No private key, seed phrase, signing token, or recovery secret may be committed, uploaded as a CI artifact, stored in repository secrets for routine builds, or installed with the package.
 
@@ -58,4 +58,4 @@ The **Download…** dialog attempts the built-in verified channel first and refr
 
 ## Release verification boundary
 
-The optional release role is shared with the read-only verifier described in `docs/signed-release-updates.md`. Release metadata is not fetched by the image-catalog refresh path and does not grant installation authority. A verified release record can identify a newer exact package, but download, persistent rollback state, privilege acquisition, package-manager invocation, and installation remain separate reviewed steps.
+The optional release role is shared with the verifier described in `docs/signed-release-updates.md`. The image-catalog refresh path still does not fetch release metadata; the separate `update refresh` path uses the same packaged bootstrap root, root URL template, host allowlist, and transport while maintaining a distinct release cache and locked update rollback state. A verified release record can identify a newer exact package, but refresh, package download, privilege acquisition, package-manager invocation, and installation remain separate reviewed steps.

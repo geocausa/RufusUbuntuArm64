@@ -198,11 +198,12 @@ The bootstrap root must be version 1. Metadata URLs must be HTTPS, use the defau
   --bootstrap-root 1.root.json \
   --root-url https://updates.example.org/metadata/{version}.root.json \
   --catalog-url https://updates.example.org/metadata/catalog.json \
+  --release-url https://updates.example.org/metadata/release.json \
   --host updates.example.org \
   --output channel.json
 ```
 
-Loopback, private, local, multicast, unspecified, non-HTTPS, user-information, fragment, non-default-port, and non-allowlisted metadata locations are rejected.
+`--release-url` is optional for catalog-only channels. When supplied, it receives the same HTTPS, default-port, public-host, and allowlist validation as root and catalog metadata. Loopback, private, local, multicast, unspecified, non-HTTPS, user-information, fragment, non-default-port, and non-allowlisted metadata locations are rejected.
 
 ## Build a publication directory
 
@@ -213,16 +214,18 @@ After every envelope and the public configuration has been independently reviewe
   --root 1.root.json \
   --root 2.root.json \
   --catalog catalog-envelope.json \
+  --release release.json \
   --config channel.json \
   --directory publication-v2
 ```
 
-The destination must not already exist. The tool verifies the full chain and catalog, canonicalizes every public file, builds the directory privately, fsyncs its contents, and renames it into place atomically. It produces:
+The destination must not already exist. The tool verifies the full chain, catalog, and—when configured—the release envelope; canonicalizes every public file; builds the directory privately; fsyncs its contents; and renames it into place atomically. A configuration with `release_url` requires `--release`, while a catalog-only configuration refuses an unexpected release envelope. It produces:
 
 - one `<version>.root.json` file per root;
 - `catalog.json`;
+- optional `release.json`;
 - `channel.json`;
-- `publication.json` with public version/digest information;
+- `publication.json` with root, catalog, and optional release version/digest information;
 - `SHA256SUMS` covering all other publication files.
 
 Repeated runs with the same inputs produce byte-for-byte identical files.
