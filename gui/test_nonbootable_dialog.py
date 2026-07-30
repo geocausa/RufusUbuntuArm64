@@ -36,7 +36,8 @@ class NonBootableDialogStructureTests(unittest.TestCase):
         self.assertIn("self.parent_window.set_busy(True)", self.dialog_class_source)
         self.assertIn("self.parent_window.set_busy(False)", self.dialog_class_source)
 
-    def test_ext2_and_ext3_are_explicit_graphical_choices(self):
+    def test_udf_ext2_and_ext3_are_explicit_graphical_choices(self):
+        self.assertIn('self.filesystem.append("udf", "UDF")', self.dialog_class_source)
         self.assertIn('self.filesystem.append("ext2", "ext2")', self.dialog_class_source)
         self.assertIn('self.filesystem.append("ext3", "ext3")', self.dialog_class_source)
 

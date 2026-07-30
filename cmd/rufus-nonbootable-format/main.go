@@ -71,7 +71,7 @@ func run(argv []string) error {
 	flags.StringVar(&opts.devicePath, "device", "", "whole target disk")
 	flags.StringVar(&opts.expectedIdentity, "expected-identity", "", "expected device identity from rufusarm64-cli list --json")
 	flags.StringVar(&opts.scheme, "scheme", "gpt", "partition scheme: gpt or mbr")
-	flags.StringVar(&opts.filesystem, "filesystem", "fat32", "filesystem: fat16, fat32, exfat, ntfs, ext2, ext3, or ext4")
+	flags.StringVar(&opts.filesystem, "filesystem", "fat32", "filesystem: fat16, fat32, exfat, ntfs, udf, ext2, ext3, or ext4")
 	flags.StringVar(&opts.label, "label", "", "filesystem volume label")
 	flags.StringVar(&opts.cancelFile, "cancel-file", "", "owner-only GUI cancellation marker beneath /run/user/UID")
 	flags.BoolVar(&opts.yes, "yes", false, "skip interactive confirmation")
@@ -321,7 +321,7 @@ func usage() {
 
 Usage:
   rufusarm64-nonbootable-format --device /dev/DEVICE --dry-run [--json]
-  sudo rufusarm64-nonbootable-format --device /dev/DEVICE --scheme gpt|mbr --filesystem fat16|fat32|exfat|ntfs|ext2|ext3|ext4
+  sudo rufusarm64-nonbootable-format --device /dev/DEVICE --scheme gpt|mbr --filesystem fat16|fat32|exfat|ntfs|udf|ext2|ext3|ext4
 
 This dedicated command erases the complete selected drive and creates one data
 partition. It never claims the result is bootable. Use rufusarm64-cli list --json

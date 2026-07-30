@@ -29,6 +29,7 @@ const (
 	FilesystemFAT32 = "fat32"
 	FilesystemExFAT = "exfat"
 	FilesystemNTFS  = "ntfs"
+	FilesystemUDF   = "udf"
 	FilesystemExt2  = "ext2"
 	FilesystemExt3  = "ext3"
 	FilesystemExt4  = "ext4"
@@ -83,6 +84,7 @@ type filesystemContract struct {
 	mbrType       string
 	maxLabelBytes int
 	maxLabelUTF16 int
+	extraTools    []string
 	maxSize       uint64
 }
 
@@ -120,6 +122,14 @@ var filesystemContracts = map[string]filesystemContract{
 		gptType:       "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
 		mbrType:       "07",
 		maxLabelUTF16: 32,
+	},
+	FilesystemUDF: {
+		display:    "UDF",
+		mkfs:       "mkudffs",
+		check:      "udfinfo",
+		extraTools: []string{"mount"},
+		gptType:    "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
+		mbrType:    "07",
 	},
 	FilesystemExt2: {
 		display:       "ext2",
@@ -236,6 +246,8 @@ func NormalizeFilesystem(value string) (string, error) {
 		return FilesystemExFAT, nil
 	case "ntfs":
 		return FilesystemNTFS, nil
+	case "udf":
+		return FilesystemUDF, nil
 	case "ext2":
 		return FilesystemExt2, nil
 	case "ext3":
@@ -243,7 +255,7 @@ func NormalizeFilesystem(value string) (string, error) {
 	case "ext4":
 		return FilesystemExt4, nil
 	default:
-		return "", fmt.Errorf("filesystem must be FAT16, FAT32, exFAT, NTFS, ext2, ext3, or ext4, not %q", value)
+		return "", fmt.Errorf("filesystem must be FAT16, FAT32, exFAT, NTFS, UDF, ext2, ext3, or ext4, not %q", value)
 	}
 }
 
@@ -330,7 +342,8 @@ func canonicalGeometry(deviceSize, sectorSize uint64, contract filesystemContrac
 }
 
 func requiredTools(contract filesystemContract) []string {
-	return []string{"sfdisk", "blockdev", contract.mkfs, contract.check}
+	tools := []string{"sfdisk", "blockdev", contract.mkfs, contract.check}
+	return append(tools, contract.extraTools...)
 }
 
 func safetyWarnings() []string {
@@ -361,9 +374,29 @@ func normalizeLabel(value, filesystem string, contract filesystemContract) (stri
 	if strings.TrimSpace(value) != value {
 		return "", errors.New("filesystem label must not have leading or trailing whitespace")
 	}
+	udfWide := false
+	udfCharacters := 0
 	for _, character := range value {
 		if unicode.IsControl(character) {
 			return "", errors.New("filesystem label must not contain control characters")
+		}
+		if filesystem == FilesystemUDF {
+			if character > 0xffff {
+				return "", errors.New("UDF label must use Basic Multilingual Plane characters")
+			}
+			if character > 0xff {
+				udfWide = true
+			}
+			udfCharacters++
+		}
+	}
+	if filesystem == FilesystemUDF {
+		limit := 126
+		if udfWide {
+			limit = 63
+		}
+		if udfCharacters > limit {
+			return "", fmt.Errorf("UDF label exceeds %d OSTA compressed Unicode characters", limit)
 		}
 	}
 	if contract.maxLabelBytes != 0 && len([]byte(value)) > contract.maxLabelBytes {

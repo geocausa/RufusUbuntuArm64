@@ -456,6 +456,7 @@ grep -q 'Depends:.*mount' "${extract_dir}/DEBIAN/control"
 if grep -q 'Depends:.*util-linux' "${extract_dir}/DEBIAN/control"; then echo 'package must not depend explicitly on Essential util-linux' >&2; exit 1; fi
 grep -q 'Depends:.*e2fsprogs' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*ntfs-3g' "${extract_dir}/DEBIAN/control"
+grep -q 'Depends:.*udftools' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*xz-utils' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*zstd' "${extract_dir}/DEBIAN/control"
 grep -q 'Depends:.*qemu-utils' "${extract_dir}/DEBIAN/control"

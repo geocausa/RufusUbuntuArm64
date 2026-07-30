@@ -162,6 +162,16 @@ func (backend *linuxBackend) Format(ctx context.Context, plan Plan, _ PartitionT
 		if plan.Label != "" {
 			args = append(args, "-L", plan.Label)
 		}
+	case FilesystemUDF:
+		name = "mkudffs"
+		args = append(args,
+			"--utf8",
+			"--media-type=hd",
+			"--udfrev=2.01",
+			fmt.Sprintf("--blocksize=%d", plan.LogicalSectorSize),
+			"--label="+plan.Label,
+			"--bootarea=erase",
+		)
 	case FilesystemExt2, FilesystemExt3, FilesystemExt4:
 		name = "mkfs." + plan.Filesystem
 		args = append(args, "-F")
@@ -172,6 +182,12 @@ func (backend *linuxBackend) Format(ctx context.Context, plan Plan, _ PartitionT
 		return fmt.Errorf("unsupported filesystem %q", plan.Filesystem)
 	}
 	args = append(args, backend.stablePartitionPath)
+	if plan.Filesystem == FilesystemUDF {
+		if plan.PartitionSizeBytes%plan.LogicalSectorSize != 0 {
+			return errors.New("UDF partition size is not an exact logical-block multiple")
+		}
+		args = append(args, strconv.FormatUint(plan.PartitionSizeBytes/plan.LogicalSectorSize, 10))
+	}
 	return safety.WithTemporarilyReleasedFlock(backend.partition, func() error {
 		_, err := runCommand(ctx, nil, name, args...)
 		return err
@@ -188,12 +204,21 @@ func (backend *linuxBackend) Verify(ctx context.Context, plan Plan, table Partit
 	if _, err := runCommand(ctx, nil, "blockdev", "--flushbufs", backend.stablePartitionPath); err != nil {
 		return FilesystemState{}, fmt.Errorf("flush formatted partition: %w", err)
 	}
-	checkName, checkArgs, err := filesystemCheck(plan.Filesystem, backend.stablePartitionPath)
-	if err != nil {
-		return FilesystemState{}, err
-	}
-	if _, err := runCommand(ctx, nil, checkName, checkArgs...); err != nil {
-		return FilesystemState{}, fmt.Errorf("filesystem check failed: %w", err)
+	var udfMetadata map[string]string
+	if plan.Filesystem == FilesystemUDF {
+		var inspectErr error
+		udfMetadata, inspectErr = inspectUDF(ctx, plan, backend.stablePartitionPath)
+		if inspectErr != nil {
+			return FilesystemState{}, inspectErr
+		}
+	} else {
+		checkName, checkArgs, checkErr := filesystemCheck(plan.Filesystem, backend.stablePartitionPath)
+		if checkErr != nil {
+			return FilesystemState{}, checkErr
+		}
+		if _, checkErr = runCommand(ctx, nil, checkName, checkArgs...); checkErr != nil {
+			return FilesystemState{}, fmt.Errorf("filesystem check failed: %w", checkErr)
+		}
 	}
 	if err := backend.verifyPublishedTable(ctx, plan, table); err != nil {
 		return FilesystemState{}, err
@@ -203,6 +228,19 @@ func (backend *linuxBackend) Verify(ctx context.Context, plan Plan, table Partit
 		return FilesystemState{}, err
 	}
 	filesystemType := strings.ToLower(metadata["TYPE"])
+	if plan.Filesystem == FilesystemUDF {
+		if err := validateUDFBlkid(metadata, udfMetadata, plan); err != nil {
+			return FilesystemState{}, err
+		}
+		if err := safety.WithTemporarilyReleasedFlock(backend.partition, func() error {
+			return verifyReadOnlyUDFMount(ctx, backend.stablePartitionPath)
+		}); err != nil {
+			return FilesystemState{}, err
+		}
+		if err := backend.verifyPartitionPath(plan, partitionPath); err != nil {
+			return FilesystemState{}, fmt.Errorf("revalidate UDF partition after mount verification: %w", err)
+		}
+	}
 	if filesystemType == "vfat" {
 		filesystemType, err = detectFATFilesystem(backend.partition)
 		if err != nil {
@@ -237,11 +275,17 @@ func (backend *linuxBackend) Verify(ctx context.Context, plan Plan, table Partit
 	if partition.Type != "part" || partition.ParentName != parent {
 		return FilesystemState{}, fmt.Errorf("formatted partition is not bound to %s", plan.DevicePath)
 	}
+	label := metadata["LABEL"]
+	uuid := metadata["UUID"]
+	if plan.Filesystem == FilesystemUDF {
+		label = udfMetadata["label"]
+		uuid = udfMetadata["uuid"]
+	}
 	state := FilesystemState{
 		Path:       partitionPath,
 		Type:       filesystemType,
-		Label:      metadata["LABEL"],
-		UUID:       metadata["UUID"],
+		Label:      label,
+		UUID:       uuid,
 		SizeBytes:  size,
 		ReadOnly:   strings.TrimSpace(readOnlyText) != "0",
 		ParentPath: plan.DevicePath,

@@ -136,6 +136,36 @@ class NonBootableFormatContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "FAT16 compatibility"):
             normalize_plan(oversized)
 
+
+    def test_udf_plan_and_label_boundaries(self):
+        payload = sample_plan()
+        payload["plan"].update(
+            {
+                "filesystem": "udf",
+                "filesystem_display": "UDF",
+                "label": "Rufus_日本",
+                "required_tools": ["sfdisk", "blockdev", "mkudffs", "udfinfo", "mount"],
+            }
+        )
+        payload["partition_table"].update(
+            {
+                "filesystem": "udf",
+                "filesystem_display": "UDF",
+                "label": "Rufus_日本",
+            }
+        )
+        payload["confirmation"] = "FORMAT /dev/sdb AS UDF USING GPT LABEL Rufus_日本"
+        normalized = normalize_plan(payload)
+        self.assertEqual(normalized["plan"]["filesystem"], "udf")
+        self.assertEqual(confirmation_phrase(normalized), payload["confirmation"])
+
+        for label in ("日" * 64, "DATA😀"):
+            altered = copy.deepcopy(payload)
+            altered["plan"]["label"] = label
+            altered["partition_table"]["label"] = label
+            with self.assertRaises(ValueError):
+                normalize_plan(altered)
+
     def test_ext2_and_ext3_plans_have_distinct_tool_contracts(self):
         for filesystem in ("ext2", "ext3"):
             payload = sample_plan()

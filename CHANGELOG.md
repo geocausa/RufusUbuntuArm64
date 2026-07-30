@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added guarded UDF 2.01 data-only formatting with MBR/GPT parity types, logical-sector-matched blocks, bounded OSTA Unicode labels, descriptor and `blkid` agreement, closed-integrity verification, a private read-only kernel mount, GTK/CLI integration, and real loop qualification.
 - Added guarded ext2 and ext3 data-only formatting with distinct formatter contracts, MBR/GPT Linux data partition types, read-only `e2fsck`, independent ext-superblock generation classification, GTK/CLI integration, and real loop-device qualification.
 - Added guarded FAT16 data-only formatting with MBR/GPT planning, a conservative below-4-GiB capacity boundary, canonical FAT labels, read-only checking, and independent FAT16-versus-FAT32 BPB verification.
 - Added fail-closed threshold-signed release publication enforcement: canonical tags are deferred until a reviewed metadata tag exists, staged and published asset directories are descriptor-bound and matched exactly to the signed tag, commit, sizes, and SHA-256 graph, and release workflows verify deterministic metadata before upload and again after publication.

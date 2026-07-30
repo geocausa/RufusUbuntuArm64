@@ -16,7 +16,7 @@ rufusarm64-nonbootable-format \- erase and format a removable drive as data-only
 .B rufusarm64-nonbootable-format
 is the dedicated identity-bound data-only formatter. It erases one explicitly
 selected whole block device, writes one GPT or MBR partition, creates FAT16,
-FAT32, exFAT, NTFS, ext2, ext3, or ext4, and verifies the published partition
+FAT32, exFAT, NTFS, UDF, ext2, ext3, or ext4, and verifies the published partition
 table, kernel geometry, filesystem type, label, and read-only checker result. The result is
 not claimed bootable.
 .PP
@@ -27,10 +27,10 @@ execution reconstructs and revalidates the same canonical plan immediately
 before erasure.
 .SH LAYOUT
 Exactly one data partition is created with a 1 MiB aligned start and a 1 MiB
-reserved tail. GPT uses Microsoft basic-data for FAT16, FAT32, exFAT, and
-NTFS and the Linux filesystem-data type for ext2, ext3, and ext4. MBR uses type
-0x06 for FAT16, 0x0c for FAT32, 0x07 for exFAT/NTFS, and 0x83 for the ext
-family. FAT16 is
+reserved tail. GPT uses Microsoft basic-data for FAT16, FAT32, exFAT, NTFS,
+and UDF, and the Linux filesystem-data type for ext2, ext3, and ext4. MBR uses
+type 0x06 for FAT16, 0x0c for FAT32, 0x07 for exFAT/NTFS/UDF, and 0x83 for
+the ext family. FAT16 is
 accepted only when the resulting canonical partition remains below 4 GiB; a
 larger target is refused before erasure rather than silently truncated. Geometry
 beyond the exact MBR address range is refused with instructions to use GPT.
@@ -48,10 +48,12 @@ Mandatory with noninteractive or override-capable terminal modes.
 .BI --scheme " gpt|mbr"
 Choose GPT or MBR. GPT is the default.
 .TP
-.BI --filesystem " fat16|fat32|exfat|ntfs|ext2|ext3|ext4"
-Choose the data filesystem. FAT32 is the default. ext2, ext3, and ext4 use
-distinct formatters and are independently classified from ext-superblock feature
-bits after a non-repairing filesystem check.
+.BI --filesystem " fat16|fat32|exfat|ntfs|udf|ext2|ext3|ext4"
+Choose the data filesystem. FAT32 is the default. UDF uses a fixed revision 2.01
+hard-disk profile and is verified through descriptor metadata, independent blkid
+evidence, and a private read-only kernel mount; Linux provides no general UDF
+repair checker. ext2, ext3, and ext4 use distinct formatters and are independently
+classified from ext-superblock feature bits after a non-repairing filesystem check.
 .TP
 .BI --label " LABEL"
 Set a label under the selected filesystem's validated length and character

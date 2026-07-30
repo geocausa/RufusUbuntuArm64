@@ -26,7 +26,8 @@ func TestExecuteDeviceFormatsRealLoopDevices(t *testing.T) {
 	for _, tool := range []string{
 		"losetup", "blockdev", "sfdisk", "wipefs", "blkid",
 		"mkfs.vfat", "fsck.vfat", "mkfs.exfat", "fsck.exfat",
-		"mkfs.ntfs", "ntfsfix", "mkfs.ext2", "mkfs.ext3", "mkfs.ext4", "e2fsck",
+		"mkfs.ntfs", "ntfsfix", "mkudffs", "udfinfo", "mount",
+		"mkfs.ext2", "mkfs.ext3", "mkfs.ext4", "e2fsck",
 	} {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Fatalf("required loop-test tool %q is unavailable: %v", tool, err)
@@ -34,15 +35,18 @@ func TestExecuteDeviceFormatsRealLoopDevices(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		scheme     string
-		filesystem string
-		label      string
+		name          string
+		scheme        string
+		filesystem    string
+		label         string
+		logicalSector uint64
 	}{
 		{name: "mbr-fat16", scheme: SchemeMBR, filesystem: FilesystemFAT16, label: "RUFUS16"},
 		{name: "gpt-fat32", scheme: SchemeGPT, filesystem: FilesystemFAT32, label: "RUFUSFAT"},
 		{name: "mbr-exfat", scheme: SchemeMBR, filesystem: FilesystemExFAT, label: "RUFUS-EXFAT"},
 		{name: "gpt-ntfs", scheme: SchemeGPT, filesystem: FilesystemNTFS, label: "Rufus:*?-Été"},
+		{name: "mbr-udf", scheme: SchemeMBR, filesystem: FilesystemUDF, label: "Rufus_日本"},
+		{name: "gpt-udf-4k-empty", scheme: SchemeGPT, filesystem: FilesystemUDF, label: "", logicalSector: 4096},
 		{name: "mbr-ext2", scheme: SchemeMBR, filesystem: FilesystemExt2, label: "RUFUS-EXT2"},
 		{name: "gpt-ext3", scheme: SchemeGPT, filesystem: FilesystemExt3, label: "RUFUS-EXT3"},
 		{name: "mbr-ext4", scheme: SchemeMBR, filesystem: FilesystemExt4, label: "RUFUS-EXT4"},
@@ -63,7 +67,12 @@ func TestExecuteDeviceFormatsRealLoopDevices(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			output, err := exec.Command("losetup", "--find", "--show", "--partscan", backing).CombinedOutput()
+			loopArgs := []string{"--find", "--show", "--partscan"}
+			if test.logicalSector != 0 {
+				loopArgs = append(loopArgs, "--sector-size", strconv.FormatUint(test.logicalSector, 10))
+			}
+			loopArgs = append(loopArgs, backing)
+			output, err := exec.Command("losetup", loopArgs...).CombinedOutput()
 			if err != nil {
 				t.Fatalf("attach loop device: %v: %s", err, strings.TrimSpace(string(output)))
 			}
