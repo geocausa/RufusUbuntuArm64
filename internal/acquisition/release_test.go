@@ -1,9 +1,17 @@
 package acquisition
 
 import (
+	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -207,5 +215,107 @@ func TestCanonicalReleaseDraftAndAdministrativeEnvelope(t *testing.T) {
 	}
 	if verified.MetadataType != "release" || verified.Version != 2 {
 		t.Fatalf("unexpected administrative result: %+v", verified)
+	}
+}
+
+func TestDownloadReleasePackageUsesAuthenticatedAssetAndReuses(t *testing.T) {
+	data := bytesOf("signed-release-package", 2048)
+	digest := sha256.Sum256(data)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+		_, _ = writer.Write(data)
+	}))
+	defer server.Close()
+	version := "0.16.0"
+	name := "rufusarm64_" + version + "_arm64.deb"
+	release := &VerifiedRelease{
+		Metadata: ReleaseMetadata{
+			Version: 4, ReleaseVersion: version, Tag: "v" + version,
+			Commit: strings.Repeat("a", 40), Channel: "stable",
+			Assets: []ReleaseAsset{{Name: name, Size: uint64(len(data)), SHA256: hex.EncodeToString(digest[:]), URL: server.URL}},
+		},
+		SHA256:        strings.Repeat("e", 64),
+		SigningKeyIDs: []string{strings.Repeat("f", 64)},
+		trusted: &releaseTrustSnapshot{
+			metadata: ReleaseMetadata{
+				Version: 4, ReleaseVersion: version, Tag: "v" + version,
+				Commit: strings.Repeat("a", 40), Channel: "stable",
+				Assets: []ReleaseAsset{{Name: name, Size: uint64(len(data)), SHA256: hex.EncodeToString(digest[:]), URL: server.URL}},
+			},
+			sha256: strings.Repeat("e", 64), signingKeyIDs: []string{strings.Repeat("f", 64)},
+		},
+	}
+	directory := t.TempDir()
+	result, err := DownloadReleasePackage(context.Background(), release, DownloadOptions{Destination: directory, AllowHTTP: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ReleaseVersion != version || result.MetadataVersion != 4 || result.Package.Name != name || result.Download.Path != filepath.Join(directory, name) {
+		t.Fatalf("unexpected release download result: %+v", result)
+	}
+	stored, err := os.ReadFile(result.Download.Path)
+	if err != nil || string(stored) != string(data) {
+		t.Fatalf("stored release package mismatch: %v", err)
+	}
+	reused, err := DownloadReleasePackage(context.Background(), release, DownloadOptions{Destination: result.Download.Path, AllowHTTP: true})
+	if err != nil || !reused.Download.Reused {
+		t.Fatalf("verified package was not reused: %+v, %v", reused, err)
+	}
+}
+
+func TestDownloadReleasePackageRejectsUnauthenticatedMetadata(t *testing.T) {
+	version := "0.16.0"
+	release := &VerifiedRelease{Metadata: ReleaseMetadata{ReleaseVersion: version, Assets: []ReleaseAsset{{Name: "rufusarm64_" + version + "_arm64.deb"}}}}
+	if _, err := DownloadReleasePackage(context.Background(), release, DownloadOptions{}); err == nil || !strings.Contains(err.Error(), "authenticated") {
+		t.Fatalf("unauthenticated release download error = %v", err)
+	}
+}
+
+func TestVerifiedReleaseMethodsIgnoreExportedFieldMutation(t *testing.T) {
+	now := time.Date(2026, 7, 30, 14, 0, 0, 0, time.UTC)
+	rootA, rootB := trustSigner(1), trustSigner(33)
+	catalogSigner, releaseSigner := trustSigner(65), trustSigner(97)
+	rootMetadata := releaseRootMetadata(1, now.Add(-time.Hour), now.Add(180*24*time.Hour), []testTrustSigner{rootA, rootB}, []testTrustSigner{catalogSigner}, []testTrustSigner{releaseSigner}, 1)
+	root, err := VerifyBootstrapRoot(signedEnvelope(t, rootMetadata, rootA, rootB), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata := testReleaseMetadata(9, "0.16.0", now)
+	verified, err := VerifyReleaseMetadata(root, signedEnvelope(t, metadata, releaseSigner), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalPackage, err := verified.Package()
+	if err != nil {
+		t.Fatal(err)
+	}
+	verified.Metadata.Version = 1
+	verified.Metadata.ReleaseVersion = "99.0.0"
+	verified.Metadata.Tag = "v99.0.0"
+	verified.Metadata.Assets[0].URL = "https://example.com/substitution"
+	verified.Metadata.Assets[len(verified.Metadata.Assets)-1].SHA256 = strings.Repeat("00", 32)
+	verified.SHA256 = strings.Repeat("0", 64)
+	verified.SigningKeyIDs[0] = strings.Repeat("0", 64)
+	decision, err := EvaluateRelease("0.15.0", 8, verified)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.ReleaseVersion != "0.16.0" || decision.MetadataVersion != 9 || decision.MetadataSHA256 == verified.SHA256 || decision.SigningKeyIDs[0] == verified.SigningKeyIDs[0] {
+		t.Fatalf("trusted update decision followed mutable exported fields: %+v", decision)
+	}
+	packageAsset, err := verified.Package()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if packageAsset.Name != originalPackage.Name || packageAsset.SHA256 != originalPackage.SHA256 || packageAsset.URL != originalPackage.URL {
+		t.Fatalf("trusted package followed mutable exported fields: before=%+v after=%+v", originalPackage, packageAsset)
+	}
+	packageAsset.RedirectHosts = append(packageAsset.RedirectHosts, "mutated.example")
+	again, err := verified.Package()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again.RedirectHosts) != len(originalPackage.RedirectHosts) {
+		t.Fatal("returned package shared mutable redirect-host storage")
 	}
 }

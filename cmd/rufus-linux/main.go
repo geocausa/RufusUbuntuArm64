@@ -32,6 +32,7 @@ import (
 )
 
 var version = "development"
+var downloadReleasePackage = acquisition.DownloadReleasePackage
 
 const defaultAcquisitionChannelConfig = "/usr/share/rufusarm64/acquisition/channel.json"
 
@@ -154,6 +155,7 @@ Usage:
   rufusarm64-cli acquire channel list [--offline] [--json]
   rufusarm64-cli acquire channel download --id ID [--output FILE] [--offline]
   rufusarm64-cli update verify --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--json]
+  rufusarm64-cli update download --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--output FILE] [--replace] [--resume] [--json-progress|--json]
   rufusarm64-cli persistence plan --image FILE --media-root DIR --target-size SIZE [--size SIZE] [--json]
   sudo rufusarm64-cli persistence analyze --image FILE --expected-source-identity ID --target-size SIZE [--size SIZE] [--json]
   sudo rufusarm64-cli windows analyze --image FILE --expected-source-identity ID [--json]
@@ -164,7 +166,7 @@ Usage:
 
 Acquisition catalogs are accepted only after detached Ed25519 signature, expiry, URL, size, filename, and SHA-256 validation.
 The built-in channel additionally enforces threshold root/catalog signatures, key rotation, version rollback protection, and owner-only atomic trust state.
-Update verification authenticates threshold-signed release metadata and refuses metadata rollback or package-version downgrade; it never installs software.
+Update verification authenticates threshold-signed release metadata and refuses metadata rollback or package-version downgrade. Update download reuses the bounded acquisition writer for exact size/SHA-256 verification and atomic publication; neither command installs software.
 Persistence planning accepts mounted or extracted Ubuntu 20.04+ casper and Debian live-boot media trees.
 Automatic analysis mounts the selected plain ISOHybrid image privately and read-only; it never opens a target device.
 The experimental persistent writer is CLI-only, GPT/UEFI-only, and is never accepted by the graphical privileged path.
@@ -1678,53 +1680,82 @@ type acquireCatalogSummary struct {
 }
 
 func runUpdate(args []string) error {
-	if len(args) == 0 || args[0] != "verify" {
-		return errors.New("update requires verify")
+	if len(args) == 0 {
+		return errors.New("update requires verify or download")
 	}
-	return runUpdateVerify(args[1:])
+	switch args[0] {
+	case "verify":
+		return runUpdateVerify(args[1:])
+	case "download":
+		return runUpdateDownload(args[1:])
+	default:
+		return fmt.Errorf("unknown update command %q", args[0])
+	}
+}
+
+type updateMetadataFlags struct {
+	roots                  repeatedString
+	releasePath            *string
+	currentVersion         *string
+	minimumMetadataVersion *int
+}
+
+func addUpdateMetadataFlags(fs *flag.FlagSet) *updateMetadataFlags {
+	flags := &updateMetadataFlags{
+		releasePath:            fs.String("release", "", "threshold-signed release metadata envelope"),
+		currentVersion:         fs.String("current-version", version, "currently installed RufusArm64 version"),
+		minimumMetadataVersion: fs.Int("minimum-metadata-version", 0, "lowest previously accepted release metadata version"),
+	}
+	fs.Var(&flags.roots, "root", "signed root metadata file in sequential order")
+	return flags
+}
+
+func (flags *updateMetadataFlags) load() (*acquisition.VerifiedRelease, acquisition.UpdateDecision, error) {
+	if len(flags.roots) == 0 || strings.TrimSpace(*flags.releasePath) == "" {
+		return nil, acquisition.UpdateDecision{}, errors.New("at least one --root and --release are required")
+	}
+	if *flags.currentVersion == "development" || strings.TrimSpace(*flags.currentVersion) == "" {
+		return nil, acquisition.UpdateDecision{}, errors.New("development builds require an explicit --current-version")
+	}
+	rootData := make([][]byte, 0, len(flags.roots))
+	for _, path := range flags.roots {
+		data, err := readLimitedRegularFile(path, acquisition.MaxRootMetadataBytes)
+		if err != nil {
+			return nil, acquisition.UpdateDecision{}, fmt.Errorf("read update root metadata: %w", err)
+		}
+		rootData = append(rootData, data)
+	}
+	now := time.Now()
+	trustedRoot, err := acquisition.VerifyRootChain(rootData, now)
+	if err != nil {
+		return nil, acquisition.UpdateDecision{}, fmt.Errorf("verify update root chain: %w", err)
+	}
+	releaseData, err := readLimitedRegularFile(*flags.releasePath, acquisition.MaxReleaseMetadataBytes)
+	if err != nil {
+		return nil, acquisition.UpdateDecision{}, fmt.Errorf("read release metadata: %w", err)
+	}
+	release, err := acquisition.VerifyReleaseMetadata(trustedRoot, releaseData, now)
+	if err != nil {
+		return nil, acquisition.UpdateDecision{}, fmt.Errorf("verify release metadata: %w", err)
+	}
+	decision, err := acquisition.EvaluateRelease(*flags.currentVersion, *flags.minimumMetadataVersion, release)
+	if err != nil {
+		return nil, acquisition.UpdateDecision{}, err
+	}
+	return release, decision, nil
 }
 
 func runUpdateVerify(args []string) error {
 	fs := flag.NewFlagSet("update verify", flag.ContinueOnError)
-	releasePath := fs.String("release", "", "threshold-signed release metadata envelope")
-	currentVersion := fs.String("current-version", version, "currently installed RufusArm64 version")
-	minimumMetadataVersion := fs.Int("minimum-metadata-version", 0, "lowest previously accepted release metadata version")
+	metadataFlags := addUpdateMetadataFlags(fs)
 	asJSON := fs.Bool("json", false, "output JSON")
-	var roots repeatedString
-	fs.Var(&roots, "root", "signed root metadata file in sequential order")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
 		return errors.New("update verify does not accept positional arguments")
 	}
-	if len(roots) == 0 || strings.TrimSpace(*releasePath) == "" {
-		return errors.New("update verify requires at least one --root and --release")
-	}
-	if *currentVersion == "development" || strings.TrimSpace(*currentVersion) == "" {
-		return errors.New("development builds require an explicit --current-version")
-	}
-	rootData := make([][]byte, 0, len(roots))
-	for _, path := range roots {
-		data, err := readLimitedRegularFile(path, acquisition.MaxRootMetadataBytes)
-		if err != nil {
-			return fmt.Errorf("read update root metadata: %w", err)
-		}
-		rootData = append(rootData, data)
-	}
-	trustedRoot, err := acquisition.VerifyRootChain(rootData, time.Now())
-	if err != nil {
-		return fmt.Errorf("verify update root chain: %w", err)
-	}
-	releaseData, err := readLimitedRegularFile(*releasePath, acquisition.MaxReleaseMetadataBytes)
-	if err != nil {
-		return fmt.Errorf("read release metadata: %w", err)
-	}
-	release, err := acquisition.VerifyReleaseMetadata(trustedRoot, releaseData, time.Now())
-	if err != nil {
-		return fmt.Errorf("verify release metadata: %w", err)
-	}
-	decision, err := acquisition.EvaluateRelease(*currentVersion, *minimumMetadataVersion, release)
+	_, decision, err := metadataFlags.load()
 	if err != nil {
 		return err
 	}
@@ -1736,6 +1767,73 @@ func runUpdateVerify(args []string) error {
 		status = "A verified update is available."
 	}
 	fmt.Printf("%s\nCurrent: %s\nRelease: %s\nTag: %s\nCommit: %s\nMetadata version: %d\nPackage: %s\nSize: %s\nSHA-256: %s\nURL: %s\n", status, decision.CurrentVersion, decision.ReleaseVersion, decision.Tag, decision.Commit, decision.MetadataVersion, decision.Package.Name, humanBytes(decision.Package.Size), decision.Package.SHA256, decision.Package.URL)
+	return nil
+}
+
+func runUpdateDownload(args []string) error {
+	fs := flag.NewFlagSet("update download", flag.ContinueOnError)
+	metadataFlags := addUpdateMetadataFlags(fs)
+	output := fs.String("output", "", "destination file or existing directory")
+	replace := fs.Bool("replace", false, "replace an existing different regular file")
+	resume := fs.Bool("resume", false, "retain and resume a signed-identity partial download")
+	jsonProgress := fs.Bool("json-progress", false, "stream progress events as JSON")
+	asJSON := fs.Bool("json", false, "output final JSON result")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("update download does not accept positional arguments")
+	}
+	if *jsonProgress && *asJSON {
+		return errors.New("--json-progress and --json cannot be combined")
+	}
+	release, decision, err := metadataFlags.load()
+	if err != nil {
+		return err
+	}
+	if !decision.UpdateAvailable {
+		return errors.New("authenticated release is not newer than the current version; refusing update download")
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	emit := emitter{json: *jsonProgress}
+	result, err := downloadReleasePackage(ctx, release, acquisition.DownloadOptions{
+		Destination: *output,
+		Replace:     *replace,
+		Resume:      *resume,
+		Progress: func(progress acquisition.Progress) {
+			if *jsonProgress {
+				emit.event(jsonEvent{Event: "progress", Stage: "download", Done: progress.Done, Total: progress.Total, Rate: progress.BytesPerSec})
+				return
+			}
+			if !*asJSON {
+				printProgress("download", imaging.Progress{Done: progress.Done, Total: progress.Total, BytesPerSec: progress.BytesPerSec})
+			}
+		},
+	})
+	if !*jsonProgress && !*asJSON {
+		fmt.Println()
+	}
+	if err != nil {
+		return err
+	}
+	if *jsonProgress {
+		return json.NewEncoder(os.Stdout).Encode(struct {
+			Event  string                            `json:"event"`
+			Result acquisition.ReleaseDownloadResult `json:"result"`
+		}{Event: "complete", Result: result})
+	}
+	if *asJSON {
+		return json.NewEncoder(os.Stdout).Encode(result)
+	}
+	status := "Downloaded and verified"
+	if result.Download.Reused {
+		status = "Already downloaded and verified"
+	}
+	if result.Download.Resumed > 0 {
+		fmt.Printf("Resumed from: %s\n", humanBytes(result.Download.Resumed))
+	}
+	fmt.Printf("%s: %s\nRelease: %s (%s)\nCommit: %s\nMetadata version: %d\nMetadata SHA-256: %s\nPackage SHA-256: %s\nNo software was installed.\n", status, result.Download.Path, result.ReleaseVersion, result.Tag, result.Commit, result.MetadataVersion, result.MetadataSHA256, result.Download.SHA256)
 	return nil
 }
 

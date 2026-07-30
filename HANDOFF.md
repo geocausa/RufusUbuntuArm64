@@ -1,6 +1,6 @@
 # RufusArm64 development handoff
 
-Updated: 2026-07-30 15:33 Europe/London
+Updated: 2026-07-30 16:02 Europe/London
 
 This file is the durable restart point for ChatGPT/Connector2 development on
 `geocausa/RufusUbuntuArm64`. Read it before changing files or running a
@@ -127,62 +127,58 @@ Relevant project trackers:
 
 ## Current objective
 
-The bounded Linux ISO compatibility corpus is complete and PR #420 merged as
-`1c23e23a3fe005da23a550a6de53c2727049e457`. Do not resume speculative
-distribution-by-distribution qualification unless an exact artifact exposes a
-new generic media-layout rule. Linux Mint, Bazzite, Nobara, Nutanix and umbrelOS
-have been removed from the active manifest and moved to deferred long-tail
-coverage.
+PR #421 merged as `89686ef31ff8750f6079296f080c50b38786f56e`. The
+active branch is `release/verified-update-download`, based on merged `main`.
+Continue the signed-release completion path without introducing automatic
+installation or CI-held private keys.
 
-The active tranche is signed release metadata and verified updates. Current
-branch: `release/product-completion`, based on merged `main`.
+Implemented in this tranche:
 
-Implemented foundation:
-
-- Root metadata may optionally authorize a dedicated threshold `release` role
-  without invalidating existing root/catalog-only metadata.
-- Strict release envelopes bind metadata version, expiry, product, repository,
-  semantic release version, exact tag, exact commit, stable/prerelease channel,
-  sorted immutable assets, HTTPS GitHub release URLs, sizes, SHA-256 digests and
-  signed redirect hosts.
-- Offline administration can canonicalize release drafts, emit signing
-  manifests, assemble externally produced Ed25519 signatures and verify the
-  completed release envelope. No private-key API was added.
-- `rufusarm64-cli update verify` verifies a sequential root chain and signed
-  release envelope, refuses expired trust, metadata rollback and version
-  downgrade, and reports the exact authenticated ARM64 package. It is read-only
-  and never downloads or installs software.
-- Focused adversarial tests cover threshold failure, payload tampering, expiry,
-  absent release authorization, wrong tag/commit/URL/digest, missing package,
-  unsorted assets, metadata rollback, version downgrade, offline operator flow
-  and end-user CLI verification.
-- Final local validation passed: clean Go 1.22.12 complete-suite execution in
-  an isolated mount namespace; Go 1.26.5 race, vet, staticcheck, actionlint and
-  govulncheck with no vulnerabilities; all Go and GUI tests; exact bounded ISO
-  corpus; native ARM64 package construction; pinned WIM/UEFI source checks; and
-  byte-for-byte reproducible Debian packaging. The temporary package prerequisite
-  was restored from a previously green package only after exact checksum checks
-  and was removed before commit.
+- `DownloadReleasePackage` adapts the exact authenticated ARM64 package record
+  to the existing reviewed acquisition downloader rather than creating another
+  network or filesystem writer.
+- A private immutable trust snapshot is created only after threshold signature
+  verification. Exported inspection fields may be changed by an embedding
+  caller without changing the trusted version, package URL, size, SHA-256,
+  metadata digest or signing-key evidence used by update decisions/downloads.
+- `rufusarm64-cli update download` requires the full sequential root chain,
+  signed release envelope, current version and rollback floor. It refuses a
+  same-version or older release before any network request.
+- The command supports exact destination selection, safe replacement, resumable
+  transfer, JSON progress or final JSON, and reports release/metadata evidence.
+  It never requests privilege or invokes a package manager.
+- The reused downloader enforces signed redirect hosts, HTTPS/TLS policy, exact
+  response and range semantics, available-space preflight, cancellation,
+  bounded owner-owned partial files, exact size/SHA-256, synchronization,
+  atomic no-replace publication and verified reuse.
+- Focused tests pass for authenticated download/readback/reuse, unauthenticated
+  object refusal, same-version refusal, exact CLI binding and post-verification
+  mutation resistance.
+- Final local validation passed: complete Go 1.22.12 suite in an isolated
+  mount namespace; Go 1.26.5 race/vet, staticcheck, actionlint and govulncheck
+  with no vulnerabilities; all Go and GUI tests; native ARM64 package checks;
+  exact bounded ISO corpus; and byte-for-byte reproducible Debian packaging.
+  The temporary pinned UEFI prerequisite was restored from a previously green
+  package only after exact checksum verification and removed before commit.
 
 Remaining sequence:
 
-1. Finish documentation and workflow contract tests for signed release metadata.
-2. Add a deterministic release-draft generator that binds the six existing
-   release assets and exact tag commit.
-3. Define the offline key ceremony and committed root/envelope publication
-   layout; do not introduce CI-held private signing keys.
-4. Make future release publication refuse assets that do not match the committed
-   threshold-signed envelope.
-5. Add verified package download/readback using the signed asset record. Keep
-   package installation explicit and separate until rollback, privilege and
-   package-manager behavior are reviewed.
-6. Run Go 1.22 compatibility, pinned static/vulnerability checks, all GUI tests,
-   package/reproducibility tests and exact workflow-contract validation before
-   opening the review PR.
+1. Finish documentation and run Go 1.22, race/vet/static/vulnerability, GUI,
+   package, reproducibility and exact workflow-contract validation.
+2. Commit, push and open a dedicated verified-download PR; accept only exact-head
+   green CI before merge.
+3. Design owner-only persistent release metadata rollback state and authenticated
+   network refresh. Do not rely indefinitely on caller-supplied rollback floors.
+4. Define and perform the production offline root/release key ceremony, then
+   commit only public roots and threshold-signed envelopes.
+5. Make release publication refuse any staged artifact graph that differs from
+   the committed signed envelope.
+6. Keep package installation, privilege, package-manager behavior and rollback
+   as a separate high-risk tranche.
 
-The current sacrificial USB contains the exact verified openSUSE Tumbleweed
-AArch64 image. Do not overwrite it unless a new physical test is explicitly
-authorized and the device identity is freshly re-enumerated.
+The sacrificial USB still contains the verified openSUSE Tumbleweed AArch64
+image. Do not overwrite it without explicit authorization and fresh identity
+re-enumeration.
 
 ## Machine/toolchain state
 
