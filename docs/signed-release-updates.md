@@ -67,6 +67,24 @@ The command verifies the complete root chain and release signature threshold, th
 
 The default state path follows `$XDG_STATE_HOME/rufusarm64/update/state.json`, falling back to `$HOME/.local/state/rufusarm64/update/state.json`. The final state directory is mode 0700; the state and lock are mode 0600. State admission uses no-follow opens, owner and single-link checks, strict JSON, an exclusive process lock, atomic replacement, file and directory synchronization, and a post-read mutation check. Concurrent processes therefore cannot overwrite a higher accepted sequence with a lower one. Deleting the state as the same local user resets this local rollback memory; the production metadata channel and package bootstrap root remain separate trust anchors.
 
+## Authenticated metadata refresh
+
+A provisioned package can discover release metadata through the same package-owned root-chain configuration used by the built-in acquisition channel:
+
+```bash
+rufusarm64-cli update refresh \
+  --config /usr/share/rufusarm64/acquisition/channel.json \
+  --current-version 0.15.0 \
+  --state-file "$HOME/.local/state/rufusarm64/update/state.json" \
+  --json
+```
+
+The channel configuration adds an optional `release_url` beside the versioned `root_url` and catalog URL. Refresh starts from the package-owned bootstrap root, replays cached root rotations sequentially, fetches any missing root versions one at a time, and verifies the threshold-signed `release.json` with the final root's release role. HTTPS, TLS 1.2+, byte limits, disabled transparent compression, public-host validation, and signed host allowlisting reuse the existing metadata-channel transport.
+
+Verified roots and the release envelope are cached under `$XDG_CACHE_HOME/rufusarm64/update`, falling back to the user cache directory. Cache directories are descriptor-checked mode 0700 directories; metadata files are mode 0600 and are written with same-directory temporary files, `fsync`, atomic rename, and directory synchronization. `--offline` accepts only an unexpired cached root chain and release envelope. Ordinary network failures may fall back to that same independently reverified cache; signature, expiry, rollback, substitution, and clock failures never receive a fallback bypass.
+
+Refresh checks the existing rollback state before using network or cached metadata, then acceptance is forced to use the exact same resolved state path. The state and lock must remain outside the metadata cache and cannot collide with the packaged channel configuration or bootstrap root. The command reports the authenticated package record but does not download or install it.
+
 A newer authenticated package can be downloaded without installation:
 
 ```bash
@@ -87,7 +105,6 @@ The downloader receives the package record from an internal immutable snapshot c
 
 This implementation does **not**:
 
-- automatically discover or refresh release metadata from the network;
 - prevent the same local account from deliberately deleting its rollback state;
 - execute `dpkg`, `apt`, PackageKit or another installer;
 - request privilege;
@@ -97,4 +114,4 @@ This implementation does **not**:
 - provide rollback after package installation;
 - make an AppImage or other portable-distribution claim.
 
-The next safe step is a committed offline-signed production root and release envelope that the release workflow checks against freshly reproduced assets before publication, followed by authenticated metadata refresh through a pinned channel. Installation remains a separate privileged package-management design.
+The next safe step is the production offline-key ceremony and a dedicated activation change that commits only reviewed public roots, an enabled pinned channel, and threshold-signed release envelopes. Release publication must then prove that the signed asset graph matches freshly reproduced bytes before upload. Installation remains a separate privileged package-management design.

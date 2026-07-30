@@ -201,6 +201,7 @@ func TestCanonicalizeChannelConfig(t *testing.T) {
 		BootstrapRoot: " 1.root.json ",
 		RootURL:       " https://updates.example.com/roots/{version}.json ",
 		CatalogURL:    " https://updates.example.com/catalog.json ",
+		ReleaseURL:    " https://updates.example.com/release.json ",
 		AllowedHosts:  []string{"updates.example.com"},
 	}
 	first, err := CanonicalizeChannelConfig(config)
@@ -214,12 +215,17 @@ func TestCanonicalizeChannelConfig(t *testing.T) {
 	if !bytes.Equal(first, second) || bytes.Contains(first, []byte("\n")) {
 		t.Fatalf("channel config is not deterministic: %q", first)
 	}
-	if bytes.Contains(first, []byte(" 1.root.json ")) || bytes.Contains(first, []byte(" https://")) {
+	if bytes.Contains(first, []byte(" 1.root.json ")) || bytes.Contains(first, []byte(" https://")) || !bytes.Contains(first, []byte(`"release_url":"https://updates.example.com/release.json"`)) {
 		t.Fatalf("channel config whitespace was not normalized: %q", first)
 	}
 	config.CatalogURL = "https://127.0.0.1/catalog.json"
 	if _, err := CanonicalizeChannelConfig(config); err == nil {
 		t.Fatal("private/loopback production URL was accepted")
+	}
+	config.CatalogURL = "https://updates.example.com/catalog.json"
+	config.ReleaseURL = "https://127.0.0.1/release.json"
+	if _, err := CanonicalizeChannelConfig(config); err == nil {
+		t.Fatal("private/loopback release URL was accepted")
 	}
 }
 

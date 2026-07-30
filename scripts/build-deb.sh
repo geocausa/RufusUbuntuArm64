@@ -348,6 +348,8 @@ install -Dm644 "${ROOT_DIR}/docs/acquisition-channel.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/acquisition-channel.md"
 install -Dm644 "${ROOT_DIR}/docs/acquisition-admin.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/acquisition-admin.md"
+install -Dm644 "${ROOT_DIR}/docs/signed-release-updates.md" \
+  "${PACKAGE_DIR}/usr/share/doc/rufusarm64/signed-release-updates.md"
 install -Dm644 "${ROOT_DIR}/docs/persistence-user-guide.md" \
   "${PACKAGE_DIR}/usr/share/doc/rufusarm64/persistence-user-guide.md"
 install -Dm644 "${ROOT_DIR}/docs/persistence-qualification.md" \

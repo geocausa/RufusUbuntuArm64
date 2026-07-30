@@ -127,51 +127,63 @@ Relevant project trackers:
 
 ## Current objective
 
-PR #422 merged as `9f405c0b5161a4589f9b05f325cd9d529b5881cb`. The
-active branch is `release/update-rollback-state`, based on merged `main`.
+PR #423 merged as `368e085904cfbea36b9e52c9797c0070c7834cd5`. The
+active branch is `release/authenticated-update-refresh`, based on merged `main`.
 Continue product completion without adding automatic installation or private
 release keys to CI.
 
 Implemented in this tranche:
 
-- Verified roots now retain an internal immutable snapshot of trusted version,
-  roles, generation/expiry and SHA-256. Root updates plus catalog/release
-  signature verification use that snapshot rather than mutable exported fields.
-- Verified releases are bound to the exact root version/SHA-256 that authorized
-  them. Persistent acceptance refuses pairing a release with another root.
-- `AcceptReleaseMetadata` resolves the XDG-compatible per-user state path,
-  secures the directory, takes an owner-owned no-follow exclusive lock, reads
-  strict owner-only state, enforces rollback/clock invariants and atomically
-  publishes the new state with directory synchronization.
-- State binds root version/hash, release metadata version/hash, release version
-  and monotonic acceptance time. It refuses lower versions, same-version content
-  substitution, release-version rollback and clocks more than 24 hours behind.
-- `update verify` and `update download` now persist rollback state by default;
-  `--state-file` selects a reviewed explicit path and
-  `--minimum-metadata-version` is only an additional floor.
-- Concurrent high/low metadata acceptance cannot regress final state. Tests also
-  cover state and lock symlinks, insecure modes, root/release cross-binding,
-  exported-field mutation, default XDG resolution and acceptance-time monotonicity.
-- Final local validation passed: complete Go 1.22.12 suite in an isolated
-  mount namespace; Go 1.26.5 race/vet, staticcheck, actionlint and govulncheck
-  with no vulnerabilities; all Go and GUI tests; native ARM64 package checks;
-  exact bounded ISO corpus; and byte-for-byte reproducible Debian packaging.
-  The temporary pinned UEFI prerequisite was restored from a previously green
-  package only after exact checksum verification and removed before commit.
+- The package-owned channel schema now has an explicit optional `release_url`.
+  It receives the same HTTPS, default-port, public-host, sorted allowlist and
+  bounded redirect validation as root and catalog metadata.
+- `RefreshReleaseChannel` starts from the packaged bootstrap root, replays cached
+  sequential rotations, fetches missing root versions one at a time, verifies
+  the threshold-signed release envelope with the final release role and caches
+  only authenticated metadata in an owner-only XDG-compatible directory.
+- Online refresh, network-error fallback and explicit offline mode all reverify
+  the complete root chain, expiry, signatures, root/release rollback state,
+  release-version monotonicity and the bounded local-clock rule. Security
+  failures never fall back to stale metadata.
+- Refresh checks the exact rollback state before using metadata and acceptance
+  is bound to the same resolved path. State and lock files must stay outside the
+  metadata cache and cannot collide with the packaged configuration or bootstrap
+  root.
+- `rufusarm64-cli update refresh` reports whether network or verified cache was
+  used plus the exact root, release, signer and package record. It downloads and
+  installs nothing.
+- `rufus-channel-admin channel-config --release-url` and
+  `publish --release` generate one deterministic publication containing
+  `release.json`, release version/digest evidence in `publication.json`, and
+  `SHA256SUMS` coverage. Release URL and envelope must be supplied together.
+- Adversarial tests cover TLS refresh, offline fallback, root rotation,
+  same-version substitution, metadata rollback, cache/state/config collisions,
+  cross-state acceptance, private release URLs, deterministic publication and
+  missing release-envelope refusal.
+
+Validation completed in this branch:
+
+- complete Go 1.22.12 suite in an isolated mount namespace;
+- Go 1.26.5 race/vet plus the pinned staticcheck and govulncheck audit with no vulnerabilities;
+- release/version/publication Python contracts and actionlint;
+- all Go and GUI tests, native ARM64 package checks, the exact bounded Linux ISO corpus, and byte-for-byte reproducible Debian packaging;
+- delayed acceptance expiry, cache/config/state separation, exported-field mutation resistance, TLS refresh, offline fallback, root rotation, substitution and rollback refusal, and deterministic release publication.
+
+The temporary pinned UEFI prerequisite was restored from the installed green package only after exact checksum and size verification and removed before commit.
 
 Remaining sequence:
 
-1. Complete source review and run Go 1.22, race/vet/static/vulnerability, GUI,
-   package/reproducibility and workflow-contract validation.
-2. Commit, push and open a dedicated rollback-state PR; merge only after all
-   exact-head checks pass.
-3. Implement authenticated release metadata refresh through a provisioned public
-   channel while reusing the same persistent root/release state.
-4. Define and perform the production offline key ceremony, then commit only
-   public roots and threshold-signed release envelopes.
-5. Make release publication refuse any asset graph differing from the committed
-   signed envelope.
-6. Keep package installation, privilege, package-manager behavior and rollback
+1. Complete final source/document review and run Go 1.22, race/vet,
+   static/vulnerability, GUI, package/reproducibility and workflow-contract
+   validation.
+2. Commit, push and open a dedicated authenticated-refresh PR; merge only after
+   every exact-head check passes.
+3. Define and perform the production offline key ceremony, then commit only
+   reviewed public roots, the enabled pinned channel and threshold-signed release
+   envelopes.
+4. Make release publication and the tagged workflow refuse any asset graph that
+   differs from the committed signed envelope and freshly reproduced bytes.
+5. Keep package installation, privilege, package-manager behavior and rollback
    as a separate high-risk tranche.
 
 The sacrificial USB still contains the verified openSUSE Tumbleweed AArch64

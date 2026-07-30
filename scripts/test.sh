@@ -268,10 +268,10 @@ ET.parse("packaging/io.github.geocausa.RufusArm64.svg")
 import json
 channel_path = pathlib.Path("packaging/acquisition/channel.json")
 channel = json.loads(channel_path.read_text(encoding="utf-8"))
-expected_keys = {"schema", "enabled", "bootstrap_root", "root_url", "catalog_url", "allowed_hosts"}
+expected_keys = {"schema", "enabled", "bootstrap_root", "root_url", "catalog_url", "release_url", "allowed_hosts"}
 if set(channel) != expected_keys or channel["schema"] != 1 or channel["enabled"] is not False:
     raise SystemExit("packaged acquisition channel must remain an explicit disabled schema-1 configuration")
-if any(channel[name] for name in ("bootstrap_root", "root_url", "catalog_url", "allowed_hosts")):
+if any(channel[name] for name in ("bootstrap_root", "root_url", "catalog_url", "release_url", "allowed_hosts")):
     raise SystemExit("disabled acquisition channel must not contain placeholder trust material or URLs")
 if "PRIVATE KEY" in channel_path.read_text(encoding="utf-8"):
     raise SystemExit("private acquisition key material must never be packaged")
@@ -419,6 +419,7 @@ gzip -t "${extract_dir}/usr/share/doc/rufusarm64/changelog.gz"
 [[ -f "${extract_dir}/usr/share/lintian/overrides/rufusarm64" ]]
 [[ -f "${extract_dir}/usr/share/doc/rufusarm64/acquisition-channel.md" ]]
 [[ -f "${extract_dir}/usr/share/doc/rufusarm64/acquisition-admin.md" ]]
+[[ -f "${extract_dir}/usr/share/doc/rufusarm64/signed-release-updates.md" ]]
 [[ -f "${extract_dir}/usr/share/doc/rufusarm64/persistence-user-guide.md" ]]
 [[ -f "${extract_dir}/usr/share/doc/rufusarm64/persistence-qualification.md" ]]
 [[ -f "${extract_dir}/usr/share/doc/rufusarm64/freedos-user-guide.md" ]]
@@ -434,7 +435,7 @@ python3 - "${channel_config}" <<'PYCHANNEL'
 import json, pathlib, sys
 value = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 assert value["schema"] == 1 and value["enabled"] is False
-assert not value["bootstrap_root"] and not value["root_url"] and not value["catalog_url"] and not value["allowed_hosts"]
+assert not value["bootstrap_root"] and not value["root_url"] and not value["catalog_url"] and not value["release_url"] and not value["allowed_hosts"]
 PYCHANNEL
 file "${helper}" | grep -q 'ARM aarch64'
 file "${helper}" | grep -q 'statically linked'

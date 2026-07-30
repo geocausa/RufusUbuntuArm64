@@ -19,6 +19,7 @@ type channelFixture struct {
 	mu      sync.RWMutex
 	roots   map[int][]byte
 	catalog []byte
+	release []byte
 }
 
 func (fixture *channelFixture) handler(writer http.ResponseWriter, request *http.Request) {
@@ -27,6 +28,10 @@ func (fixture *channelFixture) handler(writer http.ResponseWriter, request *http
 	writer.Header().Set("Content-Type", "application/json")
 	if request.URL.Path == "/catalog.json" {
 		_, _ = writer.Write(fixture.catalog)
+		return
+	}
+	if request.URL.Path == "/release.json" && fixture.release != nil {
+		_, _ = writer.Write(fixture.release)
 		return
 	}
 	var version int

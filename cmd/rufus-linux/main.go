@@ -33,6 +33,10 @@ import (
 
 var version = "development"
 var downloadReleasePackage = acquisition.DownloadReleasePackage
+var refreshReleaseChannel = acquisition.RefreshReleaseChannel
+var acceptReleaseChannel = func(result *acquisition.ReleaseChannelResult, currentVersion string, options acquisition.UpdateStateOptions) (acquisition.UpdateStateResult, error) {
+	return result.Accept(currentVersion, options)
+}
 
 const defaultAcquisitionChannelConfig = "/usr/share/rufusarm64/acquisition/channel.json"
 
@@ -155,6 +159,7 @@ Usage:
   rufusarm64-cli acquire channel list [--offline] [--json]
   rufusarm64-cli acquire channel download --id ID [--output FILE] [--offline]
   rufusarm64-cli update verify --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--state-file FILE] [--json]
+  rufusarm64-cli update refresh [--config FILE] [--cache-dir DIR] [--state-file FILE] [--current-version VERSION] [--minimum-metadata-version N] [--offline] [--json]
   rufusarm64-cli update download --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--state-file FILE] [--output FILE] [--replace] [--resume] [--json-progress|--json]
   rufusarm64-cli persistence plan --image FILE --media-root DIR --target-size SIZE [--size SIZE] [--json]
   sudo rufusarm64-cli persistence analyze --image FILE --expected-source-identity ID --target-size SIZE [--size SIZE] [--json]
@@ -166,7 +171,7 @@ Usage:
 
 Acquisition catalogs are accepted only after detached Ed25519 signature, expiry, URL, size, filename, and SHA-256 validation.
 The built-in channel additionally enforces threshold root/catalog signatures, key rotation, version rollback protection, and owner-only atomic trust state.
-Update verification authenticates threshold-signed release metadata and atomically advances owner-only rollback state while refusing root/release rollback or package-version downgrade. Update download reuses the bounded acquisition writer for exact size/SHA-256 verification and atomic publication; neither command installs software.
+Update verification authenticates threshold-signed release metadata and atomically advances owner-only rollback state while refusing root/release rollback or package-version downgrade. Update refresh discovers that metadata through a package-owned pinned channel with verified cache fallback. Update download reuses the bounded acquisition writer for exact size/SHA-256 verification and atomic publication; none of these commands installs software.
 Persistence planning accepts mounted or extracted Ubuntu 20.04+ casper and Debian live-boot media trees.
 Automatic analysis mounts the selected plain ISOHybrid image privately and read-only; it never opens a target device.
 The experimental persistent writer is CLI-only, GPT/UEFI-only, and is never accepted by the graphical privileged path.
@@ -1681,11 +1686,13 @@ type acquireCatalogSummary struct {
 
 func runUpdate(args []string) error {
 	if len(args) == 0 {
-		return errors.New("update requires verify or download")
+		return errors.New("update requires verify, refresh, or download")
 	}
 	switch args[0] {
 	case "verify":
 		return runUpdateVerify(args[1:])
+	case "refresh":
+		return runUpdateRefresh(args[1:])
 	case "download":
 		return runUpdateDownload(args[1:])
 	default:
@@ -1786,6 +1793,64 @@ func runUpdateVerify(args []string) error {
 		status = "A verified update is available."
 	}
 	fmt.Printf("%s\nCurrent: %s\nRelease: %s\nTag: %s\nCommit: %s\nRoot version: %d\nRoot SHA-256: %s\nMetadata version: %d\nRollback state: %s\nAccepted at: %s\nPackage: %s\nSize: %s\nSHA-256: %s\nURL: %s\n", status, decision.CurrentVersion, decision.ReleaseVersion, decision.Tag, decision.Commit, decision.RootVersion, decision.RootSHA256, decision.MetadataVersion, decision.StatePath, decision.AcceptedAt, decision.Package.Name, humanBytes(decision.Package.Size), decision.Package.SHA256, decision.Package.URL)
+	return nil
+}
+
+type updateRefreshOutput struct {
+	Channel  *acquisition.ReleaseChannelResult `json:"channel"`
+	Decision acquisition.UpdateDecision        `json:"decision"`
+}
+
+func runUpdateRefresh(args []string) error {
+	fs := flag.NewFlagSet("update refresh", flag.ContinueOnError)
+	config := fs.String("config", defaultAcquisitionChannelConfig, "package-owned pinned metadata channel configuration")
+	cacheDir := fs.String("cache-dir", "", "owner-only release metadata cache; default follows XDG_CACHE_HOME")
+	stateFile := fs.String("state-file", "", "owner-only rollback state file; default follows XDG_STATE_HOME")
+	currentVersion := fs.String("current-version", version, "currently installed RufusArm64 version")
+	minimumMetadataVersion := fs.Int("minimum-metadata-version", 0, "additional lowest accepted release metadata version")
+	offline := fs.Bool("offline", false, "use only already verified, unexpired cached metadata")
+	asJSON := fs.Bool("json", false, "output JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("update refresh does not accept positional arguments")
+	}
+	if strings.TrimSpace(*config) == "" {
+		return errors.New("--config is required")
+	}
+	if *currentVersion == "development" || strings.TrimSpace(*currentVersion) == "" {
+		return errors.New("development builds require an explicit --current-version")
+	}
+	now := time.Now()
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	channel, err := refreshReleaseChannel(ctx, *config, acquisition.ReleaseChannelOptions{
+		CacheDir: *cacheDir, StatePath: *stateFile, Now: now, Offline: *offline,
+		AllowCachedOnNetworkError: true,
+	})
+	if err != nil {
+		return err
+	}
+	accepted, err := acceptReleaseChannel(channel, *currentVersion, acquisition.UpdateStateOptions{
+		Path: *stateFile, MinimumMetadataVersion: *minimumMetadataVersion, Now: now,
+	})
+	if err != nil {
+		return err
+	}
+	output := updateRefreshOutput{Channel: channel, Decision: accepted.Decision}
+	if *asJSON {
+		return json.NewEncoder(os.Stdout).Encode(output)
+	}
+	status := "Current version is up to date."
+	if output.Decision.UpdateAvailable {
+		status = "A verified update is available."
+	}
+	source := "network refresh"
+	if channel.FromCache {
+		source = "verified cache"
+	}
+	fmt.Printf("%s\nSource: %s\nCurrent: %s\nRelease: %s\nTag: %s\nCommit: %s\nRoot version: %d\nRoot SHA-256: %s\nMetadata version: %d\nMetadata SHA-256: %s\nMetadata cache: %s\nRollback state: %s\nAccepted at: %s\nPackage: %s\nSize: %s\nSHA-256: %s\nURL: %s\nNo package was downloaded or installed.\n", status, source, output.Decision.CurrentVersion, output.Decision.ReleaseVersion, output.Decision.Tag, output.Decision.Commit, output.Decision.RootVersion, output.Decision.RootSHA256, output.Decision.MetadataVersion, output.Decision.MetadataSHA256, channel.CacheDir, output.Decision.StatePath, output.Decision.AcceptedAt, output.Decision.Package.Name, humanBytes(output.Decision.Package.Size), output.Decision.Package.SHA256, output.Decision.Package.URL)
 	return nil
 }
 
