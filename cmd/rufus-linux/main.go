@@ -196,15 +196,16 @@ func runList(args []string) error {
 }
 
 type inspectResult struct {
-	Mode             string `json:"mode"`
-	Recognized       bool   `json:"recognized"`
-	PartitionScheme  string `json:"partition_scheme"`
-	TargetSystem     string `json:"target_system"`
-	FileSystem       string `json:"filesystem"`
-	WindowsOptions   bool   `json:"windows_options"`
-	Description      string `json:"description"`
-	ContainerFormat  string `json:"container_format,omitempty"`
-	NeedsPreparation bool   `json:"needs_preparation,omitempty"`
+	Mode                string `json:"mode"`
+	Recognized          bool   `json:"recognized"`
+	PartitionScheme     string `json:"partition_scheme"`
+	TargetSystem        string `json:"target_system"`
+	FileSystem          string `json:"filesystem"`
+	WindowsOptions      bool   `json:"windows_options"`
+	WindowsInstallMedia bool   `json:"windows_install_media"`
+	Description         string `json:"description"`
+	ContainerFormat     string `json:"container_format,omitempty"`
+	NeedsPreparation    bool   `json:"needs_preparation,omitempty"`
 }
 
 func runInspect(args []string) error {
@@ -248,7 +249,8 @@ func runInspect(args []string) error {
 		}
 		result.Recognized = true
 		if available && preview.Recognized() {
-			selected, selectionErr := selectWriteMode("auto", preview, false)
+			result.WindowsInstallMedia = preview.HasWindowsInstallMedia()
+			selected, selectionErr := selectInspectionMode(preview)
 			modeErr = selectionErr
 			if selectionErr == nil && selected == "windows" {
 				result.Mode = "windows"
@@ -278,7 +280,8 @@ func runInspect(args []string) error {
 			return inspectErr
 		}
 		result.Recognized = inspection.Recognized()
-		mode, err := selectWriteMode("auto", inspection, false)
+		result.WindowsInstallMedia = inspection.HasWindowsInstallMedia()
+		mode, err := selectInspectionMode(inspection)
 		modeErr = err
 		switch {
 		case err != nil:
@@ -295,7 +298,11 @@ func runInspect(args []string) error {
 			result.PartitionScheme = "From image"
 			result.TargetSystem = "From image"
 			result.FileSystem = "From image"
-			result.Description = "Raw/ISOHybrid image; embedded layout will be preserved"
+			if inspection.HasOpticalFilesystem() && !inspection.LooksLikeRawBootMedia() {
+				result.Description = "Optical Linux/UEFI ISO; ISO Image mode can extract a conventional USB layout after compatibility analysis"
+			} else {
+				result.Description = "Raw/ISOHybrid image; embedded layout will be preserved"
+			}
 		}
 	}
 	if err := file.Close(); err != nil {
@@ -797,6 +804,19 @@ func runWrite(args []string) error {
 	return nil
 }
 
+func selectInspectionMode(inspection imaging.ImageInfo) (string, error) {
+	if inspection.HasSquashFS && !inspection.HasOpticalFilesystem() && !inspection.LooksLikeRawBootMedia() {
+		return "", errors.New("the selected file is a recognized SquashFS filesystem image but not a complete ISOHybrid, GPT, or MBR disk image; refusing automatic raw writing (use --force-raw only for a deliberate filesystem-byte copy)")
+	}
+	if !inspection.Recognized() {
+		return "", errors.New("the selected file is not a recognized ISOHybrid, GPT, MBR, or supported direct-filesystem image; refusing to write an arbitrary or damaged file")
+	}
+	if inspection.HasWindowsInstallMedia() {
+		return "windows", nil
+	}
+	return "raw", nil
+}
+
 func selectWriteMode(requested string, inspection imaging.ImageInfo, forceRaw bool) (string, error) {
 	if requested != "auto" && requested != "raw" && requested != "windows" && requested != "linux-persistent" {
 		return "", errors.New("mode must be auto, raw, windows, or linux-persistent")
@@ -811,14 +831,17 @@ func selectWriteMode(requested string, inspection imaging.ImageInfo, forceRaw bo
 	if selected == "auto" && forceRaw {
 		selected = "raw"
 	} else if selected == "auto" {
-		if inspection.HasOpticalFilesystem() && !inspection.LooksLikeRawBootMedia() {
+		if inspection.HasWindowsInstallMedia() {
 			selected = "windows"
 		} else {
 			selected = "raw"
 		}
 	}
+	if selected == "windows" && !inspection.HasWindowsInstallMedia() {
+		return "", errors.New("this optical image does not contain the bounded Windows installation markers sources/boot.wim plus an install.wim, install.esd, or install.swm payload")
+	}
 	if selected == "raw" && inspection.HasOpticalFilesystem() && !inspection.LooksLikeRawBootMedia() && !forceRaw {
-		return "", errors.New("this optical ISO is not raw-bootable; use automatic Windows mode or select a bootable disk image")
+		return "", errors.New("this optical ISO has no raw USB disk layout; use RufusArm64 ISO Image mode or --force-raw only for a deliberate byte-for-byte copy")
 	}
 	return selected, nil
 }

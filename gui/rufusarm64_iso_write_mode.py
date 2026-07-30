@@ -16,8 +16,8 @@ DEFAULT_ISO_VOLUME_LABEL = "RUFUS-LIVE"
 _pending_iso_window = None
 
 
-def hybrid_mode_available(info):
-    """Return whether inspection exposes a bounded UEFI ISOHybrid choice."""
+def iso_image_mode_available(info):
+    """Return whether bounded UEFI optical evidence permits ISO Image mode."""
     if not isinstance(info, dict) or info.get("mode") != "raw":
         return False
     profile = info.get("compatibility_profile")
@@ -25,11 +25,23 @@ def hybrid_mode_available(info):
         return False
     methods = profile.get("boot_methods") or []
     return (
-        profile.get("write_path") == "hybrid-direct-write"
-        and profile.get("hybrid") is True
+        profile.get("write_path") in {"hybrid-direct-write", "optical-direct-write"}
+        and profile.get("optical") is True
         and isinstance(methods, list)
         and "UEFI" in methods
     )
+
+
+def dd_image_mode_available(info):
+    """Return whether the source carries a coherent raw USB disk layout."""
+    if not iso_image_mode_available(info):
+        return False
+    profile = info.get("compatibility_profile") or {}
+    return profile.get("write_path") == "hybrid-direct-write" and profile.get("hybrid") is True
+
+
+# Compatibility alias retained for the existing integration surface.
+hybrid_mode_available = iso_image_mode_available
 
 
 def normalize_iso_partition_scheme(value):
@@ -133,8 +145,9 @@ def build_iso_write_command(
 class ISOHybridWriteModeDialog(Gtk.Dialog):
     """Explicit choice matching Rufus's ISOHybrid write-mode boundary."""
 
-    def __init__(self, parent):
-        super().__init__(title="ISOHybrid image detected", transient_for=parent, modal=True)
+    def __init__(self, parent, allow_dd=True):
+        super().__init__(title="Bootable Linux ISO detected", transient_for=parent, modal=True)
+        self.allow_dd = bool(allow_dd)
         self.add_button("Cancel", Gtk.ResponseType.CANCEL)
         self.add_button("Continue", Gtk.ResponseType.OK)
         self.set_default_response(Gtk.ResponseType.OK)
@@ -151,8 +164,9 @@ class ISOHybridWriteModeDialog(Gtk.Dialog):
 
         intro = Gtk.Label(
             label=(
-                "This image can be used as an optical ISO or as a complete disk image. "
-                "ISO Image mode is selected by default, as in Rufus on Windows."
+                "This image has a validated UEFI optical boot entry. "
+                + ("It also carries a complete raw disk layout. " if self.allow_dd else "It does not carry a raw USB disk layout. ")
+                + "ISO Image mode is selected by default, as in Rufus on Windows."
             )
         )
         intro.set_xalign(0)
@@ -182,10 +196,14 @@ class ISOHybridWriteModeDialog(Gtk.Dialog):
         box.pack_start(iso_detail, False, False, 0)
 
         self.dd_mode = Gtk.RadioButton.new_with_label_from_widget(
-            self.iso_mode, "Write in DD Image mode"
+            self.iso_mode,
+            "Write in DD Image mode" if self.allow_dd else "DD Image mode unavailable (no raw USB disk layout)",
         )
+        self.dd_mode.set_sensitive(self.allow_dd)
         self.dd_mode.set_tooltip_text(
             "Copy the image byte-for-byte, preserving its embedded partitions and boot structures."
+            if self.allow_dd
+            else "This optical-only ISO has no coherent MBR/GPT USB disk layout to preserve."
         )
         box.pack_start(self.dd_mode, False, False, 0)
 
@@ -193,6 +211,8 @@ class ISOHybridWriteModeDialog(Gtk.Dialog):
             label=(
                 "Copies the whole image exactly, preserving its embedded partition table, filesystems, boot records, and fixed image capacity. "
                 "The visible ISO extraction layout controls are ignored in DD mode."
+                if self.allow_dd
+                else "Use ISO Image mode to create a conventional USB layout from this optical-only UEFI ISO."
             )
         )
         dd_detail.set_xalign(0)
@@ -204,7 +224,7 @@ class ISOHybridWriteModeDialog(Gtk.Dialog):
         self.show_all()
 
     def selected_mode(self):
-        return "iso" if self.iso_mode.get_active() else "dd"
+        return "dd" if self.allow_dd and self.dd_mode.get_active() else "iso"
 
 
 def install_iso_write_mode():
@@ -327,8 +347,9 @@ def install_iso_write_mode():
                 window._iso_settings_suspended = False
         elif hybrid_mode_available(info):
             window.mode_value.set_text(
-                "ISOHybrid image: ISO Image mode (recommended/default) and DD Image mode are available. "
-                "ISO mode supports reviewed MBR/GPT and Automatic/FAT32/NTFS choices."
+                "Bootable Linux ISO: ISO Image mode is recommended and available. "
+                + ("DD Image mode is also available because a raw disk layout was detected. " if dd_image_mode_available(info) else "DD Image mode is unavailable because no raw USB disk layout was detected. ")
+                + "ISO mode supports reviewed MBR/GPT and Automatic/FAT32/NTFS choices."
             )
             apply_iso_controls(window)
         return result
@@ -432,7 +453,7 @@ def install_iso_write_mode():
         if window.persistence_enabled.get_active() or not hybrid_mode_available(window.inspection):
             return original_start(window, *args)
 
-        dialog = ISOHybridWriteModeDialog(window)
+        dialog = ISOHybridWriteModeDialog(window, allow_dd=dd_image_mode_available(window.inspection))
         response = dialog.run()
         choice = dialog.selected_mode()
         dialog.destroy()

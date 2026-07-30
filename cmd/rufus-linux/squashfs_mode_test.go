@@ -37,7 +37,7 @@ func TestSelectWriteModeKeepsSquashFSBackedDiskImageRaw(t *testing.T) {
 }
 
 func TestSelectWriteModePrefersValidatedOpticalEvidenceOverSystemAreaHint(t *testing.T) {
-	inspection := imaging.ImageInfo{HasSquashFS: true, HasISO9660: true}
+	inspection := imaging.ImageInfo{HasSquashFS: true, HasISO9660: true, HasWindowsBootWIM: true, HasWindowsInstallPayload: true}
 	mode, err := selectWriteMode("auto", inspection, false)
 	if err != nil {
 		t.Fatal(err)

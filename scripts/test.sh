@@ -76,10 +76,42 @@ python3 - "${native_dir}/windows.iso" "${native_dir}/test.dbx" <<'PYSECURE'
 import hashlib, struct, sys
 iso, dbx = sys.argv[1:]
 data = bytearray(160 * 1024)
-offset = 16 * 2048
-data[offset] = 1
-data[offset + 1:offset + 6] = b"CD001"
-data[offset + 6] = 1
+
+def record(buffer, offset, extent, size, flags, identifier):
+    length = 33 + len(identifier) + (1 if len(identifier) % 2 == 0 else 0)
+    item = memoryview(buffer)[offset:offset + length]
+    item[0] = length
+    struct.pack_into("<I", item, 2, extent)
+    struct.pack_into(">I", item, 6, extent)
+    struct.pack_into("<I", item, 10, size)
+    struct.pack_into(">I", item, 14, size)
+    item[25] = flags
+    struct.pack_into("<H", item, 28, 1)
+    struct.pack_into(">H", item, 30, 1)
+    item[32] = len(identifier)
+    item[33:33 + len(identifier)] = identifier
+    return length
+
+pvd = memoryview(data)[16 * 2048:17 * 2048]
+pvd[0] = 1
+pvd[1:6] = b"CD001"
+pvd[6] = 1
+struct.pack_into("<I", pvd, 80, len(data) // 2048)
+struct.pack_into("<H", pvd, 128, 2048)
+record(pvd, 156, 20, 2048, 2, bytes([0]))
+terminator = memoryview(data)[17 * 2048:18 * 2048]
+terminator[0] = 255
+terminator[1:6] = b"CD001"
+terminator[6] = 1
+root = memoryview(data)[20 * 2048:21 * 2048]
+cursor = record(root, 0, 20, 2048, 2, bytes([0]))
+cursor += record(root, cursor, 20, 2048, 2, bytes([1]))
+record(root, cursor, 21, 2048, 2, b"SOURCES")
+sources = memoryview(data)[21 * 2048:22 * 2048]
+cursor = record(sources, 0, 21, 2048, 2, bytes([0]))
+cursor += record(sources, cursor, 20, 2048, 2, bytes([1]))
+cursor += record(sources, cursor, 30, 1, 0, b"BOOT.WIM;1")
+record(sources, cursor, 31, 1, 0, b"INSTALL.WIM;1")
 open(iso, "wb").write(data)
 # EFI_CERT_SHA256_GUID in EFI byte order, one owner GUID, one digest.
 guid = bytes.fromhex("2616c4c14c509240aca941f936934328")
