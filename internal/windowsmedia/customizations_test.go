@@ -58,3 +58,44 @@ func TestPrepareCustomizationsForMetadataLeavesZeroOptionsAsNoOp(t *testing.T) {
 		t.Fatalf("zero options generated an answer file")
 	}
 }
+
+func TestPrepareSilentInstallBindsInspectedLanguageAndImageIndex(t *testing.T) {
+	metadata := windowsconfig.MediaMetadata{
+		ProductName: "Windows 11 Pro", Version: "10.0.26100", Architecture: "arm64", InstallationType: "Client",
+		ImageCount: 2,
+		Images: []windowsconfig.WindowsImage{
+			{Index: 1, Name: "Windows 11 Home", DefaultLanguage: "en-GB"},
+			{Index: 4, Name: "Windows 11 Pro", DefaultLanguage: "en-GB"},
+		},
+		BootLanguage: "en-GB",
+	}
+	options := windowsconfig.Options{
+		LocalAccount: "Tester", ReduceDataCollection: true, SilentInstall: true,
+		InstallImageIndex: 4, Locale: "en-GB", TimeZone: "GMT Standard Time",
+	}
+	prepared, err := PrepareCustomizationsForMetadata(metadata, "arm64", options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(prepared.AnswerFile)
+	for _, want := range []string{"<Value>4</Value>", "<UILanguage>en-GB</UILanguage>", "<WillWipeDisk>true</WillWipeDisk>", "RUFUS_BOOT"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in answer file", want)
+		}
+	}
+
+	options.InstallImageIndex = 2
+	if _, err := PrepareCustomizationsForMetadata(metadata, "arm64", options); err == nil || !strings.Contains(err.Error(), "not present") {
+		t.Fatalf("unproven index error=%v", err)
+	}
+	options.InstallImageIndex = 4
+	metadata.BootLanguage = ""
+	if _, err := PrepareCustomizationsForMetadata(metadata, "arm64", options); err == nil || !strings.Contains(err.Error(), "boot language") {
+		t.Fatalf("missing boot language error=%v", err)
+	}
+	metadata.BootLanguage = "en-GB"
+	metadata.ExistingUnattendPath = "autounattend.xml"
+	if _, err := PrepareCustomizationsForMetadata(metadata, "arm64", options); err == nil || !strings.Contains(err.Error(), "already contains") {
+		t.Fatalf("existing answer error=%v", err)
+	}
+}

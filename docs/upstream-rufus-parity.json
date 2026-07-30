@@ -64,7 +64,7 @@
       "id": "windows-install-media",
       "upstream_feature": "Create Windows installation drives",
       "status": "implemented",
-      "notes": "GPT/MBR, UEFI, x86 BIOS/CSM, FAT32, NTFS, WIM splitting, UEFI:NTFS, setup options, and driver staging are implemented through Linux-native tooling. Windows and Linux NTFS media share the pinned UEFI:NTFS geometry and metadata implementation. Windows CA 2023, SkuSiPolicy, silent installation, and Windows To Go are tracked as separate material capability gaps rather than being implied by this core installer-media status.",
+      "notes": "GPT/MBR, UEFI, x86 BIOS/CSM, FAT32, NTFS, WIM splitting, UEFI:NTFS, setup options, driver staging, SkuSiPolicy, qualified Windows UEFI CA 2023 replacement, and guarded UEFI/NTFS silent-install media are implemented through Linux-native tooling. Windows and Linux NTFS media share the pinned UEFI:NTFS geometry and metadata implementation. Silent installation binds exact WIM indexes and boot.wim language, refuses pre-existing answer files, requires a separate disk-0 acknowledgement, and uses the verified UEFI:NTFS partition as a fail-open disk-numbering guard. FAT32 silent-install parity, Windows To Go, and broader physical Windows Setup/firmware coverage remain separate bounded gaps.",
       "upstream_sources": [
         "src/format.c",
         "src/iso.c",
@@ -76,7 +76,7 @@
       "id": "windows-user-experience",
       "upstream_feature": "Customize Windows Setup and OOBE behavior",
       "status": "partial",
-      "notes": "Hardware-check bypass, offline/local account, localized reserved-account-name rejection, privacy, regional settings, time zone, BitLocker suppression, driver loading, and the opt-in Rufus 4.15 Quality of Life policy are implemented through deterministic XML, CLI, and GTK paths. Silent installation, SkuSiPolicy deployment, and Windows CA 2023 bootloader selection remain separate high-risk or media-capability-gated tranches.",
+      "notes": "Hardware-check bypass, offline/local account, localized reserved-account-name rejection, privacy, regional settings, time zone, BitLocker suppression, driver loading, the Rufus 4.15 Quality of Life policy, installed-system SkuSiPolicy deployment, qualified Windows UEFI CA 2023 selection, and guarded UEFI/NTFS silent installation are implemented through deterministic XML, CLI, GTK, repeated media analysis, and exact readback contracts. Silent mode binds the selected WIM index and boot.wim language, refuses existing unattended files, requires all upstream prerequisites, appends a visible SILENT label, and adds an independent three-part disk-0 warning. The entry remains partial because FAT32 silent-install parity and physical Windows installation qualification are not claimed.",
       "upstream_sources": [
         "src/wue.c",
         "src/rufus.h"

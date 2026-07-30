@@ -92,13 +92,9 @@ func AnalyzeCapabilities(ctx context.Context, isoPath string, expectedSource sou
 	if err != nil {
 		return CapabilityAnalysis{}, err
 	}
-	payloadPath, err := customizationImagePath(plan)
+	metadata, err := inspectPlanCustomizationMetadata(ctx, plan, false)
 	if err != nil {
 		return CapabilityAnalysis{}, err
-	}
-	metadata, err := InspectWIMSetupMetadata(ctx, payloadPath)
-	if err != nil {
-		return CapabilityAnalysis{}, fmt.Errorf("inspect Windows setup capabilities: %w", err)
 	}
 	ca2023, caErr := InspectWindowsCA2023Capability(ctx, plan.BootWIMPath)
 	if caErr != nil {

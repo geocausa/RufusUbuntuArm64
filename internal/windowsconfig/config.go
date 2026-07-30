@@ -23,12 +23,15 @@ type Options struct {
 	LoadDrivers          bool
 	QualityOfLife        bool
 	ApplySkuSiPolicy     bool
+	SilentInstall        bool
+	InstallImageIndex    int
+	BootLanguage         string
 	Locale               string
 	TimeZone             string
 }
 
 func (o Options) Enabled() bool {
-	return o.BypassHardwareChecks || o.BypassOnlineAccount || strings.TrimSpace(o.LocalAccount) != "" || o.ReduceDataCollection || o.DisableBitLocker || o.LoadDrivers || o.QualityOfLife || o.ApplySkuSiPolicy || strings.TrimSpace(o.Locale) != "" || strings.TrimSpace(o.TimeZone) != ""
+	return o.BypassHardwareChecks || o.BypassOnlineAccount || strings.TrimSpace(o.LocalAccount) != "" || o.ReduceDataCollection || o.DisableBitLocker || o.LoadDrivers || o.QualityOfLife || o.ApplySkuSiPolicy || o.SilentInstall || strings.TrimSpace(o.Locale) != "" || strings.TrimSpace(o.TimeZone) != ""
 }
 
 var validLocale = regexp.MustCompile(`^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$`)
@@ -89,6 +92,18 @@ func Validate(o Options) error {
 	if timeZone != "" && !validTimeZone.MatchString(timeZone) {
 		return fmt.Errorf("invalid Windows time-zone name %q", timeZone)
 	}
+	bootLanguage := strings.TrimSpace(o.BootLanguage)
+	if bootLanguage != "" && !validLocale.MatchString(bootLanguage) {
+		return fmt.Errorf("invalid Windows Setup boot language %q", bootLanguage)
+	}
+	if o.SilentInstall {
+		if username == "" || !o.ReduceDataCollection || locale == "" || timeZone == "" {
+			return errors.New("silent installation requires a local account, reduced data collection, locale, and time zone")
+		}
+		if o.InstallImageIndex <= 0 || o.InstallImageIndex > 256 {
+			return errors.New("silent installation requires an exact Windows image index from 1 to 256")
+		}
+	}
 	return nil
 }
 
@@ -102,6 +117,9 @@ func Generate(architecture string, o Options) ([]byte, error) {
 	if err := Validate(o); err != nil {
 		return nil, err
 	}
+	if o.SilentInstall && strings.TrimSpace(o.BootLanguage) == "" {
+		return nil, errors.New("silent installation requires a boot.wim language bound by media analysis")
+	}
 	arch := normalizeArchitecture(architecture)
 	if arch == "" {
 		return nil, fmt.Errorf("unsupported Windows architecture %q", architecture)
@@ -113,12 +131,14 @@ func Generate(architecture string, o Options) ([]byte, error) {
 
 	locale := strings.TrimSpace(o.Locale)
 	timeZone := strings.TrimSpace(o.TimeZone)
-	setupComponent := o.BypassHardwareChecks || o.DisableBitLocker || o.LoadDrivers
+	setupComponent := o.BypassHardwareChecks || o.DisableBitLocker || o.LoadDrivers || o.SilentInstall
 	if setupComponent || locale != "" {
 		b.WriteString("  <settings pass=\"windowsPE\">\n")
 		if setupComponent {
 			fmt.Fprintf(&b, "    <component name=\"Microsoft-Windows-Setup\" processorArchitecture=\"%s\" language=\"neutral\" publicKeyToken=\"31bf3856ad364e35\" versionScope=\"nonSxS\" xmlns:wcm=\"http://schemas.microsoft.com/WMIConfig/2002/State\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n", arch)
-			if o.DisableBitLocker {
+			if o.SilentInstall {
+				writeSilentInstallSetup(&b, o)
+			} else if o.DisableBitLocker {
 				b.WriteString("      <DisableEncryptedDiskProvisioning>true</DisableEncryptedDiskProvisioning>\n")
 			}
 			if o.BypassHardwareChecks || o.LoadDrivers {
@@ -142,6 +162,9 @@ func Generate(architecture string, o Options) ([]byte, error) {
 		if locale != "" {
 			fmt.Fprintf(&b, "    <component name=\"Microsoft-Windows-International-Core-WinPE\" processorArchitecture=\"%s\" language=\"neutral\" publicKeyToken=\"31bf3856ad364e35\" versionScope=\"nonSxS\" xmlns:wcm=\"http://schemas.microsoft.com/WMIConfig/2002/State\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n", arch)
 			fmt.Fprintf(&b, "      <InputLocale>%s</InputLocale>\n      <SystemLocale>%s</SystemLocale>\n      <UserLocale>%s</UserLocale>\n", escapeText(locale), escapeText(locale), escapeText(locale))
+			if o.SilentInstall {
+				fmt.Fprintf(&b, "      <UILanguage>%s</UILanguage>\n", escapeText(strings.TrimSpace(o.BootLanguage)))
+			}
 			b.WriteString("    </component>\n")
 		}
 		b.WriteString("  </settings>\n")
@@ -174,17 +197,20 @@ func Generate(architecture string, o Options) ([]byte, error) {
 		b.WriteString("      </RunSynchronous>\n    </component>\n  </settings>\n")
 	}
 
-	shellComponent := o.BypassOnlineAccount || o.ReduceDataCollection || strings.TrimSpace(o.LocalAccount) != "" || o.QualityOfLife || o.ApplySkuSiPolicy || timeZone != ""
+	shellComponent := o.BypassOnlineAccount || o.ReduceDataCollection || strings.TrimSpace(o.LocalAccount) != "" || o.QualityOfLife || o.ApplySkuSiPolicy || o.SilentInstall || timeZone != ""
 	if shellComponent || locale != "" {
 		b.WriteString("  <settings pass=\"oobeSystem\">\n")
 		if shellComponent {
 			fmt.Fprintf(&b, "    <component name=\"Microsoft-Windows-Shell-Setup\" processorArchitecture=\"%s\" language=\"neutral\" publicKeyToken=\"31bf3856ad364e35\" versionScope=\"nonSxS\" xmlns:wcm=\"http://schemas.microsoft.com/WMIConfig/2002/State\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n", arch)
-			if o.BypassOnlineAccount || o.ReduceDataCollection {
+			if o.BypassOnlineAccount || o.ReduceDataCollection || o.SilentInstall {
 				b.WriteString("      <OOBE>\n")
-				if o.BypassOnlineAccount {
+				if o.SilentInstall {
+					b.WriteString("        <HideEULAPage>true</HideEULAPage>\n")
+				}
+				if o.BypassOnlineAccount || o.SilentInstall {
 					b.WriteString("        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>\n        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>\n")
 				}
-				if o.ReduceDataCollection {
+				if o.ReduceDataCollection || o.SilentInstall {
 					b.WriteString("        <ProtectYourPC>3</ProtectYourPC>\n")
 				}
 				b.WriteString("      </OOBE>\n")
@@ -248,6 +274,52 @@ func Generate(architecture string, o Options) ([]byte, error) {
 		}
 	}
 	return output, nil
+}
+
+func writeSilentInstallSetup(b *bytes.Buffer, o Options) {
+	b.WriteString("      <UserData>\n        <AcceptEula>true</AcceptEula>\n        <ProductKey><Key /></ProductKey>\n      </UserData>\n")
+	b.WriteString("      <DiskConfiguration>\n        <WillShowUI>OnError</WillShowUI>\n")
+	if o.DisableBitLocker {
+		b.WriteString("        <DisableEncryptedDiskProvisioning>true</DisableEncryptedDiskProvisioning>\n")
+	}
+	// The verified NTFS USB is expected to be Disk 1 with UEFI:NTFS as
+	// partition 2. A different disk order, missing partition, or additional
+	// ambiguous disk is intended to make this modification fail and expose
+	// Setup's disk UI; users must still disconnect every other storage device.
+	b.WriteString(`        <Disk wcm:action="modify">
+          <DiskID>1</DiskID>
+          <ModifyPartitions>
+            <ModifyPartition wcm:action="modify">
+              <Order>1</Order>
+              <PartitionID>2</PartitionID>
+              <Label>RUFUS_BOOT</Label>
+            </ModifyPartition>
+          </ModifyPartitions>
+        </Disk>
+`)
+	b.WriteString(`        <Disk wcm:action="add">
+          <DiskID>0</DiskID>
+          <WillWipeDisk>true</WillWipeDisk>
+          <CreatePartitions>
+            <CreatePartition wcm:action="add"><Order>1</Order><Type>EFI</Type><Size>260</Size></CreatePartition>
+            <CreatePartition wcm:action="add"><Order>2</Order><Type>MSR</Type><Size>16</Size></CreatePartition>
+            <CreatePartition wcm:action="add"><Order>3</Order><Type>Primary</Type><Extend>true</Extend></CreatePartition>
+          </CreatePartitions>
+          <ModifyPartitions>
+            <ModifyPartition wcm:action="add"><Order>1</Order><PartitionID>1</PartitionID><Label>EFI</Label><Format>FAT32</Format></ModifyPartition>
+            <ModifyPartition wcm:action="add"><Order>2</Order><PartitionID>3</PartitionID><Label>Windows</Label><Letter>C</Letter><Format>NTFS</Format></ModifyPartition>
+          </ModifyPartitions>
+        </Disk>
+      </DiskConfiguration>
+`)
+	fmt.Fprintf(b, `      <ImageInstall>
+        <OSImage>
+          <WillShowUI>OnError</WillShowUI>
+          <InstallFrom><MetaData wcm:action="add"><Key>/IMAGE/INDEX</Key><Value>%d</Value></MetaData></InstallFrom>
+          <InstallTo><DiskID>0</DiskID><PartitionID>3</PartitionID></InstallTo>
+        </OSImage>
+      </ImageInstall>
+`, o.InstallImageIndex)
 }
 
 func normalizeArchitecture(value string) string {

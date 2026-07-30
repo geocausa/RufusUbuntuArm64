@@ -386,6 +386,9 @@ func runWrite(args []string) error {
 	winPrivacy := fs.Bool("win-reduce-data-collection", false, "reduce Windows setup data collection and recommendations")
 	winQualityOfLife := fs.Bool("win-quality-of-life", false, "remove bundled OneDrive setup, Outlook and Teams and apply Rufus Quality of Life policies")
 	winApplySkuSiPolicy := fs.Bool("win-apply-sku-si-policy", false, "apply the installed Windows SkuSiPolicy to its EFI System Partition on first logon")
+	winSilentInstall := fs.Bool("win-silent-install", false, "create guarded unattended Windows 11 media that may erase disk 0 on the installation computer")
+	winInstallImageIndex := fs.Int("win-install-image-index", 0, "exact Windows installation-image index for guarded silent installation")
+	winSilentConfirm := fs.String("win-silent-confirm", "", "required literal acknowledgement for guarded silent installation: ERASE DISK 0")
 	winUseCA2023Bootloaders := fs.Bool("win-use-ca-2023-bootloaders", false, "replace qualified FAT32 removable-media boot files with the Windows UEFI CA 2023 _EX set from boot.wim after embedded certificate-chain evidence checks")
 	winDisableBitLocker := fs.Bool("win-disable-bitlocker", false, "disable automatic Windows device encryption provisioning")
 	winLocale := fs.String("win-locale", "", "apply a Windows regional locale, such as en-GB")
@@ -542,9 +545,14 @@ func runWrite(args []string) error {
 		ReduceDataCollection: *winPrivacy,
 		QualityOfLife:        *winQualityOfLife,
 		ApplySkuSiPolicy:     *winApplySkuSiPolicy,
+		SilentInstall:        *winSilentInstall,
+		InstallImageIndex:    *winInstallImageIndex,
 		DisableBitLocker:     *winDisableBitLocker,
 		Locale:               *winLocale,
 		TimeZone:             *winTimeZone,
+	}
+	if err := validateSilentInstallAcknowledgement(winOptions, *winSilentConfirm); err != nil {
+		return err
 	}
 	if selectedMode != "windows" && (winOptions.Enabled() || *winUseCA2023Bootloaders || scheme != "auto" || targetSystemChoice != "auto" || filesystemChoice != "auto" || clusterSize != 0 || *driverFolder != "" || *dbxFile != "" || *fullFormat || *badBlockCheck) {
 		return errors.New("windows partition and setup options can only be used with a supported Windows installation ISO")
@@ -2381,6 +2389,20 @@ func printProgress(label string, p imaging.Progress) {
 	}
 	fmt.Printf("\r%-6s %6.2f%%  %s / %s  %s/s", label, percent, humanBytes(p.Done), humanBytes(p.Total), humanBytes(uint64(p.BytesPerSec)))
 }
+
+func validateSilentInstallAcknowledgement(options windowsconfig.Options, confirmation string) error {
+	if options.SilentInstall {
+		if confirmation != "ERASE DISK 0" {
+			return errors.New("silent installation requires --win-silent-confirm 'ERASE DISK 0'")
+		}
+		return nil
+	}
+	if options.InstallImageIndex != 0 || confirmation != "" {
+		return errors.New("--win-install-image-index and --win-silent-confirm require --win-silent-install")
+	}
+	return nil
+}
+
 func parseClusterSize(value string) (uint64, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "", "auto", "0":

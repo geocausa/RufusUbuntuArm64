@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/geocausa/RufusArm64/internal/windowsconfig"
 )
@@ -27,16 +29,24 @@ type wimInfoXML struct {
 }
 
 type wimImageXML struct {
+	Index       string        `xml:"INDEX,attr"`
 	Name        string        `xml:"NAME"`
 	DisplayName string        `xml:"DISPLAYNAME"`
+	Description string        `xml:"DESCRIPTION"`
 	Windows     wimWindowsXML `xml:"WINDOWS"`
 }
 
 type wimWindowsXML struct {
-	Architecture     string        `xml:"ARCH"`
-	ProductName      string        `xml:"PRODUCTNAME"`
-	InstallationType string        `xml:"INSTALLATIONTYPE"`
-	Version          wimVersionXML `xml:"VERSION"`
+	Architecture     string          `xml:"ARCH"`
+	ProductName      string          `xml:"PRODUCTNAME"`
+	InstallationType string          `xml:"INSTALLATIONTYPE"`
+	Languages        wimLanguagesXML `xml:"LANGUAGES"`
+	Version          wimVersionXML   `xml:"VERSION"`
+}
+
+type wimLanguagesXML struct {
+	Languages []string `xml:"LANGUAGE"`
+	Default   string   `xml:"DEFAULT"`
 }
 
 type wimVersionXML struct {
@@ -153,6 +163,7 @@ func parseWIMMetadata(reader io.Reader) (windowsconfig.MediaMetadata, error) {
 
 	var result windowsconfig.MediaMetadata
 	seenNames := make(map[string]struct{})
+	seenIndexes := make(map[int]struct{}, len(document.Images))
 	for index, image := range document.Images {
 		current := windowsconfig.MediaMetadata{
 			ProductName:      firstNonEmpty(image.DisplayName, image.Windows.ProductName, image.Name),
@@ -166,10 +177,25 @@ func parseWIMMetadata(reader io.Reader) (windowsconfig.MediaMetadata, error) {
 			return windowsconfig.MediaMetadata{}, errors.New("WIM editions contain conflicting Windows generation, family, or architecture metadata")
 		}
 
-		name := firstNonEmpty(image.DisplayName, image.Name, image.Windows.ProductName)
+		name := firstNonEmpty(image.DisplayName, image.Description, image.Name, image.Windows.ProductName)
 		if len(name) > maxWIMEditionName {
 			return windowsconfig.MediaMetadata{}, fmt.Errorf("WIM edition name exceeds the %d-byte safe limit", maxWIMEditionName)
 		}
+		imageIndex, err := strconv.Atoi(strings.TrimSpace(image.Index))
+		if err != nil || imageIndex <= 0 || imageIndex > maxWIMImages {
+			return windowsconfig.MediaMetadata{}, fmt.Errorf("WIM image %d has invalid INDEX %q", index+1, image.Index)
+		}
+		if _, duplicate := seenIndexes[imageIndex]; duplicate {
+			return windowsconfig.MediaMetadata{}, fmt.Errorf("WIM image INDEX %d is duplicated", imageIndex)
+		}
+		seenIndexes[imageIndex] = struct{}{}
+		language, err := normalizeWIMLanguage(image.Windows.Languages)
+		if err != nil {
+			return windowsconfig.MediaMetadata{}, fmt.Errorf("WIM image %d language metadata: %w", imageIndex, err)
+		}
+		result.Images = append(result.Images, windowsconfig.WindowsImage{
+			Index: imageIndex, Name: name, DefaultLanguage: language,
+		})
 		if name != "" {
 			key := strings.ToLower(name)
 			if _, exists := seenNames[key]; !exists {
@@ -180,6 +206,38 @@ func parseWIMMetadata(reader io.Reader) (windowsconfig.MediaMetadata, error) {
 	}
 	result.ImageCount = len(document.Images)
 	return result, nil
+}
+
+func normalizeWIMLanguage(languages wimLanguagesXML) (string, error) {
+	value := strings.TrimSpace(languages.Default)
+	if value == "" {
+		for _, candidate := range languages.Languages {
+			if value = strings.TrimSpace(candidate); value != "" {
+				break
+			}
+		}
+	}
+	if value == "" {
+		return "", nil
+	}
+	if len(value) > 32 {
+		return "", errors.New("default language exceeds 32 bytes")
+	}
+	for _, character := range value {
+		if unicode.IsControl(character) || !(unicode.IsLetter(character) || unicode.IsDigit(character) || character == '-') {
+			return "", fmt.Errorf("default language %q contains unsupported characters", value)
+		}
+	}
+	return value, nil
+}
+
+func wimImageByIndex(metadata windowsconfig.MediaMetadata, index int) (windowsconfig.WindowsImage, bool) {
+	for _, image := range metadata.Images {
+		if image.Index == index {
+			return image, true
+		}
+	}
+	return windowsconfig.WindowsImage{}, false
 }
 
 func normalizeWIMMetadataXML(data []byte) ([]byte, bool, error) {

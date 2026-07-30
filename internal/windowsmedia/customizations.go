@@ -4,6 +4,7 @@ package windowsmedia
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -41,7 +42,21 @@ func PrepareCustomizationsForMetadata(metadata windowsconfig.MediaMetadata, answ
 	if err := windowsconfig.ValidateForMedia(metadata, options); err != nil {
 		return result, err
 	}
-	answer, err := windowsconfig.Generate(answerArchitecture, options)
+	resolvedOptions := options
+	if options.SilentInstall {
+		matched := false
+		for _, image := range metadata.Images {
+			if image.Index == options.InstallImageIndex {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return result, fmt.Errorf("silent installation image index %d is not present in the inspected Windows payload", options.InstallImageIndex)
+		}
+		resolvedOptions.BootLanguage = metadata.BootLanguage
+	}
+	answer, err := windowsconfig.Generate(answerArchitecture, resolvedOptions)
 	if err != nil {
 		return result, fmt.Errorf("generate Windows answer file: %w", err)
 	}
@@ -49,9 +64,14 @@ func PrepareCustomizationsForMetadata(metadata windowsconfig.MediaMetadata, answ
 	return result, nil
 }
 
-func validateCustomizationTargetSystem(options windowsconfig.Options, targetSystem string) error {
-	if options.ApplySkuSiPolicy && strings.ToLower(strings.TrimSpace(targetSystem)) != "uefi" {
+func validateCustomizationLayout(options windowsconfig.Options, targetSystem, filesystem string) error {
+	target := strings.ToLower(strings.TrimSpace(targetSystem))
+	format := strings.ToLower(strings.TrimSpace(filesystem))
+	if options.ApplySkuSiPolicy && target != "uefi" {
 		return fmt.Errorf("SkuSiPolicy deployment requires a resolved UEFI Windows target; BIOS/CSM media has no EFI System Partition")
+	}
+	if options.SilentInstall && (target != "uefi" || format != "ntfs") {
+		return fmt.Errorf("silent installation requires resolved UEFI/NTFS media so the verified UEFI:NTFS partition can guard disk numbering")
 	}
 	return nil
 }
@@ -60,6 +80,9 @@ func validateCustomizationTargetSystem(options windowsconfig.Options, targetSyst
 // an external WIM engine. Production callers pass PrepareCustomizations.
 type customizationPreparer func(context.Context, string, string, windowsconfig.Options) (CustomizationPreparation, error)
 
+var inspectPlanSetupMetadata = InspectWIMSetupMetadata
+var inspectPlanBootMetadata = InspectWIMMetadata
+
 // preparePlanAnswerFile preserves the historical zero-option no-op. Metadata is
 // required only when at least one customization is selected; this keeps ordinary
 // Windows media creation compatible with images whose product metadata cannot be
@@ -67,6 +90,17 @@ type customizationPreparer func(context.Context, string, string, windowsconfig.O
 func preparePlanAnswerFile(ctx context.Context, plan mediaPlan, options windowsconfig.Options, prepare customizationPreparer) ([]byte, error) {
 	if !options.Enabled() {
 		return windowsconfig.Generate(plan.Architecture, options)
+	}
+	if options.SilentInstall {
+		metadata, err := inspectPlanCustomizationMetadata(ctx, plan, true)
+		if err != nil {
+			return nil, err
+		}
+		result, err := PrepareCustomizationsForMetadata(metadata, plan.Architecture, options)
+		if err != nil {
+			return nil, err
+		}
+		return result.AnswerFile, nil
 	}
 	imagePath, err := customizationImagePath(plan)
 	if err != nil {
@@ -77,6 +111,34 @@ func preparePlanAnswerFile(ctx context.Context, plan mediaPlan, options windowsc
 		return nil, err
 	}
 	return result.AnswerFile, nil
+}
+
+func inspectPlanCustomizationMetadata(ctx context.Context, plan mediaPlan, requireBootLanguage bool) (windowsconfig.MediaMetadata, error) {
+	imagePath, err := customizationImagePath(plan)
+	if err != nil {
+		return windowsconfig.MediaMetadata{}, err
+	}
+	metadata, err := inspectPlanSetupMetadata(ctx, imagePath)
+	if err != nil {
+		return windowsconfig.MediaMetadata{}, fmt.Errorf("inspect Windows setup capabilities: %w", err)
+	}
+	bootMetadata, bootErr := inspectPlanBootMetadata(ctx, plan.BootWIMPath)
+	if bootErr != nil {
+		if requireBootLanguage {
+			return windowsconfig.MediaMetadata{}, fmt.Errorf("inspect Windows Setup boot language: %w", bootErr)
+		}
+	} else if setupImage, ok := wimImageByIndex(bootMetadata, 2); ok {
+		metadata.BootLanguage = strings.TrimSpace(setupImage.DefaultLanguage)
+	}
+	if requireBootLanguage && metadata.BootLanguage == "" {
+		return windowsconfig.MediaMetadata{}, errors.New("boot.wim image 2 does not publish a default Windows Setup language")
+	}
+	if plan.ExistingAnswerPath != "" {
+		metadata.ExistingUnattendPath = "autounattend.xml"
+	} else if plan.ExistingPantherAnswerPath != "" {
+		metadata.ExistingUnattendPath = "sources/$OEM$/$$/Panther/unattend.xml"
+	}
+	return metadata, nil
 }
 
 func customizationImagePath(plan mediaPlan) (string, error) {

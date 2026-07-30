@@ -83,31 +83,32 @@ type Event struct {
 type EventFunc func(Event)
 
 type mediaPlan struct {
-	InstallPath        string
-	InstallRelative    string
-	InstallSize        uint64
-	NeedsSplit         bool
-	SplitFiles         []string
-	ExistingSplitFiles []string
-	SplitBytes         uint64
-	Architecture       string
-	BootWIMPath        string
-	HasARM64           bool
-	HasX64             bool
-	HasX86             bool
-	HasBIOS            bool
-	BIOSArchitecture   string
-	HasBootmgr         bool
-	OtherBytes         uint64
-	CopyBytes          uint64
-	RequiredBytes      uint64
-	ExistingAnswerPath string
-	ExistingAnswerSize uint64
-	AnswerFile         []byte
-	Filesystem         string
-	DriverFolder       string
-	DriverBytes        uint64
-	CA2023             *WindowsCA2023Plan
+	InstallPath               string
+	InstallRelative           string
+	InstallSize               uint64
+	NeedsSplit                bool
+	SplitFiles                []string
+	ExistingSplitFiles        []string
+	SplitBytes                uint64
+	Architecture              string
+	BootWIMPath               string
+	HasARM64                  bool
+	HasX64                    bool
+	HasX86                    bool
+	HasBIOS                   bool
+	BIOSArchitecture          string
+	HasBootmgr                bool
+	OtherBytes                uint64
+	CopyBytes                 uint64
+	RequiredBytes             uint64
+	ExistingAnswerPath        string
+	ExistingAnswerSize        uint64
+	ExistingPantherAnswerPath string
+	AnswerFile                []byte
+	Filesystem                string
+	DriverFolder              string
+	DriverBytes               uint64
+	CA2023                    *WindowsCA2023Plan
 }
 
 // Create destroys devicePath and creates Windows installation media from
@@ -367,7 +368,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		plan.DriverFolder = driverRoot
 	}
 	customizations := opts.Customizations
-	if err := validateCustomizationTargetSystem(customizations, targetSystem); err != nil {
+	if err := validateCustomizationLayout(customizations, targetSystem, filesystem); err != nil {
 		return err
 	}
 	customizations.LoadDrivers = plan.DriverFolder != ""
@@ -407,7 +408,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		return fmt.Errorf("unsupported filesystem %q", filesystem)
 	}
 
-	label, err := normalizeVolumeLabel(opts.VolumeLabel, filesystem)
+	label, err := customizationVolumeLabel(opts.VolumeLabel, filesystem, customizations)
 	if err != nil {
 		return err
 	}
@@ -891,6 +892,9 @@ func inspectMountedISO(root string) (mediaPlan, error) {
 		if info, statErr := os.Stat(answerPath); statErr == nil {
 			plan.ExistingAnswerSize = uint64(info.Size())
 		}
+	}
+	if answerPath, ok := findRelativeCaseInsensitive(root, "sources/$OEM$/$$/Panther/unattend.xml"); ok {
+		plan.ExistingPantherAnswerPath = answerPath
 	}
 	if hasInstall {
 		rel, err := filepath.Rel(root, installPath)
@@ -1649,6 +1653,21 @@ func readVolumeLabel(ctx context.Context, path string) (string, error) {
 		return "", fmt.Errorf("read formatted volume label: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return strings.TrimRight(string(output), "\r\n"), nil
+}
+
+func customizationVolumeLabel(value, filesystem string, options windowsconfig.Options) (string, error) {
+	labelInput := value
+	if options.SilentInstall && !strings.HasSuffix(labelInput, " (SILENT)") {
+		labelInput += " (SILENT)"
+	}
+	label, err := normalizeVolumeLabel(labelInput, filesystem)
+	if err != nil {
+		if options.SilentInstall {
+			return "", fmt.Errorf("silent-install volume label: %w", err)
+		}
+		return "", err
+	}
+	return label, nil
 }
 
 func normalizeVolumeLabel(value, filesystem string) (string, error) {

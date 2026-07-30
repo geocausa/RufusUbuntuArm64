@@ -13,7 +13,7 @@ import (
 
 func TestParseWIMMetadata(t *testing.T) {
 	xml := `<WIM>
-  <IMAGE INDEX="1"><NAME>Windows 11 Pro</NAME><WINDOWS><ARCH>12</ARCH><PRODUCTNAME>Microsoft Windows 11 Pro</PRODUCTNAME><INSTALLATIONTYPE>Client</INSTALLATIONTYPE><VERSION><MAJOR>10</MAJOR><MINOR>0</MINOR><BUILD>26100</BUILD></VERSION></WINDOWS></IMAGE>
+  <IMAGE INDEX="1"><NAME>Windows 11 Pro</NAME><WINDOWS><ARCH>12</ARCH><PRODUCTNAME>Microsoft Windows 11 Pro</PRODUCTNAME><LANGUAGES><LANGUAGE>en-GB</LANGUAGE><DEFAULT>en-GB</DEFAULT></LANGUAGES><INSTALLATIONTYPE>Client</INSTALLATIONTYPE><VERSION><MAJOR>10</MAJOR><MINOR>0</MINOR><BUILD>26100</BUILD></VERSION></WINDOWS></IMAGE>
   <IMAGE INDEX="2"><NAME>Windows 11 Home</NAME><WINDOWS><ARCH>12</ARCH><PRODUCTNAME>Microsoft Windows 11 Home</PRODUCTNAME><INSTALLATIONTYPE>Client</INSTALLATIONTYPE><VERSION><MAJOR>10</MAJOR><MINOR>0</MINOR><BUILD>26100</BUILD></VERSION></WINDOWS></IMAGE>
 </WIM>`
 	metadata, err := parseWIMMetadata(strings.NewReader(xml))
@@ -28,6 +28,9 @@ func TestParseWIMMetadata(t *testing.T) {
 	}
 	if got := strings.Join(metadata.EditionNames, "|"); got != "Windows 11 Pro|Windows 11 Home" {
 		t.Fatalf("edition names=%q", got)
+	}
+	if len(metadata.Images) != 2 || metadata.Images[0].Index != 1 || metadata.Images[0].Name != "Windows 11 Pro" || metadata.Images[0].DefaultLanguage != "en-GB" || metadata.Images[1].Index != 2 {
+		t.Fatalf("exact images=%#v", metadata.Images)
 	}
 }
 
@@ -151,6 +154,30 @@ func TestParseWIMMetadataFailsClosed(t *testing.T) {
 				t.Fatalf("unidentified metadata was accepted: %#v", metadata)
 			}
 		})
+	}
+}
+
+func TestParseWIMMetadataRejectsInvalidOrDuplicateIndexes(t *testing.T) {
+	for name, xml := range map[string]string{
+		"missing":   `<WIM><IMAGE><NAME>Windows 11 Pro</NAME><WINDOWS><ARCH>12</ARCH><PRODUCTNAME>Windows 11 Pro</PRODUCTNAME><INSTALLATIONTYPE>Client</INSTALLATIONTYPE></WINDOWS></IMAGE></WIM>`,
+		"duplicate": `<WIM><IMAGE INDEX="1"><NAME>Windows 11 Pro</NAME><WINDOWS><ARCH>12</ARCH><PRODUCTNAME>Windows 11 Pro</PRODUCTNAME><INSTALLATIONTYPE>Client</INSTALLATIONTYPE></WINDOWS></IMAGE><IMAGE INDEX="1"><NAME>Windows 11 Home</NAME><WINDOWS><ARCH>12</ARCH><PRODUCTNAME>Windows 11 Home</PRODUCTNAME><INSTALLATIONTYPE>Client</INSTALLATIONTYPE></WINDOWS></IMAGE></WIM>`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parseWIMMetadata(strings.NewReader(xml)); err == nil || !strings.Contains(err.Error(), "INDEX") {
+				t.Fatalf("error=%v", err)
+			}
+		})
+	}
+}
+
+func TestParseWIMMetadataUsesDescriptionAndFirstLanguageFallbacks(t *testing.T) {
+	xml := `<WIM><IMAGE INDEX="7"><DESCRIPTION>Windows 11 Education</DESCRIPTION><WINDOWS><ARCH>12</ARCH><PRODUCTNAME>Windows 11 Education</PRODUCTNAME><INSTALLATIONTYPE>Client</INSTALLATIONTYPE><LANGUAGES><LANGUAGE>fr-FR</LANGUAGE></LANGUAGES></WINDOWS></IMAGE></WIM>`
+	metadata, err := parseWIMMetadata(strings.NewReader(xml))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(metadata.Images) != 1 || metadata.Images[0].Index != 7 || metadata.Images[0].Name != "Windows 11 Education" || metadata.Images[0].DefaultLanguage != "fr-FR" {
+		t.Fatalf("metadata=%#v", metadata)
 	}
 }
 

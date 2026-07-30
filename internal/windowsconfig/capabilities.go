@@ -6,22 +6,33 @@ import (
 	"strings"
 )
 
+// WindowsImage binds one selectable installation image to its exact WIM index.
+// Names are disclosure only; destructive silent installation always uses Index.
+type WindowsImage struct {
+	Index           int    `json:"index"`
+	Name            string `json:"name"`
+	DefaultLanguage string `json:"default_language,omitempty"`
+}
+
 // MediaMetadata contains the Windows identity facts obtained from inspected
 // installation media. Empty or conflicting facts deliberately produce a
-// fail-closed capability profile. ImageCount and EditionNames describe the
-// complete bounded edition set that agreed on those identity facts.
+// fail-closed capability profile. Images retains exact WIM indexes while
+// ImageCount and EditionNames provide bounded user-facing disclosure.
 type MediaMetadata struct {
-	ProductName                 string   `json:"product_name,omitempty"`
-	Version                     string   `json:"version,omitempty"`
-	Architecture                string   `json:"architecture,omitempty"`
-	InstallationType            string   `json:"installation_type,omitempty"`
-	ImageCount                  int      `json:"image_count,omitempty"`
-	EditionNames                []string `json:"edition_names,omitempty"`
-	SkuSiPolicyAvailable        bool     `json:"sku_si_policy_available"`
-	SkuSiPolicyUnavailableWhy   string   `json:"sku_si_policy_unavailable_reason,omitempty"`
-	WindowsCA2023Available      bool     `json:"windows_ca_2023_available"`
-	WindowsCA2023UnavailableWhy string   `json:"windows_ca_2023_unavailable_reason,omitempty"`
-	WindowsCA2023ImageIndex     int      `json:"windows_ca_2023_image_index,omitempty"`
+	ProductName                 string         `json:"product_name,omitempty"`
+	Version                     string         `json:"version,omitempty"`
+	Architecture                string         `json:"architecture,omitempty"`
+	InstallationType            string         `json:"installation_type,omitempty"`
+	ImageCount                  int            `json:"image_count,omitempty"`
+	EditionNames                []string       `json:"edition_names,omitempty"`
+	Images                      []WindowsImage `json:"images,omitempty"`
+	BootLanguage                string         `json:"boot_language,omitempty"`
+	ExistingUnattendPath        string         `json:"existing_unattend_path,omitempty"`
+	SkuSiPolicyAvailable        bool           `json:"sku_si_policy_available"`
+	SkuSiPolicyUnavailableWhy   string         `json:"sku_si_policy_unavailable_reason,omitempty"`
+	WindowsCA2023Available      bool           `json:"windows_ca_2023_available"`
+	WindowsCA2023UnavailableWhy string         `json:"windows_ca_2023_unavailable_reason,omitempty"`
+	WindowsCA2023ImageIndex     int            `json:"windows_ca_2023_image_index,omitempty"`
 }
 
 // OptionCapability explains whether one setup option is safe for the detected
@@ -48,6 +59,7 @@ type CapabilityProfile struct {
 	QualityOfLife               OptionCapability `json:"quality_of_life"`
 	ApplySkuSiPolicy            OptionCapability `json:"apply_sku_si_policy"`
 	UseWindowsCA2023Bootloaders OptionCapability `json:"use_windows_ca_2023_bootloaders"`
+	SilentInstall               OptionCapability `json:"silent_install"`
 	Locale                      OptionCapability `json:"locale"`
 	TimeZone                    OptionCapability `json:"time_zone"`
 }
@@ -125,6 +137,7 @@ func Capabilities(metadata MediaMetadata) CapabilityProfile {
 		profile.ApplySkuSiPolicy = OptionCapability{Reason: reason}
 		profile.UseWindowsCA2023Bootloaders = OptionCapability{Reason: reason}
 	}
+	profile.SilentInstall = silentInstallCapability(metadata, profile)
 	return profile
 }
 
@@ -154,6 +167,7 @@ func ValidateForMedia(metadata MediaMetadata, options Options) error {
 		{options.LoadDrivers, "driver loading", profile.LoadDrivers},
 		{options.QualityOfLife, "Quality of Life policy", profile.QualityOfLife},
 		{options.ApplySkuSiPolicy, "SkuSiPolicy deployment", profile.ApplySkuSiPolicy},
+		{options.SilentInstall, "silent installation", profile.SilentInstall},
 		{strings.TrimSpace(options.Locale) != "", "locale", profile.Locale},
 		{strings.TrimSpace(options.TimeZone) != "", "time zone", profile.TimeZone},
 	}
@@ -177,9 +191,37 @@ func disabledProfile(profile CapabilityProfile, reason string) CapabilityProfile
 	profile.QualityOfLife = disabled
 	profile.ApplySkuSiPolicy = disabled
 	profile.UseWindowsCA2023Bootloaders = disabled
+	profile.SilentInstall = disabled
 	profile.Locale = disabled
 	profile.TimeZone = disabled
 	return profile
+}
+
+func silentInstallCapability(metadata MediaMetadata, profile CapabilityProfile) OptionCapability {
+	const genericReason = "Available only for positively identified Windows 11 client media"
+	if !profile.Recognized || profile.Generation != "11" || profile.Family != "client" {
+		return OptionCapability{Reason: genericReason}
+	}
+	if strings.TrimSpace(metadata.ExistingUnattendPath) != "" {
+		return OptionCapability{Reason: "The selected ISO already contains an unattended-setup file at " + metadata.ExistingUnattendPath}
+	}
+	if len(metadata.Images) == 0 || len(metadata.Images) != metadata.ImageCount {
+		return OptionCapability{Reason: "Exact Windows installation-image indexes were not proven"}
+	}
+	seen := make(map[int]struct{}, len(metadata.Images))
+	for _, image := range metadata.Images {
+		if image.Index <= 0 || image.Index > 256 || strings.TrimSpace(image.Name) == "" {
+			return OptionCapability{Reason: "Windows installation-image metadata is incomplete"}
+		}
+		if _, duplicate := seen[image.Index]; duplicate {
+			return OptionCapability{Reason: "Windows installation-image indexes are duplicated"}
+		}
+		seen[image.Index] = struct{}{}
+	}
+	if !validLocale.MatchString(strings.TrimSpace(metadata.BootLanguage)) {
+		return OptionCapability{Reason: "The Windows Setup boot language was not proven from boot.wim"}
+	}
+	return OptionCapability{Enabled: true}
 }
 
 func detectGeneration(productName, version string) (string, bool) {
