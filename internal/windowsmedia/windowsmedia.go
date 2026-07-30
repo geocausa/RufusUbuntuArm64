@@ -33,6 +33,7 @@ import (
 	"github.com/geocausa/RufusArm64/internal/secureboot"
 	"github.com/geocausa/RufusArm64/internal/sourcefile"
 	"github.com/geocausa/RufusArm64/internal/uefintfs"
+	"github.com/geocausa/RufusArm64/internal/volumelabel"
 	"github.com/geocausa/RufusArm64/internal/windowsconfig"
 )
 
@@ -178,7 +179,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		return fmt.Errorf("hash selected Windows ISO: %w", err)
 	}
 
-	for _, name := range []string{"mount", "umount", "findmnt", "lsblk", "wipefs", "sync", "blockdev"} {
+	for _, name := range []string{"mount", "umount", "findmnt", "lsblk", "wipefs", "sync", "blockdev", "blkid"} {
 		if _, err := exec.LookPath(name); err != nil {
 			return fmt.Errorf("required program %q is not installed", name)
 		}
@@ -630,6 +631,17 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 			return err
 		}
 	}
+	if err := run(ctx, emit, "blockdev", "--flushbufs", partition); err != nil {
+		return fmt.Errorf("flush formatted partition before label readback: %w", err)
+	}
+	readbackLabel, err := readVolumeLabel(ctx, partition)
+	if err != nil {
+		return err
+	}
+	if readbackLabel != label {
+		return fmt.Errorf("formatted volume label %q does not match reviewed label %q", readbackLabel, label)
+	}
+	send(emit, Event{Stage: "format", Message: fmt.Sprintf("Verified formatted %s volume label %q.", strings.ToUpper(filesystem), label)})
 	if targetSystem == "bios" {
 		if err := installLegacyBIOSBoot(lock, partition, filesystem, layout.Data, sectorSize); err != nil {
 			return fmt.Errorf("install legacy BIOS boot code: %w", err)
@@ -1627,27 +1639,27 @@ func verifyDirectory(ctx context.Context, sourceRoot, destinationRoot string, em
 	return err
 }
 
+func readVolumeLabel(ctx context.Context, path string) (string, error) {
+	command := exec.CommandContext(ctx, "blkid", "-p", "--no-encoding", "-o", "value", "-s", "LABEL", "--", path)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return "", fmt.Errorf("read formatted volume label: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return strings.TrimRight(string(output), "\r\n"), nil
+}
+
 func normalizeVolumeLabel(value, filesystem string) (string, error) {
-	label := strings.ToUpper(strings.TrimSpace(value))
-	if label == "" {
-		label = "RUFUSARM64"
+	switch strings.ToLower(strings.TrimSpace(filesystem)) {
+	case "fat32":
+		return volumelabel.FAT32(value, "RUFUSARM64")
+	case "ntfs":
+		return volumelabel.NTFS(value, "RUFUSARM64")
+	default:
+		return "", fmt.Errorf("unsupported filesystem %q for volume label", filesystem)
 	}
-	limit := 11
-	if filesystem == "ntfs" {
-		limit = 32
-	}
-	if len(label) > limit {
-		return "", fmt.Errorf("%s volume label must contain at most %d ASCII characters", strings.ToUpper(filesystem), limit)
-	}
-	for _, r := range label {
-		if r < 0x20 || r > 0x7e || strings.ContainsRune(`"*/:<>?\|`, r) {
-			return "", fmt.Errorf("%s volume label contains an unsupported character", strings.ToUpper(filesystem))
-		}
-		if filesystem == "fat32" && strings.ContainsRune(`+,.;=[]`, r) {
-			return "", errors.New("FAT32 volume label contains an unsupported character")
-		}
-	}
-	return label, nil
 }
 
 var wimPercentPattern = regexp.MustCompile(`\(([0-9]{1,3})%\)`)

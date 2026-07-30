@@ -66,7 +66,7 @@ class ISOLayoutOptionTests(unittest.TestCase):
 
     def test_filesystem_specific_label_boundaries(self):
         self.assertEqual(normalize_iso_volume_label("ubuntu", "auto"), "UBUNTU")
-        self.assertEqual(normalize_iso_volume_label("linux installation media", "ntfs"), "LINUX INSTALLATION MEDIA")
+        self.assertEqual(normalize_iso_volume_label("linux installation media", "ntfs"), "linux installation media")
         with self.assertRaises(ValueError):
             normalize_iso_volume_label("linux installation media", "fat32")
 
@@ -90,7 +90,7 @@ class ISOLayoutOptionTests(unittest.TestCase):
         self.assertEqual(command[command.index("--partition-scheme") + 1], "gpt")
         self.assertEqual(command[command.index("--filesystem") + 1], "ntfs")
         self.assertEqual(command[command.index("--cluster-size") + 1], "8192")
-        self.assertEqual(command[command.index("--volume-label") + 1], "LINUX INSTALLATION MEDIA")
+        self.assertEqual(command[command.index("--volume-label") + 1], "linux installation media")
         self.assertIn(
             "GPT / UEFI / NTFS / 8 KiB clusters",
             iso_layout_summary("gpt", "ntfs", "8192", "linux installation media"),

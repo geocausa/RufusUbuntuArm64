@@ -397,8 +397,20 @@ class LogicTests(unittest.TestCase):
 
     def test_volume_label(self):
         self.assertEqual(normalize_volume_label("Win 11"), "WIN 11")
-        with self.assertRaises(ValueError):
-            normalize_volume_label("way-too-long-label")
+        self.assertEqual(normalize_volume_label("Rufus_日本", "ntfs"), "Rufus_日本")
+        self.assertEqual(normalize_volume_label('Rufus:*?/\\|<>"', "ntfs"), 'Rufus:*?/\\|<>"')
+        self.assertEqual(normalize_volume_label("Rufus_日本", "auto"), "Rufus_日本")
+        self.assertEqual(normalize_volume_label("😀" * 16, "ntfs"), "😀" * 16)
+        for value, filesystem in (
+            ("way-too-long-label", "fat32"),
+            ("Rufus_日本", "fat32"),
+            (" leading", "ntfs"),
+            ("😀" * 17, "ntfs"),
+            ("😀" * 17, "auto"),
+        ):
+            with self.subTest(value=value, filesystem=filesystem):
+                with self.assertRaises(ValueError):
+                    normalize_volume_label(value, filesystem)
 
 
     def test_success_message_matches_verification_mode(self):

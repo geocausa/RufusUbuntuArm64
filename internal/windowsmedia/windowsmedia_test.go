@@ -270,6 +270,8 @@ func installFakeTools(t *testing.T, directory string) {
 	t.Helper()
 	mountState := filepath.Join(t.TempDir(), "mount.state")
 	t.Setenv("RUFUS_TEST_MOUNT_STATE", mountState)
+	labelState := filepath.Join(t.TempDir(), "label.state")
+	t.Setenv("RUFUS_TEST_LABEL_STATE", labelState)
 	tools := []string{"wipefs", "udevadm", "mkfs.vfat", "fsck.vfat", "mkfs.ntfs", "mkntfs", "ntfsfix", "sync"}
 	for _, tool := range tools {
 		script := "#!/bin/sh\necho '" + tool + " ' \"$@\" >> \"$RUFUS_TEST_LOG\"\nexit 0\n"
@@ -279,15 +281,37 @@ func installFakeTools(t *testing.T, directory string) {
 printf 'mkfs.vfat %s\n' "$*" >> "$RUFUS_TEST_LOG"
 printf 'FAT32   ' | dd of="$RUFUS_TEST_PARTITION" bs=1 seek=82 conv=notrunc status=none
 printf '\006\000' | dd of="$RUFUS_TEST_PARTITION" bs=1 seek=50 conv=notrunc status=none
+label=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in -n) shift; label="$1" ;; esac
+  shift
+done
+printf '%s' "$label" > "$RUFUS_TEST_LABEL_STATE"
 exit 0
 `)
 	for _, tool := range []string{"mkfs.ntfs", "mkntfs"} {
 		writeExecutable(t, filepath.Join(directory, tool), `#!/bin/sh
 printf '`+tool+` %s\n' "$*" >> "$RUFUS_TEST_LOG"
 printf 'NTFS    ' | dd of="$RUFUS_TEST_PARTITION" bs=1 seek=3 conv=notrunc status=none
+label=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in -L) shift; label="$1" ;; esac
+  shift
+done
+printf '%s' "$label" > "$RUFUS_TEST_LABEL_STATE"
 exit 0
 `)
 	}
+	blkidScript := `#!/bin/sh
+case " $* " in
+  *" --no-encoding "*) ;;
+  *) exit 42 ;;
+esac
+cat "$RUFUS_TEST_LABEL_STATE"
+printf '\n'
+exit 0
+`
+	writeExecutable(t, filepath.Join(directory, "blkid"), blkidScript)
 	blockdevScript := `#!/bin/sh
 printf 'blockdev %s\n' "$*" >> "$RUFUS_TEST_LOG"
 if [ "$1" = "--getss" ]; then printf '512\n'; fi
@@ -557,14 +581,52 @@ func TestCleanupNeverRemovesWorkDirWhileUSBMayStillBeMounted(t *testing.T) {
 }
 
 func TestNormalizeVolumeLabel(t *testing.T) {
-	label, err := normalizeVolumeLabel("win 11", "fat32")
-	if err != nil || label != "WIN 11" {
-		t.Fatalf("label=%q err=%v", label, err)
+	fat, err := normalizeVolumeLabel("win 11", "fat32")
+	if err != nil || fat != "WIN 11" {
+		t.Fatalf("FAT32 label=%q err=%v", fat, err)
 	}
-	for _, bad := range []string{"this-label-is-too-long", "BAD/NAME"} {
-		if _, err := normalizeVolumeLabel(bad, "fat32"); err == nil {
-			t.Fatalf("accepted invalid label %q", bad)
+	for _, ntfs := range []string{"Rufus_日本", `Rufus:*?/\\|<>"`} {
+		got, err := normalizeVolumeLabel(ntfs, "ntfs")
+		if err != nil || got != ntfs {
+			t.Fatalf("NTFS label=%q err=%v", got, err)
 		}
+	}
+	if got, err := normalizeVolumeLabel(strings.Repeat("😀", 16), "ntfs"); err != nil || got != strings.Repeat("😀", 16) {
+		t.Fatalf("32-unit NTFS label=%q err=%v", got, err)
+	}
+	for _, test := range []struct {
+		filesystem string
+		label      string
+	}{
+		{filesystem: "fat32", label: "this-label-is-too-long"},
+		{filesystem: "fat32", label: "BAD/NAME"},
+		{filesystem: "fat32", label: "Rufus_日本"},
+		{filesystem: "ntfs", label: " leading"},
+		{filesystem: "ntfs", label: strings.Repeat("😀", 17)},
+	} {
+		if _, err := normalizeVolumeLabel(test.label, test.filesystem); err == nil {
+			t.Fatalf("accepted invalid %s label %q", test.filesystem, test.label)
+		}
+	}
+}
+
+func TestReadVolumeLabelRequestsUnencodedOutput(t *testing.T) {
+	directory := t.TempDir()
+	script := filepath.Join(directory, "blkid")
+	content := `#!/bin/sh
+case " $* " in
+  *" --no-encoding "*) ;;
+  *) exit 41 ;;
+esac
+printf 'Rufus:*?-Été\n'
+`
+	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", directory)
+	got, err := readVolumeLabel(context.Background(), "/dev/test")
+	if err != nil || got != "Rufus:*?-Été" {
+		t.Fatalf("readVolumeLabel() = %q, %v", got, err)
 	}
 }
 

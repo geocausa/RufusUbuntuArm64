@@ -5,9 +5,9 @@ package linuxmedia
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/geocausa/RufusArm64/internal/uefintfs"
+	"github.com/geocausa/RufusArm64/internal/volumelabel"
 )
 
 // ExtractedMediaPlan is the complete non-destructive filesystem and partition
@@ -126,19 +126,7 @@ func normalizeExtractedNTFSClusterSize(requested, sectorSize uint64) (uint64, er
 }
 
 func normalizeExtractedNTFSLabel(value string) (string, error) {
-	label := strings.ToUpper(strings.TrimSpace(value))
-	if label == "" {
-		label = "RUFUSARM64"
-	}
-	if len(label) > 32 {
-		return "", errors.New("NTFS volume label must contain at most 32 ASCII characters")
-	}
-	for _, r := range label {
-		if r < 0x20 || r > 0x7e || strings.ContainsRune(`"*/:<>?\|`, r) {
-			return "", errors.New("NTFS volume label contains an unsupported character")
-		}
-	}
-	return label, nil
+	return volumelabel.NTFS(value, "RUFUSARM64")
 }
 
 func estimateExtractedNTFSBytes(manifest Manifest) (uint64, error) {

@@ -18,11 +18,11 @@ import (
 )
 
 func TestCreateExtractedNTFSOnRealLoopDeviceMBR(t *testing.T) {
-	testCreateExtractedNTFSOnRealLoopDevice(t, "mbr", "RUFUS-NTFS-MBR")
+	testCreateExtractedNTFSOnRealLoopDevice(t, "mbr", "Rufus:*?-Été-MBR")
 }
 
 func TestCreateExtractedNTFSOnRealLoopDeviceGPT(t *testing.T) {
-	testCreateExtractedNTFSOnRealLoopDevice(t, "gpt", "RUFUS-NTFS-GPT")
+	testCreateExtractedNTFSOnRealLoopDevice(t, "gpt", "Rufus:*?-Été-GPT")
 }
 
 func testCreateExtractedNTFSOnRealLoopDevice(t *testing.T, scheme, label string) {
@@ -169,7 +169,7 @@ func testCreateExtractedNTFSOnRealLoopDevice(t *testing.T, scheme, label string)
 		}
 	}
 
-	blkidOutput, err := exec.Command("blkid", "-p", "-o", "export", dataPartitionPath).CombinedOutput()
+	blkidOutput, err := exec.Command("blkid", "-p", "--no-encoding", "-o", "export", dataPartitionPath).CombinedOutput()
 	if err != nil {
 		t.Fatalf("inspect completed NTFS partition: %v: %s", err, strings.TrimSpace(string(blkidOutput)))
 	}

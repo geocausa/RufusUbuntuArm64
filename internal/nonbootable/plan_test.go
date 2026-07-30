@@ -175,6 +175,26 @@ func TestUnicodeLabelsUseOnDiskUTF16Limits(t *testing.T) {
 	}
 }
 
+func TestNTFSLabelPreservesUnicodeAndCase(t *testing.T) {
+	request := baseRequest()
+	request.Filesystem = FilesystemNTFS
+	request.Label = "Rufus_日本"
+	plan, err := BuildPlan(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Label != request.Label {
+		t.Fatalf("NTFS label = %q, want exact %q", plan.Label, request.Label)
+	}
+	phrase, err := ConfirmationPhrase(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(phrase, " LABEL "+request.Label) {
+		t.Fatalf("confirmation phrase lost NTFS label: %q", phrase)
+	}
+}
+
 func TestPlanJSONIsStableAndExplicitlyNonBootable(t *testing.T) {
 	plan, err := BuildPlan(baseRequest())
 	if err != nil {

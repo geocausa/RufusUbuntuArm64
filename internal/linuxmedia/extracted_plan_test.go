@@ -32,14 +32,14 @@ func TestPlanExtractedMediaAutomaticFAT32(t *testing.T) {
 func TestPlanExtractedMediaAutomaticNTFSBindsUEFINTFSEvidence(t *testing.T) {
 	manifest := testExtractedFilesystemManifest(Entry{Path: "images/rootfs.img", Size: fat32MaxFileSize + 1, SHA256: strings.Repeat("b", 64)})
 	for _, scheme := range []string{"mbr", "gpt"} {
-		plan, err := PlanExtractedMedia(manifest, "auto", scheme, "linux media", 8192, 8*1024*1024*1024, 512)
+		plan, err := PlanExtractedMedia(manifest, "auto", scheme, "Linux_日本", 8192, 8*1024*1024*1024, 512)
 		if err != nil {
 			t.Fatalf("PlanExtractedMedia(%s): %v", scheme, err)
 		}
 		if plan.FilesystemSelection.Selected != ExtractedFilesystemNTFS || !strings.Contains(plan.FilesystemSelection.FAT32Refusal, "single-file limit") {
 			t.Fatalf("%s selection = %+v", scheme, plan.FilesystemSelection)
 		}
-		if plan.VolumeLabel != "LINUX MEDIA" || plan.ClusterSize != 8192 {
+		if plan.VolumeLabel != "Linux_日本" || plan.ClusterSize != 8192 {
 			t.Fatalf("%s label/cluster = %q/%d", scheme, plan.VolumeLabel, plan.ClusterSize)
 		}
 		if plan.Data.Number != 1 || plan.Boot == nil || plan.Boot.Number != 2 {
@@ -65,8 +65,11 @@ func TestPlanExtractedMediaExplicitChoicesFailClosed(t *testing.T) {
 	}
 
 	ordinary := testExtractedFilesystemManifest(Entry{Path: "casper/initrd", Size: 1024, SHA256: strings.Repeat("d", 64)})
-	if _, err := PlanExtractedMedia(ordinary, "ntfs", "gpt", strings.Repeat("x", 33), 4096, 8*1024*1024*1024, 512); err == nil || !strings.Contains(err.Error(), "32 ASCII") {
+	if _, err := PlanExtractedMedia(ordinary, "ntfs", "gpt", strings.Repeat("x", 33), 4096, 8*1024*1024*1024, 512); err == nil || !strings.Contains(err.Error(), "32 UTF-16") {
 		t.Fatalf("NTFS label error = %v", err)
+	}
+	if _, err := PlanExtractedMedia(ordinary, "ntfs", "gpt", strings.Repeat("😀", 17), 4096, 8*1024*1024*1024, 512); err == nil || !strings.Contains(err.Error(), "32 UTF-16") {
+		t.Fatalf("NTFS surrogate-pair label error = %v", err)
 	}
 	if _, err := PlanExtractedMedia(ordinary, "ntfs", "gpt", "LINUX", 65536, 8*1024*1024*1024, 512); err == nil || !strings.Contains(err.Error(), "4096, 8192, 16384, or 32768") {
 		t.Fatalf("NTFS cluster error = %v", err)

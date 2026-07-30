@@ -45,6 +45,7 @@ func TestFormatterUsesAuditedReopenableWholeDiskContract(t *testing.T) {
 		`safety.WithTemporarilyReleasedFlock(backend.partition`,
 		`filesystemCheck(plan.Filesystem, backend.stablePartitionPath)`,
 		`readBlkid(ctx, backend.stablePartitionPath)`,
+		`"blkid", "-p", "--no-encoding", "-o", "export", "--", path`,
 		`"blockdev", "--flushbufs", backend.stableTargetPath`,
 		`syscall.Flock(int(backend.target.Fd()), syscall.LOCK_UN)`,
 	} {

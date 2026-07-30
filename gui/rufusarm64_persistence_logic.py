@@ -27,7 +27,11 @@ def inspect_source_identity(path):
 
 
 def normalize_boot_label(value):
-    label = str(value or "RUFUS-LIVE").strip().upper() or "RUFUS-LIVE"
+    raw = "" if value is None else str(value)
+    label = raw if raw != "" else "RUFUS-LIVE"
+    if label.strip() != label:
+        raise ValueError("The boot volume label must not have leading or trailing whitespace.")
+    label = label.upper()
     if not LABEL_PATTERN.fullmatch(label):
         raise ValueError("The boot volume label must be 1–11 uppercase letters, numbers, spaces, underscores, or hyphens.")
     return label
