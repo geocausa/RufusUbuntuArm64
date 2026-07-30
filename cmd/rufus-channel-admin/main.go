@@ -84,6 +84,7 @@ Usage:
   rufus-channel-admin verify root --root FILE [--root FILE...] [--now RFC3339] [--json]
   rufus-channel-admin verify catalog --root FILE [--root FILE...] --catalog FILE [--now RFC3339] [--json]
   rufus-channel-admin verify release --root FILE [--root FILE...] --release FILE [--now RFC3339] [--json]
+  rufus-channel-admin verify release-assets --root FILE [--root FILE...] --release FILE --asset-dir DIR --expected-tag TAG --expected-commit SHA [--now RFC3339] [--json]
   rufus-channel-admin channel-config --bootstrap-root FILE --root-url URL --catalog-url URL [--release-url URL] --host HOST [--host HOST...] --output FILE [--now RFC3339]
   rufus-channel-admin publish --root FILE [--root FILE...] --catalog FILE [--release FILE] --config FILE --directory DIR [--now RFC3339]
 
@@ -287,7 +288,7 @@ func runEnvelope(args []string) error {
 
 func runVerify(args []string) error {
 	if len(args) == 0 {
-		return errors.New("verify requires root, catalog, or release")
+		return errors.New("verify requires root, catalog, release, or release-assets")
 	}
 	switch args[0] {
 	case "root":
@@ -296,6 +297,8 @@ func runVerify(args []string) error {
 		return runVerifyCatalog(args[1:])
 	case "release":
 		return runVerifyRelease(args[1:])
+	case "release-assets":
+		return runVerifyReleaseAssets(args[1:])
 	default:
 		return fmt.Errorf("unknown verification type %q", args[0])
 	}
@@ -404,6 +407,45 @@ func runVerifyRelease(args []string) error {
 		"generated": release.Metadata.Generated, "expires": release.Metadata.Expires,
 		"sha256": release.SHA256, "signing_key_ids": release.SigningKeyIDs,
 		"assets": len(release.Metadata.Assets),
+	}
+	return printResult(result, *asJSON)
+}
+
+func runVerifyReleaseAssets(args []string) error {
+	fs := flag.NewFlagSet("verify release-assets", flag.ContinueOnError)
+	releasePath := fs.String("release", "", "signed release envelope")
+	assetDir := fs.String("asset-dir", "", "exact staged or downloaded release asset directory")
+	expectedTag := fs.String("expected-tag", "", "exact product release tag")
+	expectedCommit := fs.String("expected-commit", "", "exact product release commit")
+	nowText := fs.String("now", "", "validation time in RFC3339")
+	asJSON := fs.Bool("json", false, "output JSON")
+	var roots stringList
+	fs.Var(&roots, "root", "signed root metadata file in sequential order")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 || len(roots) == 0 || *releasePath == "" || *assetDir == "" || *expectedTag == "" || *expectedCommit == "" {
+		return errors.New("verify release-assets requires at least one --root plus --release, --asset-dir, --expected-tag, and --expected-commit")
+	}
+	now, err := parseNow(*nowText)
+	if err != nil {
+		return err
+	}
+	root, err := readAndVerifyRootChain(roots, now)
+	if err != nil {
+		return err
+	}
+	data, err := readOperatorFile(*releasePath, acquisition.MaxReleaseMetadataBytes)
+	if err != nil {
+		return err
+	}
+	release, err := acquisition.VerifyReleaseMetadata(root, data, now)
+	if err != nil {
+		return err
+	}
+	result, err := acquisition.VerifyReleaseAssets(release, *assetDir, *expectedTag, *expectedCommit)
+	if err != nil {
+		return err
 	}
 	return printResult(result, *asJSON)
 }

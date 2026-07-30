@@ -1,6 +1,6 @@
 # Threshold-signed release metadata and verified updates
 
-Status: **verification, persistent rollback state, and exact package download implemented; production signing and installation are not yet enabled**.
+Status: **verification, persistent rollback state, exact package download, and signed release-publication enforcement implemented; production signing and installation are not yet enabled**.
 
 RufusArm64 release assets were already reproducible and bound by published SHA-256 sidecars. That proves that downloaded bytes match release metadata served by GitHub, but it does not create an independent project-controlled publisher signature. This tranche reuses the acquisition channel's offline Ed25519 trust model for release metadata instead of introducing CI-held private keys or a second cryptographic format.
 
@@ -48,6 +48,26 @@ rufus-channel-admin verify release \
 ```
 
 A production ceremony must use independently controlled offline keys, record public-key fingerprints and custody, require the configured threshold, preserve signed root history and publish no private material. The exact production roots and signed release envelope are not yet present in the repository.
+
+## Release publication enforcement
+
+The operator can bind a staged or downloaded directory to authenticated release metadata before any upload or after GitHub publication:
+
+```bash
+rufus-channel-admin verify release-assets \
+  --root 1.root.json \
+  --release release.json \
+  --asset-dir dist \
+  --expected-tag v0.15.0 \
+  --expected-commit 0123456789abcdef0123456789abcdef01234567 \
+  --json
+```
+
+Verification opens the owner-controlled directory without following links, requires its sorted inventory to equal the signed asset graph exactly, opens each non-empty single-link regular file relative to the held directory descriptor, hashes it, and rechecks file and directory identity, permissions, timestamps, and inventory. Extra files, symlinks, hard links, group/world-writable paths, tag or commit substitution, size drift, digest drift, and path replacement are refused.
+
+`scripts/verify-release-publication.sh` additionally requires the packaged channel and bootstrap root to match the signed publication byte-for-byte, verifies the complete root chain and release envelope, deterministically rebuilds the public metadata directory, and compares every published metadata byte. The canonical-tag workflow now defers `v<version>` until a separately reviewed `release-metadata-v<version>` tag exists and binds the final `main` commit. The release workflow verifies freshly reproduced staged assets before upload, and the read-only published-release workflow downloads and verifies the exact public graph again.
+
+No workflow receives a private signing key. Creating the signed metadata tag remains an external reviewed ceremony; once it exists, the canonical-tag workflow is manually dispatched with the exact repository `VERSION`.
 
 ## User-side verification
 
@@ -114,4 +134,4 @@ This implementation does **not**:
 - provide rollback after package installation;
 - make an AppImage or other portable-distribution claim.
 
-The next safe step is the production offline-key ceremony and a dedicated activation change that commits only reviewed public roots, an enabled pinned channel, and threshold-signed release envelopes. Release publication must then prove that the signed asset graph matches freshly reproduced bytes before upload. Installation remains a separate privileged package-management design.
+The next safe step is the production offline-key ceremony and a dedicated activation change that commits only reviewed public roots, an enabled pinned channel, and threshold-signed release envelopes. The reviewed metadata publication must then be tagged separately and pass the enforced pre-upload and post-publication asset-graph gates. Installation remains a separate privileged package-management design.

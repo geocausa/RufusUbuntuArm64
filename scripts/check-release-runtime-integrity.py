@@ -20,6 +20,11 @@ required_release_once = {
     "deterministic loader source checksum asset": "            dist/RufusArm64-${{ steps.version.outputs.version }}-uefi-md5sum-v1.2-source.tar.gz.sha256\n",
     "generated loader source-ZIP exclusion": "'vendor/uefi-md5sum/arm64/*'",
     "unsigned disclosure": "The loader is unsigned and is not claimed Secure Boot compatible.",
+    "signed metadata tag checkout": "          ref: release-metadata-v${{ steps.version.outputs.version }}\n",
+    "signed metadata checkout path": "          path: signed-release-metadata\n",
+    "pre-upload signed publication gate": "          bash scripts/verify-release-publication.sh \\\n",
+    "product channel input": "            packaging/acquisition/channel.json \\\n",
+    "product bootstrap input": "            packaging/acquisition/1.root.json\n",
 }
 for description, marker in required_release_once.items():
     count = release_text.count(marker)
@@ -28,6 +33,11 @@ for description, marker in required_release_once.items():
 
 if release_text.count("          name: uefi-md5sum-arm64\n") != 2:
     raise SystemExit("release workflow must upload and download exactly one canonical loader artifact")
+if release_text.index("      - name: Create corresponding source archives\n") > release_text.index("      - name: Check out signed release metadata publication\n"):
+    raise SystemExit("signed metadata checkout must occur only after source archives are finalized")
+if release_text.index("      - name: Require threshold-signed staged asset graph\n") > release_text.index("      - uses: softprops/action-gh-release@"):
+    raise SystemExit("signed asset verification must complete before release upload")
+
 
 release_files = release_text.split("      - uses: softprops/action-gh-release@", 1)
 if len(release_files) != 2:
@@ -49,7 +59,7 @@ required_tag_once = {
     "release artifact gate": "python3 scripts/check-release-runtime-integrity.py",
     "missing-tag-safe lookup": 'git/matching-refs/tags/${tag}',
     "exact matching tag filter": 'select(.ref == \\"refs/tags/${tag}\\")',
-    "exact tag ref creation": '-f ref="refs/tags/${tag}"',
+    "exact tag ref creation": '-f ref="refs/tags/${TAG}"',
     "exact release commit binding": '-f sha="${GITHUB_SHA}" >/dev/null',
     "release workflow dispatch": "gh workflow run release.yml",
     "tag-ref dispatch": '--ref "${TAG}"',
@@ -94,6 +104,11 @@ required_published_once = {
     "tag-pinned validator": '          validator="${GITHUB_WORKSPACE}/release-tree/scripts/check-published-release.py"\n',
     "pinned fallback validator": '            validator="${GITHUB_WORKSPACE}/contract-tree/scripts/check-published-release.py"\n',
     "published asset validator": '            python3 "${validator}" "${release_json}" "${asset_dir}"\n',
+    "published setup-go": "      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5\n",
+    "resolved release commit export": '          echo "RELEASE_COMMIT=${commit_sha}" >> "${GITHUB_ENV}"\n',
+    "signed metadata tag binding": "          ref: release-metadata-${{ env.RELEASE_TAG }}\n",
+    "signed metadata tree path": "          path: signed-release-metadata\n",
+    "post-upload signed publication gate": "            bash scripts/verify-release-publication.sh \\\n",
 }
 for description, marker in required_published_once.items():
     count = published_text.count(marker)
@@ -108,6 +123,11 @@ for forbidden in ("contents: write", "actions: write", "secrets.", "persist-cred
 for forbidden_command in ("gh release create", "gh release edit", "gh release upload", "gh release delete"):
     if forbidden_command in published_text:
         raise SystemExit(f"{PUBLISHED_WORKFLOW}: published-release verification must remain read-only")
+if published_text.index("          echo \"RELEASE_COMMIT=${commit_sha}\" >> \"${GITHUB_ENV}\"\n") > published_text.index("      - name: Check out signed release metadata publication\n"):
+    raise SystemExit("published verification must bind the immutable release commit before metadata checkout")
+if published_text.index("            python3 \"${validator}\" \"${release_json}\" \"${asset_dir}\"\n") > published_text.index("            bash scripts/verify-release-publication.sh \\\n"):
+    raise SystemExit("published GitHub asset validation must precede threshold-signed publication validation")
+
 
 CONTRACT_WORKFLOW = Path(".github/workflows/release-contract.yml")
 contract_text = CONTRACT_WORKFLOW.read_text(encoding="utf-8")
@@ -118,8 +138,10 @@ required_contract_once = {
     "published workflow path": "      - .github/workflows/release-published.yml\n",
     "published validator path": "      - scripts/check-published-release.py\n",
     "published validator test path": "      - scripts/test-check-published-release.py\n",
+    "signed publication validator path": "      - scripts/verify-release-publication.sh\n",
     "published validator compilation": "            scripts/check-published-release.py \\\n",
     "published validator test execution": "          python3 scripts/test-check-published-release.py\n",
+    "signed publication shell validation": "scripts/verify-release-publication.sh scripts/test.sh\n",
 }
 for description, marker in required_contract_once.items():
     count = contract_text.count(marker)
@@ -127,6 +149,7 @@ for description, marker in required_contract_once.items():
         "published workflow path",
         "published validator path",
         "published validator test path",
+        "signed publication validator path",
     } else 1
     if count != expected:
         raise SystemExit(

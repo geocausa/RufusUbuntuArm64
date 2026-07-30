@@ -67,7 +67,7 @@
 ## 0.9 — parity and product-quality programme (in progress)
 
 - Rich progress and exportable diagnostics (software completed)
-- Strict local signed catalog, threshold-root built-in channel, rollback-protected metadata cache, graphical acquisition workflow, and source-only offline public-metadata administration toolkit (software implemented; production offline-key ceremony and publication pending)
+- Strict local signed catalog, threshold-root built-in channel, rollback-protected metadata cache, graphical acquisition workflow, source-only offline public-metadata administration, and signed release asset-graph enforcement (software implemented; production offline-key ceremony and public metadata publication pending)
 - Linux persistence planner, verified writable-tree copy, guarded GPT/UEFI creator, dedicated identity-bound graphical wizard, and checksum-backed reboot qualification reports (bounded Ubuntu casper and Debian live-boot subset; broader distribution and physical qualification pending)
 - FreeDOS creation (software completed in 0.13)
 - Windows To Go feasibility and implementation (deferred)

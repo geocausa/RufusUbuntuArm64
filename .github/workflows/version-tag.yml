@@ -6,11 +6,19 @@ on:
     paths:
       - VERSION
       - docs/release-*.md
+      - packaging/acquisition/**
       - packaging/io.github.geocausa.RufusArm64.metainfo.xml
       - .github/workflows/version-tag.yml
       - .github/workflows/release.yml
       - scripts/canonical_tag_decision.py
       - scripts/test_canonical_tag_decision.py
+      - scripts/verify-release-publication.sh
+  workflow_dispatch:
+    inputs:
+      expected_version:
+        description: Canonical VERSION value whose signed metadata tag is ready
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -24,25 +32,37 @@ jobs:
   publish:
     if: github.repository == 'geocausa/RufusUbuntuArm64'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Validate the canonical release state
+      - name: Validate canonical state and signed metadata readiness
         id: version
         env:
           GH_TOKEN: ${{ github.token }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
         run: |
           set -euo pipefail
+          test "${GITHUB_REF}" = "refs/heads/main" || {
+            echo "Canonical tagging must run at refs/heads/main, not ${GITHUB_REF}" >&2
+            exit 1
+          }
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           python3 scripts/check-version-sync.py
           python3 scripts/check-release-runtime-integrity.py
           python3 scripts/test_canonical_tag_decision.py
           version="$(tr -d '\r\n' < VERSION)"
           tag="v${version}"
+          metadata_tag="release-metadata-${tag}"
           test -f "docs/release-${version}.md"
+          if [[ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]]; then
+            test "${EXPECTED_VERSION}" = "${version}" || {
+              echo "Dispatched version ${EXPECTED_VERSION} does not match repository VERSION ${version}" >&2
+              exit 1
+            }
+          fi
           existing="$(
             gh api "/repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/${tag}" \
               --jq ".[] | select(.ref == \"refs/tags/${tag}\") | .object.sha"
@@ -50,31 +70,75 @@ jobs:
           decision="$(python3 scripts/canonical_tag_decision.py \
             --current-sha "${GITHUB_SHA}" \
             --existing-sha "${existing}")"
+          metadata_ref="$(
+            gh api "/repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/${metadata_tag}" \
+              --jq ".[] | select(.ref == \"refs/tags/${metadata_tag}\") | .object.sha"
+          )"
+          metadata_ready=false
           case "${decision}" in
             create)
-              gh api --method POST "/repos/${GITHUB_REPOSITORY}/git/refs" \
-                -f ref="refs/tags/${tag}" \
-                -f sha="${GITHUB_SHA}" >/dev/null
-              echo "Created immutable canonical tag ${tag} at ${GITHUB_SHA}."
-              echo "created=true" >> "${GITHUB_OUTPUT}"
+              if [[ -z "${metadata_ref}" ]]; then
+                if [[ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]]; then
+                  echo "Signed metadata tag ${metadata_tag} does not exist" >&2
+                  exit 1
+                fi
+                echo "Deferring ${tag}: create and verify ${metadata_tag}, then dispatch this workflow at main."
+                decision=deferred
+              else
+                metadata_ready=true
+              fi
               ;;
             already-current)
               echo "${tag} already points to the canonical release commit; no new dispatch is needed."
-              echo "created=false" >> "${GITHUB_OUTPUT}"
               ;;
             already-released)
               echo "${tag} remains immutable at ${existing}; ${GITHUB_SHA} is post-release development and will not move or redispatch it."
-              echo "created=false" >> "${GITHUB_OUTPUT}"
               ;;
             *)
               echo "Unexpected canonical-tag decision: ${decision}" >&2
               exit 1
               ;;
           esac
-          echo "version=${version}" >> "${GITHUB_OUTPUT}"
-          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "version=${version}"
+            echo "tag=${tag}"
+            echo "metadata_tag=${metadata_tag}"
+            echo "metadata_ready=${metadata_ready}"
+            echo "decision=${decision}"
+          } >> "${GITHUB_OUTPUT}"
+      - name: Check out signed release metadata publication
+        if: steps.version.outputs.metadata_ready == 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ steps.version.outputs.metadata_tag }}
+          path: signed-release-metadata
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify signed metadata binds the final main commit
+        if: steps.version.outputs.metadata_ready == 'true'
+        run: |
+          bash scripts/verify-release-publication.sh \
+            signed-release-metadata \
+            - \
+            "${{ steps.version.outputs.tag }}" \
+            "${GITHUB_SHA}" \
+            packaging/acquisition/channel.json \
+            packaging/acquisition/1.root.json
+      - name: Create the immutable canonical tag
+        id: create
+        if: steps.version.outputs.decision == 'create' && steps.version.outputs.metadata_ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh api --method POST "/repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/${TAG}" \
+            -f sha="${GITHUB_SHA}" >/dev/null
+          echo "Created immutable canonical tag ${TAG} at ${GITHUB_SHA}."
+          echo "created=true" >> "${GITHUB_OUTPUT}"
       - name: Dispatch the audited release workflow at the new tag
-        if: steps.version.outputs.created == 'true'
+        if: steps.create.outputs.created == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}

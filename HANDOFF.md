@@ -1,6 +1,6 @@
 # RufusArm64 development handoff
 
-Updated: 2026-07-30 16:33 Europe/London
+Updated: 2026-07-30 21:08 Europe/London
 
 This file is the durable restart point for ChatGPT/Connector2 development on
 `geocausa/RufusUbuntuArm64`. Read it before changing files or running a
@@ -74,8 +74,8 @@ of silently approximating it.
 - Connected-machine user: `geoca`
 - Primary workspace: `/home/geoca/Documents/RufusUbuntuArm64`
 - Active feature worktree: `/home/geoca/Documents/RufusUbuntuArm64-corpus`
-- Active branch: `parity/opensuse-iso-corpus`
-- Branch base: `742a542106daea0c5a9e2a308012b3d301b8bb51`
+- Active branch: `release/signed-publication-enforcement`
+- Branch base: `32487b04867f6111f5c15d92bf07b21935376c1e`
 - Remote: `origin`
 
 After Connector2 access is restored, start with:
@@ -89,19 +89,7 @@ cat HANDOFF.md
 lsblk -o NAME,PATH,TYPE,SIZE,MODEL,TRAN,FSTYPE,LABEL,SERIAL,MOUNTPOINTS
 ```
 
-To resume the exact openSUSE artifact transfer without changing corpus claims:
-
-```bash
-rsync --partial --append-verify --human-readable --info=progress2 \
-  rsync://ftp.icm.edu.pl/pub/Linux/opensuse/ports/aarch64/tumbleweed/iso/openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso \
-  /home/geoca/Downloads/opensuse-tumbleweed-aarch64-20260714/openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso.download
-printf '%s  %s\n' \
-  be9ff4dae638029557f5cb9d8e1c55fcc50f9c8ad1253c3d2e401fffcc41f547 \
-  /home/geoca/Downloads/opensuse-tumbleweed-aarch64-20260714/openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso.download | sha256sum -c -
-mv -- \
-  /home/geoca/Downloads/opensuse-tumbleweed-aarch64-20260714/openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso.download \
-  /home/geoca/Downloads/opensuse-tumbleweed-aarch64-20260714/openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso
-```
+The openSUSE corpus transfer and qualification are complete. Do not resume the retired transfer command or alter corpus evidence unless a new dedicated tranche requires it.
 
 The active branch should be checked out. Do not reset or delete local files
 until `git status` has been inspected.
@@ -127,63 +115,63 @@ Relevant project trackers:
 
 ## Current objective
 
-PR #423 merged as `368e085904cfbea36b9e52c9797c0070c7834cd5`. The
-active branch is `release/authenticated-update-refresh`, based on merged `main`.
-Continue product completion without adding automatic installation or private
-release keys to CI.
+PR #424 merged as `32487b04867f6111f5c15d92bf07b21935376c1e`. The
+active branch is `release/signed-publication-enforcement`, based on merged
+`main`. This tranche closes the software-side release-publication gap without
+placing private release keys in CI.
 
 Implemented in this tranche:
 
-- The package-owned channel schema now has an explicit optional `release_url`.
-  It receives the same HTTPS, default-port, public-host, sorted allowlist and
-  bounded redirect validation as root and catalog metadata.
-- `RefreshReleaseChannel` starts from the packaged bootstrap root, replays cached
-  sequential rotations, fetches missing root versions one at a time, verifies
-  the threshold-signed release envelope with the final release role and caches
-  only authenticated metadata in an owner-only XDG-compatible directory.
-- Online refresh, network-error fallback and explicit offline mode all reverify
-  the complete root chain, expiry, signatures, root/release rollback state,
-  release-version monotonicity and the bounded local-clock rule. Security
-  failures never fall back to stale metadata.
-- Refresh checks the exact rollback state before using metadata and acceptance
-  is bound to the same resolved path. State and lock files must stay outside the
-  metadata cache and cannot collide with the packaged configuration or bootstrap
-  root.
-- `rufusarm64-cli update refresh` reports whether network or verified cache was
-  used plus the exact root, release, signer and package record. It downloads and
-  installs nothing.
-- `rufus-channel-admin channel-config --release-url` and
-  `publish --release` generate one deterministic publication containing
-  `release.json`, release version/digest evidence in `publication.json`, and
-  `SHA256SUMS` coverage. Release URL and envelope must be supplied together.
-- Adversarial tests cover TLS refresh, offline fallback, root rotation,
-  same-version substitution, metadata rollback, cache/state/config collisions,
-  cross-state acceptance, private release URLs, deterministic publication and
-  missing release-envelope refusal.
+- `rufus-channel-admin verify release-assets` verifies an exact staged or
+  downloaded asset directory against threshold-authenticated release metadata,
+  including tag, commit, sorted inventory, sizes and SHA-256 values.
+- Asset verification is directory-descriptor rooted and refuses symlinks, hard
+  links, non-regular or empty files, owner mismatch, group/world-writable paths,
+  file or directory replacement, permission/timestamp mutation, inventory
+  drift, and content substitution while hashing.
+- `scripts/verify-release-publication.sh` checks the packaged channel and
+  bootstrap root against the signed publication, verifies the root/release
+  chain, deterministically rebuilds the metadata directory, compares every
+  public byte, and optionally verifies the complete release asset graph.
+- The canonical-tag workflow defers `v<version>` until the separately reviewed
+  `release-metadata-v<version>` tag exists, verifies that signed metadata against
+  the final `main` commit, then creates the immutable canonical tag and
+  dispatches the audited release workflow.
+- The release workflow verifies freshly reproduced assets before upload. The
+  read-only published-release workflow binds the release tag to its exact commit,
+  downloads the public assets, runs the existing GitHub release contract, and
+  verifies the threshold-signed graph again.
+- Workflow-integrity contracts, operator documentation, signed-update
+  documentation, roadmap, changelog and parity ledger are synchronized.
 
-Validation completed in this branch:
+Validation completed for this tree on 2026-07-30:
 
-- complete Go 1.22.12 suite in an isolated mount namespace;
-- Go 1.26.5 race/vet plus the pinned staticcheck and govulncheck audit with no vulnerabilities;
-- release/version/publication Python contracts and actionlint;
-- all Go and GUI tests, native ARM64 package checks, the exact bounded Linux ISO corpus, and byte-for-byte reproducible Debian packaging;
-- delayed acceptance expiry, cache/config/state separation, exported-field mutation resistance, TLS refresh, offline fallback, root rotation, substitution and rollback refusal, and deterministic release publication.
+- Go 1.22.12 complete compatibility suite in a root-owned private mount
+  namespace that hides the installed Rufus package;
+- Go 1.26.5 complete race suite, three shuffled repetitions, vet and coverage;
+- focused release-asset and administrator tests under Go 1.22.12 and Go 1.26.5;
+- all 227 GUI Python tests and release/publication Python contract tests;
+- gofmt, `git diff --check`, JSON validation, Bash syntax, shellcheck and
+  actionlint;
+- staticcheck and govulncheck (`No vulnerabilities found`);
+- native ARM64 package validation and byte-for-byte reproducible Debian package.
 
-The temporary pinned UEFI prerequisite was restored from the installed green package only after exact checksum and size verification and removed before commit.
+The package-private `uefi-md5sum` prerequisite was supplied only through a
+verified temporary directory copied from the installed green package. Its exact
+40960-byte size and pinned SHA-256 were checked, both sidecars passed, the
+installed package was hidden from tests, and the temporary directory was
+removed automatically.
 
 Remaining sequence:
 
-1. Complete final source/document review and run Go 1.22, race/vet,
-   static/vulnerability, GUI, package/reproducibility and workflow-contract
-   validation.
-2. Commit, push and open a dedicated authenticated-refresh PR; merge only after
-   every exact-head check passes.
-3. Define and perform the production offline key ceremony, then commit only
-   reviewed public roots, the enabled pinned channel and threshold-signed release
-   envelopes.
-4. Make release publication and the tagged workflow refuse any asset graph that
-   differs from the committed signed envelope and freshly reproduced bytes.
-5. Keep package installation, privilege, package-manager behavior and rollback
+1. Keep the completed local tranche unpushed until the user has reviewed the
+   validation results, commit summary and proposed remote action.
+2. After explicit approval, push the branch, open a dedicated PR and require
+   exact-head green CI before merge.
+3. Perform the production offline-key ceremony separately, then publish only
+   reviewed public roots, the enabled pinned channel and threshold-signed
+   metadata. No private key enters source, CI, packages or artifacts.
+4. Keep package installation, privilege, package-manager behavior and rollback
    as a separate high-risk tranche.
 
 The sacrificial USB still contains the verified openSUSE Tumbleweed AArch64
@@ -259,26 +247,25 @@ Notable Fedora record:
 
 ## Last fully green validation
 
-At PR #419 head `ea07169915ec67bbc3b4ce5c3fcace2d2e04b1f9`:
+For the `release/signed-publication-enforcement` tree validated on 2026-07-30:
 
-- all GitHub checks passed;
-- Go 1.22 compatibility passed;
-- Go 1.26.5 staticcheck/actionlint/govulncheck passed with no vulnerabilities;
-- all 226 Python GUI tests passed;
-- native ARM64 Go/package suite passed;
-- reproducible Debian package was confirmed;
-- strict corpus passed for Ubuntu, Debian, Fedora and five deterministic
-  fixtures;
-- physical Ubuntu MBR/NTFS, Debian GPT/FAT32 and Fedora optical-only MBR/FAT32
-  write/readback passed on `/dev/sda`.
+- the complete isolated Go 1.22.12 and Go 1.26.5 matrices passed;
+- staticcheck, actionlint and govulncheck passed with no vulnerabilities;
+- all 227 Python GUI tests and all release/publication contract tests passed;
+- shell, formatting, JSON and workflow-integrity validation passed;
+- native ARM64 package checks passed;
+- byte-for-byte reproducible Debian packaging was confirmed;
+- no physical USB operation was performed.
 
 ## New-chat instruction
 
 A concise restart request is:
 
 > Connect to Connector2, open `/home/geoca/Documents/RufusUbuntuArm64-corpus`,
-> read `HANDOFF.md`, verify Git and USB state, and resume the
-> `parity/opensuse-iso-corpus` tranche from the documented next objective.
+> read `HANDOFF.md`, inspect Git status and the complete diff, and resume the
+> `release/signed-publication-enforcement` tranche from the documented remaining
+> sequence. Do not push before showing the user the validation and proposed
+> remote action.
 
-Do not redo PR #418 or #419, and do not begin by recloning unless the existing
-worktrees are genuinely missing or corrupt.
+Do not redo merged release-refresh work, and do not begin by recloning unless
+the existing worktrees are genuinely missing or corrupt.

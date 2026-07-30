@@ -162,6 +162,22 @@ jobs:
               "RufusArm64-${VERSION}-uefi-md5sum-v1.2-source.tar.gz" \
               >> "rufusarm64_${VERSION}_arm64.deb.sha256"
           )
+      - name: Check out signed release metadata publication
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: release-metadata-v${{ steps.version.outputs.version }}
+          path: signed-release-metadata
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Require threshold-signed staged asset graph
+        run: |
+          bash scripts/verify-release-publication.sh \
+            signed-release-metadata \
+            dist \
+            "v${VERSION}" \
+            "${GITHUB_SHA}" \
+            packaging/acquisition/channel.json \
+            packaging/acquisition/1.root.json
       - uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           tag_name: v${{ steps.version.outputs.version }}
