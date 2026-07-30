@@ -1,6 +1,6 @@
 # Threshold-signed release metadata and verified updates
 
-Status: **verification and exact package download implemented; production signing and installation are not yet enabled**.
+Status: **verification, persistent rollback state, and exact package download implemented; production signing and installation are not yet enabled**.
 
 RufusArm64 release assets were already reproducible and bound by published SHA-256 sidecars. That proves that downloaded bytes match release metadata served by GitHub, but it does not create an independent project-controlled publisher signature. This tranche reuses the acquisition channel's offline Ed25519 trust model for release metadata instead of introducing CI-held private keys or a second cryptographic format.
 
@@ -59,10 +59,13 @@ rufusarm64-cli update verify \
   --release release.json \
   --current-version 0.15.0 \
   --minimum-metadata-version 1 \
+  --state-file "$HOME/.local/state/rufusarm64/update/state.json" \
   --json
 ```
 
-The command verifies the complete root chain and release signature threshold, refuses metadata rollback and release-version downgrade, and returns the exact authenticated package record. `--minimum-metadata-version` represents the highest metadata version already accepted by a caller; persistent owner-only update state and automatic metadata refresh remain later tranches.
+The command verifies the complete root chain and release signature threshold, then commits acceptance through a locked owner-only rollback transaction. The state binds the highest accepted root version and SHA-256, release metadata version and SHA-256, release version, and monotonic acceptance time. It refuses root rollback, same-version root substitution, release metadata rollback, same-version metadata substitution, release-version rollback, and a local clock more than 24 hours behind the last accepted time. `--minimum-metadata-version` remains an additional operator floor but cannot reduce the persisted floor.
+
+The default state path follows `$XDG_STATE_HOME/rufusarm64/update/state.json`, falling back to `$HOME/.local/state/rufusarm64/update/state.json`. The final state directory is mode 0700; the state and lock are mode 0600. State admission uses no-follow opens, owner and single-link checks, strict JSON, an exclusive process lock, atomic replacement, file and directory synchronization, and a post-read mutation check. Concurrent processes therefore cannot overwrite a higher accepted sequence with a lower one. Deleting the state as the same local user resets this local rollback memory; the production metadata channel and package bootstrap root remain separate trust anchors.
 
 A newer authenticated package can be downloaded without installation:
 
@@ -72,6 +75,7 @@ rufusarm64-cli update download \
   --release release.json \
   --current-version 0.15.0 \
   --minimum-metadata-version 1 \
+  --state-file "$HOME/.local/state/rufusarm64/update/state.json" \
   --output "$HOME/Downloads" \
   --resume \
   --json
@@ -84,6 +88,7 @@ The downloader receives the package record from an internal immutable snapshot c
 This implementation does **not**:
 
 - automatically discover or refresh release metadata from the network;
+- prevent the same local account from deliberately deleting its rollback state;
 - execute `dpkg`, `apt`, PackageKit or another installer;
 - request privilege;
 - replace the running application;
@@ -92,4 +97,4 @@ This implementation does **not**:
 - provide rollback after package installation;
 - make an AppImage or other portable-distribution claim.
 
-The next safe step is a committed offline-signed production root and release envelope that the release workflow checks against freshly reproduced assets before publication, followed by owner-only persistent rollback state and authenticated metadata refresh. Installation remains a separate privileged package-management design.
+The next safe step is a committed offline-signed production root and release envelope that the release workflow checks against freshly reproduced assets before publication, followed by authenticated metadata refresh through a pinned channel. Installation remains a separate privileged package-management design.

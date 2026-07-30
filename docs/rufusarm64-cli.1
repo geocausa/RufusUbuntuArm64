@@ -40,9 +40,9 @@ rufusarm64-cli \- inspect images and safely create bootable USB media on Linux
 .B sudo rufusarm64-cli qualify
 .RI "start|verify"
 .RI [ options ]
-.B rufusarm64-cli update verify --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--json]
+.B rufusarm64-cli update verify --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--state-file FILE] [--json]
 .br
-.B rufusarm64-cli update download --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--output FILE] [--replace] [--resume] [--json-progress|--json]
+.B rufusarm64-cli update download --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--state-file FILE] [--output FILE] [--replace] [--resume] [--json-progress|--json]
 .br
 .SH DESCRIPTION
 .B rufusarm64-cli
@@ -165,8 +165,18 @@ reviewed public mirrors and offline trust metadata are provisioned.
 validates a threshold-signed release envelope through a supplied sequential root
 chain. It binds the release version, tag, commit, channel, exact asset names,
 sizes, SHA-256 digests, GitHub release URLs, and authorized signing key IDs.
-The command refuses expired metadata, metadata-version rollback, and release
-version downgrade.
+The command refuses expired metadata, root-version or root-content rollback,
+release-metadata version or content rollback, release-version rollback, and a
+system clock more than 24 hours behind the last accepted metadata time. On every
+successful verification it advances an owner-only rollback record under
+`$XDG_STATE_HOME/rufusarm64/update/state.json`, or
+`$HOME/.local/state/rufusarm64/update/state.json` when XDG_STATE_HOME is unset.
+.B --state-file
+selects an explicit path. The state directory is secured to mode 0700; the state
+and lock files use mode 0600, no-follow admission, single-link ownership checks,
+an exclusive process lock, atomic replacement, and directory synchronization.
+.B --minimum-metadata-version
+is an additional operator floor and cannot lower the persisted floor.
 .PP
 .B update download
 requires the same authenticated metadata and additionally requires the signed

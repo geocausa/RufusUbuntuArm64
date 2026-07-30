@@ -1,6 +1,6 @@
 # RufusArm64 development handoff
 
-Updated: 2026-07-30 16:02 Europe/London
+Updated: 2026-07-30 16:33 Europe/London
 
 This file is the durable restart point for ChatGPT/Connector2 development on
 `geocausa/RufusUbuntuArm64`. Read it before changing files or running a
@@ -127,33 +127,31 @@ Relevant project trackers:
 
 ## Current objective
 
-PR #421 merged as `89686ef31ff8750f6079296f080c50b38786f56e`. The
-active branch is `release/verified-update-download`, based on merged `main`.
-Continue the signed-release completion path without introducing automatic
-installation or CI-held private keys.
+PR #422 merged as `9f405c0b5161a4589f9b05f325cd9d529b5881cb`. The
+active branch is `release/update-rollback-state`, based on merged `main`.
+Continue product completion without adding automatic installation or private
+release keys to CI.
 
 Implemented in this tranche:
 
-- `DownloadReleasePackage` adapts the exact authenticated ARM64 package record
-  to the existing reviewed acquisition downloader rather than creating another
-  network or filesystem writer.
-- A private immutable trust snapshot is created only after threshold signature
-  verification. Exported inspection fields may be changed by an embedding
-  caller without changing the trusted version, package URL, size, SHA-256,
-  metadata digest or signing-key evidence used by update decisions/downloads.
-- `rufusarm64-cli update download` requires the full sequential root chain,
-  signed release envelope, current version and rollback floor. It refuses a
-  same-version or older release before any network request.
-- The command supports exact destination selection, safe replacement, resumable
-  transfer, JSON progress or final JSON, and reports release/metadata evidence.
-  It never requests privilege or invokes a package manager.
-- The reused downloader enforces signed redirect hosts, HTTPS/TLS policy, exact
-  response and range semantics, available-space preflight, cancellation,
-  bounded owner-owned partial files, exact size/SHA-256, synchronization,
-  atomic no-replace publication and verified reuse.
-- Focused tests pass for authenticated download/readback/reuse, unauthenticated
-  object refusal, same-version refusal, exact CLI binding and post-verification
-  mutation resistance.
+- Verified roots now retain an internal immutable snapshot of trusted version,
+  roles, generation/expiry and SHA-256. Root updates plus catalog/release
+  signature verification use that snapshot rather than mutable exported fields.
+- Verified releases are bound to the exact root version/SHA-256 that authorized
+  them. Persistent acceptance refuses pairing a release with another root.
+- `AcceptReleaseMetadata` resolves the XDG-compatible per-user state path,
+  secures the directory, takes an owner-owned no-follow exclusive lock, reads
+  strict owner-only state, enforces rollback/clock invariants and atomically
+  publishes the new state with directory synchronization.
+- State binds root version/hash, release metadata version/hash, release version
+  and monotonic acceptance time. It refuses lower versions, same-version content
+  substitution, release-version rollback and clocks more than 24 hours behind.
+- `update verify` and `update download` now persist rollback state by default;
+  `--state-file` selects a reviewed explicit path and
+  `--minimum-metadata-version` is only an additional floor.
+- Concurrent high/low metadata acceptance cannot regress final state. Tests also
+  cover state and lock symlinks, insecure modes, root/release cross-binding,
+  exported-field mutation, default XDG resolution and acceptance-time monotonicity.
 - Final local validation passed: complete Go 1.22.12 suite in an isolated
   mount namespace; Go 1.26.5 race/vet, staticcheck, actionlint and govulncheck
   with no vulnerabilities; all Go and GUI tests; native ARM64 package checks;
@@ -163,16 +161,16 @@ Implemented in this tranche:
 
 Remaining sequence:
 
-1. Finish documentation and run Go 1.22, race/vet/static/vulnerability, GUI,
-   package, reproducibility and exact workflow-contract validation.
-2. Commit, push and open a dedicated verified-download PR; accept only exact-head
-   green CI before merge.
-3. Design owner-only persistent release metadata rollback state and authenticated
-   network refresh. Do not rely indefinitely on caller-supplied rollback floors.
-4. Define and perform the production offline root/release key ceremony, then
-   commit only public roots and threshold-signed envelopes.
-5. Make release publication refuse any staged artifact graph that differs from
-   the committed signed envelope.
+1. Complete source review and run Go 1.22, race/vet/static/vulnerability, GUI,
+   package/reproducibility and workflow-contract validation.
+2. Commit, push and open a dedicated rollback-state PR; merge only after all
+   exact-head checks pass.
+3. Implement authenticated release metadata refresh through a provisioned public
+   channel while reusing the same persistent root/release state.
+4. Define and perform the production offline key ceremony, then commit only
+   public roots and threshold-signed release envelopes.
+5. Make release publication refuse any asset graph differing from the committed
+   signed envelope.
 6. Keep package installation, privilege, package-manager behavior and rollback
    as a separate high-risk tranche.
 
