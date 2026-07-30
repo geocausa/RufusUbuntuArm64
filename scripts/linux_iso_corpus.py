@@ -79,14 +79,18 @@ def validate_manifest(value: Any) -> None:
             _required_text(source, "url", f"{label} source")
         else:
             _required_text(source, "generator", f"{label} source")
-        if state == "qualified":
-            size = entry.get("size")
-            digest = entry.get("sha256")
-            expected = entry.get("expected")
+        size = entry.get("size")
+        digest = entry.get("sha256")
+        if size is not None or digest is not None:
+            binding_kind = "qualified" if state == "qualified" else "bound"
             if not isinstance(size, int) or size <= 0:
-                raise CorpusError(f"{label} qualified size must be a positive integer")
+                raise CorpusError(f"{label} {binding_kind} size must be a positive integer")
             if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
-                raise CorpusError(f"{label} qualified sha256 must be lowercase hexadecimal")
+                raise CorpusError(f"{label} {binding_kind} sha256 must be lowercase hexadecimal")
+        if state == "qualified":
+            expected = entry.get("expected")
+            if size is None or digest is None:
+                raise CorpusError(f"{label} qualified entry requires size and sha256")
             if not isinstance(expected, dict) or expected.get("decision") not in DECISIONS:
                 raise CorpusError(f"{label} qualified expected decision is invalid")
 
@@ -288,24 +292,32 @@ def run_entry(
         return result
 
     metadata = image.stat()
-    digest = sha256_file(image)
-    result.update({"path": str(image), "size": metadata.st_size, "sha256": digest})
+    result.update({"path": str(image), "size": metadata.st_size})
     failures: list[str] = []
-    if entry["qualification_state"] == "qualified":
-        if metadata.st_size != entry["size"]:
-            failures.append(f"size expected {entry['size']}, got {metadata.st_size}")
-        if digest != entry["sha256"]:
+    if "size" in entry and metadata.st_size != entry["size"]:
+        failures.append(f"size expected {entry['size']}, got {metadata.st_size}")
+
+    # Do not hash a clearly truncated multi-gigabyte artifact. If its exact
+    # size is correct, hash it before any helper inspection or decision.
+    if not failures:
+        digest = sha256_file(image)
+        result["sha256"] = digest
+        if "sha256" in entry and digest != entry["sha256"]:
             failures.append(f"sha256 expected {entry['sha256']}, got {digest}")
 
-    try:
-        inspection = inspect_image(helper, image)
-        profile = linux_compatibility_profile(image, inspection)
-        decision = classify(inspection, profile)
-        result.update({"inspection": inspection, "profile": profile, "decision": decision})
-        if entry["qualification_state"] == "qualified":
-            failures.extend(compare_expected(entry, result))
-    except CorpusError as exc:
-        failures.append(str(exc))
+    # A source-bound entry must match its exact official bytes before helper
+    # inspection. This prevents interrupted downloads using the final filename
+    # from producing a plausible but misleading compatibility decision.
+    if not failures:
+        try:
+            inspection = inspect_image(helper, image)
+            profile = linux_compatibility_profile(image, inspection)
+            decision = classify(inspection, profile)
+            result.update({"inspection": inspection, "profile": profile, "decision": decision})
+            if entry["qualification_state"] == "qualified":
+                failures.extend(compare_expected(entry, result))
+        except CorpusError as exc:
+            failures.append(str(exc))
 
     result["status"] = "checked"
     result["failures"] = failures

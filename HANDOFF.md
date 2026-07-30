@@ -1,6 +1,6 @@
 # RufusArm64 development handoff
 
-Updated: 2026-07-30 07:22 Europe/London
+Updated: 2026-07-30 12:14 Europe/London
 
 This file is the durable restart point for ChatGPT/Connector2 development on
 `geocausa/RufusUbuntuArm64`. Read it before changing files or running a
@@ -86,6 +86,21 @@ git fetch origin
 git status --short --branch
 git log -5 --oneline --decorate
 cat HANDOFF.md
+lsblk -o NAME,PATH,TYPE,SIZE,MODEL,TRAN,FSTYPE,LABEL,SERIAL,MOUNTPOINTS
+```
+
+To resume the exact openSUSE artifact transfer without changing corpus claims:
+
+```bash
+rsync --partial --append-verify --human-readable --info=progress2 \
+  rsync://ftp.icm.edu.pl/pub/Linux/opensuse/ports/aarch64/tumbleweed/iso/openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso \
+  /home/geoca/Downloads/opensuse-tumbleweed-aarch64-20260714/openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso.download
+printf '%s  %s\n' \
+  be9ff4dae638029557f5cb9d8e1c55fcc50f9c8ad1253c3d2e401fffcc41f547 \
+  /home/geoca/Downloads/opensuse-tumbleweed-aarch64-20260714/openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso.download | sha256sum -c -
+mv -- \
+  /home/geoca/Downloads/opensuse-tumbleweed-aarch64-20260714/openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso.download \
+  /home/geoca/Downloads/opensuse-tumbleweed-aarch64-20260714/openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso
 ```
 
 The active branch should be checked out. Do not reset or delete local files
@@ -112,26 +127,55 @@ Relevant project trackers:
 
 ## Current objective
 
-Begin the next distinct compatibility family with official openSUSE
+Continue the next distinct compatibility family with official openSUSE
 Tumbleweed AArch64 DVD media.
 
-Planned sequence:
+Current progress:
 
-1. Resolve a version-pinned official openSUSE AArch64 ISO, checksum and signing
-   material. Avoid committing a rolling `Current` URL as qualified evidence.
-2. Verify the signed checksum before admitting the artifact.
-3. Run the read-only helper and headless Linux compatibility analyser.
-4. Determine whether the image is ISO Image capable, DD-only, both, or safely
-   refused.
-5. Add generic handling only where the official artifact proves it necessary;
+- The pending corpus entry is pinned to
+  `openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso`; do not return
+  it to the rolling `Current` alias.
+- The official detached checksum signature was accepted with `gpgv` using the
+  openSUSE Project Signing Key fingerprint
+  `AD48 5664 E901 B867 051A B15F 35A2 F86E 29B7 00A4`.
+- The signed expected SHA-256 is
+  `be9ff4dae638029557f5cb9d8e1c55fcc50f9c8ad1253c3d2e401fffcc41f547`;
+  the mirror-reported size is `4099753984` bytes.
+- Evidence files are under
+  `/home/geoca/Downloads/opensuse-tumbleweed-aarch64-20260714/`. The resumable
+  partial is named with the non-admissible `.iso.download` suffix and was
+  `154697728` bytes at this checkpoint.
+- A bounded sparse range probe showed an MBR/ISO9660 hybrid with a BIOS El
+  Torito entry and provisionally classified it as `dd-only`. This is not corpus
+  qualification: the complete artifact still requires full-byte SHA-256
+  verification and exact helper/analyser execution.
+- The installed `0.15.0~rc2` helper is stale for Fedora optical classification.
+  Use the branch-built helper at
+  `/home/geoca/Documents/RufusUbuntuArm64-corpus/dist/local-corpus-tools/rufusarm64-helper`
+  or rebuild it from the active branch.
+- Pending entries may now carry signed size/SHA-256 bindings. The corpus runner
+  rejects a mismatched size before hashing or helper inspection, preventing an
+  interrupted download with the final filename from producing a plausible
+  compatibility decision.
+- Checkpoint validation passed with Go 1.26.5: all Go packages, all 227 GUI
+  tests, `staticcheck`, `actionlint`, `govulncheck` with no vulnerabilities,
+  and the existing corpus baseline (`8` checked, `6` pending/missing).
+
+Remaining sequence:
+
+1. Resume the `.iso.download` transfer and verify the complete artifact against
+   the signed SHA-256 before renaming it to the exact corpus filename.
+2. Run the read-only helper and headless Linux compatibility analyser.
+3. Determine whether the complete image is ISO Image capable, DD-only, both,
+   or safely refused; do not promote the sparse-probe result by assumption.
+4. Add generic handling only where the official artifact proves it necessary;
    avoid distribution-name special cases when a media-layout rule suffices.
-6. Add exact filename, size, SHA-256, inspection and expected decision to the
-   corpus.
-7. Run focused tests, Go 1.22 compatibility, pinned Go 1.26.5 audit, full
-   native ARM64 package/reproducibility tests and loop-device qualification.
-8. Use `/dev/sda` for physical write/readback only after exact source and target
-   identity checks and all pre-erasure validation pass.
-9. Push a major green tranche and open a PR.
+5. Commit the exact inspection and expected decision, then run Go 1.22
+   compatibility, pinned Go 1.26.5 audit, full native ARM64 package and
+   reproducibility tests, and loop-device qualification.
+6. Use a freshly enumerated and identity-bound sacrificial target for physical
+   write/readback only after all pre-erasure validation passes.
+7. Push a major green qualification tranche and open a PR.
 
 Existing pending corpus families after Fedora:
 
@@ -162,16 +206,24 @@ Existing pending corpus families after Fedora:
 
 ## Physical USB state and safety
 
-Current known target:
+Previously qualified sacrificial target:
 
-- Whole device: `/dev/sda`
+- Whole device at the time: `/dev/sda`
 - Model: `KINGSTON SNS4151S316G`
 - Capacity: approximately 14.9 GiB
 - Connection: SATA SSD in a USB enclosure
 - Stable identity used by Rufus safety checks:
   `03cda7c90ec3517d84d817a9e761c369e5c53acf88bef4bd3873d43f0208b0de`
 - Last completed media: Fedora Everything 44 aarch64
-- Current filesystem/label: FAT32, `FEDORA44`
+- Last known filesystem/label: FAT32, `FEDORA44`
+
+Current safety block observed on 2026-07-30:
+
+- `/dev/sda` is now a different mounted 29.7 GiB `Generic STORAGE DEVICE`
+  with a FAT volume labelled `UBUNTUX1E`.
+- It does not match the qualified Kingston model, capacity or stable identity.
+- Physical writes are disabled until a sacrificial target is deliberately
+  selected, unmounted, enumerated and identity-bound again.
 
 The internal system disk is not `/dev/sda`. Nevertheless, never assume target
 identity from the pathname alone. Before every destructive operation:

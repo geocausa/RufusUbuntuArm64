@@ -25,7 +25,7 @@ Official images are not committed to Git. A qualified official entry binds:
 - the headless compatibility profile; and
 - the expected decision.
 
-Pending official entries identify the next representative families without claiming that they pass. A pending image is never promoted to qualified until its official checksum and exact analyser result are committed.
+Pending official entries identify the next representative families without claiming that they pass. Once signed upstream checksum material is verified, a pending entry may bind the exact filename, byte size and SHA-256 before analyser qualification. Any local file using that filename must match those bytes before inspection, so an interrupted download cannot produce a compatibility decision. A pending image is never promoted to qualified until its exact analyser result is committed.
 
 Compact synthetic fixtures are generated deterministically by the runner. They cover stable parser and refusal boundaries without storing opaque binaries in the repository.
 
@@ -41,7 +41,7 @@ Debian was written to the same target using GPT/UEFI/FAT32 with a 4 KiB cluster 
 
 Fedora was written to the same target using MBR/UEFI/FAT32 with a 4 KiB cluster size and label `FEDORA44`. Complete copied-file SHA-256 verification, FAT checking, fallback-loader readback, the 978,661,376-byte installer image and detached read-only reopen passed. These records do not establish firmware boot or Secure Boot behavior.
 
-The manifest tracks Linux Mint, Bazzite, Nobara, openSUSE, Nutanix and umbrelOS as pending representatives.
+The manifest tracks Linux Mint, Bazzite, Nobara, openSUSE, Nutanix and umbrelOS as pending representatives. The openSUSE representative is now pinned to `openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso` instead of the rolling `Current` alias. Its detached checksum signature was accepted with the openSUSE Project Signing Key fingerprint `AD48 5664 E901 B867 051A B15F 35A2 F86E 29B7 00A4`; the signed expected SHA-256 is `be9ff4dae638029557f5cb9d8e1c55fcc50f9c8ad1253c3d2e401fffcc41f547`. The entry remains pending until the complete local artifact passes full-byte SHA-256 verification and the exact read-only analyser.
 
 ## Run the corpus
 

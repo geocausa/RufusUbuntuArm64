@@ -199,6 +199,29 @@ class LinuxISOCorpusTests(unittest.TestCase):
         self.assertFalse(report["passed"])
         self.assertIn("sha256 expected", report["results"][0]["failures"][0])
 
+    def test_bound_pending_partial_is_rejected_before_inspection(self):
+        image = self.root / "pending.iso"
+        image.write_bytes(b"partial download with a plausible filename")
+        entry = {
+            "id": "pending-bound",
+            "family": "Pending",
+            "architecture": "arm64",
+            "filename": image.name,
+            "qualification_state": "pending",
+            "source": {"kind": "official", "project": "Example", "url": "https://example.invalid/"},
+            "size": 4096,
+            "sha256": "0" * 64,
+        }
+        manifest = {"schema": 1, "corpus_version": "test", "entries": [entry]}
+        CORPUS.validate_manifest(manifest)
+        report = CORPUS.run_corpus(manifest, [self.root], self.helper, True)
+        result = report["results"][0]
+        self.assertFalse(report["passed"])
+        self.assertFalse(result["passed"])
+        self.assertNotIn("inspection", result)
+        self.assertTrue(any(failure.startswith("size expected") for failure in result["failures"]))
+        self.assertNotIn("sha256", result)
+
     def test_manifest_rejects_duplicate_ids_and_unbound_qualified_entries(self):
         base = {
             "id": "same",

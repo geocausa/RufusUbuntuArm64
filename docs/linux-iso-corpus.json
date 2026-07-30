@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "corpus_version": "2026.07.30.2",
+  "corpus_version": "2026.07.30.3",
   "upstream_rufus": {
     "version": "4.15",
     "commit": "6d8fbf98305ff37eb531c45cbd6ff44563c53917"
@@ -322,13 +322,18 @@
       "id": "opensuse-tumbleweed-dvd-aarch64",
       "family": "openSUSE",
       "architecture": "aarch64",
-      "filename": "openSUSE-Tumbleweed-DVD-aarch64-Current.iso",
+      "filename": "openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso",
       "qualification_state": "pending",
       "source": {
         "kind": "official",
         "project": "openSUSE",
-        "url": "https://get.opensuse.org/tumbleweed/"
-      }
+        "url": "https://ftp.icm.edu.pl/pub/Linux/opensuse/ports/aarch64/tumbleweed/iso/openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso",
+        "checksum_url": "https://ftp.icm.edu.pl/pub/Linux/opensuse/ports/aarch64/tumbleweed/iso/openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso.sha256",
+        "checksum_signature_url": "https://ftp.icm.edu.pl/pub/Linux/opensuse/ports/aarch64/tumbleweed/iso/openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso.sha256.asc",
+        "keyring_url": "https://download.opensuse.org/ports/aarch64/tumbleweed/repo/oss/gpg-pubkey-29b700a4-6a17fa38.asc"
+      },
+      "size": 4099753984,
+      "sha256": "be9ff4dae638029557f5cb9d8e1c55fcc50f9c8ad1253c3d2e401fffcc41f547"
     },
     {
       "id": "nutanix-community-edition-installer",
