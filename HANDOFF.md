@@ -1,6 +1,6 @@
 # RufusArm64 development handoff
 
-Updated: 2026-07-30 12:41 Europe/London
+Updated: 2026-07-30 14:26 Europe/London
 
 This file is the durable restart point for ChatGPT/Connector2 development on
 `geocausa/RufusUbuntuArm64`. Read it before changing files or running a
@@ -127,64 +127,68 @@ Relevant project trackers:
 
 ## Current objective
 
-Continue the next distinct compatibility family with official openSUSE
-Tumbleweed AArch64 DVD media.
+The official openSUSE Tumbleweed AArch64 DVD compatibility tranche is now
+qualified. Prepare the completed evidence for review/PR, or continue with the
+next distinct pending compatibility family without weakening the generic media
+rules established here.
 
-Current progress:
+Completed openSUSE evidence:
 
-- The pending corpus entry is pinned to
-  `openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso`; do not return
-  it to the rolling `Current` alias.
-- The official detached checksum signature was accepted with `gpgv` using the
-  openSUSE Project Signing Key fingerprint
-  `AD48 5664 E901 B867 051A B15F 35A2 F86E 29B7 00A4`.
-- The signed expected SHA-256 is
-  `be9ff4dae638029557f5cb9d8e1c55fcc50f9c8ad1253c3d2e401fffcc41f547`;
-  the mirror-reported size is `4099753984` bytes.
-- Evidence files are under
-  `/home/geoca/Downloads/opensuse-tumbleweed-aarch64-20260714/`. The resumable
-  partial is named with the non-admissible `.iso.download` suffix and was
-  `746684416` bytes at this checkpoint. No transfer process is currently running.
-- A bounded sparse range probe showed an MBR/ISO9660 hybrid with a BIOS El
-  Torito entry and provisionally classified it as `dd-only`. This is not corpus
-  qualification: the complete artifact still requires full-byte SHA-256
-  verification and exact helper/analyser execution.
-- The installed `0.15.0~rc2` helper is stale for Fedora optical classification.
-  Use the branch-built helper at
-  `/home/geoca/Documents/RufusUbuntuArm64-corpus/dist/local-corpus-tools/rufusarm64-helper`
-  or rebuild it from the active branch.
-- Pending entries may now carry signed size/SHA-256 bindings. The corpus runner
-  rejects a mismatched size before hashing or helper inspection, preventing an
-  interrupted download with the final filename from producing a plausible
-  compatibility decision.
-- Checkpoint validation passed with Go 1.26.5: all Go packages, all 227 GUI
-  tests, `staticcheck`, `actionlint`, `govulncheck` with no vulnerabilities,
-  and the existing corpus baseline (`8` checked, `6` pending/missing).
+- Immutable artifact:
+  `openSUSE-Tumbleweed-DVD-aarch64-Snapshot20260714-Media.iso`
+- Exact size: `4099753984` bytes
+- Signed SHA-256:
+  `be9ff4dae638029557f5cb9d8e1c55fcc50f9c8ad1253c3d2e401fffcc41f547`
+- Detached checksum signature accepted with the openSUSE Project Signing Key
+  fingerprint `AD48 5664 E901 B867 051A B15F 35A2 F86E 29B7 00A4`.
+- The complete artifact was downloaded, full-byte hashed, and renamed from the
+  non-admissible `.iso.download` suffix only after the exact signed hash passed.
+- Exact branch-built helper/analyser result: `dd-only`.
+- Exact profile: recognised plain raw/ISOHybrid media,
+  `hybrid-direct-write`, hybrid and optical, validated BIOS El Torito entry,
+  no validated UEFI entry, and no supported extraction bootloader.
+- The earlier sparse-probe prediction agreed with the complete artifact, but
+  qualification is based only on the complete signed image.
+- The production helper intentionally does not enumerate loop devices as normal
+  write targets; an attempted CLI loop qualification stopped before writing at
+  that safety boundary. Existing privileged loop invariants remain green in CI.
+- Physical target: `/dev/sda`, 31,914,983,424-byte removable Generic storage
+  device, stable identity
+  `84d18636c43baa4b9c72e73a8f53f7f3be7d13789f0b8d11ec0dd5189146b5be`.
+- Identity-bound dry run, automatic raw write, helper full-device verification,
+  independent SHA-256 readback, partition/layout inspection, and post-write
+  identity comparison all passed.
+- Physical readback SHA-256 exactly matched the signed source hash.
+- Resulting layout: DOS/MBR, 13.7 MiB bootable FAT32 partition at sector 2400,
+  followed by a 3.8 GiB Linux/ISO9660 partition; volume label
+  `openSUSE-Tumbleweed-DVD-aarch64`.
+- Local evidence:
+  `dist/audit-logs/local-corpus/opensuse-tumbleweed-exact-20260730.json`
+  and
+  `dist/audit-logs/local-corpus/physical-opensuse-tumbleweed-20260730.jsonl`.
+- Corpus version is `2026.07.30.4`; the entry is now `qualified` with exact
+  expected inspection/profile/decision fields.
+- Commit `87ab721` and all three associated GitHub Actions workflows were green
+  before the final qualification changes.
+- Final local validation is green: clean Go 1.22.12 compatibility in a private
+  mount namespace, pinned Go 1.26.5 static/audit checks, all 227 GUI tests,
+  complete isolated native package tests, deterministic UEFI-loader checks,
+  byte-for-byte reproducible Debian packaging, and the exact corpus with
+  openSUSE reported as `PASS ... dd-only`.
+- The package prerequisite was restored from the previously green local package
+  only after its pinned loader and source-bundle checksums passed; generated
+  vendor artifacts were removed before commit.
 
-Remaining sequence:
+Next sequence:
 
-1. Resume the `.iso.download` transfer and verify the complete artifact against
-   the signed SHA-256 before renaming it to the exact corpus filename.
-2. Run the read-only helper and headless Linux compatibility analyser.
-3. Determine whether the complete image is ISO Image capable, DD-only, both,
-   or safely refused; do not promote the sparse-probe result by assumption.
-4. Add generic handling only where the official artifact proves it necessary;
-   avoid distribution-name special cases when a media-layout rule suffices.
-5. Commit the exact inspection and expected decision, then run Go 1.22
-   compatibility, pinned Go 1.26.5 audit, full native ARM64 package and
-   reproducibility tests, and loop-device qualification.
-6. Use a freshly enumerated and identity-bound sacrificial target for physical
-   write/readback only after all pre-erasure validation passes.
-7. Push a major green qualification tranche and open a PR.
-
-Existing pending corpus families after Fedora:
-
-- Linux Mint
-- Bazzite
-- Nobara
-- openSUSE
-- Nutanix
-- umbrelOS
+1. Commit and push the exact qualification evidence.
+2. Require all exact-head GitHub Actions workflows to pass.
+3. Open or update the review PR for this major qualification tranche.
+4. Do not claim firmware boot, installation success or Secure Boot behavior;
+   the evidence proves exact software classification and byte-for-byte physical
+   write/readback only.
+5. After review, select the next pending family: Linux Mint, Bazzite, Nobara,
+   Nutanix or umbrelOS.
 
 ## Machine/toolchain state
 
