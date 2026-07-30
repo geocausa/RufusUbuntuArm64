@@ -30,7 +30,9 @@ func TestSelectWriteMode(t *testing.T) {
 		wantErr    bool
 	}{
 		{"hybrid iso raw", "auto", imaging.ImageInfo{HasISO9660: true, HasMBR: true, HasMBRPartition: true}, false, "raw", false},
-		{"plain optical windows", "auto", imaging.ImageInfo{HasISO9660: true}, false, "windows", false},
+		{"plain optical windows", "auto", imaging.ImageInfo{HasISO9660: true, HasWindowsBootWIM: true, HasWindowsInstallPayload: true}, false, "windows", false},
+		{"plain optical Linux requires ISO mode", "auto", imaging.ImageInfo{HasISO9660: true}, false, "", true},
+		{"explicit Windows requires markers", "windows", imaging.ImageInfo{HasISO9660: true}, false, "", true},
 		{"gpt raw", "auto", imaging.ImageInfo{HasGPT: true}, false, "raw", false},
 		{"unknown rejected", "auto", imaging.ImageInfo{}, false, "", true},
 		{"unknown expert force", "auto", imaging.ImageInfo{}, true, "raw", false},

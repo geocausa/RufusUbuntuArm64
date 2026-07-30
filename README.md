@@ -199,6 +199,17 @@ Requirements include Go 1.22 or newer, Python 3, Debian packaging tools, `qemu-u
 ./scripts/test.sh
 ```
 
+Run the versioned Linux ISO compatibility corpus against locally downloaded official images with:
+
+```bash
+PYTHONPATH=gui python3 scripts/linux_iso_corpus.py \
+  --image-dir "$HOME/Downloads" \
+  --helper /usr/lib/rufusarm64/rufusarm64-helper \
+  --allow-missing
+```
+
+See `docs/linux-iso-corpus.md` for the qualification boundary and `docs/linux-iso-corpus.json` for immutable artifact identities and pending representatives.
+
 The release-candidate package is produced at:
 
 ```text

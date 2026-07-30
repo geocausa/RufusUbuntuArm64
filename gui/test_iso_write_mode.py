@@ -31,7 +31,12 @@ try:
     sys.modules["gi.repository"] = fake_repository
     sys.modules["rufusarm64"] = fake_rufusarm64
     sys.modules.pop("rufusarm64_iso_write_mode", None)
-    from rufusarm64_iso_write_mode import build_iso_write_command, hybrid_mode_available
+    from rufusarm64_iso_write_mode import (
+        build_iso_write_command,
+        dd_image_mode_available,
+        hybrid_mode_available,
+        iso_image_mode_available,
+    )
 finally:
     for name, module in _saved_modules.items():
         if module is None:
@@ -41,24 +46,38 @@ finally:
 
 
 class ISOImageModeTests(unittest.TestCase):
-    def test_hybrid_mode_requires_uefi_iso_hybrid_profile(self):
-        compatible = {
+    def test_iso_mode_accepts_hybrid_and_optical_only_uefi_profiles(self):
+        hybrid = {
             "mode": "raw",
             "compatibility_profile": {
                 "write_path": "hybrid-direct-write",
                 "hybrid": True,
+                "optical": True,
                 "boot_methods": ["BIOS", "UEFI"],
             },
         }
-        self.assertTrue(hybrid_mode_available(compatible))
+        optical = {
+            "mode": "raw",
+            "compatibility_profile": {
+                "write_path": "optical-direct-write",
+                "hybrid": False,
+                "optical": True,
+                "boot_methods": ["UEFI"],
+            },
+        }
+        self.assertTrue(iso_image_mode_available(hybrid))
+        self.assertTrue(hybrid_mode_available(hybrid))
+        self.assertTrue(dd_image_mode_available(hybrid))
+        self.assertTrue(iso_image_mode_available(optical))
+        self.assertFalse(dd_image_mode_available(optical))
 
         for incompatible in (
             {},
             {"mode": "windows"},
-            {"mode": "raw", "compatibility_profile": {"hybrid": True, "boot_methods": ["BIOS"]}},
-            {"mode": "raw", "compatibility_profile": {"write_path": "raw-direct-write", "hybrid": False, "boot_methods": ["UEFI"]}},
+            {"mode": "raw", "compatibility_profile": {"write_path": "optical-direct-write", "optical": True, "boot_methods": ["BIOS"]}},
+            {"mode": "raw", "compatibility_profile": {"write_path": "raw-direct-write", "hybrid": False, "optical": False, "boot_methods": ["UEFI"]}},
         ):
-            self.assertFalse(hybrid_mode_available(incompatible), incompatible)
+            self.assertFalse(iso_image_mode_available(incompatible), incompatible)
 
     def test_build_iso_write_command_binds_source_target_and_cancellation(self):
         with tempfile.TemporaryDirectory() as directory:

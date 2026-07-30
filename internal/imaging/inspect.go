@@ -18,15 +18,22 @@ const (
 )
 
 type ImageInfo struct {
-	HasMBR          bool
-	HasGPT          bool
-	HasISO9660      bool
-	HasUDF          bool
-	HasSquashFS     bool
-	HasMBRPartition bool
+	HasMBR                   bool
+	HasGPT                   bool
+	HasISO9660               bool
+	HasUDF                   bool
+	HasSquashFS              bool
+	HasMBRPartition          bool
+	HasWindowsBootWIM        bool
+	HasWindowsInstallPayload bool
+	HasMicrosoftUDFBridge    bool
 }
 
 func (i ImageInfo) HasOpticalFilesystem() bool { return i.HasISO9660 || i.HasUDF }
+
+func (i ImageInfo) HasWindowsInstallMedia() bool {
+	return (i.HasWindowsBootWIM && i.HasWindowsInstallPayload) || i.HasMicrosoftUDFBridge
+}
 
 // HasDirectFilesystem reports a filesystem superblock found directly at byte
 // zero. It is recognition evidence, not proof that the file is a complete disk
@@ -95,6 +102,7 @@ func InspectReaderAt(reader io.ReaderAt, size int64) (ImageInfo, error) {
 		info.HasGPT = inspectGPT(reader, header[512:1024], fileSectors)
 	}
 	inspectOpticalDescriptors(reader, &info)
+	inspectISO9660WindowsMarkers(reader, size, &info)
 	return info, nil
 }
 
@@ -200,6 +208,7 @@ func inspectOpticalDescriptors(file io.ReaderAt, info *ImageInfo) {
 	// arbitrary file that merely contains a signature string elsewhere.
 	descriptor := make([]byte, opticalSectorSize)
 	sawBEA, sawNSR, sawTEA := false, false, false
+	sawMicrosoftPVD := false
 	for sector := firstVolumeDescriptor; sector <= lastVolumeDescriptor; sector++ {
 		n, readErr := file.ReadAt(descriptor, sector*opticalSectorSize)
 		if readErr != nil && readErr != io.EOF {
@@ -212,10 +221,11 @@ func inspectOpticalDescriptors(file io.ReaderAt, info *ImageInfo) {
 		if identifier == "CD001" && descriptor[6] == 1 {
 			if descriptor[0] == 1 {
 				info.HasISO9660 = true
+				sawMicrosoftPVD = sawMicrosoftPVD || microsoftOpticalDescriptor(descriptor)
 			}
-			if descriptor[0] == 255 {
-				break
-			}
+			// The ISO9660 terminator does not terminate the UDF Volume
+			// Recognition Sequence. UDF bridge media place BEA/NSR/TEA
+			// descriptors in later aligned sectors, so keep the bounded scan.
 		}
 		if descriptor[0] == 0 && descriptor[6] == 1 {
 			switch identifier {
@@ -233,6 +243,7 @@ func inspectOpticalDescriptors(file io.ReaderAt, info *ImageInfo) {
 		}
 	}
 	info.HasUDF = sawBEA && sawNSR && sawTEA
+	info.HasMicrosoftUDFBridge = info.HasUDF && sawMicrosoftPVD
 }
 
 func allZero(data []byte) bool {
