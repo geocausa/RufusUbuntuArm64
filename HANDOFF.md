@@ -6,6 +6,68 @@ This file is the durable restart point for ChatGPT/Connector2 development on
 `geocausa/RufusUbuntuArm64`. Read it before changing files or running a
 physical USB operation.
 
+## Project purpose and operating mandate
+
+Build `RufusUbuntuArm64` into a native Linux/ARM64 USB-media tool with practical
+functional parity with upstream Windows Rufus. Port or independently implement
+features wherever Linux provides a safe, auditable equivalent. When a Windows-
+only provider, firmware dependency, licensing boundary, architecture limitation,
+or unavailable Linux primitive prevents faithful implementation, record the
+limitation explicitly in the parity ledger, keep the user-facing claim bounded,
+and continue to the next tractable feature rather than blocking the programme.
+
+The implementation should prefer upstream-compatible behaviour and defaults,
+but must not imitate unsafe assumptions merely for cosmetic parity. Destructive
+operations remain identity-bound, source-authenticated, cancellation-aware and
+revalidated immediately before erasure.
+
+## Scope and evidence model
+
+The programme includes the complete product surface, not only raw ISO copying:
+
+- Windows and Linux installation-media creation;
+- ISO Image and DD Image modes;
+- partition scheme, target-system, filesystem, cluster and label behaviour;
+- Windows setup customisation where it can be reproduced safely;
+- persistence, FreeDOS, non-bootable formatting, imaging, backup and supported
+  container formats;
+- Secure Boot, UEFI, bootloader and runtime-integrity validation;
+- bad-block/capacity qualification and guarded physical-device workflows;
+- official-image acquisition, checksums, packaging, updates, localisation and
+  release integrity;
+- representative compatibility evidence for materially distinct media layouts.
+
+Do not attempt to test every distribution name or every point release. Qualify
+every materially distinct boot-media construction family, add popular official
+artifacts as immutable evidence, and treat unknown layouts conservatively.
+Evidence levels must remain separate:
+
+1. read-only parser/analyser evidence;
+2. loop-device write and reopen evidence;
+3. physical USB write/readback evidence;
+4. actual firmware boot, Secure Boot and installer-completion evidence.
+
+Never claim a higher level from a lower-level test.
+
+## Direction and roadmap
+
+The current strategic sequence is:
+
+1. complete the Linux ISO compatibility corpus across distinct media families;
+2. close release/product-completion gaps such as signed artifacts, verified
+   updates, the production official-image catalogue, localisation and portable
+   distribution;
+3. continue high-value upstream Rufus parity tranches;
+4. reassess deferred long-tail items—including Windows To Go and formats whose
+   Linux implementation is currently incomplete—after the stable media paths
+   and release pipeline are physically qualified.
+
+Development policy: implement a coherent major tranche, test it locally on the
+native ARM64 host, use loop devices and the sacrificial USB where the evidence
+benefit is meaningful, commit reviewable changes, push them, and require green
+CI before merge. Keep unsupported or unproven behaviour visibly marked instead
+of silently approximating it.
+
 ## Resume pointer
 
 - Repository: `https://github.com/geocausa/RufusUbuntuArm64`
