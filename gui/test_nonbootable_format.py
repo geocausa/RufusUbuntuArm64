@@ -136,6 +136,29 @@ class NonBootableFormatContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "FAT16 compatibility"):
             normalize_plan(oversized)
 
+    def test_ext2_and_ext3_plans_have_distinct_tool_contracts(self):
+        for filesystem in ("ext2", "ext3"):
+            payload = sample_plan()
+            payload["plan"].update(
+                {
+                    "filesystem": filesystem,
+                    "filesystem_display": filesystem,
+                    "partition_type": "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
+                    "required_tools": ["sfdisk", "blockdev", f"mkfs.{filesystem}", "e2fsck"],
+                }
+            )
+            payload["partition_table"].update(
+                {
+                    "filesystem": filesystem,
+                    "filesystem_display": filesystem,
+                    "partition_type": "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
+                }
+            )
+            payload["confirmation"] = f"FORMAT /dev/sdb AS {filesystem} USING GPT LABEL DATA"
+            normalized = normalize_plan(payload)
+            self.assertEqual(normalized["plan"]["filesystem"], filesystem)
+            self.assertEqual(confirmation_phrase(normalized), payload["confirmation"])
+
     def test_plan_requires_exact_geometry_table_and_confirmation(self):
         payload = sample_plan()
         normalized = normalize_plan(payload)

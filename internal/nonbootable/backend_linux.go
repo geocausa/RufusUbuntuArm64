@@ -162,8 +162,8 @@ func (backend *linuxBackend) Format(ctx context.Context, plan Plan, _ PartitionT
 		if plan.Label != "" {
 			args = append(args, "-L", plan.Label)
 		}
-	case FilesystemExt4:
-		name = "mkfs.ext4"
+	case FilesystemExt2, FilesystemExt3, FilesystemExt4:
+		name = "mkfs." + plan.Filesystem
 		args = append(args, "-F")
 		if plan.Label != "" {
 			args = append(args, "-L", plan.Label)
@@ -207,6 +207,14 @@ func (backend *linuxBackend) Verify(ctx context.Context, plan Plan, table Partit
 		filesystemType, err = detectFATFilesystem(backend.partition)
 		if err != nil {
 			return FilesystemState{}, fmt.Errorf("classify FAT filesystem: %w", err)
+		}
+	} else if plan.Filesystem == FilesystemExt2 || plan.Filesystem == FilesystemExt3 || plan.Filesystem == FilesystemExt4 {
+		if filesystemType != FilesystemExt2 && filesystemType != FilesystemExt3 && filesystemType != FilesystemExt4 {
+			return FilesystemState{}, fmt.Errorf("blkid reported %q for an ext-family formatting request", filesystemType)
+		}
+		filesystemType, err = detectExtFilesystem(backend.partition)
+		if err != nil {
+			return FilesystemState{}, fmt.Errorf("classify ext filesystem: %w", err)
 		}
 	}
 	sizeText, err := commandText(ctx, "blockdev", "--getsize64", backend.stablePartitionPath)
@@ -464,7 +472,7 @@ func filesystemCheck(filesystem, path string) (string, []string, error) {
 		return "fsck.exfat", []string{"-n", path}, nil
 	case FilesystemNTFS:
 		return "ntfsfix", []string{"-n", path}, nil
-	case FilesystemExt4:
+	case FilesystemExt2, FilesystemExt3, FilesystemExt4:
 		return "e2fsck", []string{"-f", "-n", path}, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported filesystem %q", filesystem)
@@ -511,6 +519,51 @@ func detectFATFilesystem(file *os.File) (string, error) {
 	default:
 		return FilesystemFAT32, nil
 	}
+}
+
+func detectExtFilesystem(file *os.File) (string, error) {
+	if file == nil {
+		return "", errors.New("ext partition descriptor is unavailable")
+	}
+	superblock := make([]byte, 256)
+	if _, err := file.ReadAt(superblock, 1024); err != nil {
+		return "", fmt.Errorf("read ext superblock: %w", err)
+	}
+	if binary.LittleEndian.Uint16(superblock[0x38:0x3a]) != 0xef53 {
+		return "", errors.New("ext superblock magic is invalid")
+	}
+	compat := binary.LittleEndian.Uint32(superblock[0x5c:0x60])
+	incompat := binary.LittleEndian.Uint32(superblock[0x60:0x64])
+	readOnlyCompat := binary.LittleEndian.Uint32(superblock[0x64:0x68])
+
+	const (
+		extCompatHasJournal = uint32(0x0004)
+		extCompatOrphanFile = uint32(0x1000)
+
+		extIncompatExtents    = uint32(0x0040)
+		extIncompat64Bit      = uint32(0x0080)
+		extIncompatFlexBG     = uint32(0x0200)
+		extIncompatInlineData = uint32(0x8000)
+		extIncompatEncrypt    = uint32(0x10000)
+		extIncompatCasefold   = uint32(0x20000)
+
+		extROCompatHugeFile     = uint32(0x0008)
+		extROCompatDirNlink     = uint32(0x0020)
+		extROCompatExtraIsize   = uint32(0x0040)
+		extROCompatBigalloc     = uint32(0x0200)
+		extROCompatMetadataCsum = uint32(0x0400)
+	)
+	ext4Incompat := extIncompatExtents | extIncompat64Bit | extIncompatFlexBG |
+		extIncompatInlineData | extIncompatEncrypt | extIncompatCasefold
+	ext4ReadOnlyCompat := extROCompatHugeFile | extROCompatDirNlink | extROCompatExtraIsize |
+		extROCompatBigalloc | extROCompatMetadataCsum
+	if compat&extCompatOrphanFile != 0 || incompat&ext4Incompat != 0 || readOnlyCompat&ext4ReadOnlyCompat != 0 {
+		return FilesystemExt4, nil
+	}
+	if compat&extCompatHasJournal != 0 {
+		return FilesystemExt3, nil
+	}
+	return FilesystemExt2, nil
 }
 
 func readBlkid(ctx context.Context, path string) (map[string]string, error) {

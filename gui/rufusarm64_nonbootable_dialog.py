@@ -90,10 +90,14 @@ class NonBootableFormatDialog(Gtk.Dialog):
         self.filesystem.append("fat32", "FAT32")
         self.filesystem.append("exfat", "exFAT")
         self.filesystem.append("ntfs", "NTFS")
+        self.filesystem.append("ext2", "ext2")
+        self.filesystem.append("ext3", "ext3")
         self.filesystem.append("ext4", "ext4")
         saved_filesystem = str(parent.settings.get("nonbootable_filesystem") or "fat32")
         self.filesystem.set_active_id(
-            saved_filesystem if saved_filesystem in {"fat16", "fat32", "exfat", "ntfs", "ext4"} else "fat32"
+            saved_filesystem
+            if saved_filesystem in {"fat16", "fat32", "exfat", "ntfs", "ext2", "ext3", "ext4"}
+            else "fat32"
         )
         self.filesystem.connect("changed", self.selection_changed)
         controls.attach(self.filesystem, 1, 1, 1, 1)
