@@ -154,8 +154,8 @@ Usage:
   rufusarm64-cli acquire download --catalog FILE --signature FILE --public-key FILE --id ID [--output FILE]
   rufusarm64-cli acquire channel list [--offline] [--json]
   rufusarm64-cli acquire channel download --id ID [--output FILE] [--offline]
-  rufusarm64-cli update verify --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--json]
-  rufusarm64-cli update download --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--output FILE] [--replace] [--resume] [--json-progress|--json]
+  rufusarm64-cli update verify --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--state-file FILE] [--json]
+  rufusarm64-cli update download --root FILE [--root FILE...] --release FILE [--current-version VERSION] [--minimum-metadata-version N] [--state-file FILE] [--output FILE] [--replace] [--resume] [--json-progress|--json]
   rufusarm64-cli persistence plan --image FILE --media-root DIR --target-size SIZE [--size SIZE] [--json]
   sudo rufusarm64-cli persistence analyze --image FILE --expected-source-identity ID --target-size SIZE [--size SIZE] [--json]
   sudo rufusarm64-cli windows analyze --image FILE --expected-source-identity ID [--json]
@@ -166,7 +166,7 @@ Usage:
 
 Acquisition catalogs are accepted only after detached Ed25519 signature, expiry, URL, size, filename, and SHA-256 validation.
 The built-in channel additionally enforces threshold root/catalog signatures, key rotation, version rollback protection, and owner-only atomic trust state.
-Update verification authenticates threshold-signed release metadata and refuses metadata rollback or package-version downgrade. Update download reuses the bounded acquisition writer for exact size/SHA-256 verification and atomic publication; neither command installs software.
+Update verification authenticates threshold-signed release metadata and atomically advances owner-only rollback state while refusing root/release rollback or package-version downgrade. Update download reuses the bounded acquisition writer for exact size/SHA-256 verification and atomic publication; neither command installs software.
 Persistence planning accepts mounted or extracted Ubuntu 20.04+ casper and Debian live-boot media trees.
 Automatic analysis mounts the selected plain ISOHybrid image privately and read-only; it never opens a target device.
 The experimental persistent writer is CLI-only, GPT/UEFI-only, and is never accepted by the graphical privileged path.
@@ -1698,51 +1698,69 @@ type updateMetadataFlags struct {
 	releasePath            *string
 	currentVersion         *string
 	minimumMetadataVersion *int
+	stateFile              *string
 }
 
 func addUpdateMetadataFlags(fs *flag.FlagSet) *updateMetadataFlags {
 	flags := &updateMetadataFlags{
 		releasePath:            fs.String("release", "", "threshold-signed release metadata envelope"),
 		currentVersion:         fs.String("current-version", version, "currently installed RufusArm64 version"),
-		minimumMetadataVersion: fs.Int("minimum-metadata-version", 0, "lowest previously accepted release metadata version"),
+		minimumMetadataVersion: fs.Int("minimum-metadata-version", 0, "additional lowest accepted release metadata version"),
+		stateFile:              fs.String("state-file", "", "owner-only rollback state file; default follows XDG_STATE_HOME"),
 	}
 	fs.Var(&flags.roots, "root", "signed root metadata file in sequential order")
 	return flags
 }
 
-func (flags *updateMetadataFlags) load() (*acquisition.VerifiedRelease, acquisition.UpdateDecision, error) {
+func (flags *updateMetadataFlags) load() (*acquisition.VerifiedRelease, acquisition.UpdateStateResult, error) {
 	if len(flags.roots) == 0 || strings.TrimSpace(*flags.releasePath) == "" {
-		return nil, acquisition.UpdateDecision{}, errors.New("at least one --root and --release are required")
+		return nil, acquisition.UpdateStateResult{}, errors.New("at least one --root and --release are required")
 	}
 	if *flags.currentVersion == "development" || strings.TrimSpace(*flags.currentVersion) == "" {
-		return nil, acquisition.UpdateDecision{}, errors.New("development builds require an explicit --current-version")
+		return nil, acquisition.UpdateStateResult{}, errors.New("development builds require an explicit --current-version")
 	}
 	rootData := make([][]byte, 0, len(flags.roots))
 	for _, path := range flags.roots {
 		data, err := readLimitedRegularFile(path, acquisition.MaxRootMetadataBytes)
 		if err != nil {
-			return nil, acquisition.UpdateDecision{}, fmt.Errorf("read update root metadata: %w", err)
+			return nil, acquisition.UpdateStateResult{}, fmt.Errorf("read update root metadata: %w", err)
 		}
 		rootData = append(rootData, data)
 	}
 	now := time.Now()
 	trustedRoot, err := acquisition.VerifyRootChain(rootData, now)
 	if err != nil {
-		return nil, acquisition.UpdateDecision{}, fmt.Errorf("verify update root chain: %w", err)
+		return nil, acquisition.UpdateStateResult{}, fmt.Errorf("verify update root chain: %w", err)
 	}
 	releaseData, err := readLimitedRegularFile(*flags.releasePath, acquisition.MaxReleaseMetadataBytes)
 	if err != nil {
-		return nil, acquisition.UpdateDecision{}, fmt.Errorf("read release metadata: %w", err)
+		return nil, acquisition.UpdateStateResult{}, fmt.Errorf("read release metadata: %w", err)
 	}
 	release, err := acquisition.VerifyReleaseMetadata(trustedRoot, releaseData, now)
 	if err != nil {
-		return nil, acquisition.UpdateDecision{}, fmt.Errorf("verify release metadata: %w", err)
+		return nil, acquisition.UpdateStateResult{}, fmt.Errorf("verify release metadata: %w", err)
 	}
-	decision, err := acquisition.EvaluateRelease(*flags.currentVersion, *flags.minimumMetadataVersion, release)
+	statePath, err := acquisition.ResolveUpdateStatePath(*flags.stateFile)
 	if err != nil {
-		return nil, acquisition.UpdateDecision{}, err
+		return nil, acquisition.UpdateStateResult{}, err
 	}
-	return release, decision, nil
+	protected := append([]string(nil), flags.roots...)
+	protected = append(protected, *flags.releasePath)
+	if err := rejectUpdatePathCollision(statePath, protected, "rollback state"); err != nil {
+		return nil, acquisition.UpdateStateResult{}, err
+	}
+	if err := rejectUpdatePathCollision(statePath+".lock", protected, "rollback state lock"); err != nil {
+		return nil, acquisition.UpdateStateResult{}, err
+	}
+	accepted, err := acquisition.AcceptReleaseMetadata(trustedRoot, release, *flags.currentVersion, acquisition.UpdateStateOptions{
+		Path:                   statePath,
+		MinimumMetadataVersion: *flags.minimumMetadataVersion,
+		Now:                    now,
+	})
+	if err != nil {
+		return nil, acquisition.UpdateStateResult{}, err
+	}
+	return release, accepted, nil
 }
 
 func runUpdateVerify(args []string) error {
@@ -1755,10 +1773,11 @@ func runUpdateVerify(args []string) error {
 	if fs.NArg() != 0 {
 		return errors.New("update verify does not accept positional arguments")
 	}
-	_, decision, err := metadataFlags.load()
+	_, accepted, err := metadataFlags.load()
 	if err != nil {
 		return err
 	}
+	decision := accepted.Decision
 	if *asJSON {
 		return json.NewEncoder(os.Stdout).Encode(decision)
 	}
@@ -1766,7 +1785,7 @@ func runUpdateVerify(args []string) error {
 	if decision.UpdateAvailable {
 		status = "A verified update is available."
 	}
-	fmt.Printf("%s\nCurrent: %s\nRelease: %s\nTag: %s\nCommit: %s\nMetadata version: %d\nPackage: %s\nSize: %s\nSHA-256: %s\nURL: %s\n", status, decision.CurrentVersion, decision.ReleaseVersion, decision.Tag, decision.Commit, decision.MetadataVersion, decision.Package.Name, humanBytes(decision.Package.Size), decision.Package.SHA256, decision.Package.URL)
+	fmt.Printf("%s\nCurrent: %s\nRelease: %s\nTag: %s\nCommit: %s\nRoot version: %d\nRoot SHA-256: %s\nMetadata version: %d\nRollback state: %s\nAccepted at: %s\nPackage: %s\nSize: %s\nSHA-256: %s\nURL: %s\n", status, decision.CurrentVersion, decision.ReleaseVersion, decision.Tag, decision.Commit, decision.RootVersion, decision.RootSHA256, decision.MetadataVersion, decision.StatePath, decision.AcceptedAt, decision.Package.Name, humanBytes(decision.Package.Size), decision.Package.SHA256, decision.Package.URL)
 	return nil
 }
 
@@ -1787,12 +1806,22 @@ func runUpdateDownload(args []string) error {
 	if *jsonProgress && *asJSON {
 		return errors.New("--json-progress and --json cannot be combined")
 	}
-	release, decision, err := metadataFlags.load()
+	release, accepted, err := metadataFlags.load()
 	if err != nil {
 		return err
 	}
+	decision := accepted.Decision
 	if !decision.UpdateAvailable {
 		return errors.New("authenticated release is not newer than the current version; refusing update download")
+	}
+	target, err := resolveUpdateDownloadTarget(*output, decision.Package.Name)
+	if err != nil {
+		return err
+	}
+	protected := append([]string(nil), metadataFlags.roots...)
+	protected = append(protected, *metadataFlags.releasePath, decision.StatePath, decision.StatePath+".lock")
+	if err := rejectUpdatePathCollision(target, protected, "download destination"); err != nil {
+		return err
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -1817,6 +1846,10 @@ func runUpdateDownload(args []string) error {
 	if err != nil {
 		return err
 	}
+	result.StatePath = decision.StatePath
+	result.AcceptedAt = decision.AcceptedAt
+	result.RootVersion = decision.RootVersion
+	result.RootSHA256 = decision.RootSHA256
 	if *jsonProgress {
 		return json.NewEncoder(os.Stdout).Encode(struct {
 			Event  string                            `json:"event"`
@@ -1833,7 +1866,53 @@ func runUpdateDownload(args []string) error {
 	if result.Download.Resumed > 0 {
 		fmt.Printf("Resumed from: %s\n", humanBytes(result.Download.Resumed))
 	}
-	fmt.Printf("%s: %s\nRelease: %s (%s)\nCommit: %s\nMetadata version: %d\nMetadata SHA-256: %s\nPackage SHA-256: %s\nNo software was installed.\n", status, result.Download.Path, result.ReleaseVersion, result.Tag, result.Commit, result.MetadataVersion, result.MetadataSHA256, result.Download.SHA256)
+	fmt.Printf("%s: %s\nRelease: %s (%s)\nCommit: %s\nRoot version: %d\nRoot SHA-256: %s\nMetadata version: %d\nRollback state: %s\nAccepted at: %s\nMetadata SHA-256: %s\nPackage SHA-256: %s\nNo software was installed.\n", status, result.Download.Path, result.ReleaseVersion, result.Tag, result.Commit, result.RootVersion, result.RootSHA256, result.MetadataVersion, result.StatePath, result.AcceptedAt, result.MetadataSHA256, result.Download.SHA256)
+	return nil
+}
+
+func resolveUpdateDownloadTarget(value, filename string) (string, error) {
+	if strings.TrimSpace(value) == "" {
+		value = filename
+	} else if info, err := os.Stat(value); err == nil && info.IsDir() {
+		value = filepath.Join(value, filename)
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("inspect update download destination: %w", err)
+	}
+	absolute, err := filepath.Abs(value)
+	if err != nil {
+		return "", fmt.Errorf("resolve update download destination: %w", err)
+	}
+	return absolute, nil
+}
+
+func rejectUpdatePathCollision(candidate string, protected []string, label string) error {
+	candidateAbsolute, err := filepath.Abs(candidate)
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", label, err)
+	}
+	for _, value := range protected {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		protectedAbsolute, err := filepath.Abs(value)
+		if err != nil {
+			return fmt.Errorf("resolve protected update path: %w", err)
+		}
+		if filepath.Clean(candidateAbsolute) == filepath.Clean(protectedAbsolute) {
+			return fmt.Errorf("%s collides with trusted update input %s", label, protectedAbsolute)
+		}
+		candidateInfo, candidateErr := os.Lstat(candidateAbsolute)
+		protectedInfo, protectedErr := os.Lstat(protectedAbsolute)
+		if candidateErr == nil && protectedErr == nil && os.SameFile(candidateInfo, protectedInfo) {
+			return fmt.Errorf("%s aliases trusted update input %s", label, protectedAbsolute)
+		}
+		if candidateErr != nil && !errors.Is(candidateErr, os.ErrNotExist) {
+			return fmt.Errorf("inspect %s: %w", label, candidateErr)
+		}
+		if protectedErr != nil && !errors.Is(protectedErr, os.ErrNotExist) {
+			return fmt.Errorf("inspect trusted update input: %w", protectedErr)
+		}
+	}
 	return nil
 }
 

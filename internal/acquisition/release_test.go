@@ -243,6 +243,7 @@ func TestDownloadReleasePackageUsesAuthenticatedAssetAndReuses(t *testing.T) {
 				Assets: []ReleaseAsset{{Name: name, Size: uint64(len(data)), SHA256: hex.EncodeToString(digest[:]), URL: server.URL}},
 			},
 			sha256: strings.Repeat("e", 64), signingKeyIDs: []string{strings.Repeat("f", 64)},
+			rootVersion: 1, rootSHA256: strings.Repeat("d", 64),
 		},
 	}
 	directory := t.TempDir()

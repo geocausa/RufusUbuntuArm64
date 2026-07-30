@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
@@ -669,14 +670,26 @@ func TestUpdateVerifyAuthenticatedRelease(t *testing.T) {
 	}
 	directory := t.TempDir()
 	rootPath, releasePath := filepath.Join(directory, "1.root.json"), filepath.Join(directory, "release.json")
+	statePath := filepath.Join(directory, "update-state", "state.json")
 	if err := os.WriteFile(rootPath, rootEnvelope, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(releasePath, releaseEnvelope, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	releaseBefore, err := os.ReadFile(releasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runUpdateVerify([]string{"--root", rootPath, "--release", releasePath, "--current-version", "0.15.0", "--state-file", releasePath}); err == nil || !strings.Contains(err.Error(), "collides") {
+		t.Fatalf("state/input collision error = %v", err)
+	}
+	releaseAfter, err := os.ReadFile(releasePath)
+	if err != nil || !bytes.Equal(releaseBefore, releaseAfter) {
+		t.Fatalf("release input changed after state collision: %v", err)
+	}
 	output, err := captureStdout(t, func() error {
-		return runUpdateVerify([]string{"--root", rootPath, "--release", releasePath, "--current-version", "0.15.0", "--minimum-metadata-version", "2", "--json"})
+		return runUpdateVerify([]string{"--root", rootPath, "--release", releasePath, "--current-version", "0.15.0", "--minimum-metadata-version", "2", "--state-file", statePath, "--json"})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -685,10 +698,10 @@ func TestUpdateVerifyAuthenticatedRelease(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &decision); err != nil {
 		t.Fatal(err)
 	}
-	if !decision.UpdateAvailable || decision.ReleaseVersion != releaseVersion || decision.MetadataVersion != 3 {
+	if !decision.UpdateAvailable || decision.ReleaseVersion != releaseVersion || decision.MetadataVersion != 3 || decision.StatePath != statePath || decision.RootVersion != 1 || decision.AcceptedAt == "" {
 		t.Fatalf("unexpected decision: %+v", decision)
 	}
-	if err := runUpdateVerify([]string{"--root", rootPath, "--release", releasePath, "--current-version", "0.17.0"}); err == nil || !strings.Contains(err.Error(), "downgrade") {
+	if err := runUpdateVerify([]string{"--root", rootPath, "--release", releasePath, "--current-version", "0.17.0", "--state-file", statePath}); err == nil || !strings.Contains(err.Error(), "downgrade") {
 		t.Fatalf("downgrade error = %v", err)
 	}
 
@@ -710,8 +723,15 @@ func TestUpdateVerifyAuthenticatedRelease(t *testing.T) {
 		}, nil
 	}
 	t.Cleanup(func() { downloadReleasePackage = previousDownload })
+	downloadCalled = false
+	if err := runUpdateDownload([]string{"--root", rootPath, "--release", releasePath, "--current-version", "0.15.0", "--state-file", statePath, "--output", rootPath, "--replace"}); err == nil || !strings.Contains(err.Error(), "collides") {
+		t.Fatalf("download/input collision error = %v", err)
+	}
+	if downloadCalled {
+		t.Fatal("colliding update destination reached the downloader")
+	}
 	downloadOutput, err := captureStdout(t, func() error {
-		return runUpdateDownload([]string{"--root", rootPath, "--release", releasePath, "--current-version", "0.15.0", "--minimum-metadata-version", "2", "--output", directory, "--resume", "--json"})
+		return runUpdateDownload([]string{"--root", rootPath, "--release", releasePath, "--current-version", "0.15.0", "--minimum-metadata-version", "2", "--state-file", statePath, "--output", directory, "--resume", "--json"})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -723,11 +743,11 @@ func TestUpdateVerifyAuthenticatedRelease(t *testing.T) {
 	if err := json.Unmarshal([]byte(downloadOutput), &downloaded); err != nil {
 		t.Fatalf("decode update download result: %v: %q", err, downloadOutput)
 	}
-	if downloaded.ReleaseVersion != releaseVersion || downloaded.Download.Path != filepath.Join(directory, packageName) {
+	if downloaded.ReleaseVersion != releaseVersion || downloaded.Download.Path != filepath.Join(directory, packageName) || downloaded.StatePath != statePath || downloaded.RootVersion != 1 || downloaded.AcceptedAt == "" {
 		t.Fatalf("unexpected update download result: %+v", downloaded)
 	}
 	downloadCalled = false
-	if err := runUpdateDownload([]string{"--root", rootPath, "--release", releasePath, "--current-version", releaseVersion, "--output", directory}); err == nil || !strings.Contains(err.Error(), "not newer") {
+	if err := runUpdateDownload([]string{"--root", rootPath, "--release", releasePath, "--current-version", releaseVersion, "--state-file", statePath, "--output", directory}); err == nil || !strings.Contains(err.Error(), "not newer") {
 		t.Fatalf("same-version download error = %v", err)
 	}
 	if downloadCalled {

@@ -63,6 +63,8 @@ type releaseTrustSnapshot struct {
 	metadata      ReleaseMetadata
 	sha256        string
 	signingKeyIDs []string
+	rootVersion   int
+	rootSHA256    string
 }
 
 // UpdateDecision is a non-destructive comparison between the running version
@@ -78,23 +80,28 @@ type UpdateDecision struct {
 	Package         ReleaseAsset `json:"package"`
 	MetadataSHA256  string       `json:"metadata_sha256"`
 	SigningKeyIDs   []string     `json:"signing_key_ids"`
+	StatePath       string       `json:"state_path,omitempty"`
+	AcceptedAt      string       `json:"accepted_at,omitempty"`
+	RootVersion     int          `json:"root_version,omitempty"`
+	RootSHA256      string       `json:"root_sha256,omitempty"`
 }
 
 // VerifyReleaseMetadata authenticates one release envelope through the optional
 // release role in the trusted root.
 func VerifyReleaseMetadata(root *VerifiedRoot, data []byte, now time.Time) (*VerifiedRelease, error) {
-	if root == nil {
+	rootSnapshot, err := root.trustSnapshot()
+	if err != nil {
 		return nil, errors.New("trusted root is required")
 	}
-	if root.Metadata.Roles.Release == nil {
+	if rootSnapshot.metadata.Roles.Release == nil {
 		return nil, errors.New("trusted root does not authorize a release role")
 	}
 	if now.IsZero() {
 		now = time.Now()
 	}
 	now = now.UTC()
-	if !root.ExpiresAt.After(now) {
-		return nil, fmt.Errorf("trusted root version %d has expired; install refreshed root metadata or a newer package", root.Metadata.Version)
+	if !rootSnapshot.expiresAt.After(now) {
+		return nil, fmt.Errorf("trusted root version %d has expired; install refreshed root metadata or a newer package", rootSnapshot.metadata.Version)
 	}
 	envelope, canonical, err := parseMetadataEnvelope(data, MaxReleaseMetadataBytes)
 	if err != nil {
@@ -108,7 +115,7 @@ func VerifyReleaseMetadata(root *VerifiedRoot, data []byte, now time.Time) (*Ver
 	if err != nil {
 		return nil, err
 	}
-	keyIDs, err := verifyRoleSignatures(*root.Metadata.Roles.Release, root.keys, canonical, envelope.Signatures)
+	keyIDs, err := verifyRoleSignatures(*rootSnapshot.metadata.Roles.Release, root.keys, canonical, envelope.Signatures)
 	if err != nil {
 		return nil, fmt.Errorf("verify release signatures: %w", err)
 	}
@@ -117,6 +124,8 @@ func VerifyReleaseMetadata(root *VerifiedRoot, data []byte, now time.Time) (*Ver
 		metadata:      cloneReleaseMetadata(verified.Metadata),
 		sha256:        verified.SHA256,
 		signingKeyIDs: append([]string(nil), keyIDs...),
+		rootVersion:   rootSnapshot.metadata.Version,
+		rootSHA256:    rootSnapshot.sha256,
 	}
 	return verified, nil
 }
@@ -323,6 +332,7 @@ func EvaluateRelease(currentVersion string, minimumMetadataVersion int, release 
 		Tag: snapshot.metadata.Tag, Commit: snapshot.metadata.Commit, Channel: snapshot.metadata.Channel,
 		Package: packageAsset, MetadataSHA256: snapshot.sha256,
 		SigningKeyIDs: append([]string(nil), snapshot.signingKeyIDs...),
+		RootVersion:   snapshot.rootVersion, RootSHA256: snapshot.rootSHA256,
 	}, nil
 }
 
@@ -337,6 +347,10 @@ type ReleaseDownloadResult struct {
 	SigningKeyIDs   []string       `json:"signing_key_ids"`
 	Package         ReleaseAsset   `json:"package"`
 	Download        DownloadResult `json:"download"`
+	StatePath       string         `json:"state_path,omitempty"`
+	AcceptedAt      string         `json:"accepted_at,omitempty"`
+	RootVersion     int            `json:"root_version,omitempty"`
+	RootSHA256      string         `json:"root_sha256,omitempty"`
 }
 
 // DownloadReleasePackage reuses the reviewed acquisition downloader for the
@@ -374,6 +388,8 @@ func DownloadReleasePackage(ctx context.Context, release *VerifiedRelease, optio
 		Commit:          snapshot.metadata.Commit,
 		SigningKeyIDs:   append([]string(nil), snapshot.signingKeyIDs...),
 		Package:         packageAsset,
+		RootVersion:     snapshot.rootVersion,
+		RootSHA256:      snapshot.rootSHA256,
 		Download:        download,
 	}, nil
 }

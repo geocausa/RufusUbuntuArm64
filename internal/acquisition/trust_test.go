@@ -252,3 +252,40 @@ func TestCatalogRejectsUnsortedImagesAndExpiredRoot(t *testing.T) {
 		t.Fatalf("unsorted catalog error = %v", err)
 	}
 }
+
+func TestVerifiedRootOperationsIgnoreExportedFieldMutation(t *testing.T) {
+	now := time.Date(2026, 7, 30, 16, 0, 0, 0, time.UTC)
+	oldA, oldB := trustSigner(1), trustSigner(33)
+	newA, newB := trustSigner(65), trustSigner(97)
+	oldCatalog, newCatalog := trustSigner(129), trustSigner(161)
+	rootV1Metadata := rootMetadata(1, now.Add(-2*time.Hour), now.Add(180*24*time.Hour), []testTrustSigner{oldA, oldB}, []testTrustSigner{oldCatalog})
+	rootV1, err := VerifyBootstrapRoot(signedEnvelope(t, rootV1Metadata, oldA, oldB), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalSHA := rootV1.SHA256
+	rootV1.Metadata.Version = 999
+	rootV1.Metadata.Roles.Root.KeyIDs = []string{newA.id, newB.id}
+	rootV1.Metadata.Roles.Catalog.KeyIDs = []string{newCatalog.id}
+	rootV1.ExpiresAt = now.Add(-time.Hour)
+	rootV1.GeneratedAt = now.Add(24 * time.Hour)
+	rootV1.SHA256 = strings.Repeat("0", 64)
+
+	catalog := channelCatalogMetadata(1, now.Add(-time.Minute), now.Add(24*time.Hour))
+	verifiedCatalog, err := VerifyChannelCatalog(rootV1, signedEnvelope(t, catalog, oldCatalog), now)
+	if err != nil {
+		t.Fatalf("exported root mutation affected catalog verification: %v", err)
+	}
+	if verifiedCatalog.SigningKeyIDs[0] != oldCatalog.id {
+		t.Fatalf("catalog used mutated root role: %+v", verifiedCatalog.SigningKeyIDs)
+	}
+
+	rootV2Metadata := rootMetadata(2, now.Add(-time.Hour), now.Add(240*24*time.Hour), []testTrustSigner{newA, newB}, []testTrustSigner{newCatalog})
+	rootV2, err := VerifyRootUpdate(rootV1, signedEnvelope(t, rootV2Metadata, oldA, oldB, newA, newB), now)
+	if err != nil {
+		t.Fatalf("exported root mutation affected root rotation: %v", err)
+	}
+	if rootV2.Metadata.Version != 2 || rootV2.SHA256 == originalSHA {
+		t.Fatalf("unexpected rotated root: %+v", rootV2)
+	}
+}

@@ -87,6 +87,14 @@ type VerifiedRoot struct {
 	SignedBytes []byte
 	Signatures  []MetadataSignature
 	keys        map[string]ed25519.PublicKey
+	trusted     *rootTrustSnapshot
+}
+
+type rootTrustSnapshot struct {
+	metadata    RootMetadata
+	generatedAt time.Time
+	expiresAt   time.Time
+	sha256      string
 }
 
 type VerifiedChannelCatalog struct {
@@ -116,14 +124,19 @@ func VerifyBootstrapRoot(data []byte, now time.Time) (*VerifiedRoot, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := verifyRoleSignatures(verified.Metadata.Roles.Root, verified.keys, canonical, envelope.Signatures); err != nil {
+	snapshot, err := verified.trustSnapshot()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := verifyRoleSignatures(snapshot.metadata.Roles.Root, verified.keys, canonical, envelope.Signatures); err != nil {
 		return nil, fmt.Errorf("verify bootstrap root: %w", err)
 	}
 	return verified, nil
 }
 
 func VerifyRootUpdate(current *VerifiedRoot, data []byte, now time.Time) (*VerifiedRoot, error) {
-	if current == nil {
+	currentSnapshot, err := current.trustSnapshot()
+	if err != nil {
 		return nil, errors.New("current trusted root is required")
 	}
 	envelope, canonical, err := parseMetadataEnvelope(data, MaxRootMetadataBytes)
@@ -138,37 +151,42 @@ func VerifyRootUpdate(current *VerifiedRoot, data []byte, now time.Time) (*Verif
 	if err != nil {
 		return nil, err
 	}
-	if candidate.Metadata.Version == current.Metadata.Version {
-		if candidate.SHA256 != current.SHA256 {
-			return nil, fmt.Errorf("root version %d changed content", candidate.Metadata.Version)
+	candidateSnapshot, err := candidate.trustSnapshot()
+	if err != nil {
+		return nil, err
+	}
+	if candidateSnapshot.metadata.Version == currentSnapshot.metadata.Version {
+		if candidateSnapshot.sha256 != currentSnapshot.sha256 {
+			return nil, fmt.Errorf("root version %d changed content", candidateSnapshot.metadata.Version)
 		}
 		return current, nil
 	}
-	if candidate.Metadata.Version != current.Metadata.Version+1 {
-		return nil, fmt.Errorf("root version must advance exactly from %d to %d", current.Metadata.Version, current.Metadata.Version+1)
+	if candidateSnapshot.metadata.Version != currentSnapshot.metadata.Version+1 {
+		return nil, fmt.Errorf("root version must advance exactly from %d to %d", currentSnapshot.metadata.Version, currentSnapshot.metadata.Version+1)
 	}
-	if candidate.GeneratedAt.Before(current.GeneratedAt) {
+	if candidateSnapshot.generatedAt.Before(currentSnapshot.generatedAt) {
 		return nil, errors.New("new root generation time precedes the trusted root")
 	}
-	if _, err := verifyRoleSignatures(current.Metadata.Roles.Root, current.keys, canonical, envelope.Signatures); err != nil {
+	if _, err := verifyRoleSignatures(currentSnapshot.metadata.Roles.Root, current.keys, canonical, envelope.Signatures); err != nil {
 		return nil, fmt.Errorf("verify new root with current root role: %w", err)
 	}
-	if _, err := verifyRoleSignatures(candidate.Metadata.Roles.Root, candidate.keys, canonical, envelope.Signatures); err != nil {
+	if _, err := verifyRoleSignatures(candidateSnapshot.metadata.Roles.Root, candidate.keys, canonical, envelope.Signatures); err != nil {
 		return nil, fmt.Errorf("verify new root with replacement root role: %w", err)
 	}
 	return candidate, nil
 }
 
 func VerifyChannelCatalog(root *VerifiedRoot, data []byte, now time.Time) (*VerifiedChannelCatalog, error) {
-	if root == nil {
+	rootSnapshot, err := root.trustSnapshot()
+	if err != nil {
 		return nil, errors.New("trusted root is required")
 	}
 	if now.IsZero() {
 		now = time.Now()
 	}
 	now = now.UTC()
-	if !root.ExpiresAt.After(now) {
-		return nil, fmt.Errorf("trusted root version %d has expired; install refreshed root metadata or a newer package", root.Metadata.Version)
+	if !rootSnapshot.expiresAt.After(now) {
+		return nil, fmt.Errorf("trusted root version %d has expired; install refreshed root metadata or a newer package", rootSnapshot.metadata.Version)
 	}
 	envelope, canonical, err := parseMetadataEnvelope(data, MaxChannelCatalogBytes)
 	if err != nil {
@@ -182,7 +200,7 @@ func VerifyChannelCatalog(root *VerifiedRoot, data []byte, now time.Time) (*Veri
 	if err != nil {
 		return nil, err
 	}
-	keyIDs, err := verifyRoleSignatures(root.Metadata.Roles.Catalog, root.keys, canonical, envelope.Signatures)
+	keyIDs, err := verifyRoleSignatures(rootSnapshot.metadata.Roles.Catalog, root.keys, canonical, envelope.Signatures)
 	if err != nil {
 		return nil, fmt.Errorf("verify catalog signatures: %w", err)
 	}
@@ -286,14 +304,47 @@ func prepareRootPayload(metadata RootMetadata, canonical []byte, now time.Time) 
 		}
 	}
 	digest := sha256.Sum256(canonical)
-	return &VerifiedRoot{
+	sha256Text := hex.EncodeToString(digest[:])
+	verified := &VerifiedRoot{
 		Metadata:    metadata,
 		GeneratedAt: generated,
 		ExpiresAt:   expires,
-		SHA256:      hex.EncodeToString(digest[:]),
+		SHA256:      sha256Text,
 		SignedBytes: append([]byte(nil), canonical...),
 		keys:        keys,
-	}, nil
+	}
+	verified.trusted = &rootTrustSnapshot{
+		metadata:    cloneRootMetadata(metadata),
+		generatedAt: generated,
+		expiresAt:   expires,
+		sha256:      sha256Text,
+	}
+	return verified, nil
+}
+
+func (root *VerifiedRoot) trustSnapshot() (*rootTrustSnapshot, error) {
+	if root == nil || root.trusted == nil {
+		return nil, errors.New("authenticated root metadata is required")
+	}
+	return root.trusted, nil
+}
+
+func cloneRootMetadata(metadata RootMetadata) RootMetadata {
+	cloned := metadata
+	cloned.Keys = append([]TrustKey(nil), metadata.Keys...)
+	cloned.Roles.Root = cloneTrustRole(metadata.Roles.Root)
+	cloned.Roles.Catalog = cloneTrustRole(metadata.Roles.Catalog)
+	if metadata.Roles.Release != nil {
+		release := cloneTrustRole(*metadata.Roles.Release)
+		cloned.Roles.Release = &release
+	}
+	return cloned
+}
+
+func cloneTrustRole(role TrustRole) TrustRole {
+	cloned := role
+	cloned.KeyIDs = append([]string(nil), role.KeyIDs...)
+	return cloned
 }
 
 func validateRole(name string, role TrustRole, keys map[string]ed25519.PublicKey, minimumThreshold int) error {
