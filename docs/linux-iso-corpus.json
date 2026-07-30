@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "corpus_version": "2026.07.30.4",
+  "corpus_version": "2026.07.30.5",
   "upstream_rufus": {
     "version": "4.15",
     "commit": "6d8fbf98305ff37eb531c45cbd6ff44563c53917"
@@ -241,18 +241,6 @@
       }
     },
     {
-      "id": "linux-mint-22.3-cinnamon-amd64",
-      "family": "Linux Mint",
-      "architecture": "amd64",
-      "filename": "linuxmint-22.3-cinnamon-64bit.iso",
-      "qualification_state": "pending",
-      "source": {
-        "kind": "official",
-        "project": "Linux Mint",
-        "url": "https://linuxmint.com/download.php"
-      }
-    },
-    {
       "id": "fedora-everything-44-aarch64-netinst",
       "family": "Fedora",
       "architecture": "aarch64",
@@ -295,30 +283,6 @@
       }
     },
     {
-      "id": "bazzite-stable-x86_64",
-      "family": "Bazzite",
-      "architecture": "x86_64",
-      "filename": "bazzite-stable-x86_64.iso",
-      "qualification_state": "pending",
-      "source": {
-        "kind": "official",
-        "project": "Bazzite",
-        "url": "https://docs.bazzite.gg/General/Installation_Guide/install-guide/"
-      }
-    },
-    {
-      "id": "nobara-43-official-amd64",
-      "family": "Nobara",
-      "architecture": "amd64",
-      "filename": "Nobara-43-Official-2026-04-19.iso",
-      "qualification_state": "pending",
-      "source": {
-        "kind": "official",
-        "project": "Nobara",
-        "url": "https://nobaraproject.org/download.html"
-      }
-    },
-    {
       "id": "opensuse-tumbleweed-dvd-aarch64",
       "family": "openSUSE",
       "architecture": "aarch64",
@@ -351,30 +315,6 @@
           ],
           "bootloaders": []
         }
-      }
-    },
-    {
-      "id": "nutanix-community-edition-installer",
-      "family": "Nutanix",
-      "architecture": "x86_64",
-      "filename": "nutanix-community-edition-installer.iso",
-      "qualification_state": "pending",
-      "source": {
-        "kind": "official",
-        "project": "Nutanix Community Edition",
-        "url": "https://www.nutanix.com/products/community-edition"
-      }
-    },
-    {
-      "id": "umbrelos-amd64-usb-installer",
-      "family": "umbrelOS",
-      "architecture": "amd64",
-      "filename": "umbrelos-amd64-usb-installer.iso",
-      "qualification_state": "pending",
-      "source": {
-        "kind": "official",
-        "project": "umbrelOS",
-        "url": "https://umbrel.com/support/install-umbrelos-on-your-own-hardware/installing-umbrelos-on-amd64"
       }
     }
   ]

@@ -135,6 +135,50 @@ func CanonicalizeCatalogDraft(root *VerifiedRoot, data []byte, now time.Time) ([
 	), nil
 }
 
+// CanonicalizeReleaseDraft validates an unsigned release draft against the
+// currently trusted root and returns the exact bytes release operators sign.
+func CanonicalizeReleaseDraft(root *VerifiedRoot, data []byte, now time.Time) ([]byte, SigningManifest, error) {
+	if root == nil {
+		return nil, SigningManifest{}, errors.New("trusted root is required")
+	}
+	if root.Metadata.Roles.Release == nil {
+		return nil, SigningManifest{}, errors.New("trusted root does not authorize a release role")
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	now = now.UTC()
+	if !root.ExpiresAt.After(now) {
+		return nil, SigningManifest{}, fmt.Errorf("trusted root version %d has expired", root.Metadata.Version)
+	}
+	canonical, err := canonicalizeDraft(data, MaxReleaseMetadataBytes, "release metadata")
+	if err != nil {
+		return nil, SigningManifest{}, err
+	}
+	var metadata ReleaseMetadata
+	if err := decodeStrictJSON(canonical, &metadata, "release metadata"); err != nil {
+		return nil, SigningManifest{}, err
+	}
+	verified, err := prepareReleasePayload(metadata, canonical, now)
+	if err != nil {
+		return nil, SigningManifest{}, err
+	}
+	normalized := verified.Metadata
+	normalized.Generated = verified.GeneratedAt.Format(time.RFC3339)
+	normalized.Expires = verified.ExpiresAt.Format(time.RFC3339)
+	for index := range normalized.Assets {
+		sort.Strings(normalized.Assets[index].RedirectHosts)
+	}
+	canonical, verified, err = canonicalReleasePayload(normalized, now)
+	if err != nil {
+		return nil, SigningManifest{}, err
+	}
+	return canonical, signingManifest(
+		"release", verified.Metadata.Version, verified.Metadata.Generated,
+		verified.Metadata.Expires, canonical, "release", *root.Metadata.Roles.Release,
+	), nil
+}
+
 // AssembleMetadataEnvelope combines a canonical payload with externally
 // produced detached signatures. The returned envelope is deterministic.
 func AssembleMetadataEnvelope(canonicalPayload []byte, detached []DetachedMetadataSignature) ([]byte, error) {
@@ -247,6 +291,22 @@ func VerifyAdministrativeEnvelope(current *VerifiedRoot, data []byte, now time.T
 			return VerifiedAdministrativeEnvelope{}, err
 		}
 		return VerifiedAdministrativeEnvelope{MetadataType: "catalog", Version: verified.Metadata.Version, SHA256: verified.SHA256}, nil
+	case "release":
+		if current == nil {
+			return VerifiedAdministrativeEnvelope{}, errors.New("release assembly requires the complete trusted root chain")
+		}
+		verified, err := VerifyReleaseMetadata(current, data, now)
+		if err != nil {
+			return VerifiedAdministrativeEnvelope{}, err
+		}
+		allowed := make(map[string]struct{}, len(current.Metadata.Roles.Release.KeyIDs))
+		for _, keyID := range current.Metadata.Roles.Release.KeyIDs {
+			allowed[keyID] = struct{}{}
+		}
+		if err := rejectUnauthorizedAdministrativeSignatures(envelope.Signatures, allowed); err != nil {
+			return VerifiedAdministrativeEnvelope{}, err
+		}
+		return VerifiedAdministrativeEnvelope{MetadataType: "release", Version: verified.Metadata.Version, SHA256: verified.SHA256}, nil
 	default:
 		return VerifiedAdministrativeEnvelope{}, fmt.Errorf("unsupported signed metadata type %q", header.Type)
 	}
@@ -396,6 +456,22 @@ func canonicalCatalogPayload(metadata CatalogMetadata, now time.Time) ([]byte, *
 		return nil, nil, err
 	}
 	verified, err := prepareCatalogPayload(metadata, canonical, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	return canonical, verified, nil
+}
+
+func canonicalReleasePayload(metadata ReleaseMetadata, now time.Time) ([]byte, *VerifiedRelease, error) {
+	raw, err := json.Marshal(metadata)
+	if err != nil {
+		return nil, nil, err
+	}
+	canonical, err := canonicalJSON(raw)
+	if err != nil {
+		return nil, nil, err
+	}
+	verified, err := prepareReleasePayload(metadata, canonical, now)
 	if err != nil {
 		return nil, nil, err
 	}

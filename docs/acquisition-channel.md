@@ -4,14 +4,15 @@ The 0.10 development line adds a built-in acquisition channel without embedding 
 
 ## Roles and trust
 
-The channel uses two metadata roles:
+The trust root authorizes two required metadata roles and one optional release role:
 
-- **root** metadata contains Ed25519 public keys and threshold rules for both the root and catalog roles;
-- **catalog** metadata contains immutable image records with HTTPS URLs, exact byte counts, filenames, redirect hosts, and SHA-256 digests.
+- **root** metadata contains Ed25519 public keys and threshold rules for root rotation, catalog publication, and—when provisioned—release publication;
+- **catalog** metadata contains immutable image records with HTTPS URLs, exact byte counts, filenames, redirect hosts, and SHA-256 digests;
+- optional **release** metadata contains the exact product version, tag, commit, channel, and published release asset graph used for read-only update verification. Existing root/catalog-only metadata remains valid until a release role is deliberately introduced by a threshold-authorized root version.
 
 Each metadata envelope contains a canonical JSON `signed` object and a detached signature list. Key IDs are the lowercase SHA-256 digest of the raw Ed25519 public key. Signed JSON must use sorted object keys, integer numbers, and no insignificant whitespace. Duplicate JSON keys, duplicate signatures, unknown fields, non-canonical forms, malformed key IDs, and invalid authorized signatures are rejected.
 
-The bootstrap root requires at least two valid root signatures. A replacement root must increase the version by exactly one and meet both the currently trusted root threshold and the replacement root threshold. This dual authorization prevents an online catalog key from replacing the offline trust root. Catalog metadata must meet the current catalog-role threshold.
+The bootstrap root requires at least two valid root signatures. A replacement root must increase the version by exactly one and meet both the currently trusted root threshold and the replacement root threshold. This dual authorization prevents an online catalog key from replacing the offline trust root. Catalog metadata must meet the current catalog-role threshold. Release metadata, when enabled, must independently meet the current release-role threshold; a catalog key cannot authorize a software update unless the root explicitly assigns it to both roles.
 
 ## Rollback and freeze protection
 
@@ -42,13 +43,19 @@ Image payloads continue to use the existing signed URL, redirect-host, exact-siz
 
 1. Generate multiple offline root key pairs on isolated systems.
 2. Store the private root keys offline and separately.
-3. Generate a distinct online catalog-signing key.
-4. Review and threshold-sign root version 1.
-5. Publish the public root envelope, channel configuration, and first threshold-signed catalog over the allowlisted HTTPS origin.
-6. Replace the disabled package configuration and add the reviewed bootstrap `root.json` in a dedicated release PR.
+3. Generate a distinct catalog-signing key under the reviewed publication policy.
+4. Generate separately controlled offline release-signing keys and choose a release threshold; routine CI must not hold these private keys.
+5. Review and threshold-sign root version 1, including only the roles that are operationally ready.
+6. Publish the public root envelope, channel configuration, and first threshold-signed catalog over the allowlisted HTTPS origin.
+7. Publish release metadata only after the exact reproducible assets, tag, and commit have been independently reviewed and signed offline.
+8. Replace the disabled package configuration and add the reviewed bootstrap `root.json` in a dedicated release PR.
 
 No private key, seed phrase, signing token, or recovery secret may be committed, uploaded as a CI artifact, stored in repository secrets for routine builds, or installed with the package.
 
 ## Graphical behavior
 
 The **Download…** dialog attempts the built-in verified channel first and refreshes it outside the GTK main loop. It displays the accepted catalog version, generation and expiry times, signing-key IDs, and whether an unexpired verified cache was used. There is no unsafe bypass. Until provisioning is complete, the dialog clearly reports that the built-in channel is unavailable and exposes the existing local signed-catalog workflow under **Advanced recovery**.
+
+## Release verification boundary
+
+The optional release role is shared with the read-only verifier described in `docs/signed-release-updates.md`. Release metadata is not fetched by the image-catalog refresh path and does not grant installation authority. A verified release record can identify a newer exact package, but download, persistent rollback state, privilege acquisition, package-manager invocation, and installation remain separate reviewed steps.

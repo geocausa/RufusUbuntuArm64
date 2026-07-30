@@ -53,11 +53,12 @@ type TrustRole struct {
 }
 
 type RootRoles struct {
-	Root    TrustRole `json:"root"`
-	Catalog TrustRole `json:"catalog"`
+	Root    TrustRole  `json:"root"`
+	Catalog TrustRole  `json:"catalog"`
+	Release *TrustRole `json:"release,omitempty"`
 }
 
-// RootMetadata authorizes both future root metadata and online catalog keys.
+// RootMetadata authorizes future root metadata plus optional catalog and release roles.
 type RootMetadata struct {
 	Type      string     `json:"_type"`
 	Schema    int        `json:"schema"`
@@ -278,6 +279,11 @@ func prepareRootPayload(metadata RootMetadata, canonical []byte, now time.Time) 
 	}
 	if err := validateRole("catalog", metadata.Roles.Catalog, keys, 1); err != nil {
 		return nil, err
+	}
+	if metadata.Roles.Release != nil {
+		if err := validateRole("release", *metadata.Roles.Release, keys, 1); err != nil {
+			return nil, err
+		}
 	}
 	digest := sha256.Sum256(canonical)
 	return &VerifiedRoot{

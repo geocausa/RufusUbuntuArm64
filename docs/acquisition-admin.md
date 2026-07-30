@@ -1,11 +1,11 @@
 # Offline acquisition-channel administration
 
-`rufus-channel-admin` is a **source-only operator tool** for provisioning and maintaining the threshold-signed image channel. It is intentionally not installed as part of the normal RufusArm64 application package.
+`rufus-channel-admin` is a **source-only operator tool** for provisioning and maintaining threshold-signed image and release metadata. It is intentionally not installed as part of the normal RufusArm64 application package.
 
 The executable never generates, reads, parses, uploads, or stores a private key. It handles only:
 
 - Ed25519 public keys;
-- unsigned root and catalog drafts;
+- unsigned root, catalog, and release drafts;
 - canonical payload bytes and SHA-256 signing manifests;
 - externally produced detached Ed25519 signatures;
 - signed public metadata envelopes;
@@ -29,12 +29,13 @@ The regular Debian package does not install this binary.
 A practical first deployment uses at least:
 
 - three offline root keys with a 2-of-3 root threshold;
-- one or more separately controlled online catalog keys;
+- one or more separately controlled catalog keys;
 - a catalog threshold appropriate to the publication process;
+- separately controlled offline release keys with a release threshold appropriate to software publication;
 - independent root operators who verify the payload digest before signing;
 - a publication reviewer who does not control enough keys to satisfy the root threshold alone.
 
-Root keys should remain offline except during planned ceremonies. Catalog keys can be more available, because a compromised catalog key can be revoked by a new root version, but they still require strong operational controls.
+Root keys should remain offline except during planned ceremonies. Catalog keys can be more available, because a compromised catalog key can be revoked by a new root version, but they still require strong operational controls. Release keys authorize software-update metadata and should remain offline or hardware-backed; routine GitHub Actions jobs and repository secrets must not contain them.
 
 ## Public-key IDs
 
@@ -97,7 +98,7 @@ Collect signatures through a controlled transfer process. Each signature must re
   --json
 ```
 
-Envelope assembly sorts signatures by key ID and is deterministic. It performs the applicable bootstrap, root-transition, or catalog-role authorization before writing the envelope. Duplicate, malformed, unknown, wrong-payload, or insufficient signatures are rejected immediately.
+Envelope assembly sorts signatures by key ID and is deterministic. It performs the applicable bootstrap, root-transition, catalog-role, or release-role authorization before writing the envelope. Duplicate, malformed, unknown, wrong-payload, or insufficient signatures are rejected immediately.
 
 ## Root rotation
 
@@ -158,6 +159,35 @@ Catalog drafts contain immutable image entries sorted by ID. Every entry include
 ```
 
 The active root determines the authorized catalog keys and threshold. Catalog metadata must be unexpired when published.
+
+## Prepare and sign release metadata
+
+Release drafts are generated from an exact staged six-asset release inventory with `scripts/build-release-metadata-draft.py`. The generator independently hashes every file, verifies the existing checksum sidecars, binds the release tag and commit, refuses extra or substituted assets, and writes an unsigned draft. The administrator then canonicalizes and verifies that draft against the active root's release role:
+
+```text
+./rufus-channel-admin payload release \
+  --root 1.root.json \
+  --root 2.root.json \
+  --input release.draft.json \
+  --output release.payload.json \
+  --manifest release.signing.json
+
+./rufus-channel-admin envelope assemble \
+  --payload release.payload.json \
+  --root 1.root.json \
+  --root 2.root.json \
+  --signature RELEASE_KEY_ID_A=release-a.sig \
+  --signature RELEASE_KEY_ID_B=release-b.sig \
+  --output release.json
+
+./rufus-channel-admin verify release \
+  --root 1.root.json \
+  --root 2.root.json \
+  --release release.json \
+  --json
+```
+
+The release payload binds version, tag, commit, channel, exact asset names, byte counts, SHA-256 values, GitHub release URLs, and signed redirect hosts. The operator tool does not upload assets or install software. The complete security and deployment boundary is recorded in `docs/signed-release-updates.md`.
 
 ## Create the public channel configuration
 
