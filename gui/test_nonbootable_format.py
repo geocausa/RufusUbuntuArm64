@@ -61,6 +61,34 @@ def sample_plan():
     }
 
 
+def sample_fat16_plan():
+    value = sample_plan()
+    device_size = 2 * 1024 * 1024 * 1024
+    partition_size = device_size - 2 * 1024 * 1024
+    value["device"]["size"] = device_size
+    value["plan"].update(
+        {
+            "device_size_bytes": device_size,
+            "scheme": "mbr",
+            "filesystem": "fat16",
+            "filesystem_display": "FAT16",
+            "partition_size_bytes": partition_size,
+            "partition_type": "06",
+        }
+    )
+    value["partition_table"].update(
+        {
+            "scheme": "mbr",
+            "size_sectors": partition_size // 512,
+            "partition_type": "06",
+            "filesystem": "fat16",
+            "filesystem_display": "FAT16",
+        }
+    )
+    value["confirmation"] = "FORMAT /dev/sdb AS FAT16 USING MBR LABEL DATA"
+    return value
+
+
 class NonBootableFormatContractTests(unittest.TestCase):
     def test_commands_keep_dry_run_unprivileged_and_execution_identity_bound(self):
         dry = build_dry_run_command(
@@ -93,6 +121,20 @@ class NonBootableFormatContractTests(unittest.TestCase):
         self.assertIn("--json", run)
         self.assertNotIn("--allow-fixed", run)
         self.assertNotIn("--no-unmount", run)
+
+    def test_fat16_plan_is_admitted_and_capacity_bounded(self):
+        payload = sample_fat16_plan()
+        normalized = normalize_plan(payload)
+        self.assertEqual(normalized["plan"]["filesystem"], "fat16")
+        self.assertEqual(confirmation_phrase(normalized), payload["confirmation"])
+
+        oversized = copy.deepcopy(payload)
+        oversized["device"]["size"] = 5 * 1024 * 1024 * 1024
+        oversized["plan"]["device_size_bytes"] = oversized["device"]["size"]
+        oversized["plan"]["partition_size_bytes"] = oversized["device"]["size"] - 2 * 1024 * 1024
+        oversized["partition_table"]["size_sectors"] = oversized["plan"]["partition_size_bytes"] // 512
+        with self.assertRaisesRegex(ValueError, "FAT16 compatibility"):
+            normalize_plan(oversized)
 
     def test_plan_requires_exact_geometry_table_and_confirmation(self):
         payload = sample_plan()

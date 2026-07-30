@@ -6,22 +6,26 @@ import unicodedata
 
 
 FILESYSTEM_DISPLAYS = {
+    "fat16": "FAT16",
     "fat32": "FAT32",
     "exfat": "exFAT",
     "ntfs": "NTFS",
     "ext4": "ext4",
 }
 FILESYSTEM_TOOLS = {
+    "fat16": ["sfdisk", "blockdev", "mkfs.vfat", "fsck.vfat"],
     "fat32": ["sfdisk", "blockdev", "mkfs.vfat", "fsck.vfat"],
     "exfat": ["sfdisk", "blockdev", "mkfs.exfat", "fsck.exfat"],
     "ntfs": ["sfdisk", "blockdev", "mkfs.ntfs", "ntfsfix"],
     "ext4": ["sfdisk", "blockdev", "mkfs.ext4", "e2fsck"],
 }
 PARTITION_TYPES = {
+    ("gpt", "fat16"): "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
     ("gpt", "fat32"): "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
     ("gpt", "exfat"): "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
     ("gpt", "ntfs"): "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7",
     ("gpt", "ext4"): "0FC63DAF-8483-4772-8E79-3D69D8477DE4",
+    ("mbr", "fat16"): "06",
     ("mbr", "fat32"): "0c",
     ("mbr", "exfat"): "07",
     ("mbr", "ntfs"): "07",
@@ -33,6 +37,7 @@ SAFETY_WARNINGS = [
 ]
 ALIGNMENT_BYTES = 1024 * 1024
 TAIL_RESERVE_BYTES = 1024 * 1024
+MAX_FAT16_BYTES = 4 * 1024 * 1024 * 1024 - 512
 MAX_FAT32_BYTES = 2 * 1024 * 1024 * 1024 * 1024
 SCHEMES = {"gpt", "mbr"}
 STATUSES = {"passed", "failed", "cancelled"}
@@ -271,6 +276,8 @@ def _normalize_plan_fields(payload):
     expected_size = usable_end - expected_start
     if start != expected_start or size != expected_size or start + size > device_size:
         raise ValueError("Formatting plan contains non-canonical partition geometry.")
+    if filesystem == "fat16" and size > MAX_FAT16_BYTES:
+        raise ValueError("Formatting plan exceeds the FAT16 compatibility boundary.")
     if filesystem == "fat32" and size > MAX_FAT32_BYTES:
         raise ValueError("Formatting plan exceeds the FAT32 compatibility boundary.")
     if scheme == "mbr" and (start + size) // sector_size > 1 << 32:
@@ -356,7 +363,7 @@ def _validate_request(binary, device, identity, scheme, filesystem, label):
     if str(scheme or "").lower() not in SCHEMES:
         raise ValueError("Partition scheme must be GPT or MBR.")
     if str(filesystem or "").lower() not in FILESYSTEM_DISPLAYS:
-        raise ValueError("Filesystem must be FAT32, exFAT, NTFS, or ext4.")
+        raise ValueError("Filesystem must be FAT16, FAT32, exFAT, NTFS, or ext4.")
     if not isinstance(label, str):
         raise ValueError("Volume label must be text.")
 
@@ -368,12 +375,12 @@ def _normalize_label(value, filesystem):
         raise ValueError("Formatting label must not have leading or trailing whitespace.")
     if any(unicodedata.category(character) == "Cc" for character in value):
         raise ValueError("Formatting label must not contain control characters.")
-    if filesystem == "fat32":
+    if filesystem in {"fat16", "fat32"}:
         if value != value.upper():
-            raise ValueError("FAT32 label must be canonical uppercase text.")
+            raise ValueError(f"{FILESYSTEM_DISPLAYS[filesystem]} label must be canonical uppercase text.")
         allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-")
         if any(character not in allowed for character in value) or len(value.encode("utf-8")) > 11:
-            raise ValueError("FAT32 label violates its canonical on-disk contract.")
+            raise ValueError(f"{FILESYSTEM_DISPLAYS[filesystem]} label violates its canonical on-disk contract.")
     elif filesystem == "ext4":
         if len(value.encode("utf-8")) > 16:
             raise ValueError("ext4 label exceeds 16 bytes.")

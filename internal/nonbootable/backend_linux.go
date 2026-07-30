@@ -5,6 +5,7 @@ package nonbootable
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -138,6 +139,12 @@ func (backend *linuxBackend) Format(ctx context.Context, plan Plan, _ PartitionT
 	name := ""
 	args := make([]string, 0, 8)
 	switch plan.Filesystem {
+	case FilesystemFAT16:
+		name = "mkfs.vfat"
+		args = append(args, "-F", "16")
+		if plan.Label != "" {
+			args = append(args, "-n", plan.Label)
+		}
 	case FilesystemFAT32:
 		name = "mkfs.vfat"
 		args = append(args, "-F", "32")
@@ -197,7 +204,10 @@ func (backend *linuxBackend) Verify(ctx context.Context, plan Plan, table Partit
 	}
 	filesystemType := strings.ToLower(metadata["TYPE"])
 	if filesystemType == "vfat" {
-		filesystemType = FilesystemFAT32
+		filesystemType, err = detectFATFilesystem(backend.partition)
+		if err != nil {
+			return FilesystemState{}, fmt.Errorf("classify FAT filesystem: %w", err)
+		}
 	}
 	sizeText, err := commandText(ctx, "blockdev", "--getsize64", backend.stablePartitionPath)
 	if err != nil {
@@ -448,7 +458,7 @@ func verifyKernelPartition(path string, plan Plan, table PartitionTable) error {
 
 func filesystemCheck(filesystem, path string) (string, []string, error) {
 	switch filesystem {
-	case FilesystemFAT32:
+	case FilesystemFAT16, FilesystemFAT32:
 		return "fsck.vfat", []string{"-n", path}, nil
 	case FilesystemExFAT:
 		return "fsck.exfat", []string{"-n", path}, nil
@@ -458,6 +468,48 @@ func filesystemCheck(filesystem, path string) (string, []string, error) {
 		return "e2fsck", []string{"-f", "-n", path}, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported filesystem %q", filesystem)
+	}
+}
+
+func detectFATFilesystem(file *os.File) (string, error) {
+	if file == nil {
+		return "", errors.New("FAT partition descriptor is unavailable")
+	}
+	boot := make([]byte, 512)
+	if _, err := file.ReadAt(boot, 0); err != nil {
+		return "", fmt.Errorf("read FAT boot sector: %w", err)
+	}
+	bytesPerSector := uint64(binary.LittleEndian.Uint16(boot[11:13]))
+	sectorsPerCluster := uint64(boot[13])
+	reservedSectors := uint64(binary.LittleEndian.Uint16(boot[14:16]))
+	fatCount := uint64(boot[16])
+	rootEntries := uint64(binary.LittleEndian.Uint16(boot[17:19]))
+	totalSectors := uint64(binary.LittleEndian.Uint16(boot[19:21]))
+	if totalSectors == 0 {
+		totalSectors = uint64(binary.LittleEndian.Uint32(boot[32:36]))
+	}
+	fatSectors := uint64(binary.LittleEndian.Uint16(boot[22:24]))
+	if fatSectors == 0 {
+		fatSectors = uint64(binary.LittleEndian.Uint32(boot[36:40]))
+	}
+	if bytesPerSector < 512 || bytesPerSector&(bytesPerSector-1) != 0 || sectorsPerCluster == 0 ||
+		sectorsPerCluster&(sectorsPerCluster-1) != 0 || reservedSectors == 0 || fatCount == 0 ||
+		totalSectors == 0 || fatSectors == 0 {
+		return "", errors.New("FAT boot-sector geometry is invalid")
+	}
+	rootDirSectors := (rootEntries*32 + bytesPerSector - 1) / bytesPerSector
+	overhead := reservedSectors + fatCount*fatSectors + rootDirSectors
+	if overhead >= totalSectors {
+		return "", errors.New("FAT boot-sector geometry has no data region")
+	}
+	clusters := (totalSectors - overhead) / sectorsPerCluster
+	switch {
+	case clusters < 4085:
+		return "", fmt.Errorf("FAT12 is not an admitted formatter result (%d clusters)", clusters)
+	case clusters < 65525:
+		return FilesystemFAT16, nil
+	default:
+		return FilesystemFAT32, nil
 	}
 }
 

@@ -39,6 +39,7 @@ func TestExecuteDeviceFormatsRealLoopDevices(t *testing.T) {
 		filesystem string
 		label      string
 	}{
+		{name: "mbr-fat16", scheme: SchemeMBR, filesystem: FilesystemFAT16, label: "RUFUS16"},
 		{name: "gpt-fat32", scheme: SchemeGPT, filesystem: FilesystemFAT32, label: "RUFUSFAT"},
 		{name: "mbr-exfat", scheme: SchemeMBR, filesystem: FilesystemExFAT, label: "RUFUS-EXFAT"},
 		{name: "gpt-ntfs", scheme: SchemeGPT, filesystem: FilesystemNTFS, label: "Rufus:*?-Été"},

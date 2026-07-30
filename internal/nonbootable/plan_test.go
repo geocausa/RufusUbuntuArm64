@@ -58,6 +58,31 @@ func TestBuildPlanCanonicalGPTFAT32(t *testing.T) {
 	}
 }
 
+func TestBuildPlanMBRFAT16(t *testing.T) {
+	request := baseRequest()
+	request.DeviceSizeBytes = 2 * gib
+	request.Scheme = SchemeMBR
+	request.Filesystem = FilesystemFAT16
+	request.Label = "rufus 16"
+	plan, err := BuildPlan(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Filesystem != FilesystemFAT16 || plan.FilesystemDisplay != "FAT16" || plan.PartitionType != "06" {
+		t.Fatalf("unexpected FAT16 plan: %#v", plan)
+	}
+	if plan.Label != "RUFUS 16" {
+		t.Fatalf("FAT16 label = %q", plan.Label)
+	}
+	phrase, err := ConfirmationPhrase(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if phrase != "FORMAT /dev/sdb AS FAT16 USING MBR LABEL RUFUS 16" {
+		t.Fatalf("phrase = %q", phrase)
+	}
+}
+
 func TestBuildPlanMBRExt4AndEmptyLabel(t *testing.T) {
 	request := baseRequest()
 	request.Scheme = "msdos"
@@ -85,6 +110,7 @@ func TestBuildPlanMBRExt4AndEmptyLabel(t *testing.T) {
 
 func TestFilesystemAliasesAndContracts(t *testing.T) {
 	for input, want := range map[string]string{
+		"fat16": FilesystemFAT16,
 		"fat":   FilesystemFAT32,
 		"VFAT":  FilesystemFAT32,
 		"exfat": FilesystemExFAT,
@@ -104,6 +130,7 @@ func TestFilesystemAliasesAndContracts(t *testing.T) {
 	}
 
 	for filesystem, display := range map[string]string{
+		FilesystemFAT16: "FAT16",
 		FilesystemFAT32: "FAT32",
 		FilesystemExFAT: "exFAT",
 		FilesystemNTFS:  "NTFS",
@@ -112,6 +139,9 @@ func TestFilesystemAliasesAndContracts(t *testing.T) {
 		request := baseRequest()
 		request.Filesystem = filesystem
 		request.Label = "DATA"
+		if filesystem == FilesystemFAT16 {
+			request.DeviceSizeBytes = 2 * gib
+		}
 		plan, err := BuildPlan(request)
 		if err != nil {
 			t.Fatalf("%s: %v", filesystem, err)
@@ -134,7 +164,7 @@ func TestBuildPlanRejectsUnsafeOrUnsupportedInput(t *testing.T) {
 		{name: "unsupported sector", mutate: func(value *Request) { value.LogicalSectorSize = 1024 }, want: "512 or 4096"},
 		{name: "small device", mutate: func(value *Request) { value.DeviceSizeBytes = 32 * 1024 * 1024 }, want: "too small"},
 		{name: "scheme", mutate: func(value *Request) { value.Scheme = "apm" }, want: "GPT or MBR"},
-		{name: "filesystem", mutate: func(value *Request) { value.Filesystem = "btrfs" }, want: "FAT32, exFAT, NTFS, or ext4"},
+		{name: "filesystem", mutate: func(value *Request) { value.Filesystem = "btrfs" }, want: "FAT16, FAT32, exFAT, NTFS, or ext4"},
 		{name: "fat punctuation", mutate: func(value *Request) { value.Label = "DATA!" }, want: "ASCII"},
 		{name: "fat too long", mutate: func(value *Request) { value.Label = "TWELVE CHARS" }, want: "11 bytes"},
 		{name: "leading space", mutate: func(value *Request) { value.Label = " DATA" }, want: "leading or trailing"},
@@ -142,7 +172,8 @@ func TestBuildPlanRejectsUnsafeOrUnsupportedInput(t *testing.T) {
 		{name: "ext4 bytes", mutate: func(value *Request) { value.Filesystem = "ext4"; value.Label = "ééééééééé" }, want: "16 bytes"},
 		{name: "exfat characters", mutate: func(value *Request) { value.Filesystem = "exfat"; value.Label = "1234567890123456" }, want: "15 UTF-16 code units"},
 		{name: "ntfs characters", mutate: func(value *Request) { value.Filesystem = "ntfs"; value.Label = strings.Repeat("x", 33) }, want: "32 UTF-16 code units"},
-		{name: "fat capacity", mutate: func(value *Request) { value.DeviceSizeBytes = maximumFAT32Size + 4*1024*1024 }, want: "compatibility contract"},
+		{name: "fat16 capacity", mutate: func(value *Request) { value.Filesystem = FilesystemFAT16; value.DeviceSizeBytes = 5 * gib }, want: "FAT16 is limited"},
+		{name: "fat32 capacity", mutate: func(value *Request) { value.DeviceSizeBytes = maximumFAT32Size + 4*1024*1024 }, want: "compatibility contract"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

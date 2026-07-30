@@ -86,13 +86,14 @@ class NonBootableFormatDialog(Gtk.Dialog):
 
         controls.attach(self._label("File system"), 0, 1, 1, 1)
         self.filesystem = Gtk.ComboBoxText()
+        self.filesystem.append("fat16", "FAT16")
         self.filesystem.append("fat32", "FAT32")
         self.filesystem.append("exfat", "exFAT")
         self.filesystem.append("ntfs", "NTFS")
         self.filesystem.append("ext4", "ext4")
         saved_filesystem = str(parent.settings.get("nonbootable_filesystem") or "fat32")
         self.filesystem.set_active_id(
-            saved_filesystem if saved_filesystem in {"fat32", "exfat", "ntfs", "ext4"} else "fat32"
+            saved_filesystem if saved_filesystem in {"fat16", "fat32", "exfat", "ntfs", "ext4"} else "fat32"
         )
         self.filesystem.connect("changed", self.selection_changed)
         controls.attach(self.filesystem, 1, 1, 1, 1)
@@ -177,7 +178,7 @@ class NonBootableFormatDialog(Gtk.Dialog):
         scheme = self.scheme.get_active_id() or "gpt"
         filesystem = self.filesystem.get_active_id() or "fat32"
         label = self.volume_label.get_text()
-        if filesystem == "fat32":
+        if filesystem in {"fat16", "fat32"}:
             label = label.upper()
         return scheme, filesystem, label
 
