@@ -884,6 +884,19 @@ func TestInspectDriverFolderRejectsUnsafeContent(t *testing.T) {
 	if _, err := inspectDriverFolder(withLink, "ntfs"); err == nil || !strings.Contains(err.Error(), "symbolic link") {
 		t.Fatalf("driver symlink was accepted: %v", err)
 	}
+
+	mixedFolder := t.TempDir()
+	writeTestFile(t, filepath.Join(mixedFolder, "driver.inf"), []byte("inf"))
+	oversized := filepath.Join(mixedFolder, "unrelated.iso")
+	if err := os.WriteFile(oversized, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(oversized, int64(fat32MaxFileSize)+1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := inspectDriverFolder(mixedFolder, "fat32"); err == nil || !strings.Contains(err.Error(), "dedicated driver-package folder") {
+		t.Fatalf("mixed-content driver folder was not refused clearly: %v", err)
+	}
 }
 
 func TestCreateNTFSWithVerifiedUEFINTFSImage(t *testing.T) {

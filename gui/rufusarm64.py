@@ -1454,17 +1454,33 @@ class RufusWindow(Gtk.ApplicationWindow):
         adv_grid.attach(self.volume_label, 1, 4, 1, 1)
 
         self.attach_label(adv_grid, "Windows drivers", 5)
+        driver_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.driver_enabled = Gtk.CheckButton(label="Include selected folder")
+        self.driver_enabled.set_tooltip_text(
+            "Off by default. Enable only when the selected folder is a dedicated Windows driver-package tree."
+        )
+        self.driver_enabled.connect("toggled", self.driver_folder_toggled)
+        driver_row.pack_start(self.driver_enabled, False, False, 0)
         self.driver_chooser = Gtk.FileChooserButton(
-            title="Choose an optional Windows driver folder",
+            title="Choose a dedicated Windows driver folder",
             action=Gtk.FileChooserAction.SELECT_FOLDER,
         )
         saved_driver_folder = self.settings.get("driver_folder", "")
         if saved_driver_folder and os.path.isdir(saved_driver_folder):
             self.driver_chooser.set_filename(saved_driver_folder)
-        self.driver_chooser.set_tooltip_text(
-            "Optional. Copies signed .inf driver packages to USB\\drivers and auto-loads them in Windows PE; the Load driver button remains available as a fallback."
+        self.driver_enabled.set_active(
+            bool(self.settings.get("driver_folder_enabled", False)) and bool(saved_driver_folder)
         )
-        adv_grid.attach(self.driver_chooser, 1, 5, 1, 1)
+        self.driver_chooser.set_tooltip_text(
+            "Copies the complete selected driver-package tree to USB\\drivers and auto-loads its .inf files in Windows PE. Do not select Downloads, Home, or another mixed-content folder."
+        )
+        driver_row.pack_start(self.driver_chooser, True, True, 0)
+        self.driver_clear_button = Gtk.Button(label="Clear")
+        self.driver_clear_button.set_tooltip_text("Forget the selected driver folder and disable driver staging")
+        self.driver_clear_button.connect("clicked", self.clear_driver_folder)
+        driver_row.pack_start(self.driver_clear_button, False, False, 0)
+        adv_grid.attach(driver_row, 1, 5, 1, 1)
+        self.update_driver_folder_controls()
 
         self.attach_label(adv_grid, "Secure Boot DBX", 6)
         dbx_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -1635,7 +1651,11 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.settings["target_system"] = self.windows_target_system
         self.settings["filesystem"] = self.windows_filesystem
         self.settings["cluster_size"] = self.windows_cluster_size
-        self.settings["driver_folder"] = self.driver_chooser.get_filename() or ""
+        saved_driver_folder = self.driver_chooser.get_filename() or ""
+        self.settings["driver_folder"] = saved_driver_folder
+        self.settings["driver_folder_enabled"] = bool(
+            self.driver_enabled.get_active() and saved_driver_folder
+        )
         self.settings["dbx_file"] = self.dbx_chooser.get_filename() or ""
         self.settings["quick_format"] = self.quick_format.get_active()
         self.settings["bad_block_check"] = self.bad_block_check.get_active()
@@ -1751,8 +1771,9 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.refresh_button.set_sensitive(not busy and not self.device_refreshing)
         self.qualify_button.set_sensitive(not busy and not self.device_refreshing and self.target_combo.get_active() >= 0)
         windows_controls = not busy and self.inspection.get("mode") == "windows"
-        for widget in (self.partition_combo, self.target_system_combo, self.filesystem_combo, self.cluster_combo, self.volume_label, self.driver_chooser, self.dbx_chooser, self.dbx_update_button, self.quick_format, self.bad_block_check):
+        for widget in (self.partition_combo, self.target_system_combo, self.filesystem_combo, self.cluster_combo, self.volume_label, self.dbx_chooser, self.dbx_update_button, self.quick_format, self.bad_block_check):
             widget.set_sensitive(windows_controls)
+        self.update_driver_folder_controls()
         if not busy:
             self.bad_block_toggled()
         self.update_layout(self.inspection)
@@ -1973,6 +1994,24 @@ class RufusWindow(Gtk.ApplicationWindow):
 
     def verify_changed(self, *_):
         self.update_verify_warning()
+
+    def driver_folder_toggled(self, *_):
+        self.update_driver_folder_controls()
+
+    def clear_driver_folder(self, *_):
+        self.driver_enabled.set_active(False)
+        self.driver_chooser.unselect_all()
+        self.update_driver_folder_controls()
+
+    def update_driver_folder_controls(self):
+        if not all(hasattr(self, name) for name in ("driver_enabled", "driver_chooser", "driver_clear_button")):
+            return
+        windows_controls = not self.busy and self.inspection.get("mode") == "windows"
+        self.driver_enabled.set_sensitive(windows_controls)
+        self.driver_chooser.set_sensitive(windows_controls and self.driver_enabled.get_active())
+        self.driver_clear_button.set_sensitive(
+            windows_controls and bool(self.driver_chooser.get_filename())
+        )
 
     def update_verify_warning(self):
         if getattr(self, "verify_warning", None) is None:
@@ -2594,7 +2633,9 @@ class RufusWindow(Gtk.ApplicationWindow):
                 self.target_system_combo.set_active_id("uefi")
                 self.filesystem_combo.set_active_id("ntfs")
                 self.cluster_combo.set_active_id("auto")
+                self.driver_enabled.set_active(False)
                 self.driver_chooser.unselect_all()
+                self.update_driver_folder_controls()
                 self.dbx_chooser.unselect_all()
                 self.quick_format.set_active(True)
                 self.bad_block_check.set_active(False)
@@ -2653,7 +2694,15 @@ class RufusWindow(Gtk.ApplicationWindow):
                 except ValueError as exc:
                     self.message(str(exc), Gtk.MessageType.ERROR)
                     return
-                driver_folder = self.driver_chooser.get_filename() or ""
+                driver_folder = ""
+                if self.driver_enabled.get_active():
+                    driver_folder = self.driver_chooser.get_filename() or ""
+                    if not driver_folder:
+                        self.message(
+                            "Choose a dedicated Windows driver folder or turn off Include selected folder.",
+                            Gtk.MessageType.ERROR,
+                        )
+                        return
                 dbx_file = self.dbx_chooser.get_filename() or ""
                 quick_format = self.quick_format.get_active()
                 bad_block_check = self.bad_block_check.get_active()
