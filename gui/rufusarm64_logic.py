@@ -61,6 +61,15 @@ DEFAULT_WINDOWS_CLUSTER_SIZE = "auto"
 DEFAULT_QUICK_FORMAT = True
 DEFAULT_BAD_BLOCK_CHECK = False
 
+PERSISTED_WINDOWS_OPTION_BOOLEAN_KEYS = (
+    "bypass_hardware",
+    "bypass_online_account",
+    "reduce_data_collection",
+    "quality_of_life",
+    "disable_bitlocker",
+    "use_regional_settings",
+)
+
 WINDOWS_TO_GO_CONFIRMATION = "CREATE EXPERIMENTAL WINDOWS TO GO"
 WINDOWS_TO_GO_MINIMUM_TARGET_BYTES = 29 * 1024**3
 WINDOWS_TO_GO_ESP_BYTES = 260 * 1024**2
@@ -69,6 +78,26 @@ WINDOWS_TO_GO_MINIMUM_FREE_BYTES = 2 * 1024**3
 WINDOWS_TO_GO_ALIGNMENT_BYTES = 1024**2
 DEFAULT_PERSISTENCE_ENABLED = False
 APPEARANCE_MODES = ("system", "light", "dark")
+
+
+def normalize_persisted_windows_options(value):
+    """Keep only ordinary, non-media-specific Windows Setup preferences.
+
+    High-risk or image-bound choices intentionally never survive a new dialog:
+    silent install, edition selection, Windows To Go, SkuSiPolicy deployment,
+    and CA 2023 boot-file replacement always require fresh review.
+    """
+    if not isinstance(value, dict):
+        return {}
+    result = {
+        key: bool(value.get(key, False))
+        for key in PERSISTED_WINDOWS_OPTION_BOOLEAN_KEYS
+    }
+    try:
+        result["local_user"] = validate_local_username(value.get("local_user", ""))
+    except ValueError:
+        result["local_user"] = ""
+    return result
 
 
 def normalize_appearance(value):

@@ -63,6 +63,7 @@ from rufusarm64_logic import (
     normalize_cluster_size,
     normalize_filesystem,
     normalize_partition_scheme,
+    normalize_persisted_windows_options,
     normalize_target_system,
     normalize_uefi_validation,
     normalize_volume_label,
@@ -292,7 +293,9 @@ class WindowsOptionsDialog(Gtk.Dialog):
             label=(
                 "Every option below is optional. Most setup choices create an autounattend.xml file. "
                 "The CA 2023 option instead replaces a bounded set of boot files on the completed USB from the selected ISO's own boot.wim. "
-                "The Windows ISO itself is never modified. Leave everything unchecked for standard Microsoft setup."
+                "The Windows ISO itself is never modified. Leave everything unchecked for standard Microsoft setup. "
+                "Ordinary setup preferences are remembered for this user; silent installation, edition selection, Windows To Go, "
+                "SkuSiPolicy deployment, and CA 2023 boot-file replacement always require fresh review."
             )
         )
         intro.set_xalign(0)
@@ -1235,7 +1238,6 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.cancel_requested = False
         self.cancel_path = None
         self.inspection = {}
-        self.windows_options = {}
         self.windows_capability_analysis = {}
         self.last_status_key = None
         self.active_verify_requested = False
@@ -1248,6 +1250,9 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.persistence_plan_key = None
         self.persistence_source_identity = ""
         self.settings = self.load_settings()
+        self.windows_options = normalize_persisted_windows_options(
+            self.settings.get("windows_options", {})
+        )
         self.appearance_mode = normalize_appearance(self.settings.get("appearance"))
         app.apply_appearance(self.appearance_mode)
         width = max(600, int(self.settings.get("width", 820)))
@@ -1659,6 +1664,9 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.settings["dbx_file"] = self.dbx_chooser.get_filename() or ""
         self.settings["quick_format"] = self.quick_format.get_active()
         self.settings["bad_block_check"] = self.bad_block_check.get_active()
+        self.settings["windows_options"] = normalize_persisted_windows_options(
+            self.windows_options
+        )
         self.settings["persistence_size_gib"] = self.persistence_size.get_value_as_int()
         self.settings["appearance"] = normalize_appearance(getattr(self, "appearance_mode", "system"))
         try:
@@ -1879,7 +1887,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         generation = self.inspection_generation
         self.inspection_running = False
         self.inspection = {}
-        self.windows_options = {}
+        self.windows_options = normalize_persisted_windows_options(self.windows_options)
         self.windows_capability_analysis = {}
         if not path:
             self.update_layout({})
@@ -2640,7 +2648,9 @@ class RufusWindow(Gtk.ApplicationWindow):
                 self.quick_format.set_active(True)
                 self.bad_block_check.set_active(False)
             dialog.destroy()
-            self.windows_options = values
+            self.windows_options = normalize_persisted_windows_options(values)
+            self.settings["windows_options"] = dict(self.windows_options)
+            self.save_settings()
             return values
 
     def start(self, *_):
@@ -2744,8 +2754,13 @@ class RufusWindow(Gtk.ApplicationWindow):
             )
             if enabled
         ]
-        if selected_options:
-            summary += "\nWindows options: " + ", ".join(selected_options)
+        windows_options_text = (
+            ", ".join(selected_options)
+            if selected_options
+            else "none — standard Microsoft setup"
+        )
+        if self.inspection.get("mode") == "windows":
+            summary += "\nWindows options: " + windows_options_text
         if windows_to_go_requested and self.windows_to_go_plan:
             summary += (
                 "\nFixed Windows To Go layout: GPT / ARM64 UEFI / unlabelled FAT32 ESP / NTFS Windows; "
@@ -2809,6 +2824,8 @@ class RufusWindow(Gtk.ApplicationWindow):
         else:
             layout_summary = "From image / From image / From image"
         self.append_log(f"Layout: {layout_summary}")
+        if self.inspection.get("mode") == "windows":
+            self.append_log(f"Windows options: {windows_options_text}")
         self.set_busy(True)
         self.progress.set_fraction(0)
         self.progress.set_text("Requesting administrator permission…")
