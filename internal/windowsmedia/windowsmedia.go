@@ -1095,7 +1095,7 @@ func inspectDriverFolder(root string, filesystem string) (uint64, error) {
 			return fmt.Errorf("driver folder contains a non-regular file: %s", path)
 		}
 		if filesystem == "fat32" && uint64(fileInfo.Size()) > fat32MaxFileSize {
-			return fmt.Errorf("driver file is too large for FAT32: %s", path)
+			return fmt.Errorf("the selected Windows driver folder contains a file too large for FAT32: %s; choose a dedicated driver-package folder or disable Windows drivers", path)
 		}
 		if strings.EqualFold(filepath.Ext(entry.Name()), ".inf") {
 			hasINF = true
