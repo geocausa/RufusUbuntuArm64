@@ -23,14 +23,18 @@ class WindowsQualityOfLifeSelectionScopeTests(unittest.TestCase):
         constructor = self.method_source("WindowsOptionsDialog", "__init__")
         self.assertIn('previous.get("quality_of_life", False)', constructor)
 
-    def test_changing_images_clears_prior_selection(self):
+    def test_changing_images_retains_only_normalized_safe_preferences(self):
         image_changed = self.method_source("RufusWindow", "image_changed")
-        self.assertIn("self.windows_options = {}", image_changed)
+        self.assertIn(
+            "self.windows_options = normalize_persisted_windows_options(self.windows_options)",
+            image_changed,
+        )
+        self.assertNotIn("self.windows_options = {}", image_changed)
 
-    def test_settings_writer_does_not_persist_app_removal_policy(self):
+    def test_settings_writer_persists_only_the_normalized_template(self):
         save_settings = self.method_source("RufusWindow", "save_settings")
-        self.assertNotIn("quality_of_life", save_settings)
-        self.assertNotIn("windows_options", save_settings)
+        self.assertIn('self.settings["windows_options"] = normalize_persisted_windows_options(', save_settings)
+        self.assertNotIn('self.settings["windows_options"] = self.windows_options', save_settings)
 
 
 if __name__ == "__main__":

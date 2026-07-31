@@ -33,6 +33,7 @@ from rufusarm64_logic import (
     normalize_ffu_review,
     normalize_filesystem,
     normalize_partition_scheme,
+    normalize_persisted_windows_options,
     normalize_target_system,
     normalize_uefi_validation,
     normalize_volume_label,
@@ -486,6 +487,41 @@ class LogicTests(unittest.TestCase):
             self.assertIn(flag, command)
         self.assertEqual(command[command.index("--volume-label") + 1], "WIN11")
 
+
+    def test_persisted_windows_options_keep_only_safe_setup_preferences(self):
+        persisted = normalize_persisted_windows_options({
+            "bypass_hardware": True,
+            "bypass_online_account": True,
+            "local_user": "RufusTest",
+            "reduce_data_collection": True,
+            "quality_of_life": True,
+            "disable_bitlocker": True,
+            "use_regional_settings": True,
+            "silent_install": True,
+            "install_image_index": 3,
+            "install_image_name": "Windows 11 Pro",
+            "windows_to_go": True,
+            "apply_sku_si_policy": True,
+            "use_windows_ca_2023_bootloaders": True,
+            "locale": "en-GB",
+            "timezone": "GMT Standard Time",
+        })
+        self.assertEqual(persisted["local_user"], "RufusTest")
+        for key in (
+            "bypass_hardware", "bypass_online_account", "reduce_data_collection",
+            "quality_of_life", "disable_bitlocker", "use_regional_settings",
+        ):
+            self.assertTrue(persisted[key])
+        for forbidden in (
+            "silent_install", "install_image_index", "install_image_name", "windows_to_go",
+            "apply_sku_si_policy", "use_windows_ca_2023_bootloaders", "locale", "timezone",
+        ):
+            self.assertNotIn(forbidden, persisted)
+
+    def test_persisted_windows_options_drop_invalid_usernames_and_non_mappings(self):
+        self.assertEqual(normalize_persisted_windows_options(None), {})
+        persisted = normalize_persisted_windows_options({"local_user": "Administrator"})
+        self.assertEqual(persisted["local_user"], "")
 
     def test_writer_command_keeps_quality_of_life_off_by_default(self):
         command = build_writer_command(
