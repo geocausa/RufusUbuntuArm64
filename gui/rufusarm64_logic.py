@@ -981,8 +981,8 @@ def build_writer_command(
         if not isinstance(capability, dict) or not capability.get("enabled"):
             reason = capability.get("reason") if isinstance(capability, dict) else ""
             raise ValueError(str(reason or "Silent installation was not proven safe by the read-only Windows media analysis."))
-        if resolved_target_system != "uefi" or resolved_filesystem != "ntfs":
-            raise ValueError("Silent installation requires resolved UEFI/NTFS media so the verified UEFI:NTFS partition can guard disk numbering.")
+        if resolved_target_system != "uefi" or resolved_filesystem not in {"fat32", "ntfs"}:
+            raise ValueError("Silent installation requires resolved UEFI FAT32 or NTFS media so the verified partition-2 guard can check disk numbering.")
         local_user = validate_local_username(options.get("local_user", ""))
         if not local_user or not options.get("reduce_data_collection") or not options.get("use_regional_settings"):
             raise ValueError("Silent installation requires a local account, reduced data collection, and complete regional settings.")

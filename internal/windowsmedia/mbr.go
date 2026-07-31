@@ -36,13 +36,21 @@ func writeSinglePartitionMBRType(target *os.File, targetSize, sectorSize uint64,
 }
 
 func writeUEFINTFSMBR(target *os.File, targetSize, sectorSize, bootImageSize uint64) (diskLayout, error) {
+	return writeSharedUEFINTFSMBR(target, targetSize, sectorSize, bootImageSize, uefintfs.DataPartitionBasic)
+}
+
+func writeGuardedFAT32MBR(target *os.File, targetSize, sectorSize, bootImageSize uint64) (diskLayout, error) {
+	return writeSharedUEFINTFSMBR(target, targetSize, sectorSize, bootImageSize, uefintfs.DataPartitionFAT32ESP)
+}
+
+func writeSharedUEFINTFSMBR(target *os.File, targetSize, sectorSize, bootImageSize uint64, profile uefintfs.DataPartitionProfile) (diskLayout, error) {
 	if target == nil {
 		return diskLayout{}, errors.New("nil MBR target")
 	}
 	if bootImageSize != uefintfs.ImageSize {
 		return diskLayout{}, fmt.Errorf("UEFI:NTFS image size %d does not match the pinned shared image size %d", bootImageSize, uefintfs.ImageSize)
 	}
-	shared, err := uefintfs.PlanLayout(uefintfs.SchemeMBR, targetSize, sectorSize)
+	shared, err := uefintfs.PlanLayoutForProfile(uefintfs.SchemeMBR, targetSize, sectorSize, profile)
 	if err != nil {
 		return diskLayout{}, err
 	}
@@ -109,10 +117,18 @@ func mbrLayoutForSize(targetSize, sectorSize uint64) (partitionLayout, error) {
 }
 
 func mbrUEFINTFSLayoutForSize(targetSize, sectorSize, bootImageSize uint64) (diskLayout, error) {
+	return mbrSharedUEFINTFSLayoutForSize(targetSize, sectorSize, bootImageSize, uefintfs.DataPartitionBasic)
+}
+
+func mbrGuardedFAT32LayoutForSize(targetSize, sectorSize, bootImageSize uint64) (diskLayout, error) {
+	return mbrSharedUEFINTFSLayoutForSize(targetSize, sectorSize, bootImageSize, uefintfs.DataPartitionFAT32ESP)
+}
+
+func mbrSharedUEFINTFSLayoutForSize(targetSize, sectorSize, bootImageSize uint64, profile uefintfs.DataPartitionProfile) (diskLayout, error) {
 	if bootImageSize != uefintfs.ImageSize {
 		return diskLayout{}, fmt.Errorf("UEFI:NTFS image size %d does not match the pinned shared image size %d", bootImageSize, uefintfs.ImageSize)
 	}
-	shared, err := uefintfs.PlanLayout(uefintfs.SchemeMBR, targetSize, sectorSize)
+	shared, err := uefintfs.PlanLayoutForProfile(uefintfs.SchemeMBR, targetSize, sectorSize, profile)
 	if err != nil {
 		return diskLayout{}, err
 	}

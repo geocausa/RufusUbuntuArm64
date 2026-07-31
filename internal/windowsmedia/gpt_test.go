@@ -202,3 +202,47 @@ func TestWriteUEFINTFSGPT512(t *testing.T) {
 		t.Fatalf("boot partition name=%q", got)
 	}
 }
+
+func TestWriteGuardedFAT32GPT512(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "disk-fat32-guarded.img")
+	const (
+		size          = uint64(64 * 1024 * 1024)
+		bootImageSize = uint64(1024 * 1024)
+	)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(int64(size)); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	layout, err := writeGuardedFAT32GPT(file, size, 512, "WIN11", bootImageSize)
+	if err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if layout.Boot == nil {
+		file.Close()
+		t.Fatal("missing partition-2 guard")
+	}
+	entries := make([]byte, 2*gptEntrySize)
+	if _, err := file.ReadAt(entries, 2*512); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	dataEntry := entries[:gptEntrySize]
+	guardEntry := entries[gptEntrySize:]
+	if string(dataEntry[:16]) != string(efiSystemPartitionType[:]) {
+		t.Fatalf("wrong guarded FAT32 data type GUID: %x", dataEntry[:16])
+	}
+	if string(guardEntry[:16]) != string(microsoftBasicDataType[:]) {
+		t.Fatalf("wrong partition-2 guard type GUID: %x", guardEntry[:16])
+	}
+	if got := binary.LittleEndian.Uint64(guardEntry[48:56]); got != gptNoDriveLetter {
+		t.Fatalf("guard attributes=%016x want %016x", got, gptNoDriveLetter)
+	}
+}

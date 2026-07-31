@@ -19,15 +19,28 @@ const (
 	SchemeMBR = "mbr"
 	SchemeGPT = "gpt"
 
-	oneMiB               = uint64(1024 * 1024)
-	minimumLayoutBytes   = uint64(16 * 1024 * 1024)
-	gptHeaderBytes       = 92
-	gptEntryBytes        = 128
-	gptEntryCount        = 128
-	gptNoDriveLetter     = uint64(1) << 63
-	mbrDataPartition     = byte(0x07)
-	mbrUEFINTFSPartition = byte(0xef)
+	// DataPartitionBasic publishes the main partition as Microsoft Basic Data
+	// on GPT and type 0x07 on MBR. This is the existing UEFI:NTFS profile.
+	DataPartitionBasic DataPartitionProfile = "basic-data"
+	// DataPartitionFAT32ESP publishes the main partition as an EFI System
+	// Partition on GPT and FAT32 LBA type 0x0c on MBR. The second partition
+	// remains the exact pinned UEFI:NTFS image and is used as a numbering guard.
+	DataPartitionFAT32ESP DataPartitionProfile = "fat32-esp"
+
+	oneMiB                = uint64(1024 * 1024)
+	minimumLayoutBytes    = uint64(16 * 1024 * 1024)
+	gptHeaderBytes        = 92
+	gptEntryBytes         = 128
+	gptEntryCount         = 128
+	gptNoDriveLetter      = uint64(1) << 63
+	mbrBasicDataPartition = byte(0x07)
+	mbrFAT32LBAPartition  = byte(0x0c)
+	mbrUEFINTFSPartition  = byte(0xef)
 )
+
+// DataPartitionProfile selects the on-disk identity of the main partition
+// without changing the deterministic two-partition geometry.
+type DataPartitionProfile string
 
 // Extent is one byte-addressed partition extent on the held target.
 type Extent struct {
@@ -35,13 +48,14 @@ type Extent struct {
 	SizeBytes  uint64 `json:"size_bytes"`
 }
 
-// Layout is the deterministic two-partition geometry used by UEFI:NTFS media.
+// Layout is the deterministic two-partition geometry shared by UEFI:NTFS and guarded FAT32 media.
 type Layout struct {
-	Scheme     string `json:"scheme"`
-	TargetSize uint64 `json:"target_size"`
-	SectorSize uint64 `json:"sector_size"`
-	Data       Extent `json:"data"`
-	Boot       Extent `json:"boot"`
+	Scheme      string               `json:"scheme"`
+	DataProfile DataPartitionProfile `json:"data_profile"`
+	TargetSize  uint64               `json:"target_size"`
+	SectorSize  uint64               `json:"sector_size"`
+	Data        Extent               `json:"data"`
+	Boot        Extent               `json:"boot"`
 }
 
 var microsoftBasicDataType = [16]byte{
@@ -49,21 +63,45 @@ var microsoftBasicDataType = [16]byte{
 	0x87, 0xc0, 0x68, 0xb6, 0xb7, 0x26, 0x99, 0xc7,
 }
 
-// PlanLayout calculates the complete data and UEFI:NTFS boot extents without
+// EFI System Partition: C12A7328-F81F-11D2-BA4B-00A0C93EC93B,
+// encoded in GPT's mixed-endian on-disk form.
+var efiSystemPartitionType = [16]byte{
+	0x28, 0x73, 0x2a, 0xc1, 0x1f, 0xf8, 0xd2, 0x11,
+	0xba, 0x4b, 0x00, 0xa0, 0xc9, 0x3e, 0xc9, 0x3b,
+}
+
+// PlanLayout calculates the default basic-data and pinned-image extents without
 // mutating the target.
 func PlanLayout(scheme string, targetSize, sectorSize uint64) (Layout, error) {
+	return PlanLayoutForProfile(scheme, targetSize, sectorSize, DataPartitionBasic)
+}
+
+// PlanLayoutForProfile calculates the same deterministic geometry while binding
+// the main partition to an explicit on-disk data profile.
+func PlanLayoutForProfile(scheme string, targetSize, sectorSize uint64, profile DataPartitionProfile) (Layout, error) {
 	scheme = strings.ToLower(strings.TrimSpace(scheme))
+	profile = DataPartitionProfile(strings.ToLower(strings.TrimSpace(string(profile))))
+	if err := validateDataPartitionProfile(profile); err != nil {
+		return Layout{}, err
+	}
 	if err := validateGeometry(targetSize, sectorSize); err != nil {
 		return Layout{}, err
 	}
+	var layout Layout
+	var err error
 	switch scheme {
 	case SchemeMBR:
-		return planMBR(targetSize, sectorSize)
+		layout, err = planMBR(targetSize, sectorSize)
 	case SchemeGPT:
-		return planGPT(targetSize, sectorSize)
+		layout, err = planGPT(targetSize, sectorSize)
 	default:
 		return Layout{}, fmt.Errorf("unsupported UEFI:NTFS partition scheme %q", scheme)
 	}
+	if err != nil {
+		return Layout{}, err
+	}
+	layout.DataProfile = profile
+	return layout, nil
 }
 
 // WriteLayout publishes and verifies the partition table for a previously
@@ -72,7 +110,7 @@ func WriteLayout(target Target, layout Layout, dataLabel string) error {
 	if target == nil {
 		return errors.New("nil UEFI:NTFS layout target")
 	}
-	expected, err := PlanLayout(layout.Scheme, layout.TargetSize, layout.SectorSize)
+	expected, err := PlanLayoutForProfile(layout.Scheme, layout.TargetSize, layout.SectorSize, layout.DataProfile)
 	if err != nil {
 		return err
 	}
@@ -93,7 +131,7 @@ func planMBR(targetSize, sectorSize uint64) (Layout, error) {
 	dataStart := alignUp(oneMiB, sectorSize)
 	bootStart := alignDown(targetSize-ImageSize, oneMiB)
 	if bootStart <= dataStart {
-		return Layout{}, errors.New("target has insufficient space for MBR NTFS data and UEFI:NTFS boot partitions")
+		return Layout{}, errors.New("target has insufficient space for MBR data and UEFI:NTFS guard partitions")
 	}
 	layout := Layout{
 		Scheme:     SchemeMBR,
@@ -136,7 +174,7 @@ func planGPT(targetSize, sectorSize uint64) (Layout, error) {
 	bootLBAs := ImageSize / sectorSize
 	bootEndLBA := bootStartLBA + bootLBAs - 1
 	if bootStartLBA <= dataStartLBA || bootEndLBA > lastUsableLBA {
-		return Layout{}, errors.New("target has insufficient aligned space for NTFS data and UEFI:NTFS boot partitions")
+		return Layout{}, errors.New("target has insufficient aligned space for data and UEFI:NTFS guard partitions")
 	}
 	return Layout{
 		Scheme:     SchemeGPT,
@@ -158,7 +196,7 @@ func writeMBRLayout(target Target, layout Layout) error {
 	if _, err := rand.Read(sector[440:444]); err != nil {
 		return fmt.Errorf("generate MBR disk signature: %w", err)
 	}
-	writeMBRPartition(sector[446:462], layout.Data, layout.SectorSize, true, mbrDataPartition)
+	writeMBRPartition(sector[446:462], layout.Data, layout.SectorSize, true, mbrDataPartitionType(layout.DataProfile))
 	writeMBRPartition(sector[462:478], layout.Boot, layout.SectorSize, false, mbrUEFINTFSPartition)
 	sector[510], sector[511] = 0x55, 0xaa
 	if err := writeFullAt(target, sector, 0); err != nil {
@@ -214,7 +252,8 @@ func writeGPTLayout(target Target, layout Layout, dataLabel string) error {
 
 	entries := make([]byte, entryLBAs*sectorSize)
 	dataEntry := entries[:gptEntryBytes]
-	copy(dataEntry[0:16], microsoftBasicDataType[:])
+	dataType := gptDataPartitionType(layout.DataProfile)
+	copy(dataEntry[0:16], dataType[:])
 	copy(dataEntry[16:32], dataGUID[:])
 	binary.LittleEndian.PutUint64(dataEntry[32:40], layout.Data.StartBytes/sectorSize)
 	binary.LittleEndian.PutUint64(dataEntry[40:48], (layout.Data.StartBytes+layout.Data.SizeBytes)/sectorSize-1)
@@ -275,6 +314,29 @@ type metadataRegion struct {
 	offset uint64
 	data   []byte
 	name   string
+}
+
+func validateDataPartitionProfile(profile DataPartitionProfile) error {
+	switch profile {
+	case DataPartitionBasic, DataPartitionFAT32ESP:
+		return nil
+	default:
+		return fmt.Errorf("unsupported shared data partition profile %q", profile)
+	}
+}
+
+func mbrDataPartitionType(profile DataPartitionProfile) byte {
+	if profile == DataPartitionFAT32ESP {
+		return mbrFAT32LBAPartition
+	}
+	return mbrBasicDataPartition
+}
+
+func gptDataPartitionType(profile DataPartitionProfile) [16]byte {
+	if profile == DataPartitionFAT32ESP {
+		return efiSystemPartitionType
+	}
+	return microsoftBasicDataType
 }
 
 func validateGeometry(targetSize, sectorSize uint64) error {

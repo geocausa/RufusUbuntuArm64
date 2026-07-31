@@ -72,13 +72,15 @@ func TestValidateCustomizationTargetSystemRejectsSkuSiPolicyAfterAutoResolvesToB
 	}
 }
 
-func TestValidateCustomizationLayoutBoundsSilentInstallToUEFINTFS(t *testing.T) {
+func TestValidateCustomizationLayoutBoundsSilentInstallToGuardedUEFI(t *testing.T) {
 	options := windowsconfig.Options{SilentInstall: true}
-	if err := validateCustomizationLayout(options, "uefi", "ntfs"); err != nil {
-		t.Fatal(err)
+	for _, filesystem := range []string{"ntfs", "fat32"} {
+		if err := validateCustomizationLayout(options, "uefi", filesystem); err != nil {
+			t.Fatalf("UEFI/%s rejected: %v", filesystem, err)
+		}
 	}
-	for _, layout := range []struct{ target, filesystem string }{{"uefi", "fat32"}, {"bios", "ntfs"}, {"bios", "fat32"}} {
-		if err := validateCustomizationLayout(options, layout.target, layout.filesystem); err == nil || !strings.Contains(err.Error(), "UEFI/NTFS") {
+	for _, layout := range []struct{ target, filesystem string }{{"bios", "ntfs"}, {"bios", "fat32"}, {"uefi", "ext4"}} {
+		if err := validateCustomizationLayout(options, layout.target, layout.filesystem); err == nil || !strings.Contains(err.Error(), "resolved UEFI") {
 			t.Fatalf("layout %s/%s error=%v", layout.target, layout.filesystem, err)
 		}
 	}

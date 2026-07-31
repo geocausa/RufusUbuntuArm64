@@ -69,12 +69,15 @@ class WindowsSilentInstallCommandTests(unittest.TestCase):
         self.assertIn("--win-locale", command)
         self.assertIn("--win-timezone", command)
 
-    def test_rejects_unqualified_media_or_layout(self):
+    def test_accepts_guarded_fat32_layout(self):
+        command = self.build(filesystem="fat32")
+        self.assertEqual(command[command.index("--filesystem") + 1], "fat32")
+        self.assertIn("--win-silent-install", command)
+
+    def test_rejects_unqualified_media_or_non_uefi_layout(self):
         with self.assertRaisesRegex(ValueError, "pre-existing unattend"):
             self.build(analysis=self.analysis(enabled=False, reason="pre-existing unattend"))
-        with self.assertRaisesRegex(ValueError, "UEFI/NTFS"):
-            self.build(filesystem="fat32")
-        with self.assertRaisesRegex(ValueError, "UEFI/NTFS"):
+        with self.assertRaisesRegex(ValueError, "resolved UEFI"):
             self.build(target="bios", partition="mbr")
 
     def test_rejects_missing_prerequisites_and_unproven_index(self):

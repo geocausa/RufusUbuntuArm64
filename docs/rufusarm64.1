@@ -44,9 +44,10 @@ media-capability checks before erasure.
 Guarded silent installation is offered only for positively identified Windows 11
 client media with exact installation-image indexes, a boot.wim Setup language,
 no pre-existing unattended file, a local account, privacy choices, and complete
-regional settings. It currently requires resolved UEFI/NTFS media so the verified
-UEFI:NTFS partition can act as a disk-numbering guard. When that guard passes,
-Windows Setup may erase disk 0, create EFI, MSR, and Windows partitions, and
+regional settings. Resolved UEFI/FAT32 and UEFI/NTFS media add a verified pinned
+partition 2 as a disk-numbering guard. FAT32 boots natively from partition 1;
+its partition 2 is guard-only. When that guard passes, Windows Setup may erase
+disk 0, create EFI, MSR, and Windows partitions, and
 install the selected image without its normal disk or edition pages. The GUI
 requires a separate three-part acknowledgement and direct CLI use requires the
 literal phrase `ERASE DISK 0`. Disconnect all other storage before booting such

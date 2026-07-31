@@ -70,8 +70,8 @@ func validateCustomizationLayout(options windowsconfig.Options, targetSystem, fi
 	if options.ApplySkuSiPolicy && target != "uefi" {
 		return fmt.Errorf("SkuSiPolicy deployment requires a resolved UEFI Windows target; BIOS/CSM media has no EFI System Partition")
 	}
-	if options.SilentInstall && (target != "uefi" || format != "ntfs") {
-		return fmt.Errorf("silent installation requires resolved UEFI/NTFS media so the verified UEFI:NTFS partition can guard disk numbering")
+	if options.SilentInstall && (target != "uefi" || (format != "fat32" && format != "ntfs")) {
+		return fmt.Errorf("silent installation requires resolved UEFI FAT32 or NTFS media with a verified partition-2 guard for disk numbering")
 	}
 	return nil
 }

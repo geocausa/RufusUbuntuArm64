@@ -1,7 +1,8 @@
 //go:build linux
 
 // Package windowsmedia creates Windows installation USB media. FAT32 media
-// use the firmware-native UEFI path and split oversized WIM/ESD payloads.
+// use the firmware-native UEFI path and split oversized WIM/ESD payloads;
+// guarded silent-install FAT32 adds the pinned FAT image only as partition 2.
 // NTFS UEFI media use Rufus's small FAT UEFI:NTFS compatibility partition.
 // MBR media can also install the Windows BOOTMGR BIOS/CSM MBR and PBR code for
 // x86 and x86-64 installation ISOs.
@@ -106,6 +107,7 @@ type mediaPlan struct {
 	ExistingPantherAnswerPath string
 	AnswerFile                []byte
 	Filesystem                string
+	GuardedFAT32              bool
 	DriverFolder              string
 	DriverBytes               uint64
 	CA2023                    *WindowsCA2023Plan
@@ -371,6 +373,7 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 	if err := validateCustomizationLayout(customizations, targetSystem, filesystem); err != nil {
 		return err
 	}
+	plan.GuardedFAT32 = customizations.SilentInstall && targetSystem == "uefi" && filesystem == "fat32"
 	customizations.LoadDrivers = plan.DriverFolder != ""
 	plan.AnswerFile, err = preparePlanAnswerFile(ctx, plan, customizations, PrepareCustomizations)
 	if err != nil {
@@ -398,14 +401,14 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		if _, err := exec.LookPath("ntfsfix"); err != nil {
 			return errors.New("NTFS support requires ntfsfix from the 'ntfs-3g' package")
 		}
-		if targetSystem == "uefi" {
-			uefiNTFSImage, uefiNTFSImageSize, err = uefiNTFSImageFile()
-			if err != nil {
-				return err
-			}
-		}
 	default:
 		return fmt.Errorf("unsupported filesystem %q", filesystem)
+	}
+	if targetSystem == "uefi" && (filesystem == "ntfs" || plan.GuardedFAT32) {
+		uefiNTFSImage, uefiNTFSImageSize, err = uefiNTFSImageFile()
+		if err != nil {
+			return err
+		}
 	}
 
 	label, err := customizationVolumeLabel(opts.VolumeLabel, filesystem, customizations)
@@ -433,12 +436,19 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 		}
 	}
 	if scheme == "mbr" {
-		if filesystem == "ntfs" && targetSystem == "uefi" {
+		switch {
+		case plan.GuardedFAT32:
+			if _, err := mbrGuardedFAT32LayoutForSize(opts.TargetSize, sectorSize, uefiNTFSImageSize); err != nil {
+				return err
+			}
+		case filesystem == "ntfs" && targetSystem == "uefi":
 			if _, err := mbrUEFINTFSLayoutForSize(opts.TargetSize, sectorSize, uefiNTFSImageSize); err != nil {
 				return err
 			}
-		} else if _, err := mbrLayoutForSize(opts.TargetSize, sectorSize); err != nil {
-			return err
+		default:
+			if _, err := mbrLayoutForSize(opts.TargetSize, sectorSize); err != nil {
+				return err
+			}
 		}
 	}
 	if opts.TargetSize < plan.RequiredBytes {
@@ -531,6 +541,10 @@ func Create(ctx context.Context, isoPath, devicePath string, opts Options, emit 
 	}
 	var layout diskLayout
 	switch {
+	case scheme == "gpt" && plan.GuardedFAT32:
+		layout, err = writeGuardedFAT32GPT(lock, opts.TargetSize, sectorSize, label, uefiNTFSImageSize)
+	case scheme == "mbr" && plan.GuardedFAT32:
+		layout, err = writeGuardedFAT32MBR(lock, opts.TargetSize, sectorSize, uefiNTFSImageSize)
 	case scheme == "gpt" && filesystem == "fat32":
 		data, writeErr := writeSinglePartitionGPT(lock, opts.TargetSize, sectorSize, label)
 		layout, err = diskLayout{Data: data}, writeErr
@@ -1149,7 +1163,7 @@ func finalizePlan(plan *mediaPlan) error {
 		margin = minimumFreeMargin
 	}
 	reserve := uint64(2 * 1024 * 1024)
-	if plan.Filesystem == "ntfs" {
+	if plan.Filesystem == "ntfs" || plan.GuardedFAT32 {
 		reserve += oneMiB
 	}
 	plan.RequiredBytes, err = checkedAdd("required Windows USB capacity", plan.CopyBytes, margin, reserve)
@@ -1656,11 +1670,35 @@ func readVolumeLabel(ctx context.Context, path string) (string, error) {
 }
 
 func customizationVolumeLabel(value, filesystem string, options windowsconfig.Options) (string, error) {
+	format := strings.ToLower(strings.TrimSpace(filesystem))
 	labelInput := value
-	if options.SilentInstall && !strings.HasSuffix(labelInput, " (SILENT)") {
-		labelInput += " (SILENT)"
+	if options.SilentInstall {
+		switch format {
+		case "fat32":
+			base, err := normalizeVolumeLabel(labelInput, format)
+			if err != nil {
+				return "", fmt.Errorf("silent-install volume label: %w", err)
+			}
+			const suffix = "-SILENT"
+			if strings.HasSuffix(base, suffix) {
+				return base, nil
+			}
+			prefixBytes := 11 - len(suffix)
+			if len(base) > prefixBytes {
+				base = base[:prefixBytes]
+			}
+			base = strings.TrimRight(base, " _-")
+			if base == "" {
+				return strings.TrimPrefix(suffix, "-"), nil
+			}
+			return base + suffix, nil
+		case "ntfs":
+			if !strings.HasSuffix(labelInput, " (SILENT)") {
+				labelInput += " (SILENT)"
+			}
+		}
 	}
-	label, err := normalizeVolumeLabel(labelInput, filesystem)
+	label, err := normalizeVolumeLabel(labelInput, format)
 	if err != nil {
 		if options.SilentInstall {
 			return "", fmt.Errorf("silent-install volume label: %w", err)

@@ -89,13 +89,21 @@ func writeSinglePartitionGPT(target *os.File, targetSize, sectorSize uint64, lab
 // writeUEFINTFSGPT creates Rufus-compatible UEFI:NTFS media through the same
 // shared planner and backup-first metadata writer used by Linux ISO Image mode.
 func writeUEFINTFSGPT(target *os.File, targetSize, sectorSize uint64, label string, bootImageSize uint64) (diskLayout, error) {
+	return writeSharedUEFINTFSGPT(target, targetSize, sectorSize, label, bootImageSize, uefintfs.DataPartitionBasic)
+}
+
+func writeGuardedFAT32GPT(target *os.File, targetSize, sectorSize uint64, label string, bootImageSize uint64) (diskLayout, error) {
+	return writeSharedUEFINTFSGPT(target, targetSize, sectorSize, label, bootImageSize, uefintfs.DataPartitionFAT32ESP)
+}
+
+func writeSharedUEFINTFSGPT(target *os.File, targetSize, sectorSize uint64, label string, bootImageSize uint64, profile uefintfs.DataPartitionProfile) (diskLayout, error) {
 	if target == nil {
 		return diskLayout{}, errors.New("nil GPT target")
 	}
 	if bootImageSize != uefintfs.ImageSize {
 		return diskLayout{}, fmt.Errorf("UEFI:NTFS image size %d does not match the pinned shared image size %d", bootImageSize, uefintfs.ImageSize)
 	}
-	shared, err := uefintfs.PlanLayout(uefintfs.SchemeGPT, targetSize, sectorSize)
+	shared, err := uefintfs.PlanLayoutForProfile(uefintfs.SchemeGPT, targetSize, sectorSize, profile)
 	if err != nil {
 		return diskLayout{}, err
 	}
