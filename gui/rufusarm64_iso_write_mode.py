@@ -29,6 +29,7 @@ def iso_image_mode_available(info):
         and profile.get("optical") is True
         and isinstance(methods, list)
         and "UEFI" in methods
+        and isinstance(profile.get("el_torito_uefi"), dict)
     )
 
 

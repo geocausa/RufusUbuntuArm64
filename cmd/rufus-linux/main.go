@@ -221,16 +221,18 @@ func runList(args []string) error {
 }
 
 type inspectResult struct {
-	Mode                string `json:"mode"`
-	Recognized          bool   `json:"recognized"`
-	PartitionScheme     string `json:"partition_scheme"`
-	TargetSystem        string `json:"target_system"`
-	FileSystem          string `json:"filesystem"`
-	WindowsOptions      bool   `json:"windows_options"`
-	WindowsInstallMedia bool   `json:"windows_install_media"`
-	Description         string `json:"description"`
-	ContainerFormat     string `json:"container_format,omitempty"`
-	NeedsPreparation    bool   `json:"needs_preparation,omitempty"`
+	Mode                string                         `json:"mode"`
+	Recognized          bool                           `json:"recognized"`
+	PartitionScheme     string                         `json:"partition_scheme"`
+	TargetSystem        string                         `json:"target_system"`
+	FileSystem          string                         `json:"filesystem"`
+	WindowsOptions      bool                           `json:"windows_options"`
+	WindowsInstallMedia bool                           `json:"windows_install_media"`
+	Description         string                         `json:"description"`
+	ContainerFormat     string                         `json:"container_format,omitempty"`
+	NeedsPreparation    bool                           `json:"needs_preparation,omitempty"`
+	ElToritoUEFI        *imaging.ElToritoUEFIImagePlan `json:"el_torito_uefi,omitempty"`
+	ElToritoUEFIRefusal string                         `json:"el_torito_uefi_refusal,omitempty"`
 }
 
 func runInspect(args []string) error {
@@ -306,6 +308,9 @@ func runInspect(args []string) error {
 		}
 		result.Recognized = inspection.Recognized()
 		result.WindowsInstallMedia = inspection.HasWindowsInstallMedia()
+		if inspection.HasISO9660 && !result.WindowsInstallMedia {
+			inspectElToritoUEFIEvidence(file, identity.Size, &result)
+		}
 		mode, err := selectInspectionMode(inspection)
 		modeErr = err
 		switch {
@@ -356,6 +361,20 @@ func runInspect(args []string) error {
 		return errors.New("image is not recognized")
 	}
 	return nil
+}
+
+func inspectElToritoUEFIEvidence(file *os.File, size int64, result *inspectResult) {
+	if file == nil || result == nil || size <= 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	plan, err := imaging.PlanElToritoUEFIImage(ctx, file, size)
+	if err != nil {
+		result.ElToritoUEFIRefusal = err.Error()
+		return
+	}
+	result.ElToritoUEFI = &plan
 }
 
 func runWrite(args []string) error {

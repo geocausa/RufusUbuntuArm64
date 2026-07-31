@@ -330,16 +330,20 @@ func CreateExtracted(ctx context.Context, isoPath, devicePath string, opts Extra
 	}
 
 	sendPersistent(emit, PersistentEvent{Stage: "inspect", Message: fmt.Sprintf("Checking ISO Image mode %s/UEFI/FAT32, cluster, filename, and capacity compatibility…", strings.ToUpper(partitionScheme))})
-	manifest, err := Inspect(ctx, sourceRoot, Options{
+	prepared, err := prepareExtractedManifest(ctx, isoFile, sourceRoot, workDir, Options{
 		Architecture: opts.Architecture,
 		RequireUEFI:  true,
 		RequireFAT32: true,
 		MaxEntries:   opts.ManifestMaxEntries,
 		MaxBytes:     opts.ManifestMaxBytes,
-	})
+	}, testTarget && os.Getenv("RUFUS_TEST_ISO_ROOT") != "", emit)
 	if err != nil {
 		return result, fmt.Errorf("ISO Image mode is not supported for this image: %w", err)
 	}
+	defer func() {
+		returnErr = errors.Join(returnErr, prepared.Close())
+	}()
+	manifest := prepared.Manifest
 	fat32Bytes, err := EstimateFAT32BytesForCluster(manifest, clusterBytes)
 	if err != nil {
 		return result, err

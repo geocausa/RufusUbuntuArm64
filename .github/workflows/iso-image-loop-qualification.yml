@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   loop-qualification:
-    name: MBR/GPT FAT32 and NTFS extracted-media qualification
+    name: MBR/GPT FAT32, NTFS and El Torito extracted-media qualification
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -27,18 +27,20 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            util-linux dosfstools ntfs-3g gdisk genisoimage
+            util-linux dosfstools ntfs-3g gdisk genisoimage mtools
       - name: Create and independently verify ISO Image mode media
         env:
           RUFUS_REAL_EXTRACTED_TEST: '1'
+          RUFUS_REAL_EL_TORITO_OVERLAY_TEST: '1'
         run: |
           mkdir -p dist/audit-logs
           sudo modprobe loop || true
           go test -c -o "${RUNNER_TEMP}/iso-image-loop.test" ./internal/linuxmedia
           set -o pipefail
           sudo env RUFUS_REAL_EXTRACTED_TEST="${RUFUS_REAL_EXTRACTED_TEST}" \
+            RUFUS_REAL_EL_TORITO_OVERLAY_TEST="${RUFUS_REAL_EL_TORITO_OVERLAY_TEST}" \
             "${RUNNER_TEMP}/iso-image-loop.test" \
-            -test.run '^(TestCreateExtractedOnRealLoopDevice(MBR|GPT)?|TestCreateExtractedNTFSOnRealLoopDevice(MBR|GPT))$' \
+            -test.run '^(TestCreateExtractedOnRealLoopDevice(MBR|GPT)?|TestCreateExtractedNTFSOnRealLoopDevice(MBR|GPT)|TestCreateExtractedOnRealLoopDeviceWithElToritoOverlay|TestPrepareExtractedManifestFromRealElToritoFATImage)$' \
             -test.v 2>&1 | tee dist/audit-logs/iso-image-loop.log
       - name: Upload ISO Image mode loop transcript
         if: always()

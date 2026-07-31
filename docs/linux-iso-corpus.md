@@ -8,7 +8,7 @@ The machine-readable contract is `docs/linux-iso-corpus.json`. The runner is `sc
 
 Each qualified artifact has exactly one reviewed result:
 
-- `iso-image-candidate`: a plain, recognised optical image with a validated UEFI El Torito boot entry. Hybrid media may also offer DD mode when a coherent MBR/GPT disk layout is present; optical-only media offer ISO Image mode only. The privileged extraction planner must still pass every filename, filesystem, fallback-loader, capacity, identity and UEFI:NTFS check before erasure.
+- `iso-image-candidate`: a plain, recognised optical image with one strict, hash-bound EFI no-emulation El Torito plan. Hybrid media may also offer DD mode when a coherent MBR/GPT disk layout is present; optical-only media offer ISO Image mode only. The privileged extraction planner must still pass every filename, filesystem, fallback-loader, capacity, identity and UEFI:NTFS check before erasure.
 - `dd-only`: recognised raw media that remains valid for exact byte-for-byte writing but is outside the reviewed extraction boundary.
 - `refuse`: an input the automatic writer rejects, including malformed or arbitrary files and direct filesystem images that are not complete disk/ISOHybrid media.
 

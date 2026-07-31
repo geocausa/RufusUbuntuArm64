@@ -36,8 +36,10 @@ func CopyAndVerify(ctx context.Context, manifest Manifest, destinationRoot strin
 	if err != nil {
 		return err
 	}
-	if pathsOverlap(manifest.SourceRoot, destinationRoot) {
-		return errors.New("source and destination media trees must not overlap")
+	for _, sourceRoot := range manifestSourceRoots(manifest) {
+		if pathsOverlap(sourceRoot, destinationRoot) {
+			return errors.New("source and destination media trees must not overlap")
+		}
 	}
 	var done uint64
 	for _, entry := range manifest.Entries {
@@ -94,15 +96,21 @@ func CopyAndVerify(ctx context.Context, manifest Manifest, destinationRoot strin
 }
 
 func validateManifestForCopy(manifest Manifest) error {
-	if manifest.SourceRoot == "" || len(manifest.Entries) == 0 {
+	if len(manifest.Entries) == 0 {
 		return errors.New("linux media manifest is empty")
 	}
-	resolvedRoot, err := resolveRoot(manifest.SourceRoot)
-	if err != nil {
-		return fmt.Errorf("reopen manifest source root: %w", err)
+	roots := manifestSourceRoots(manifest)
+	if len(roots) == 0 {
+		return errors.New("linux media manifest has no source roots")
 	}
-	if resolvedRoot != manifest.SourceRoot {
-		return errors.New("manifest source root identity changed")
+	for _, root := range roots {
+		resolvedRoot, err := resolveRoot(root)
+		if err != nil {
+			return fmt.Errorf("reopen manifest source root: %w", err)
+		}
+		if resolvedRoot != root {
+			return errors.New("manifest source root identity changed")
+		}
 	}
 	seen := make(map[string]struct{}, len(manifest.Entries))
 	var total uint64
@@ -127,9 +135,8 @@ func validateManifestForCopy(manifest Manifest) error {
 		if _, err := hex.DecodeString(entry.SHA256); err != nil {
 			return fmt.Errorf("manifest entry %q has an invalid SHA-256", entry.Path)
 		}
-		sourceRelative, err := filepath.Rel(manifest.SourceRoot, entry.SourcePath)
-		if err != nil || !filepath.IsLocal(sourceRelative) || sourceRelative == "." {
-			return fmt.Errorf("manifest source for %q escapes the source root", entry.Path)
+		if !manifestSourcePathAllowed(roots, entry.SourcePath) {
+			return fmt.Errorf("manifest source for %q escapes the approved source roots", entry.Path)
 		}
 		if entry.Size > ^uint64(0)-total {
 			return errors.New("manifest byte total overflows")
@@ -140,6 +147,37 @@ func validateManifestForCopy(manifest Manifest) error {
 		return fmt.Errorf("manifest byte total changed: entries=%d manifest=%d", total, manifest.TotalBytes)
 	}
 	return nil
+}
+
+func manifestSourceRoots(manifest Manifest) []string {
+	values := manifest.SourceRoots
+	if len(values) == 0 && manifest.SourceRoot != "" {
+		values = []string{manifest.SourceRoot}
+	}
+	roots := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		root := filepath.Clean(strings.TrimSpace(value))
+		if root == "." || root == "" {
+			continue
+		}
+		if _, exists := seen[root]; exists {
+			continue
+		}
+		seen[root] = struct{}{}
+		roots = append(roots, root)
+	}
+	return roots
+}
+
+func manifestSourcePathAllowed(roots []string, sourcePath string) bool {
+	for _, root := range roots {
+		relative, err := filepath.Rel(root, sourcePath)
+		if err == nil && filepath.IsLocal(relative) && relative != "." {
+			return true
+		}
+	}
+	return false
 }
 
 func pathsOverlap(left, right string) bool {

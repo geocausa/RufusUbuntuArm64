@@ -5,7 +5,7 @@ RufusArm64 offers a Rufus-style choice for suitable Linux ISOHybrid images:
 - **Write in ISO Image mode (Recommended)** is selected by default.
 - **Write in DD Image mode** remains available as the exact byte-for-byte alternative.
 
-The choice appears only when read-only inspection identifies an ISOHybrid image with a validated UEFI boot entry. Images outside that boundary continue through their existing automatic path without a misleading choice.
+The choice appears only when read-only inspection identifies a strict, hash-bound UEFI path. The fallback loader may be exposed directly by the ISO tree or by exactly one validated EFI no-emulation El Torito FAT image. Ambiguous, unsupported, or hash-incomplete catalogue evidence does not enable ISO Image mode.
 
 ## What ISO Image mode does
 
@@ -21,11 +21,12 @@ Before erasing the USB, the privileged helper:
 1. binds the exact source-file identity and exact removable target identity;
 2. holds the source read-only with a Linux kernel lease when available, otherwise uses conservative repeated SHA-256 passes;
 3. mounts the image privately and read-only;
-4. inventories and hashes the complete media tree;
-5. requires the native fallback UEFI loader, such as `EFI/BOOT/BOOTAA64.EFI` on ARM64;
-6. checks the selected filesystem's filename, case-collision, reserved-name, symlink, single-file-size, total-size, cluster, and target-capacity constraints;
-7. admits the exact pinned 1 MiB UEFI:NTFS image when NTFS is selected; and
-8. revalidates the selected source and target immediately before the destructive boundary.
+4. inventories and hashes the complete ISO media tree;
+5. requires the native fallback UEFI loader, such as `EFI/BOOT/BOOTAA64.EFI` on ARM64, or extracts the exact single validated El Torito UEFI image to an owner-only file and verifies its catalogue, image, and plan SHA-256 identities;
+6. mounts any extracted El Torito FAT image read-only with `nosuid,nodev,noexec`, verifies the loop source and mount flags, and merges its tree with the ISO tree only when exact and case-folded paths do not conflict;
+7. checks the selected filesystem's filename, case-collision, reserved-name, symlink, single-file-size, total-size, cluster, and target-capacity constraints;
+8. admits the exact pinned 1 MiB UEFI:NTFS image when NTFS is selected; and
+9. revalidates the selected source and target immediately before the destructive boundary.
 
 Only after those checks pass does it create the selected layout, format through a held partition descriptor, copy each file transactionally, hash every copied file back from the USB, run a read-only filesystem check, and flush the device.
 
@@ -48,10 +49,10 @@ Automatic and FAT32 use the reviewed FAT32 label boundary. Explicit NTFS permits
 
 The helper stops before erasure when the image cannot be represented within the reviewed scope. Examples include:
 
-- no native ARM64 UEFI fallback loader;
+- no native ARM64 UEFI fallback loader in either the ISO tree or one unambiguous EFI no-emulation El Torito FAT image;
 - an explicit FAT32 selection with a file above FAT32's single-file boundary;
 - unsafe or incompatible FAT32 or NTFS names;
-- case-insensitive target-filesystem path collisions;
+- exact or case-insensitive collisions between the ISO tree and an El Torito overlay, or within the target filesystem;
 - NTFS reserved DOS or metadata names;
 - a symbolic link that escapes the mounted media tree or creates a traversal cycle;
 - a missing, modified, or wrong-size UEFI:NTFS image;
@@ -67,6 +68,6 @@ DD Image mode uses the existing hardened raw writer. It preserves the image's em
 
 ## Qualification boundary
 
-Software tests cover Automatic selection, FAT32 and NTFS path policy, MBR/GPT metadata and readback, descriptor-bound FAT32/NTFS formatting, exact UEFI:NTFS asset admission and comparison, complete copied-file verification, cancellation and identity refusal, cleanup, and real MBR/GPT FAT32/NTFS loop-device creation. The loop workflow detaches and reopens every completed backing image before independent filesystem, file-tree, boot-partition, and GPT checks.
+Software tests cover Automatic selection, strict El Torito plan/refusal publication, FAT32 and NTFS path policy, multi-root overlay collision refusal, MBR/GPT metadata and readback, descriptor-bound FAT32/NTFS formatting, exact UEFI:NTFS asset admission and comparison, complete copied-file verification, cancellation and identity refusal, cleanup, and real MBR/GPT FAT32/NTFS plus fallback-only El Torito loop-device creation. The loop workflow detaches and reopens every completed backing image before independent filesystem, file-tree, boot-partition, and GPT checks.
 
 A new immutable release candidate still requires physical ARM64 firmware-boot evidence for ISO Image mode. Earlier DD-mode and persistence qualification does not automatically qualify this new extraction path.

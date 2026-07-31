@@ -199,16 +199,20 @@ func CreateExtractedNTFS(ctx context.Context, isoPath, devicePath string, opts E
 	}
 
 	sendPersistent(emit, PersistentEvent{Stage: "inspect", Message: "Checking ISO Image mode UEFI/NTFS names, asset, cluster, layout, and capacity compatibility…"})
-	manifest, err := Inspect(ctx, sourceRoot, Options{
+	prepared, err := prepareExtractedManifest(ctx, isoFile, sourceRoot, workDir, Options{
 		Architecture: opts.Architecture,
 		RequireUEFI:  true,
 		RequireFAT32: false,
 		MaxEntries:   opts.ManifestMaxEntries,
 		MaxBytes:     opts.ManifestMaxBytes,
-	})
+	}, testTarget && os.Getenv("RUFUS_TEST_ISO_ROOT") != "", emit)
 	if err != nil {
 		return result, fmt.Errorf("NTFS ISO Image mode is not supported for this image: %w", err)
 	}
+	defer func() {
+		returnErr = errors.Join(returnErr, prepared.Close())
+	}()
+	manifest := prepared.Manifest
 	plan, err := PlanExtractedMedia(manifest, "ntfs", opts.PartitionScheme, opts.VolumeLabel, opts.ClusterSize, opts.TargetSize, sectorSize)
 	if err != nil {
 		return result, err
