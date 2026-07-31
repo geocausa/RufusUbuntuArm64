@@ -1,10 +1,29 @@
 # RufusArm64
 
-RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on ARM64 computers**, including Snapdragon X systems such as Surface Pro 11 X1E. It is a native Linux implementation inspired by Rufus; it is not a Wine wrapper and is not endorsed by the official Rufus project.
+[![CI](https://github.com/geocausa/RufusUbuntuArm64/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/geocausa/RufusUbuntuArm64/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/geocausa/RufusUbuntuArm64)](https://github.com/geocausa/RufusUbuntuArm64/releases/latest)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
+[![Platform: Linux ARM64](https://img.shields.io/badge/platform-Linux%20ARM64-informational.svg)](#supported-scope)
 
-**Version 0.15.0** is the ISO Image mode parity and physical-qualification release candidate.
+**RufusArm64** is a safety-focused, Linux-native bootable-media creator for ARM64 computers, including Snapdragon X systems such as Surface Pro 11 X1E. It is independently implemented, inspired by Rufus, and is neither a Wine wrapper nor an official Rufus project.
 
-## Highlights
+> [!IMPORTANT]
+> RufusArm64 performs destructive whole-device writes. Every successful software check applies only to the exact image, target, controller, firmware, and mode tested. Read the confirmation screen and independently verify the selected removable drive before authorizing an operation.
+
+## Project status
+
+| Channel | Current state | Intended use |
+| --- | --- | --- |
+| **Stable release** | [`v0.15.0`](https://github.com/geocausa/RufusUbuntuArm64/releases/latest) | General evaluation of the published ISO Image mode release candidate |
+| **`main`** | Post-`0.15.0` development, including experimental Windows To Go work | Development, review, and controlled qualification—not an automatically published binary |
+| **Windows To Go** | Software-qualified for the stated Windows 11 ARM64 profile; physical firmware boot and first boot remain unqualified | Experimental testing on disposable removable media only |
+| **Target milestone** | `1.0` | Stable release after hardware coverage, independent privileged-code review, localisation, and production trust operations |
+
+The public `.deb` belongs to the tagged release shown above. The `main` branch may contain newer, unreleased work. Exact claims and qualification boundaries are maintained in [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md), [`ROADMAP.md`](ROADMAP.md), and the machine-readable [`docs/upstream-rufus-parity.json`](docs/upstream-rufus-parity.json).
+
+## Supported scope
+
+### Highlights
 
 - Direct writing of recognized Linux ISOHybrid images and GPT/MBR raw disk images.
 - A Rufus-style **ISO Image mode / DD Image mode** choice for suitable Linux ISOHybrid images, with conventional writable FAT32 extraction recommended by default and exact cloning retained as the alternative.
@@ -26,7 +45,9 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 
 ## Install on Ubuntu ARM64
 
-Verify the release-candidate checksum and install:
+Download the `.deb` and checksum sidecar from the corresponding GitHub release. Do not mix a package from one release with a checksum from another, and do not assume that an arbitrary build of `main` has passed the tagged release gates.
+
+Verify the published checksum and install:
 
 ```bash
 sha256sum -c rufusarm64_0.15.0_arm64.deb.sha256

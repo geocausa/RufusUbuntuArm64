@@ -1,0 +1,70 @@
+name: Bug report
+description: Report a reproducible RufusArm64 defect or failed operation
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        RufusArm64 can erase entire drives. Stop repeated destructive attempts if the target reports I/O errors, resets, disappearing capacity, or unstable identity.
+  - type: input
+    id: version
+    attributes:
+      label: Exact version or commit
+      description: Use the installed package version or full Git commit.
+      placeholder: 0.15.0 or 4c390aa16cf79edff11e21219246699b85f986a8
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Distribution, release, architecture, and computer model.
+      placeholder: Ubuntu 26.04 ARM64 on Surface Pro 11 X1E
+    validations:
+      required: true
+  - type: dropdown
+    id: operation
+    attributes:
+      label: Operation
+      options:
+        - Raw/DD image writing
+        - Linux ISO Image mode
+        - Windows installation media
+        - Windows To Go
+        - Persistent Linux media
+        - Restore or format
+        - Save drive image
+        - Check USB
+        - FFU restore
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed result
+      description: Include the first error, not only the final summary.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Diagnostics and reproducibility evidence
+      description: Attach exported diagnostics or JSON, image SHA-256, target model/capacity/transport, and relevant kernel messages. Redact private information.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I have stopped destructive retries if the target or connection appears unstable.
+          required: true
+        - label: I have removed passwords, private keys, private URLs, and unrelated device identifiers.
+          required: true
