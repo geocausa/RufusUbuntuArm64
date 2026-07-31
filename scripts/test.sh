@@ -385,7 +385,14 @@ uefi_image="${extract_dir}/usr/lib/rufusarm64/uefi-ntfs.img"
 expected_uefi_hash="$(awk '/uefi-ntfs.img$/ {print $1}' vendor/uefi-ntfs/SHA256SUMS | head -n1)"
 actual_uefi_hash="$(sha256sum "${uefi_image}" | awk '{print $1}')"
 [[ "${actual_uefi_hash}" == "${expected_uefi_hash}" ]]
-"${helper}" uefi-ntfs inspect --image "${uefi_image}" --json | python3 -c '''import json,sys; d=json.load(sys.stdin); assert d["schema"] == 1; assert d["filesystem"] == "fat12"; assert d["volume_label"] == "RUFUS_BOOT"; assert d["image_sha256"] == "72683fa1250eeea772d3399277b434d4e55ba8dd0dc926e52d817e701fc2eb9e"; assert d["manifest_sha256"] == "b4256f87b23bf0ef70870857eac2dfdc71053f1fbf3dd47e36f708908930ed16"; assert [a["name"] for a in d["architectures"]] == ["arm", "arm64", "ia32", "riscv64", "x64"]; r=d["architectures"][3]; assert r["fallback"]["path"] == "EFI/Boot/bootriscv64.efi" and r["fallback"]["machine"] == 0x5064; assert r["ntfs_driver"]["subsystem"] == 11 and r["exfat_driver"]["subsystem"] == 11'''
+uefi_inspector="${native_helper}"
+case "$(uname -m)" in
+  aarch64|arm64)
+    # Native ARM64 jobs must execute the helper extracted from the package.
+    uefi_inspector="${helper}"
+    ;;
+esac
+"${uefi_inspector}" uefi-ntfs inspect --image "${uefi_image}" --json | python3 -c '''import json,sys; d=json.load(sys.stdin); assert d["schema"] == 1; assert d["filesystem"] == "fat12"; assert d["volume_label"] == "RUFUS_BOOT"; assert d["image_sha256"] == "72683fa1250eeea772d3399277b434d4e55ba8dd0dc926e52d817e701fc2eb9e"; assert d["manifest_sha256"] == "b4256f87b23bf0ef70870857eac2dfdc71053f1fbf3dd47e36f708908930ed16"; assert [a["name"] for a in d["architectures"]] == ["arm", "arm64", "ia32", "riscv64", "x64"]; r=d["architectures"][3]; assert r["fallback"]["path"] == "EFI/Boot/bootriscv64.efi" and r["fallback"]["machine"] == 0x5064; assert r["ntfs_driver"]["subsystem"] == 11 and r["exfat_driver"]["subsystem"] == 11'''
 for file in README-RUFUS-UEFI-NTFS.txt SHA256SUMS; do
   [[ -f "${extract_dir}/usr/share/doc/rufusarm64/uefi-ntfs/${file}" ]]
 done
