@@ -22,8 +22,9 @@ import (
 var errTargetIO = errors.New("windows To Go target I/O failure")
 
 const (
-	applyHealthPollInterval = time.Second
-	applyOutputLimit        = 256 * 1024
+	applyHealthPollInterval     = time.Second
+	applyBlockedEscalationDelay = 45 * time.Second
+	applyOutputLimit            = 256 * 1024
 )
 
 var wimApplyPercentPattern = regexp.MustCompile(`^Extracting file data:.*\(([0-9]{1,3})%\) done$`)
@@ -235,6 +236,26 @@ func (transcript *commandTranscript) String() string {
 	return value
 }
 
+func emitBlockedTargetEscalation(done <-chan struct{}, delay time.Duration, emit func(Event)) {
+	if done == nil || emit == nil {
+		return
+	}
+	if delay <= 0 {
+		delay = applyBlockedEscalationDelay
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return
+	case <-timer.C:
+		emit(Event{
+			Stage:   "target_io_blocked",
+			Message: "Linux is still retrying the failed target and the writer cannot exit. Disconnect only the selected failed target now; do not disconnect any other storage. RufusArm64 will finish cleanup after the kernel releases it.",
+		})
+	}
+}
+
 func runWIMApply(
 	ctx context.Context,
 	executable string,
@@ -243,6 +264,7 @@ func runWIMApply(
 	total uint64,
 	health targetHealthMonitor,
 	pollInterval time.Duration,
+	blockedEscalationDelay time.Duration,
 	emit EventFunc,
 ) error {
 	if ctx == nil {
@@ -256,6 +278,9 @@ func runWIMApply(
 	}
 	if pollInterval <= 0 {
 		pollInterval = applyHealthPollInterval
+	}
+	if blockedEscalationDelay <= 0 {
+		blockedEscalationDelay = applyBlockedEscalationDelay
 	}
 
 	applyCtx, cancelApply := context.WithCancelCause(ctx)
@@ -274,6 +299,8 @@ func runWIMApply(
 	if err := command.Start(); err != nil {
 		return fmt.Errorf("start WIM apply: %w", err)
 	}
+	runFinished := make(chan struct{})
+	defer close(runFinished)
 
 	var emitMutex sync.Mutex
 	safeEmit := func(event Event) {
@@ -346,10 +373,11 @@ func runWIMApply(
 					if err := health.Check(); err != nil {
 						safeEmit(Event{
 							Stage:   "target_io_error",
-							Message: "The target reported a hardware I/O failure. Windows image application is being stopped; do not unplug it until RufusArm64 confirms that writing has stopped.",
+							Message: "The target reported a hardware I/O failure. RufusArm64 requested cancellation; keep the selected target connected while Linux tries to release the writer.",
 						})
 						healthFailure <- err
 						cancelApply(err)
+						go emitBlockedTargetEscalation(runFinished, blockedEscalationDelay, safeEmit)
 						return
 					}
 				}

@@ -114,7 +114,7 @@ func TestRunWIMApplyRealNTFSLoop(t *testing.T) {
 	var events []Event
 	if err := runWIMApply(
 		ctx, wimlib, []string{"apply", wimPath, "1", loopPath}, "Applying test image…",
-		sourceBytes, health, 20*time.Millisecond, func(event Event) { events = append(events, event) },
+		sourceBytes, health, 20*time.Millisecond, 50*time.Millisecond, func(event Event) { events = append(events, event) },
 	); err != nil {
 		t.Fatal(err)
 	}
