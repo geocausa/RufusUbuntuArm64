@@ -9,6 +9,7 @@ import json
 from datetime import datetime, timezone
 import os
 import platform
+import re
 import shutil
 import signal
 import subprocess

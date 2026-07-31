@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fixed the graphical Windows capability analyzer by importing Python's regular-expression module, with a runtime regression that executes valid ARM64 silent-install metadata instead of relying only on syntax compilation.
 - Persist ordinary Windows Setup customization preferences across image changes and application restarts while always resetting silent installation, edition selection, Windows To Go, SkuSiPolicy, and CA 2023 replacement; the erase confirmation and diagnostic log now explicitly disclose the exact option set or standard Microsoft setup.
 - Made optional Windows driver staging an explicit, persisted opt-in with a clear action; remembered folders are inactive by default, and mixed-content folders now fail with guidance instead of appearing to be ordinary FAT32 media failures.
 - Added structural admission for the pinned multi-architecture UEFI:NTFS image: an in-process bounded FAT12 parser now proves exact ARM32, ARM64, IA32, RISC-V64, and x64 fallback/NTFS/exFAT loader triplets by path, size, SHA-256, PE machine, and subsystem, with an installed-package CLI report and ARM Thumb UEFI support.
