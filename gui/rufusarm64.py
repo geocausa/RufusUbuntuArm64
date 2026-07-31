@@ -148,6 +148,40 @@ def normalize_windows_capability_analysis(payload):
         raise ValueError("Windows capability analysis is missing a resolved automatic layout.")
     if default_filesystem not in {"fat32", "ntfs"}:
         raise ValueError("Windows capability analysis is missing a resolved automatic filesystem.")
+    metadata = dict(metadata)
+    try:
+        image_count = int(metadata.get("image_count") or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Windows capability analysis has an invalid image count.") from exc
+    images = metadata.get("images") or []
+    if not isinstance(images, list) or image_count < 1 or image_count > 256 or len(images) != image_count:
+        raise ValueError("Windows capability analysis is missing the exact installation-image index set.")
+    normalized_images = []
+    seen_indexes = set()
+    for item in images:
+        if not isinstance(item, dict):
+            raise ValueError("Windows capability analysis contains an invalid installation image.")
+        try:
+            index = int(item.get("index") or 0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Windows capability analysis contains an invalid installation-image index.") from exc
+        name = str(item.get("name") or "").strip()
+        language = str(item.get("default_language") or "").strip()
+        if index < 1 or index > 256 or index in seen_indexes or not name or len(name.encode("utf-8")) > 256:
+            raise ValueError("Windows capability analysis contains incomplete or duplicate installation-image metadata.")
+        if language and not re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", language):
+            raise ValueError("Windows capability analysis contains an invalid installation-image language.")
+        seen_indexes.add(index)
+        normalized_images.append({"index": index, "name": name, "default_language": language})
+    boot_language = str(metadata.get("boot_language") or "").strip()
+    silent_capability = capabilities.get("silent_install")
+    if isinstance(silent_capability, dict) and silent_capability.get("enabled"):
+        if not re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", boot_language):
+            raise ValueError("Windows capability analysis enabled silent installation without a proven boot.wim language.")
+    metadata["image_count"] = image_count
+    metadata["images"] = normalized_images
+    metadata["boot_language"] = boot_language
+    metadata["existing_unattend_path"] = str(metadata.get("existing_unattend_path") or "")
     ca2023 = payload.get("windows_ca_2023")
     if not isinstance(ca2023, dict) or not isinstance(ca2023.get("available"), bool):
         raise ValueError("Windows capability analysis is missing CA 2023 bootloader evidence.")
@@ -193,6 +227,7 @@ def unavailable_windows_capability_analysis(reason):
             "quality_of_life": dict(disabled),
             "apply_sku_si_policy": dict(disabled),
             "use_windows_ca_2023_bootloaders": dict(disabled),
+            "silent_install": dict(disabled),
             "disable_bitlocker": dict(disabled),
             "load_drivers": dict(disabled),
             "locale": dict(disabled),
@@ -215,6 +250,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
             "Windows setup capabilities have not been analyzed."
         )
         self.capabilities = self.capability_analysis.get("capabilities") or {}
+        self.windows_images = list((self.capability_analysis.get("metadata") or {}).get("images") or [])
         self.selected_target_system = normalize_target_system(selected_target_system or DEFAULT_WINDOWS_TARGET_SYSTEM)
         if self.selected_target_system == "auto":
             self.selected_target_system = str(self.capability_analysis.get("default_target_system") or "").strip().lower()
@@ -280,7 +316,8 @@ class WindowsOptionsDialog(Gtk.Dialog):
         account_row.pack_start(account_label, False, False, 0)
         account_row.pack_start(self.local_user, True, True, 0)
         box.pack_start(account_row, False, False, 0)
-        self.local_account.connect("toggled", lambda *_: self.update_local_user_sensitivity())
+        self.local_account.connect("toggled", lambda *_: (self.update_local_user_sensitivity(), self.update_silent_install_sensitivity()))
+        self.local_user.connect("changed", lambda *_: self.update_silent_install_sensitivity())
 
         self.reduce_data = self.check(
             box,
@@ -288,6 +325,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
             "Sets Windows Setup privacy choices and disables advertising/consumer-content policies where supported.",
             previous.get("reduce_data_collection", False),
         )
+        self.reduce_data.connect("toggled", lambda *_: self.update_silent_install_sensitivity())
         self.quality_of_life = self.check(
             box,
             "Apply Rufus Quality of Life changes",
@@ -324,6 +362,31 @@ class WindowsOptionsDialog(Gtk.Dialog):
             previous.get("use_regional_settings", False) and bool(region_parts),
         )
         self.use_region.set_sensitive(bool(region_parts))
+        self.use_region.connect("toggled", lambda *_: self.update_silent_install_sensitivity())
+
+        self.silent_install = self.check(
+            box,
+            "Install Windows silently on the installation computer",
+            "High risk: Windows Setup may erase disk 0 automatically. Available only for qualified Windows 11 UEFI/NTFS media after local-account, privacy, and regional settings are selected.",
+            previous.get("silent_install", False),
+        )
+        self.silent_install.connect("toggled", lambda *_: self.update_silent_install_sensitivity())
+        edition_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        edition_row.set_margin_start(28)
+        edition_label = Gtk.Label(label="Windows edition")
+        edition_label.set_xalign(0)
+        self.silent_edition = Gtk.ComboBoxText()
+        for image in self.windows_images:
+            self.silent_edition.append(str(image["index"]), f"{image['name']} (image {image['index']})")
+        previous_index = int(previous.get("install_image_index") or 0)
+        available_indexes = {int(image["index"]) for image in self.windows_images}
+        selected_index = previous_index if previous_index in available_indexes else (int(self.windows_images[0]["index"]) if self.windows_images else 0)
+        if selected_index:
+            self.silent_edition.set_active_id(str(selected_index))
+        edition_row.pack_start(edition_label, False, False, 0)
+        edition_row.pack_start(self.silent_edition, True, True, 0)
+        box.pack_start(edition_row, False, False, 0)
+
         self.disable_bitlocker = self.check(
             box,
             "Disable automatic BitLocker device-encryption provisioning",
@@ -397,6 +460,12 @@ class WindowsOptionsDialog(Gtk.Dialog):
             self.use_ca_2023_bootloaders.set_sensitive(False)
             self.use_ca_2023_bootloaders.set_tooltip_text("Windows UEFI CA 2023 bootloader replacement currently requires FAT32; the pinned UEFI:NTFS first stage carries only CA 2011 certificate-chain evidence.")
         self.apply_option_capability(self.disable_bitlocker, "disable_bitlocker")
+        self.silent_install_allowed = self.apply_option_capability(self.silent_install, "silent_install")
+        if self.silent_install_allowed and (self.selected_target_system != "uefi" or self.selected_filesystem != "ntfs"):
+            self.silent_install.set_active(False)
+            self.silent_install.set_sensitive(False)
+            self.silent_install.set_tooltip_text("Silent installation currently requires resolved UEFI/NTFS media so the verified UEFI:NTFS partition can guard disk numbering.")
+            self.silent_install_allowed = False
         regional_keys = []
         if self.region_locale:
             regional_keys.append("locale")
@@ -415,6 +484,25 @@ class WindowsOptionsDialog(Gtk.Dialog):
         if regional_reasons:
             self.use_region.set_tooltip_text("; ".join(dict.fromkeys(regional_reasons)))
         self.update_local_user_sensitivity()
+        self.update_silent_install_sensitivity()
+
+    def update_silent_install_sensitivity(self):
+        if not hasattr(self, "silent_install"):
+            return
+        prerequisites = (
+            bool(getattr(self, "silent_install_allowed", False))
+            and self.local_account.get_active()
+            and bool(self.local_user.get_text().strip())
+            and self.reduce_data.get_active()
+            and self.use_region.get_active()
+            and bool(self.region_locale)
+            and bool(self.region_timezone)
+            and bool(self.windows_images)
+        )
+        if not prerequisites:
+            self.silent_install.set_active(False)
+        self.silent_install.set_sensitive(prerequisites)
+        self.silent_edition.set_sensitive(prerequisites and self.silent_install.get_active())
 
     def update_local_user_sensitivity(self):
         self.local_user.set_sensitive(bool(getattr(self, "local_account_allowed", False)) and self.local_account.get_active())
@@ -438,6 +526,20 @@ class WindowsOptionsDialog(Gtk.Dialog):
             local_user = validate_local_username(self.local_user.get_text())
             if not local_user:
                 raise ValueError("Enter a local account name or turn off local-account creation.")
+        silent_install = self.silent_install.get_active()
+        image_index = 0
+        image_name = ""
+        if silent_install:
+            if not (local_user and self.reduce_data.get_active() and self.use_region.get_active() and self.region_locale and self.region_timezone):
+                raise ValueError("Silent installation requires a local account, reduced data collection, and complete regional settings.")
+            try:
+                image_index = int(self.silent_edition.get_active_id() or 0)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Choose the exact Windows edition for silent installation.") from exc
+            selected = next((image for image in self.windows_images if int(image["index"]) == image_index), None)
+            if selected is None:
+                raise ValueError("Choose an installation image proven by the current ISO analysis.")
+            image_name = selected["name"]
         return {
             "bypass_hardware": self.bypass_hardware.get_active(),
             "bypass_online_account": self.bypass_online.get_active(),
@@ -446,6 +548,9 @@ class WindowsOptionsDialog(Gtk.Dialog):
             "quality_of_life": self.quality_of_life.get_active(),
             "apply_sku_si_policy": self.apply_sku_si_policy.get_active(),
             "use_windows_ca_2023_bootloaders": self.use_ca_2023_bootloaders.get_active(),
+            "silent_install": silent_install,
+            "install_image_index": image_index,
+            "install_image_name": image_name,
             "disable_bitlocker": self.disable_bitlocker.get_active(),
             "use_regional_settings": self.use_region.get_active(),
             "locale": self.region_locale if self.use_region.get_active() else "",
@@ -2287,6 +2392,46 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.append_log("Windows capability analysis:\n" + json.dumps(analysis, indent=2, sort_keys=True))
         return analysis
 
+    def confirm_silent_install(self, options):
+        edition = str(options.get("install_image_name") or "the selected Windows edition")
+        index = int(options.get("install_image_index") or 0)
+        dialog = Gtk.Dialog(title="Confirm automatic disk-0 erasure", transient_for=self, modal=True)
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        continue_button = dialog.add_button("Create silent-install USB", Gtk.ResponseType.OK)
+        continue_button.set_sensitive(False)
+        dialog.set_default_response(Gtk.ResponseType.CANCEL)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_border_width(18)
+        title = Gtk.Label()
+        title.set_markup("<span size='large' weight='bold'>This USB can erase disk 0 automatically</span>")
+        title.set_xalign(0)
+        box.pack_start(title, False, False, 0)
+        explanation = Gtk.Label(
+            label=(
+                f"Windows Setup will select {edition} (image {index}), wipe disk 0, create a new EFI/MSR/Windows layout, "
+                "and install without showing the normal disk or edition pages when its safeguards pass. "
+                "The UEFI:NTFS partition guard is intended to make Setup show its disk page instead if the expected one-internal-disk plus USB numbering is not present; it is not a substitute for disconnecting other storage."
+            )
+        )
+        explanation.set_xalign(0)
+        explanation.set_line_wrap(True)
+        box.pack_start(explanation, False, False, 0)
+        checks = [
+            Gtk.CheckButton(label="I understand that disk 0 on the installation computer will be completely erased."),
+            Gtk.CheckButton(label="I will disconnect every other internal, external, and card-reader storage device before booting this USB."),
+            Gtk.CheckButton(label=f"I confirm that {edition} (image {index}) is the edition I intend to install."),
+        ]
+        def update_confirmation(*_):
+            continue_button.set_sensitive(all(check.get_active() for check in checks))
+        for check in checks:
+            check.connect("toggled", update_confirmation)
+            box.pack_start(check, False, False, 0)
+        dialog.get_content_area().pack_start(box, True, True, 0)
+        dialog.show_all()
+        response = dialog.run()
+        dialog.destroy()
+        return response == Gtk.ResponseType.OK
+
     def choose_windows_options(self):
         self.windows_capability_analysis = self.analyze_windows_capabilities()
         dialog = WindowsOptionsDialog(
@@ -2305,6 +2450,8 @@ class RufusWindow(Gtk.ApplicationWindow):
                 values = dialog.values()
             except ValueError as exc:
                 self.message(str(exc), Gtk.MessageType.ERROR)
+                continue
+            if values.get("silent_install") and not self.confirm_silent_install(values):
                 continue
             dialog.destroy()
             self.windows_options = values
@@ -2384,6 +2531,7 @@ class RufusWindow(Gtk.ApplicationWindow):
                 (options.get("quality_of_life"), "Quality of Life app removals and policies"),
                 (options.get("apply_sku_si_policy"), "installed-system SkuSiPolicy deployment to the EFI System Partition"),
                 (options.get("use_windows_ca_2023_bootloaders"), "Windows UEFI CA 2023 boot-file replacement with mandatory SHA-256 readback; firmware CA 2023 trust required"),
+                (options.get("silent_install"), f"silent installation of {options.get('install_image_name', 'selected edition')} (image {options.get('install_image_index', 0)}), with automatic disk-0 erasure"),
                 (options.get("disable_bitlocker"), "automatic encryption disabled"),
                 (options.get("use_regional_settings"), "Ubuntu regional settings"),
             )

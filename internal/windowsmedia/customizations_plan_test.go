@@ -4,6 +4,7 @@ package windowsmedia
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -60,13 +61,84 @@ func TestPreparePlanAnswerFileRejectsMissingPayloadForSelectedOptions(t *testing
 
 func TestValidateCustomizationTargetSystemRejectsSkuSiPolicyAfterAutoResolvesToBIOS(t *testing.T) {
 	options := windowsconfig.Options{ApplySkuSiPolicy: true}
-	if err := validateCustomizationTargetSystem(options, "bios"); err == nil || !strings.Contains(err.Error(), "requires a resolved UEFI") {
+	if err := validateCustomizationLayout(options, "bios", "fat32"); err == nil || !strings.Contains(err.Error(), "requires a resolved UEFI") {
 		t.Fatalf("BIOS target error = %v", err)
 	}
-	if err := validateCustomizationTargetSystem(options, "UEFI"); err != nil {
+	if err := validateCustomizationLayout(options, "UEFI", "fat32"); err != nil {
 		t.Fatalf("UEFI target rejected: %v", err)
 	}
-	if err := validateCustomizationTargetSystem(windowsconfig.Options{}, "bios"); err != nil {
+	if err := validateCustomizationLayout(windowsconfig.Options{}, "bios", "fat32"); err != nil {
 		t.Fatalf("unselected policy affected BIOS media: %v", err)
+	}
+}
+
+func TestValidateCustomizationLayoutBoundsSilentInstallToUEFINTFS(t *testing.T) {
+	options := windowsconfig.Options{SilentInstall: true}
+	if err := validateCustomizationLayout(options, "uefi", "ntfs"); err != nil {
+		t.Fatal(err)
+	}
+	for _, layout := range []struct{ target, filesystem string }{{"uefi", "fat32"}, {"bios", "ntfs"}, {"bios", "fat32"}} {
+		if err := validateCustomizationLayout(options, layout.target, layout.filesystem); err == nil || !strings.Contains(err.Error(), "UEFI/NTFS") {
+			t.Fatalf("layout %s/%s error=%v", layout.target, layout.filesystem, err)
+		}
+	}
+}
+
+func TestInspectPlanCustomizationMetadataScopesBootLanguageFailure(t *testing.T) {
+	previousSetup := inspectPlanSetupMetadata
+	previousBoot := inspectPlanBootMetadata
+	t.Cleanup(func() {
+		inspectPlanSetupMetadata = previousSetup
+		inspectPlanBootMetadata = previousBoot
+	})
+	installMetadata := windowsconfig.MediaMetadata{
+		ProductName: "Windows 11 Pro", Version: "10.0.26100", Architecture: "arm64", InstallationType: "Client",
+		ImageCount: 1, Images: []windowsconfig.WindowsImage{{Index: 3, Name: "Windows 11 Pro"}},
+	}
+	inspectPlanSetupMetadata = func(context.Context, string) (windowsconfig.MediaMetadata, error) {
+		return installMetadata, nil
+	}
+	inspectPlanBootMetadata = func(context.Context, string) (windowsconfig.MediaMetadata, error) {
+		return windowsconfig.MediaMetadata{}, errors.New("unreadable boot metadata")
+	}
+	plan := mediaPlan{InstallPath: "/media/sources/install.wim", BootWIMPath: "/media/sources/boot.wim"}
+	metadata, err := inspectPlanCustomizationMetadata(context.Background(), plan, false)
+	if err != nil || metadata.ProductName != installMetadata.ProductName || metadata.BootLanguage != "" {
+		t.Fatalf("optional boot-language probe = %#v, %v", metadata, err)
+	}
+	if _, err := inspectPlanCustomizationMetadata(context.Background(), plan, true); err == nil || !strings.Contains(err.Error(), "boot language") {
+		t.Fatalf("required boot-language error=%v", err)
+	}
+}
+
+func TestInspectPlanCustomizationMetadataBindsSetupImageTwoAndExistingAnswer(t *testing.T) {
+	previousSetup := inspectPlanSetupMetadata
+	previousBoot := inspectPlanBootMetadata
+	t.Cleanup(func() {
+		inspectPlanSetupMetadata = previousSetup
+		inspectPlanBootMetadata = previousBoot
+	})
+	inspectPlanSetupMetadata = func(context.Context, string) (windowsconfig.MediaMetadata, error) {
+		return windowsconfig.MediaMetadata{
+			ProductName: "Windows 11 Pro", Version: "10.0.26100", Architecture: "arm64", InstallationType: "Client",
+			ImageCount: 1, Images: []windowsconfig.WindowsImage{{Index: 3, Name: "Windows 11 Pro"}},
+		}, nil
+	}
+	inspectPlanBootMetadata = func(context.Context, string) (windowsconfig.MediaMetadata, error) {
+		return windowsconfig.MediaMetadata{Images: []windowsconfig.WindowsImage{
+			{Index: 1, Name: "Windows PE", DefaultLanguage: "fr-FR"},
+			{Index: 2, Name: "Windows Setup", DefaultLanguage: "en-GB"},
+		}}, nil
+	}
+	plan := mediaPlan{
+		InstallPath: "/media/sources/install.wim", BootWIMPath: "/media/sources/boot.wim",
+		ExistingPantherAnswerPath: "/media/sources/$OEM$/$$/Panther/unattend.xml",
+	}
+	metadata, err := inspectPlanCustomizationMetadata(context.Background(), plan, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.BootLanguage != "en-GB" || metadata.ExistingUnattendPath != "sources/$OEM$/$$/Panther/unattend.xml" {
+		t.Fatalf("metadata=%#v", metadata)
 	}
 }

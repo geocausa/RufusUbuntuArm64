@@ -1171,3 +1171,51 @@ func TestCreateStagesAndConfiguresWindowsPEDrivers(t *testing.T) {
 		}
 	}
 }
+
+func TestInspectMountedISODetectsBothUnattendedFileLocations(t *testing.T) {
+	for name, relative := range map[string]string{
+		"root":    "AutoUnattend.XML",
+		"panther": "sources/$OEM$/$$/PANTHER/Unattend.XML",
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			writeTestFile(t, filepath.Join(root, "sources", "boot.wim"), []byte("boot"))
+			writeTestFile(t, filepath.Join(root, "sources", "install.wim"), []byte("install"))
+			writeTestFile(t, filepath.Join(root, "efi", "boot", "bootaa64.efi"), []byte("efi"))
+			answer := filepath.Join(root, filepath.FromSlash(relative))
+			writeTestFile(t, answer, []byte("existing answer"))
+			plan, err := inspectMountedISO(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if name == "root" {
+				if plan.ExistingAnswerPath != answer || plan.ExistingAnswerSize != uint64(len("existing answer")) {
+					t.Fatalf("root answer evidence=%q/%d", plan.ExistingAnswerPath, plan.ExistingAnswerSize)
+				}
+			} else if plan.ExistingPantherAnswerPath != answer {
+				t.Fatalf("Panther answer evidence=%q, want %q", plan.ExistingPantherAnswerPath, answer)
+			}
+		})
+	}
+}
+
+func TestCustomizationVolumeLabelMarksSilentMediaWithoutTruncation(t *testing.T) {
+	ordinary, err := customizationVolumeLabel("WIN11", "ntfs", windowsconfig.Options{})
+	if err != nil || ordinary != "WIN11" {
+		t.Fatalf("ordinary label=%q err=%v", ordinary, err)
+	}
+	silent, err := customizationVolumeLabel("WIN11", "ntfs", windowsconfig.Options{SilentInstall: true})
+	if err != nil || silent != "WIN11 (SILENT)" {
+		t.Fatalf("silent label=%q err=%v", silent, err)
+	}
+	already, err := customizationVolumeLabel("WIN11 (SILENT)", "ntfs", windowsconfig.Options{SilentInstall: true})
+	if err != nil || already != silent {
+		t.Fatalf("existing marker label=%q err=%v", already, err)
+	}
+	if _, err := customizationVolumeLabel(strings.Repeat("x", 24), "ntfs", windowsconfig.Options{SilentInstall: true}); err == nil || !strings.Contains(err.Error(), "silent-install volume label") {
+		t.Fatalf("oversized marked label error=%v", err)
+	}
+	if _, err := customizationVolumeLabel("WIN11", "fat32", windowsconfig.Options{SilentInstall: true}); err == nil || !strings.Contains(err.Error(), "silent-install volume label") {
+		t.Fatalf("FAT32 silent marker error=%v", err)
+	}
+}

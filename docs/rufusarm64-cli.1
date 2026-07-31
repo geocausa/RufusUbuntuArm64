@@ -103,6 +103,24 @@ Validate and stage Windows driver packages for Windows PE and manual Setup use.
 Reject Windows EFI boot files revoked by the selected Secure Boot DBX. Firmware
 is not modified.
 .TP
+.B --win-silent-install
+Create guarded Windows 11 unattended media that may erase disk 0 on the
+installation computer. This requires qualified UEFI/NTFS media, an exact image
+index, a local account, privacy choices, locale, time zone, no pre-existing
+answer file, and the independent acknowledgement below. Disconnect all other
+storage before booting the result.
+.TP
+.BI --win-install-image-index " INDEX"
+Select the exact WIM image index proven by the current ISO inspection. Display
+names are not accepted as substitutes for an index.
+.TP
+.BI --win-silent-confirm " PHRASE"
+For silent installation, require the exact literal phrase
+.BR "ERASE DISK 0" .
+This is separate from
+.B --yes
+and does not bypass source, target, media, layout, or answer-file checks.
+.TP
 .B --full-format
 Zero-write the new Windows data partition before formatting.
 .TP

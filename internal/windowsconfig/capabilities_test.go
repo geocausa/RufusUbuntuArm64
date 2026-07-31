@@ -102,3 +102,56 @@ func TestValidateForMedia(t *testing.T) {
 		t.Fatalf("zero options must leave unknown media unchanged: %v", err)
 	}
 }
+
+func TestSilentInstallCapabilityRequiresExactMediaEvidence(t *testing.T) {
+	base := MediaMetadata{
+		ProductName:      "Windows 11 Pro",
+		Version:          "10.0.26100",
+		Architecture:     "ARM64",
+		InstallationType: "Client",
+		ImageCount:       2,
+		Images: []WindowsImage{
+			{Index: 1, Name: "Windows 11 Home", DefaultLanguage: "en-GB"},
+			{Index: 2, Name: "Windows 11 Pro", DefaultLanguage: "en-GB"},
+		},
+		BootLanguage: "en-GB",
+	}
+	if capability := Capabilities(base).SilentInstall; !capability.Enabled {
+		t.Fatalf("qualified silent install disabled: %#v", capability)
+	}
+	for name, mutate := range map[string]func(*MediaMetadata){
+		"existing answer": func(m *MediaMetadata) { m.ExistingUnattendPath = "autounattend.xml" },
+		"missing images":  func(m *MediaMetadata) { m.Images = nil },
+		"duplicate index": func(m *MediaMetadata) { m.Images[1].Index = 1 },
+		"missing name":    func(m *MediaMetadata) { m.Images[0].Name = "" },
+		"boot language":   func(m *MediaMetadata) { m.BootLanguage = "" },
+		"Windows 10":      func(m *MediaMetadata) { m.ProductName = "Windows 10 Pro" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			metadata := base
+			metadata.Images = append([]WindowsImage(nil), base.Images...)
+			mutate(&metadata)
+			if capability := Capabilities(metadata).SilentInstall; capability.Enabled || capability.Reason == "" {
+				t.Fatalf("unqualified silent install accepted: %#v", capability)
+			}
+		})
+	}
+}
+
+func TestValidateForMediaSilentInstall(t *testing.T) {
+	metadata := MediaMetadata{
+		ProductName: "Windows 11 Pro", Version: "10.0.26100", Architecture: "ARM64", InstallationType: "Client",
+		ImageCount: 1, Images: []WindowsImage{{Index: 4, Name: "Windows 11 Pro"}}, BootLanguage: "en-GB",
+	}
+	options := Options{
+		LocalAccount: "Tester", ReduceDataCollection: true, SilentInstall: true,
+		InstallImageIndex: 4, Locale: "en-GB", TimeZone: "GMT Standard Time",
+	}
+	if err := ValidateForMedia(metadata, options); err != nil {
+		t.Fatal(err)
+	}
+	metadata.ExistingUnattendPath = "sources/$OEM$/$$/Panther/unattend.xml"
+	if err := ValidateForMedia(metadata, options); err == nil || !strings.Contains(err.Error(), "already contains") {
+		t.Fatalf("existing-answer error=%v", err)
+	}
+}

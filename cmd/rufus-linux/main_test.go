@@ -20,6 +20,7 @@ import (
 	"github.com/geocausa/RufusArm64/internal/imaging"
 	"github.com/geocausa/RufusArm64/internal/runtimeintegrity"
 	"github.com/geocausa/RufusArm64/internal/secureboot"
+	"github.com/geocausa/RufusArm64/internal/windowsconfig"
 )
 
 func TestSelectWriteMode(t *testing.T) {
@@ -823,4 +824,29 @@ func mustJSONBytes(t *testing.T, value any) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func TestSilentInstallAcknowledgementIsIndependentFromUSBYesFlag(t *testing.T) {
+	options := windowsconfig.Options{SilentInstall: true, InstallImageIndex: 2}
+	if err := validateSilentInstallAcknowledgement(options, "ERASE DISK 0"); err != nil {
+		t.Fatal(err)
+	}
+	for _, confirmation := range []string{"", "erase disk 0", "ERASE DISK0"} {
+		if err := validateSilentInstallAcknowledgement(options, confirmation); err == nil || !strings.Contains(err.Error(), "ERASE DISK 0") {
+			t.Fatalf("confirmation %q error=%v", confirmation, err)
+		}
+	}
+	if err := validateSilentInstallAcknowledgement(windowsconfig.Options{InstallImageIndex: 2}, ""); err == nil || !strings.Contains(err.Error(), "require --win-silent-install") {
+		t.Fatalf("orphaned image index error=%v", err)
+	}
+	if err := validateSilentInstallAcknowledgement(windowsconfig.Options{}, "ERASE DISK 0"); err == nil || !strings.Contains(err.Error(), "require --win-silent-install") {
+		t.Fatalf("orphaned confirmation error=%v", err)
+	}
+}
+
+func TestWriteRecognizesSilentInstallFlags(t *testing.T) {
+	err := run([]string{"write", "--win-silent-install", "--win-install-image-index", "2", "--win-silent-confirm", "ERASE DISK 0"})
+	if err == nil || err.Error() != "--image and --device are required" {
+		t.Fatalf("silent-install flags were not parsed before required-argument validation: %v", err)
+	}
 }

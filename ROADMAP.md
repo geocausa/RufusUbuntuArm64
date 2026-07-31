@@ -49,7 +49,7 @@
 - Verified ARM64/x86 UEFI:NTFS boot partition
 - Optional Windows driver-folder staging
 - FAT32 and NTFS post-write checks
-- Windows CA 2023, SkuSiPolicy, silent installation, and broader physical firmware coverage remain separate gaps
+- Windows CA 2023 and SkuSiPolicy are software-complete; guarded UEFI/NTFS silent installation is software-complete, while FAT32 silent-install parity and broader physical Windows Setup/firmware coverage remain bounded gaps
 
 ## 0.7 — Windows BIOS and driver integration (software completed)
 

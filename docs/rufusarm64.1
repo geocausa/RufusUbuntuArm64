@@ -29,9 +29,29 @@ identity-bound ISO read-only and inspects the complete installation metadata.
 The options dialog reports the bounded edition count and names, whether the
 payload is WIM, ESD, or a validated split SWM sequence, and the split-part
 count. All editions must agree on Windows generation, client/server family,
-and architecture or customization is disabled. RufusArm64 does not select an
-edition automatically and ordinary media creation remains available without
-customizations when product metadata cannot be classified safely.
+and architecture or customization is disabled. Exact WIM image indexes and the
+Windows Setup language from boot.wim are retained for guarded silent-install
+media; names are disclosure only and never substitute for an index. Ordinary
+media creation remains available without customizations when product metadata
+cannot be classified safely.
+.PP
+Optional Windows changes include hardware-check bypass, offline/local account
+creation, privacy and regional settings, BitLocker suppression, driver loading,
+Quality of Life policies, installed-system SkuSiPolicy deployment, and qualified
+Windows UEFI CA 2023 bootloader replacement. The privileged writer repeats the
+media-capability checks before erasure.
+.PP
+Guarded silent installation is offered only for positively identified Windows 11
+client media with exact installation-image indexes, a boot.wim Setup language,
+no pre-existing unattended file, a local account, privacy choices, and complete
+regional settings. It currently requires resolved UEFI/NTFS media so the verified
+UEFI:NTFS partition can act as a disk-numbering guard. When that guard passes,
+Windows Setup may erase disk 0, create EFI, MSR, and Windows partitions, and
+install the selected image without its normal disk or edition pages. The GUI
+requires a separate three-part acknowledgement and direct CLI use requires the
+literal phrase `ERASE DISK 0`. Disconnect all other storage before booting such
+media. Software verification does not prove that installation will complete on
+physical hardware.
 .PP
 The ordinary Create USB action preserves supported Linux raw/ISOHybrid images
 byte-for-byte. Persistent-live creation is a separate guarded workflow.

@@ -101,6 +101,10 @@ Before optional customizations, the exact source ISO is mounted read-only. Every
 
 Automatic mode prefers FAT32 and splits oversized WIM/ESD payloads when required. NTFS uses the pinned UEFI:NTFS image. Native FAT32 remains the most firmware-compatible ARM64 recovery path.
 
+Optional Windows Setup changes include hardware-check bypass, offline/local account creation, privacy and regional settings, BitLocker suppression, driver loading, Quality of Life policies, installed-system SkuSiPolicy deployment, and qualified Windows UEFI CA 2023 bootloader replacement. Each option is capability-gated from the exact ISO and repeated by the privileged writer.
+
+**Silent installation is deliberately narrower and high risk.** It is offered only for positively identified Windows 11 client media after exact WIM image indexes, boot.wim Setup language, no pre-existing unattended file, a local account, privacy choices, and regional settings have been established. The first implementation requires resolved UEFI/NTFS media so the verified UEFI:NTFS partition can act as Rufus's disk-numbering guard. When that guard passes, Windows Setup may erase **disk 0**, create a fresh EFI/MSR/Windows layout, and install the selected image index without showing the normal disk or edition pages. The GUI requires a separate three-part acknowledgement; direct CLI use requires the literal `ERASE DISK 0`. Disconnect every other internal, external, card-reader, and removable storage device before booting such media. Software verification proves the generated media contract, not that a particular Windows installation will complete on physical hardware.
+
 ## Persistent Linux media
 
 The guarded persistence path supports a deliberately narrow contract:

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added guarded Windows 11 silent-install media for qualified UEFI/NTFS layouts: exact WIM image-index and boot.wim language binding, pre-existing answer-file refusal, a verified UEFI:NTFS disk-numbering guard, automatic disk-0 EFI/MSR/Windows layout, an explicit `ERASE DISK 0` CLI acknowledgement, and a separate three-part graphical confirmation.
 - Added guarded UDF 2.01 data-only formatting with MBR/GPT parity types, logical-sector-matched blocks, bounded OSTA Unicode labels, descriptor and `blkid` agreement, closed-integrity verification, a private read-only kernel mount, GTK/CLI integration, and real loop qualification.
 - Added guarded ext2 and ext3 data-only formatting with distinct formatter contracts, MBR/GPT Linux data partition types, read-only `e2fsck`, independent ext-superblock generation classification, GTK/CLI integration, and real loop-device qualification.
 - Added guarded FAT16 data-only formatting with MBR/GPT planning, a conservative below-4-GiB capacity boundary, canonical FAT labels, read-only checking, and independent FAT16-versus-FAT32 BPB verification.

@@ -833,6 +833,27 @@ def build_writer_command(
         raise ValueError("BIOS/CSM cannot be combined with the GPT partition scheme.")
     if options.get("apply_sku_si_policy") and resolved_target_system != "uefi":
         raise ValueError("SkuSiPolicy deployment requires a UEFI Windows target.")
+    if options.get("silent_install"):
+        capability = (analysis.get("capabilities") or {}).get("silent_install")
+        if not isinstance(capability, dict) or not capability.get("enabled"):
+            reason = capability.get("reason") if isinstance(capability, dict) else ""
+            raise ValueError(str(reason or "Silent installation was not proven safe by the read-only Windows media analysis."))
+        if resolved_target_system != "uefi" or resolved_filesystem != "ntfs":
+            raise ValueError("Silent installation requires resolved UEFI/NTFS media so the verified UEFI:NTFS partition can guard disk numbering.")
+        local_user = validate_local_username(options.get("local_user", ""))
+        if not local_user or not options.get("reduce_data_collection") or not options.get("use_regional_settings"):
+            raise ValueError("Silent installation requires a local account, reduced data collection, and complete regional settings.")
+        locale_value = normalize_windows_locale(options.get("locale", ""))
+        timezone_value = validate_windows_timezone(options.get("timezone", ""))
+        if not locale_value or not timezone_value:
+            raise ValueError("Silent installation requires both a Windows locale and time zone.")
+        try:
+            image_index = int(options.get("install_image_index") or 0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Silent installation requires an exact Windows image index.") from exc
+        images = (analysis.get("metadata") or {}).get("images") or []
+        if not any(isinstance(image, dict) and int(image.get("index") or 0) == image_index for image in images):
+            raise ValueError("The selected silent-install image index is not present in the current ISO analysis.")
     if options.get("use_windows_ca_2023_bootloaders"):
         capability = analysis.get("windows_ca_2023")
         if not isinstance(capability, dict) or not capability.get("available"):
@@ -892,6 +913,14 @@ def build_writer_command(
         command.append("--win-quality-of-life")
     if options.get("apply_sku_si_policy"):
         command.append("--win-apply-sku-si-policy")
+    if options.get("silent_install"):
+        command.extend([
+            "--win-silent-install",
+            "--win-install-image-index",
+            str(int(options.get("install_image_index") or 0)),
+            "--win-silent-confirm",
+            "ERASE DISK 0",
+        ])
     if options.get("use_windows_ca_2023_bootloaders"):
         command.append("--win-use-ca-2023-bootloaders")
     if options.get("disable_bitlocker"):
