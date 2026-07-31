@@ -89,7 +89,7 @@ func canonicalCustomizations(customizations Customizations) (Customizations, err
 		"time zone":     customizations.TimeZone,
 	} {
 		if value != strings.TrimSpace(value) {
-			return Customizations{}, fmt.Errorf("Windows To Go %s must be canonical without surrounding whitespace", name)
+			return Customizations{}, fmt.Errorf("windows To Go %s must be canonical without surrounding whitespace", name)
 		}
 	}
 	if err := windowsconfig.ValidateWindowsToGo(customizations.windowsOptions()); err != nil {

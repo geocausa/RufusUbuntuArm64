@@ -176,7 +176,7 @@ func Materialize(ctx context.Context, osRoot, espRoot string, plan Plan, layout 
 	answerDigest := sha256.Sum256(answerFile)
 	answerHash := hex.EncodeToString(answerDigest[:])
 	if uint64(len(answerFile)) != plan.AnswerFileBytes || answerHash != plan.AnswerFileSHA256 {
-		return MaterializationEvidence{}, errors.New("Windows To Go answer file changed after planning")
+		return MaterializationEvidence{}, errors.New("windows To Go answer file changed after planning")
 	}
 	answerPath := filepath.Join(panther, "unattend.xml")
 	writtenHash, err := writeFileExact(answerPath, answerFile)

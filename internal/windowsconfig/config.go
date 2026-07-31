@@ -100,10 +100,10 @@ func Validate(o Options) error {
 	}
 	if o.WindowsToGo {
 		if !o.OfflineInternalDrives {
-			return errors.New("Windows To Go requires the internal-disk offline SAN policy")
+			return errors.New("windows To Go requires the internal-disk offline SAN policy")
 		}
 		if o.BypassHardwareChecks || o.DisableBitLocker || o.LoadDrivers || o.ApplySkuSiPolicy || o.SilentInstall || o.InstallImageIndex != 0 || bootLanguage != "" {
-			return errors.New("Windows To Go supports only online-account bypass, local account, reduced data collection, Quality of Life, locale, time zone, and the required internal-disk offline policy")
+			return errors.New("windows To Go supports only online-account bypass, local account, reduced data collection, Quality of Life, locale, time zone, and the required internal-disk offline policy")
 		}
 	} else if o.OfflineInternalDrives {
 		return errors.New("the internal-disk offline SAN policy is valid only for Windows To Go")
