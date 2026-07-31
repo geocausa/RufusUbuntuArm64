@@ -1,6 +1,7 @@
 """Headless, descriptor-bound Linux ISO compatibility analysis."""
 
 import os
+import re
 import stat
 import struct
 
@@ -10,6 +11,48 @@ LAST_ISO_DESCRIPTOR = 64
 MAX_BOOT_CATALOGUE_BYTES = 2048
 MAX_BOOT_IMAGE_PROBE_BYTES = 64 * 1024
 MAX_BOOT_ENTRIES = 32
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+
+
+def normalize_el_torito_uefi_plan(inspection, source_size):
+    """Validate the strict Go El Torito plan before exposing ISO Image mode."""
+    if not isinstance(inspection, dict):
+        return None
+    plan = inspection.get("el_torito_uefi")
+    if not isinstance(plan, dict):
+        return None
+    try:
+        normalized = {
+            "schema": int(plan.get("schema") or 0),
+            "source_size": int(plan.get("source_size") or 0),
+            "catalog_lba": int(plan.get("catalog_lba") or 0),
+            "entry_index": int(plan.get("entry_index") or 0),
+            "platform_id": int(plan.get("platform_id") or 0),
+            "media_type": int(plan.get("media_type") or 0),
+            "image_lba": int(plan.get("image_lba") or 0),
+            "image_offset": int(plan.get("image_offset") or 0),
+            "image_length": int(plan.get("image_length") or 0),
+            "catalog_sha256": str(plan.get("catalog_sha256") or "").strip().lower(),
+            "image_sha256": str(plan.get("image_sha256") or "").strip().lower(),
+            "plan_sha256": str(plan.get("plan_sha256") or "").strip().lower(),
+        }
+    except (TypeError, ValueError):
+        return None
+    if (
+        normalized["schema"] != 1
+        or normalized["source_size"] != int(source_size or 0)
+        or normalized["catalog_lba"] <= 0
+        or normalized["entry_index"] <= 0
+        or normalized["platform_id"] != 0xEF
+        or normalized["media_type"] != 0
+        or normalized["image_lba"] <= 0
+        or normalized["image_offset"] < 0
+        or normalized["image_length"] <= 0
+        or normalized["image_offset"] + normalized["image_length"] > normalized["source_size"]
+        or not all(SHA256_PATTERN.fullmatch(normalized[key]) for key in ("catalog_sha256", "image_sha256", "plan_sha256"))
+    ):
+        return None
+    return normalized
 
 def _read_at(handle, offset, size):
     if offset < 0 or size < 0:
@@ -197,7 +240,12 @@ def linux_compatibility_profile(path, inspection, expected_snapshot=None):
     finally:
         os.close(descriptor)
 
-    boot_methods = sorted({platform for platform, _ in entries}, key=lambda item: (item != "BIOS", item))
+    strict_uefi = normalize_el_torito_uefi_plan(inspection, metadata.st_size)
+    boot_method_set = {platform for platform, _ in entries if platform != "UEFI"}
+    if strict_uefi is not None:
+        boot_method_set.add("UEFI")
+    boot_methods = sorted(boot_method_set, key=lambda item: (item != "BIOS", item))
+    el_torito_refusal = str(inspection.get("el_torito_uefi_refusal") or "").strip()
     if not disk_layout and not has_iso:
         return {}
 
@@ -222,6 +270,14 @@ def linux_compatibility_profile(path, inspection, expected_snapshot=None):
             parts.append("Validated El Torito firmware entries: " + " and ".join(boot_methods) + ".")
         else:
             parts.append("No valid El Torito BIOS or UEFI boot entry was found.")
+        if strict_uefi is not None:
+            parts.append(
+                "Strict UEFI extraction plan: "
+                + strict_uefi["image_sha256"]
+                + f" ({strict_uefi['image_length']} bytes)."
+            )
+        elif el_torito_refusal:
+            parts.append("El Torito UEFI extraction unavailable: " + el_torito_refusal + ".")
         if bootloaders:
             parts.append("Bootloader fingerprint: " + ", ".join(bootloaders) + ".")
     parts.append("Software inspection does not prove that the intended computer will boot this USB.")
@@ -232,6 +288,8 @@ def linux_compatibility_profile(path, inspection, expected_snapshot=None):
         "optical": bool(has_iso),
         "boot_methods": boot_methods,
         "bootloaders": bootloaders,
+        "el_torito_uefi": strict_uefi,
+        "el_torito_uefi_refusal": el_torito_refusal,
         "summary": " ".join(parts),
     }
 

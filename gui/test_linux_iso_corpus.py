@@ -44,6 +44,14 @@ class LinuxISOCorpusTests(unittest.TestCase):
                     for sector in range(16, 65)
                 )
                 recognized = has_mbr or has_iso
+                el_torito = None
+                if has_iso and b"GRUB" in data:
+                    el_torito = {
+                        "schema": 1, "source_size": len(data), "catalog_lba": 20,
+                        "entry_index": 3, "platform_id": 239, "media_type": 0,
+                        "image_lba": 40, "image_offset": 40 * 2048, "image_length": 4096,
+                        "catalog_sha256": "a" * 64, "image_sha256": "b" * 64, "plan_sha256": "c" * 64,
+                    }
                 print(json.dumps({
                     "mode": "raw" if recognized else "unknown",
                     "recognized": recognized,
@@ -53,6 +61,7 @@ class LinuxISOCorpusTests(unittest.TestCase):
                     "windows_options": False,
                     "description": "Raw/ISOHybrid image; embedded layout will be preserved" if recognized else "Unknown",
                     "container_format": "plain",
+                    "el_torito_uefi": el_torito,
                 }))
                 """
             ),

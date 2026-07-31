@@ -56,6 +56,7 @@ from rufusarm64_logic import (
     inspect_source_identity,
     normalize_acquisition_channel,
     normalize_acquisition_images,
+    normalize_appearance,
     persistence_plan_summary,
     plan_windows_to_go_target,
     progress_status,
@@ -1247,6 +1248,8 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.persistence_plan_key = None
         self.persistence_source_identity = ""
         self.settings = self.load_settings()
+        self.appearance_mode = normalize_appearance(self.settings.get("appearance"))
+        app.apply_appearance(self.appearance_mode)
         width = max(600, int(self.settings.get("width", 820)))
         height = max(430, int(self.settings.get("height", 700)))
         self.set_default_size(width, height)
@@ -1509,6 +1512,18 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.wim_status.get_style_context().add_class("dim-label")
         adv_grid.attach(self.wim_status, 1, 10, 1, 1)
 
+        self.attach_label(adv_grid, "Appearance", 11)
+        self.appearance_combo = Gtk.ComboBoxText()
+        self.appearance_combo.append("system", "Follow desktop")
+        self.appearance_combo.append("light", "Light")
+        self.appearance_combo.append("dark", "Dark")
+        self.appearance_combo.set_active_id(self.appearance_mode)
+        self.appearance_combo.set_tooltip_text(
+            "Choose whether RufusArm64 follows the desktop appearance or explicitly requests the GTK light or dark variant."
+        )
+        self.appearance_combo.connect("changed", self.appearance_changed)
+        adv_grid.attach(self.appearance_combo, 1, 11, 1, 1)
+
         arm_note = Gtk.Label(
             label="For Surface Pro 11 X1E, use an official Windows ARM64 ISO with UEFI. BIOS/CSM media are only for x86/x86-64 PCs."
         )
@@ -1625,6 +1640,7 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.settings["quick_format"] = self.quick_format.get_active()
         self.settings["bad_block_check"] = self.bad_block_check.get_active()
         self.settings["persistence_size_gib"] = self.persistence_size.get_value_as_int()
+        self.settings["appearance"] = normalize_appearance(getattr(self, "appearance_mode", "system"))
         try:
             self.settings["volume_label"] = normalize_volume_label(
                 self.volume_label.get_text(), self.windows_filesystem
@@ -1646,6 +1662,12 @@ class RufusWindow(Gtk.ApplicationWindow):
     def on_window_state(self, *_):
         self.settings["maximized"] = self.is_maximized()
         return False
+
+    def appearance_changed(self, widget):
+        mode = normalize_appearance(widget.get_active_id())
+        self.appearance_mode = mode
+        self.get_application().apply_appearance(mode)
+        self.save_settings()
 
     def remember_advanced(self, expanded):
         self.settings["advanced"] = bool(expanded)
@@ -2965,6 +2987,18 @@ class RufusWindow(Gtk.ApplicationWindow):
 class RufusApp(Gtk.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID)
+        settings = Gtk.Settings.get_default()
+        self._desktop_dark_preference = bool(
+            settings.get_property("gtk-application-prefer-dark-theme")
+        ) if settings is not None else False
+
+    def apply_appearance(self, mode):
+        settings = Gtk.Settings.get_default()
+        if settings is None:
+            return
+        mode = normalize_appearance(mode)
+        prefer_dark = self._desktop_dark_preference if mode == "system" else mode == "dark"
+        settings.set_property("gtk-application-prefer-dark-theme", prefer_dark)
 
     def do_activate(self):
         window = self.props.active_window or RufusWindow(self)

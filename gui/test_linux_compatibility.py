@@ -74,6 +74,23 @@ class LinuxCompatibilityTests(unittest.TestCase):
         path.write_bytes(data)
 
     @staticmethod
+    def _strict_plan(source_size=256 * 1024):
+        return {
+            "schema": 1,
+            "source_size": source_size,
+            "catalog_lba": 20,
+            "entry_index": 3,
+            "platform_id": 0xEF,
+            "media_type": 0,
+            "image_lba": 40,
+            "image_offset": 40 * 2048,
+            "image_length": 4096,
+            "catalog_sha256": "a" * 64,
+            "image_sha256": "b" * 64,
+            "plan_sha256": "c" * 64,
+        }
+
+    @staticmethod
     def _inspection(**updates):
         value = {
             "recognized": True,
@@ -88,7 +105,7 @@ class LinuxCompatibilityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "dual.iso"
             self._write_iso(path)
-            profile = self.profile(path, self._inspection())
+            profile = self.profile(path, self._inspection(el_torito_uefi=self._strict_plan(path.stat().st_size)))
         self.assertEqual(profile["write_path"], "hybrid-direct-write")
         self.assertEqual(profile["boot_methods"], ["BIOS", "UEFI"])
         self.assertEqual(profile["bootloaders"], ["GRUB", "ISOLINUX"])
@@ -100,7 +117,7 @@ class LinuxCompatibilityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "optical.iso"
             self._write_iso(path, hybrid=False)
-            profile = self.profile(path, self._inspection())
+            profile = self.profile(path, self._inspection(el_torito_uefi=self._strict_plan(path.stat().st_size)))
         self.assertEqual(profile["write_path"], "optical-direct-write")
         self.assertFalse(profile["hybrid"])
         self.assertIn("USB-CD emulation", profile["summary"])
@@ -109,10 +126,24 @@ class LinuxCompatibilityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "invalid.iso"
             self._write_iso(path, valid_catalogue=False)
-            profile = self.profile(path, self._inspection())
+            profile = self.profile(path, self._inspection(el_torito_uefi_refusal="invalid El Torito catalogue"))
         self.assertEqual(profile["boot_methods"], [])
         self.assertEqual(profile["bootloaders"], [])
         self.assertIn("No valid El Torito", profile["summary"])
+
+    def test_uefi_requires_strict_hash_bound_plan(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "ambiguous.iso"
+            self._write_iso(path)
+            loose = self.profile(path, self._inspection(el_torito_uefi_refusal="multiple EFI entries"))
+            invalid = self.profile(path, self._inspection(el_torito_uefi={"schema": 1}))
+            strict = self.profile(path, self._inspection(el_torito_uefi=self._strict_plan(path.stat().st_size)))
+        self.assertEqual(loose["boot_methods"], ["BIOS"])
+        self.assertEqual(invalid["boot_methods"], ["BIOS"])
+        self.assertEqual(strict["boot_methods"], ["BIOS", "UEFI"])
+        self.assertIsNone(loose["el_torito_uefi"])
+        self.assertIn("multiple EFI entries", loose["summary"])
+        self.assertEqual(strict["el_torito_uefi"]["plan_sha256"], "c" * 64)
 
     def test_raw_disk_layout_is_reported_without_optical_claims(self):
         with tempfile.TemporaryDirectory() as directory:

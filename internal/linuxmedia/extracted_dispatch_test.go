@@ -31,6 +31,49 @@ func TestSelectExtractedFilesystemImagePrefersFAT32(t *testing.T) {
 	}
 }
 
+func TestSelectExtractedFilesystemImageUsesElToritoFallbackOverlay(t *testing.T) {
+	isoRoot := t.TempDir()
+	writeLinuxTestFile(t, filepath.Join(isoRoot, "casper", "vmlinuz"), "kernel")
+	overlayRoot := t.TempDir()
+	writeLinuxTestBytes(t, filepath.Join(overlayRoot, "EFI", "BOOT", "BOOTAA64.EFI"), linuxTestARM64EFI(0x83))
+	isoPath, identity := dispatchTestSource(t)
+	t.Setenv("RUFUS_TEST_ISO_ROOT", isoRoot)
+	t.Setenv("RUFUS_TEST_EL_TORITO_ROOT", overlayRoot)
+
+	selection, err := SelectExtractedFilesystemImage(context.Background(), isoPath, ExtractedCreateOptions{
+		ExpectedSource: identity,
+		Architecture:   "arm64",
+		WorkDirectory:  t.TempDir(),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selection.Selected != ExtractedFilesystemFAT32 || selection.FAT32Refusal != "" {
+		t.Fatalf("selection = %+v", selection)
+	}
+}
+
+func TestSelectExtractedFilesystemImageRejectsElToritoCollision(t *testing.T) {
+	isoRoot := t.TempDir()
+	writeLinuxTestFile(t, filepath.Join(isoRoot, "EFI", "BOOT", "BOOTAA64.EFI"), "conflicting-iso-file")
+	writeLinuxTestFile(t, filepath.Join(isoRoot, "casper", "vmlinuz"), "kernel")
+	overlayRoot := t.TempDir()
+	writeLinuxTestBytes(t, filepath.Join(overlayRoot, "EFI", "BOOT", "BOOTAA64.EFI"), linuxTestARM64EFI(0x84))
+	isoPath, identity := dispatchTestSource(t)
+	t.Setenv("RUFUS_TEST_ISO_ROOT", isoRoot)
+	t.Setenv("RUFUS_TEST_EL_TORITO_ROOT", overlayRoot)
+
+	// A native fallback takes precedence, so the overlay is never consulted.
+	selection, err := SelectExtractedFilesystemImage(context.Background(), isoPath, ExtractedCreateOptions{
+		ExpectedSource: identity,
+		Architecture:   "arm64",
+		WorkDirectory:  t.TempDir(),
+	}, nil)
+	if err != nil || selection.Selected != ExtractedFilesystemFAT32 {
+		t.Fatalf("native fallback precedence selection=%+v err=%v", selection, err)
+	}
+}
+
 func TestSelectExtractedFilesystemImageUsesNTFSForFAT32LongPath(t *testing.T) {
 	isoRoot := t.TempDir()
 	writeLinuxTestBytes(t, filepath.Join(isoRoot, "EFI", "BOOT", "BOOTAA64.EFI"), linuxTestARM64EFI(0x82))

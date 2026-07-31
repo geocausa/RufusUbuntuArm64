@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Integrated strict El Torito UEFI extraction into Linux ISO Image mode: unprivileged inspection now publishes one hash-bound EFI no-emulation plan or an exact refusal, the privileged writer extracts and read-only mounts fallback-only FAT boot images, merges them with the ISO tree under multi-root source validation and collision refusal, and permanently qualifies the complete loop transaction.
+- Added an app-wide persisted System/Light/Dark appearance selector that restores the original GTK desktop preference in System mode and avoids hard-coded theme names.
 - Added a capability-gated graphical Windows To Go selector with exact expanded-size and language evidence, pre-authentication target geometry checks, mutually exclusive installer options, fixed GPT/ARM64 UEFI/FAT32-ESP/NTFS disclosure, a separate three-part unsupported-feature acknowledgement, and an exact privileged-command allowlist.
 - Added an explicit experimental Windows To Go writer for Windows 11 client ARM64: exact WIM index/expanded-size admission, reproducible direct NTFS application, a 260 MiB unlabelled FAT32 ESP, backup-first/readback-verified GPT, Microsoft ARM64 EFI fallback files, GUID-bound transactional BCD derived from `BCD-Template`, disabled recovery, offline SAN policy 4, no-default-drive-letter attributes, private read-only verification, and a real 32 GiB loop qualification while keeping firmware boot unclaimed.
 - Rebuilt the pinned package-private ARM64 WIM engine reproducibly with direct NTFS-volume support, added an exact `libntfs-3g.so.89` runtime contract, and permanently qualified native WIM application to NTFS with filesystem and hard-link readback.

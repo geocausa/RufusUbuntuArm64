@@ -54,6 +54,7 @@ class ISOImageModeTests(unittest.TestCase):
                 "hybrid": True,
                 "optical": True,
                 "boot_methods": ["BIOS", "UEFI"],
+                "el_torito_uefi": {"plan_sha256": "a" * 64},
             },
         }
         optical = {
@@ -63,6 +64,7 @@ class ISOImageModeTests(unittest.TestCase):
                 "hybrid": False,
                 "optical": True,
                 "boot_methods": ["UEFI"],
+                "el_torito_uefi": {"plan_sha256": "b" * 64},
             },
         }
         self.assertTrue(iso_image_mode_available(hybrid))
@@ -75,7 +77,8 @@ class ISOImageModeTests(unittest.TestCase):
             {},
             {"mode": "windows"},
             {"mode": "raw", "compatibility_profile": {"write_path": "optical-direct-write", "optical": True, "boot_methods": ["BIOS"]}},
-            {"mode": "raw", "compatibility_profile": {"write_path": "raw-direct-write", "hybrid": False, "optical": False, "boot_methods": ["UEFI"]}},
+            {"mode": "raw", "compatibility_profile": {"write_path": "optical-direct-write", "optical": True, "boot_methods": ["UEFI"]}},
+            {"mode": "raw", "compatibility_profile": {"write_path": "raw-direct-write", "hybrid": False, "optical": False, "boot_methods": ["UEFI"], "el_torito_uefi": {"plan_sha256": "c" * 64}}},
         ):
             self.assertFalse(iso_image_mode_available(incompatible), incompatible)
 

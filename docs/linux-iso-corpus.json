@@ -6,7 +6,7 @@
     "commit": "6d8fbf98305ff37eb531c45cbd6ff44563c53917"
   },
   "policy": {
-    "iso_image_candidate": "plain recognized optical media with a validated UEFI El Torito entry; hybrid media may also retain an explicit DD choice, while optical-only media are ISO Image mode only",
+    "iso_image_candidate": "plain recognized optical media with one strict, hash-bound EFI no-emulation El Torito plan; hybrid media may also retain an explicit DD choice, while optical-only media are ISO Image mode only",
     "dd_only": "recognized raw media outside the reviewed ISO extraction boundary",
     "refuse": "unrecognized, unsafe, prepared, non-raw, or inspector-refused input",
     "physical_boot_not_implied": true

@@ -45,16 +45,26 @@ type Entry struct {
 	DereferencedSymlink bool   `json:"dereferenced_symlink,omitempty"`
 }
 
+type ElToritoOverlayEvidence struct {
+	PlanSHA256    string `json:"plan_sha256"`
+	CatalogSHA256 string `json:"catalog_sha256"`
+	ImageSHA256   string `json:"image_sha256"`
+	ImageOffset   uint64 `json:"image_offset"`
+	ImageLength   uint64 `json:"image_length"`
+}
+
 type Manifest struct {
-	SourceRoot           string  `json:"source_root"`
-	Architecture         string  `json:"architecture"`
-	Entries              []Entry `json:"entries"`
-	Files                int     `json:"files"`
-	Directories          int     `json:"directories"`
-	DereferencedSymlinks int     `json:"dereferenced_symlinks"`
-	OmittedRootAliases   int     `json:"omitted_root_aliases,omitempty"`
-	TotalBytes           uint64  `json:"total_bytes"`
-	UEFIBootPath         string  `json:"uefi_boot_path,omitempty"`
+	SourceRoot           string                   `json:"source_root"`
+	SourceRoots          []string                 `json:"source_roots,omitempty"`
+	Architecture         string                   `json:"architecture"`
+	Entries              []Entry                  `json:"entries"`
+	Files                int                      `json:"files"`
+	Directories          int                      `json:"directories"`
+	DereferencedSymlinks int                      `json:"dereferenced_symlinks"`
+	OmittedRootAliases   int                      `json:"omitted_root_aliases,omitempty"`
+	TotalBytes           uint64                   `json:"total_bytes"`
+	UEFIBootPath         string                   `json:"uefi_boot_path,omitempty"`
+	ElToritoOverlay      *ElToritoOverlayEvidence `json:"el_torito_overlay,omitempty"`
 }
 
 type manifestBuilder struct {
@@ -83,6 +93,7 @@ func Inspect(ctx context.Context, root string, opts Options) (Manifest, error) {
 		opts: opts,
 		manifest: Manifest{
 			SourceRoot:   root,
+			SourceRoots:  []string{root},
 			Architecture: opts.Architecture,
 		},
 		seen: make(map[string]string),

@@ -139,16 +139,20 @@ func SelectExtractedFilesystemImage(ctx context.Context, isoPath string, opts Ex
 		sourceRoot = isoMount
 	}
 
-	manifest, err := Inspect(ctx, sourceRoot, Options{
+	prepared, err := prepareExtractedManifest(ctx, isoFile, sourceRoot, workDir, Options{
 		Architecture: opts.Architecture,
 		RequireUEFI:  true,
 		RequireFAT32: false,
 		MaxEntries:   opts.ManifestMaxEntries,
 		MaxBytes:     opts.ManifestMaxBytes,
-	})
+	}, strings.TrimSpace(os.Getenv("RUFUS_TEST_ISO_ROOT")) != "", emit)
 	if err != nil {
 		return selection, fmt.Errorf("inspect Linux image for automatic filesystem selection: %w", err)
 	}
+	defer func() {
+		returnErr = errors.Join(returnErr, prepared.Close())
+	}()
+	manifest := prepared.Manifest
 	if err := sourcefile.VerifyPinned(isoFile, opts.ExpectedSource); err != nil {
 		return selection, err
 	}

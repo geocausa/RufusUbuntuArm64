@@ -24,9 +24,9 @@ Software, CI, and loop-device passes do not establish universal physical boot, f
 
 ## ISO Image mode boundary
 
-ISO Image mode currently accepts a plain raw-bootable Linux ISOHybrid image whose complete accepted tree can be represented by one FAT32 partition and which contains the architecture fallback UEFI loader, such as `EFI/BOOT/BOOTAA64.EFI` on ARM64.
+ISO Image mode accepts a bounded plain Linux optical or ISOHybrid image whose accepted tree can be represented by the selected FAT32 or NTFS profile and which provides the architecture fallback UEFI loader either directly in the ISO tree or inside exactly one strict EFI no-emulation El Torito FAT image.
 
-It refuses unsupported or unsafe sources before target mutation, including missing fallback loaders, compressed or virtual-disk input, optical-only media, FAT32-incompatible paths, case-insensitive collisions, files at or above FAT32's single-file boundary, escaping or cyclic links, unsupported sector geometry, insufficient target capacity, source mutation, target substitution, and protected/system disks.
+It refuses unsupported or unsafe sources before target mutation, including missing or ambiguous fallback loaders, compressed or virtual-disk input, FAT32-incompatible paths, case-insensitive collisions, files at or above FAT32's single-file boundary, escaping or cyclic links, unsupported sector geometry, insufficient target capacity, source mutation, target substitution, and protected/system disks.
 
 An ISO-mode refusal is not proof that an image is corrupt. DD Image mode remains the exact-clone alternative. RufusArm64 does not silently start DD writing after an ISO-mode refusal; the user must explicitly choose and confirm the alternative.
 
