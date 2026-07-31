@@ -164,9 +164,15 @@ The mode requires
 .BI --win-to-go-image-index " INDEX",
 and the exact acknowledgement
 .BR "--win-to-go-confirm 'CREATE EXPERIMENTAL WINDOWS TO GO'" .
-It refuses installer customizations, driver staging, DBX overrides, manual
-filesystem/layout choices, unsupported architecture, insufficient expanded
-capacity, changed sources or targets, and mounted/protected targets.
+It accepts optional first-boot flags for online-account bypass, a local
+administrator, reduced data collection, Quality of Life changes, and
+locale/time-zone settings. The exact combined Windows/Panther/unattend.xml is
+size/SHA-256 bound before erasure and read back after creation; SAN policy 4 is
+mandatory and keeps internal disks offline. It refuses hardware-check bypass,
+silent installation, BitLocker suppression, SkuSiPolicy, CA 2023 replacement,
+driver staging, DBX overrides, manual filesystem/layout choices, unsupported
+architecture, insufficient expanded capacity, changed sources or targets, and
+mounted/protected targets.
 .PP
 Microsoft removed Windows To Go from supported modern Windows releases. The
 result remains experimental: software and loop-device verification do not prove

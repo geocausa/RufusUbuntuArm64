@@ -62,12 +62,18 @@ same nominal 32 GB-class capacity, 512-byte or 4 KiB logical-sector, fixed 260
 MiB unlabelled FAT32 ESP, and 2 GiB Windows-image headroom rules as the
 privileged backend.
 .PP
-Windows To Go is mutually exclusive with Windows Setup customizations, driver
-staging, DBX overrides, full format, and bad-block checking. The GUI discloses
-the fixed GPT / ARM64 UEFI / FAT32 ESP + NTFS layout and requires three separate
+Windows To Go accepts only first-boot choices that apply to an already-deployed
+system: online-account bypass, a local administrator, reduced data collection,
+Quality of Life changes, and locale/time-zone settings. Hardware-check bypass,
+silent installation, BitLocker suppression, SkuSiPolicy, CA 2023 replacement,
+driver staging, DBX overrides, full format, and bad-block checking remain
+refused. Mandatory SAN policy 4 keeps internal disks offline. The GUI discloses
+the fixed GPT / ARM64 UEFI / FAT32 ESP + NTFS layout and requires four separate
 acknowledgements for whole-drive erasure, Microsoft's removal of Windows To Go
-support, and the exact selected edition. The privileged helper admits only the
-corresponding exact experimental command envelope. Direct NTFS WIM application
+support, the exact selected edition, and internal-disk isolation. The exact
+combined Windows/Panther/unattend.xml is size/SHA-256 bound before erasure and
+read back after creation. The privileged helper admits only the corresponding
+exact experimental command envelope. Direct NTFS WIM application
 streams live percentage and rate records. The helper also snapshots the exact
 target's kernel I/O error counter and requests cancellation with a failed-medium
 diagnostic if that counter changes or the target leaves the running state. If

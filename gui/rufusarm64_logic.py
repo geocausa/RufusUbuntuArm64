@@ -930,25 +930,18 @@ def _windows_to_go_command(pkexec, helper, image, path, identity, cancel_path, o
     selected = windows_to_go_image(analysis, options.get("install_image_index"))
     forbidden = (
         options.get("bypass_hardware"),
-        options.get("bypass_online_account"),
-        str(options.get("local_user") or "").strip(),
-        options.get("reduce_data_collection"),
-        options.get("quality_of_life"),
         options.get("apply_sku_si_policy"),
         options.get("use_windows_ca_2023_bootloaders"),
         options.get("silent_install"),
         options.get("disable_bitlocker"),
-        options.get("use_regional_settings"),
-        str(options.get("locale") or "").strip(),
-        str(options.get("timezone") or "").strip(),
         str(driver_folder or "").strip(),
         str(dbx_file or "").strip(),
         not bool(quick_format),
         bool(bad_block_check),
     )
     if any(forbidden):
-        raise ValueError("Windows To Go cannot be combined with Windows Setup customizations, drivers, DBX overrides, full format, or bad-block checking.")
-    return [
+        raise ValueError("Windows To Go supports online-account bypass, local account, privacy, Quality of Life, and regional settings; installer-only choices, drivers, DBX overrides, full format, and bad-block checking remain unsupported.")
+    command = [
         pkexec, helper, "write",
         "--image", image,
         "--device", path,
@@ -961,6 +954,26 @@ def _windows_to_go_command(pkexec, helper, image, path, identity, cancel_path, o
         "--win-to-go-image-index", str(selected["index"]),
         "--win-to-go-confirm", WINDOWS_TO_GO_CONFIRMATION,
     ]
+    if options.get("bypass_online_account"):
+        command.append("--win-bypass-online-account")
+    local_user = str(options.get("local_user") or "").strip()
+    if local_user:
+        command.extend(("--win-local-user", validate_local_username(local_user)))
+    if options.get("reduce_data_collection"):
+        command.append("--win-reduce-data-collection")
+    if options.get("quality_of_life"):
+        command.append("--win-quality-of-life")
+    locale = str(options.get("locale") or "").strip()
+    timezone = str(options.get("timezone") or "").strip()
+    if options.get("use_regional_settings") and not (locale or timezone):
+        raise ValueError("Windows To Go regional settings were selected without a mapped locale or time zone.")
+    if (locale or timezone) and not options.get("use_regional_settings"):
+        raise ValueError("Windows To Go locale or time zone was supplied without selecting regional settings.")
+    if locale:
+        command.extend(("--win-locale", normalize_windows_locale(locale)))
+    if timezone:
+        command.extend(("--win-timezone", timezone))
+    return command
 
 
 def build_writer_command(

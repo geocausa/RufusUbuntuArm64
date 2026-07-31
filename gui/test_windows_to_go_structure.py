@@ -35,25 +35,28 @@ class WindowsToGoStructureTests(unittest.TestCase):
         self.assertIn('self.windows_to_go.connect("toggled", self.update_windows_to_go_sensitivity)', source)
         self.assertIn('previous.get("windows_to_go", False)', source)
 
-    def test_mode_disables_every_installer_customization(self):
+    def test_mode_keeps_first_boot_choices_and_disables_installer_only_options(self):
         source = self.method_source("WindowsOptionsDialog", "enforce_windows_image_mode")
-        self.assertIn("for widget in self.standard_option_widgets()", source)
+        self.assertIn("for widget in self.windows_to_go_incompatible_widgets()", source)
         self.assertIn("widget.set_active(False)", source)
         self.assertIn("widget.set_sensitive(False)", source)
-        widgets = self.method_source("WindowsOptionsDialog", "standard_option_widgets")
+        widgets = self.method_source("WindowsOptionsDialog", "windows_to_go_incompatible_widgets")
         for name in (
-            "bypass_hardware", "bypass_online", "local_account", "reduce_data",
-            "quality_of_life", "apply_sku_si_policy", "use_ca_2023_bootloaders",
-            "use_region", "silent_install", "disable_bitlocker",
+            "bypass_hardware", "apply_sku_si_policy", "use_ca_2023_bootloaders",
+            "silent_install", "disable_bitlocker",
         ):
             self.assertIn(f"self.{name}", widgets)
+        for supported in ("bypass_online", "local_account", "reduce_data", "quality_of_life", "use_region"):
+            self.assertNotIn(f"self.{supported}", widgets)
 
-    def test_three_part_confirmation_is_distinct_from_silent_install(self):
+    def test_four_part_confirmation_is_distinct_from_silent_install(self):
         source = self.method_source("RufusWindow", "confirm_windows_to_go")
         self.assertIn("Microsoft removed Windows To Go support", source)
         self.assertIn("complete selected target drive will be permanently erased", source)
         self.assertIn("may not boot or complete first boot", source)
         self.assertIn("is the edition I intend to apply", source)
+        self.assertIn("mandatory SAN policy 4", source)
+        self.assertIn("internal disks", source)
         self.assertIn("all(check.get_active() for check in checks)", source)
         self.assertNotIn("disk 0", source.lower())
 
@@ -76,10 +79,16 @@ class WindowsToGoStructureTests(unittest.TestCase):
         self.assertIn('"--win-to-go-confirm", WINDOWS_TO_GO_CONFIRMATION', self.logic)
         self.assertIn('WINDOWS_TO_GO_CONFIRMATION = "CREATE EXPERIMENTAL WINDOWS TO GO"', self.logic)
         special = self.logic[self.logic.index("def _windows_to_go_command"):self.logic.index("def build_writer_command")]
+        for supported in (
+            "--win-bypass-online-account", "--win-local-user", "--win-reduce-data-collection",
+            "--win-quality-of-life", "--win-locale", "--win-timezone",
+        ):
+            self.assertIn(supported, special)
         for forbidden in (
             "--partition-scheme", "--target-system", "--filesystem", "--cluster-size",
             "--volume-label", "--verify", "--driver-folder", "--dbx-file",
             "--full-format", "--bad-block-check", "--win-silent-install",
+            "--win-bypass-hardware", "--win-disable-bitlocker", "--win-apply-sku-si-policy",
         ):
             self.assertNotIn(forbidden, special)
 
@@ -88,6 +97,8 @@ class WindowsToGoStructureTests(unittest.TestCase):
         self.assertIn('envelope.WinToGoConfirm != "CREATE EXPERIMENTAL WINDOWS TO GO"', self.helper)
         self.assertIn("envelope.WinToGoImageIndex < 1", self.helper)
         self.assertIn("envelope.WinBypassHardware", self.helper)
+        self.assertIn("windowsconfig.ValidateWindowsToGo", self.helper)
+        self.assertIn("envelope.WinBypassOnline", self.helper)
         self.assertIn("envelope.DriverFolder != \"\"", self.helper)
 
     def test_capability_requires_arm64_size_and_language_evidence(self):

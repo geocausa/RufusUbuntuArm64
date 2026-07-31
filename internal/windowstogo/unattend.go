@@ -2,33 +2,18 @@
 
 package windowstogo
 
-import (
-	"bytes"
-	"encoding/xml"
-	"errors"
-	"io"
-)
+import "github.com/geocausa/RufusArm64/internal/windowsconfig"
 
-var windowsToGoOfflinePolicy = []byte(`<?xml version="1.0" encoding="utf-8"?>
-<unattend xmlns="urn:schemas-microsoft-com:unattend">
-  <settings pass="offlineServicing">
-    <component name="Microsoft-Windows-PartitionManager" processorArchitecture="arm64" language="neutral" publicKeyToken="31bf3856ad364e35" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-      <SanPolicy>4</SanPolicy>
-    </component>
-  </settings>
-</unattend>
-`)
+// WindowsToGoAnswerFile creates the exact answer file installed below
+// Windows/Panther. SAN policy 4 is mandatory; selected first-boot preferences
+// use the shared Windows configuration generator and exclude windowsPE-only
+// installer behavior.
+func WindowsToGoAnswerFile(customizations Customizations) ([]byte, error) {
+	return windowsconfig.GenerateWindowsToGo("arm64", customizations.windowsOptions())
+}
 
+// WindowsToGoOfflinePolicy preserves the original narrow API for callers and
+// tests that need only the mandatory internal-disk offline policy.
 func WindowsToGoOfflinePolicy() ([]byte, error) {
-	policy := append([]byte(nil), windowsToGoOfflinePolicy...)
-	decoder := xml.NewDecoder(bytes.NewReader(policy))
-	for {
-		if _, err := decoder.Token(); err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return nil, err
-		}
-	}
-	return policy, nil
+	return WindowsToGoAnswerFile(Customizations{})
 }

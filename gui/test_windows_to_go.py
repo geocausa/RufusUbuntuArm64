@@ -71,17 +71,43 @@ class WindowsToGoLogicTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "expanded-size"):
             self.build(windows_capability_analysis=incomplete)
 
-    def test_rejects_every_installer_only_surface(self):
+    def test_emits_supported_first_boot_customizations(self):
+        command = self.build(windows_options=self.options(
+            bypass_online_account=True,
+            local_user="PortableUser",
+            reduce_data_collection=True,
+            quality_of_life=True,
+            use_regional_settings=True,
+            locale="en_GB.UTF-8",
+            timezone="GMT Standard Time",
+        ))
+        expected = {
+            "--win-bypass-online-account": None,
+            "--win-local-user": "PortableUser",
+            "--win-reduce-data-collection": None,
+            "--win-quality-of-life": None,
+            "--win-locale": "en-GB",
+            "--win-timezone": "GMT Standard Time",
+        }
+        for flag, value in expected.items():
+            self.assertIn(flag, command)
+            if value is not None:
+                self.assertEqual(command[command.index(flag) + 1], value)
+
+    def test_rejects_installer_only_and_external_surfaces(self):
         cases = [
-            {"windows_options": self.options(local_user="Tester")},
+            {"windows_options": self.options(bypass_hardware=True)},
             {"windows_options": self.options(silent_install=True)},
+            {"windows_options": self.options(disable_bitlocker=True)},
+            {"windows_options": self.options(apply_sku_si_policy=True)},
+            {"windows_options": self.options(use_windows_ca_2023_bootloaders=True)},
             {"driver_folder": "/drivers"},
             {"dbx_file": "/dbx.bin"},
             {"quick_format": False},
             {"bad_block_check": True},
         ]
         for case in cases:
-            with self.subTest(case=case), self.assertRaisesRegex(ValueError, "cannot be combined"):
+            with self.subTest(case=case), self.assertRaisesRegex(ValueError, "remain unsupported"):
                 self.build(**case)
 
     def test_target_planner_matches_backend_geometry(self):
