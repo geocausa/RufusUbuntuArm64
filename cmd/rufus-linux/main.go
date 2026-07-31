@@ -416,8 +416,27 @@ func runWrite(args []string) error {
 		return errors.New("--mode must be auto, raw, windows, windows-to-go, or linux-persistent")
 	}
 	if os.Getenv("PKEXEC_UID") != "" {
-		if !*jsonProgress || !*yes || *expectedIdentity == "" || *cancelFile == "" || *mode != "auto" || *allowFixed || *noUnmount || *forceRaw || *allowForeignArchitecture {
-			return errors.New("unsafe or unsupported arguments were supplied to the graphical privileged writer")
+		envelope := graphicalWriteEnvelope{
+			Mode: *mode, Verify: *verify, Yes: *yes, JSONProgress: *jsonProgress,
+			ExpectedIdentity: *expectedIdentity, CancelFile: *cancelFile,
+			AllowFixed: *allowFixed, NoUnmount: *noUnmount, ForceRaw: *forceRaw,
+			AllowForeignArchitecture: *allowForeignArchitecture, DryRun: *dryRun,
+			VolumeLabel: *volumeLabel, PartitionScheme: *partitionScheme,
+			TargetSystem: *targetSystem, Filesystem: *filesystem, ClusterSize: *clusterSizeText,
+			DriverFolder: *driverFolder, DBXFile: *dbxFile, FullFormat: *fullFormat,
+			BadBlockCheck: *badBlockCheck, WinBypassHardware: *winBypassHardware,
+			WinBypassOnline: *winBypassOnline, WinLocalUser: *winLocalUser,
+			WinPrivacy: *winPrivacy, WinQualityOfLife: *winQualityOfLife,
+			WinApplySkuSiPolicy: *winApplySkuSiPolicy, WinSilentInstall: *winSilentInstall,
+			WinInstallImageIndex: *winInstallImageIndex, WinSilentConfirm: *winSilentConfirm,
+			WinUseCA2023Bootloaders: *winUseCA2023Bootloaders,
+			WinDisableBitLocker:     *winDisableBitLocker, WinLocale: *winLocale, WinTimeZone: *winTimeZone,
+			ExperimentalPersistence: *experimentalPersistence, PersistenceSize: *persistenceSizeText,
+			ExperimentalWindowsToGo: *experimentalWindowsToGo, WinToGoImageIndex: *winToGoImageIndex,
+			WinToGoConfirm: *winToGoConfirm, PositionalArguments: fs.NArg(),
+		}
+		if err := validateGraphicalWriteEnvelope(envelope); err != nil {
+			return err
 		}
 	}
 	if err := safety.RequireRoot(); err != nil && !*dryRun {
@@ -2428,6 +2447,80 @@ func printProgress(label string, p imaging.Progress) {
 		percent = float64(p.Done) * 100 / float64(p.Total)
 	}
 	fmt.Printf("\r%-6s %6.2f%%  %s / %s  %s/s", label, percent, humanBytes(p.Done), humanBytes(p.Total), humanBytes(uint64(p.BytesPerSec)))
+}
+
+type graphicalWriteEnvelope struct {
+	Mode                     string
+	Verify                   bool
+	Yes                      bool
+	JSONProgress             bool
+	ExpectedIdentity         string
+	CancelFile               string
+	AllowFixed               bool
+	NoUnmount                bool
+	ForceRaw                 bool
+	AllowForeignArchitecture bool
+	DryRun                   bool
+	VolumeLabel              string
+	PartitionScheme          string
+	TargetSystem             string
+	Filesystem               string
+	ClusterSize              string
+	DriverFolder             string
+	DBXFile                  string
+	FullFormat               bool
+	BadBlockCheck            bool
+	WinBypassHardware        bool
+	WinBypassOnline          bool
+	WinLocalUser             string
+	WinPrivacy               bool
+	WinQualityOfLife         bool
+	WinApplySkuSiPolicy      bool
+	WinSilentInstall         bool
+	WinInstallImageIndex     int
+	WinSilentConfirm         string
+	WinUseCA2023Bootloaders  bool
+	WinDisableBitLocker      bool
+	WinLocale                string
+	WinTimeZone              string
+	ExperimentalPersistence  bool
+	PersistenceSize          string
+	ExperimentalWindowsToGo  bool
+	WinToGoImageIndex        int
+	WinToGoConfirm           string
+	PositionalArguments      int
+}
+
+func validateGraphicalWriteEnvelope(envelope graphicalWriteEnvelope) error {
+	unsafe := errors.New("unsafe or unsupported arguments were supplied to the graphical privileged writer")
+	if !envelope.JSONProgress || !envelope.Yes || envelope.ExpectedIdentity == "" || envelope.CancelFile == "" ||
+		envelope.AllowFixed || envelope.NoUnmount || envelope.ForceRaw || envelope.AllowForeignArchitecture ||
+		envelope.DryRun || envelope.PositionalArguments != 0 {
+		return unsafe
+	}
+	switch envelope.Mode {
+	case "auto":
+		if envelope.ExperimentalPersistence || envelope.PersistenceSize != "0" || envelope.ExperimentalWindowsToGo ||
+			envelope.WinToGoImageIndex != 0 || envelope.WinToGoConfirm != "" {
+			return unsafe
+		}
+		return nil
+	case "windows-to-go":
+		if envelope.Verify || envelope.VolumeLabel != "RUFUSARM64" || envelope.PartitionScheme != "auto" ||
+			envelope.TargetSystem != "auto" || envelope.Filesystem != "auto" || envelope.ClusterSize != "auto" ||
+			envelope.DriverFolder != "" || envelope.DBXFile != "" || envelope.FullFormat || envelope.BadBlockCheck ||
+			envelope.WinBypassHardware || envelope.WinBypassOnline || strings.TrimSpace(envelope.WinLocalUser) != "" ||
+			envelope.WinPrivacy || envelope.WinQualityOfLife || envelope.WinApplySkuSiPolicy || envelope.WinSilentInstall ||
+			envelope.WinInstallImageIndex != 0 || envelope.WinSilentConfirm != "" || envelope.WinUseCA2023Bootloaders ||
+			envelope.WinDisableBitLocker || strings.TrimSpace(envelope.WinLocale) != "" || strings.TrimSpace(envelope.WinTimeZone) != "" ||
+			envelope.ExperimentalPersistence || envelope.PersistenceSize != "0" || !envelope.ExperimentalWindowsToGo ||
+			envelope.WinToGoImageIndex < 1 || envelope.WinToGoImageIndex > 256 || envelope.WinToGoConfirm != "CREATE EXPERIMENTAL WINDOWS TO GO" {
+			return unsafe
+		}
+		return nil
+	default:
+		return unsafe
+	}
 }
 
 func validateWindowsToGoAcknowledgement(selected, experimental bool, imageIndex int, confirmation string) error {

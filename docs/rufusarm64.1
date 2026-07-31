@@ -53,6 +53,23 @@ literal phrase `ERASE DISK 0`. Disconnect all other storage before booting such
 media. Software verification does not prove that installation will complete on
 physical hardware.
 .PP
+Experimental Windows To Go selection is offered in the Windows options dialog
+only for positively identified Windows 11 client ARM64 media with complete
+exact image indexes, positive expanded sizes, and proven per-image default
+languages. After an exact edition is selected, the current target must pass the
+same nominal 32 GB-class capacity, 512-byte or 4 KiB logical-sector, fixed 260
+MiB unlabelled FAT32 ESP, and 2 GiB Windows-image headroom rules as the
+privileged backend.
+.PP
+Windows To Go is mutually exclusive with Windows Setup customizations, driver
+staging, DBX overrides, full format, and bad-block checking. The GUI discloses
+the fixed GPT / ARM64 UEFI / FAT32 ESP + NTFS layout and requires three separate
+acknowledgements for whole-drive erasure, Microsoft's removal of Windows To Go
+support, and the exact selected edition. The privileged helper admits only the
+corresponding exact experimental command envelope. Software verification does
+not prove physical firmware boot or Windows first boot; encrypted-file and
+Windows extended-attribute restoration remain upstream wimlib limitations.
+.PP
 The ordinary Create USB action preserves supported Linux raw/ISOHybrid images
 byte-for-byte. Persistent-live creation is a separate guarded workflow.
 .PP

@@ -61,6 +61,7 @@ type CapabilityProfile struct {
 	ApplySkuSiPolicy            OptionCapability `json:"apply_sku_si_policy"`
 	UseWindowsCA2023Bootloaders OptionCapability `json:"use_windows_ca_2023_bootloaders"`
 	SilentInstall               OptionCapability `json:"silent_install"`
+	WindowsToGo                 OptionCapability `json:"windows_to_go"`
 	Locale                      OptionCapability `json:"locale"`
 	TimeZone                    OptionCapability `json:"time_zone"`
 }
@@ -139,6 +140,7 @@ func Capabilities(metadata MediaMetadata) CapabilityProfile {
 		profile.UseWindowsCA2023Bootloaders = OptionCapability{Reason: reason}
 	}
 	profile.SilentInstall = silentInstallCapability(metadata, profile)
+	profile.WindowsToGo = windowsToGoCapability(metadata, profile)
 	return profile
 }
 
@@ -193,6 +195,7 @@ func disabledProfile(profile CapabilityProfile, reason string) CapabilityProfile
 	profile.ApplySkuSiPolicy = disabled
 	profile.UseWindowsCA2023Bootloaders = disabled
 	profile.SilentInstall = disabled
+	profile.WindowsToGo = disabled
 	profile.Locale = disabled
 	profile.TimeZone = disabled
 	return profile
@@ -221,6 +224,33 @@ func silentInstallCapability(metadata MediaMetadata, profile CapabilityProfile) 
 	}
 	if !validLocale.MatchString(strings.TrimSpace(metadata.BootLanguage)) {
 		return OptionCapability{Reason: "The Windows Setup boot language was not proven from boot.wim"}
+	}
+	return OptionCapability{Enabled: true}
+}
+
+func windowsToGoCapability(metadata MediaMetadata, profile CapabilityProfile) OptionCapability {
+	const genericReason = "Available only for positively identified Windows 11 client ARM64 media"
+	if !profile.Recognized || profile.Generation != "11" || profile.Family != "client" || profile.Architecture != "arm64" {
+		return OptionCapability{Reason: genericReason}
+	}
+	if metadata.ImageCount <= 0 || len(metadata.Images) != metadata.ImageCount {
+		return OptionCapability{Reason: "Complete exact Windows installation-image metadata was not proven"}
+	}
+	seen := make(map[int]struct{}, len(metadata.Images))
+	for _, image := range metadata.Images {
+		if image.Index <= 0 || image.Index > 256 || strings.TrimSpace(image.Name) == "" {
+			return OptionCapability{Reason: "Windows installation-image metadata is incomplete"}
+		}
+		if _, duplicate := seen[image.Index]; duplicate {
+			return OptionCapability{Reason: "Windows installation-image indexes are duplicated"}
+		}
+		seen[image.Index] = struct{}{}
+		if image.TotalBytes == 0 {
+			return OptionCapability{Reason: fmt.Sprintf("Windows image %d has no proven expanded size", image.Index)}
+		}
+		if !validLocale.MatchString(strings.TrimSpace(image.DefaultLanguage)) {
+			return OptionCapability{Reason: fmt.Sprintf("Windows image %d has no proven default language", image.Index)}
+		}
 	}
 	return OptionCapability{Enabled: true}
 }

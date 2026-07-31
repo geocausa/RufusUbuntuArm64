@@ -11,7 +11,7 @@ RufusArm64 is an **independent, unofficial bootable-USB creator for Ubuntu on AR
 - Bounded Linux compatibility reporting for hybrid layouts, optical-only ISO media, El Torito BIOS/UEFI entries, and ISOLINUX/SYSLINUX/GRUB fingerprints.
 - Safe preparation of ZIP, gzip, bzip2, XZ, LZMA, Zstandard, VHD, VHDX, QCOW2, and VMDK inputs.
 - Windows installation media using GPT or MBR, UEFI or x86-family BIOS/CSM, and Automatic, FAT32, or NTFS selection.
-- An explicit experimental **Windows To Go** CLI path for Windows 11 client ARM64, with exact edition-index binding, direct NTFS image application, a GUID-bound FAT32 ESP/BCD, SAN policy 4, and full loop-device readback while physical firmware boot remains unclaimed.
+- An explicit experimental **Windows To Go** GUI and CLI path for Windows 11 client ARM64, with exact edition-index binding, pre-authentication target geometry checks, direct NTFS image application, a GUID-bound FAT32 ESP/BCD, SAN policy 4, and full loop-device readback while physical firmware boot remains unclaimed.
 - Bounded Windows multi-edition reporting for WIM, ESD, and validated split SWM payloads before optional Setup customizations.
 - A guarded graphical persistent Ubuntu casper and Debian live-boot workflow.
 - A guarded **Restore / format…** workflow for verified data-only GPT/MBR media using FAT16, FAT32, exFAT, NTFS, UDF, ext2, ext3, or ext4.
@@ -109,7 +109,9 @@ Optional Windows Setup changes include hardware-check bypass, offline/local acco
 
 ## Experimental Windows To Go
 
-The direct CLI exposes a deliberately narrow Windows To Go profile for positively identified Windows 11 client ARM64 media. It requires a 512-byte or 4 KiB-sector target of at least a nominal 32 GB class, the exact WIM image index reported by analysis, a GPT/UEFI layout, a 260 MiB unlabelled FAT32 EFI System Partition, and an NTFS Windows partition with at least 2 GiB of reviewed headroom beyond the image's expanded size.
+The Windows options dialog and direct CLI expose a deliberately narrow Windows To Go profile for positively identified Windows 11 client ARM64 media. It requires a 512-byte or 4 KiB-sector target of at least a nominal 32 GB class, the exact WIM image index reported by analysis, a GPT/UEFI layout, a 260 MiB unlabelled FAT32 EFI System Partition, and an NTFS Windows partition with at least 2 GiB of reviewed headroom beyond the image's expanded size.
+
+The graphical selector is offered only when read-only ISO analysis proves Windows 11 client ARM64, complete exact image indexes, a positive expanded size, and a valid default language for every image. After an exact edition is selected, the chosen USB must independently pass the same capacity and 512-byte/4 KiB sector-geometry rules as the privileged backend. Windows To Go is mutually exclusive with installer customizations, drivers, DBX overrides, full format, and bad-block checking. The GUI then displays the fixed layout and requires three separate acknowledgements covering whole-drive erasure, Microsoft's removal of Windows To Go support, and the exact edition being applied.
 
 The writer uses the package-owned NTFS-enabled WIM engine to apply the selected image directly to the unmounted NTFS partition, preserving Windows-specific metadata through libntfs-3g's native volume path. It constructs BCD transactionally from the applied image's own `BCD-Template`, binds the exact disk, ESP, and Windows partition GUIDs, disables recovery, installs the Microsoft ARM64 fallback bootloader, writes offline SAN policy 4, and marks the Windows partition not to receive a default drive letter. Both filesystems are then reopened read-only and independently verified before success is reported.
 
