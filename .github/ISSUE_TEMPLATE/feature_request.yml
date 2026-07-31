@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose a bounded workflow or compatibility improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the user or compatibility problem, not only the desired implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: upstream
+    attributes:
+      label: Relevant upstream behaviour
+      description: Identify the Rufus operation, media type, firmware path, or other reference behaviour when applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety and failure boundaries
+      description: Explain what may be erased, what must fail closed, and how the exact source and target should be bound.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Test media or hardware evidence
+      description: List representative images, devices, controllers, and firmware needed to qualify the proposal.

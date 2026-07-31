@@ -1,28 +1,27 @@
 ## Summary
 
-<!-- What changes, and why? -->
+Describe the change and the user-visible or engineering problem it addresses.
 
-## Safety boundary
+## Safety impact
 
-<!-- Describe source/target identity, confirmation, privilege, cancellation, changed-media reporting, flush/finalisation, and verification effects. Write “unchanged” only after checking each boundary. -->
+- Destructive-device path affected: yes / no
+- Privilege boundary affected: yes / no
+- Source/target identity contract affected: yes / no
+- Failure modes considered:
 
-## Upstream Rufus parity and work scope
+## Upstream/parity impact
 
-- Corresponding upstream Rufus operation/default:
-- Reviewed upstream commit/path:
-- Complete source passes:
-- Target bytes written and scaling basis:
-- Target bytes read back and scaling basis:
-- Maximum temporary storage and scaling basis:
-- Default verification:
-- Optional or separate qualification:
-- Intentional Linux divergence and reason:
+Identify the corresponding Rufus behaviour or state why this is an intentional Linux-specific divergence. Update the parity and operation-cost contracts when scope changes.
 
 ## Validation
 
-<!-- Exact tests, workflows, hardware, and architecture evidence. -->
+List the exact commands, test fixtures, loop-device runs, architecture checks, package checks, and physical hardware evidence completed for this commit.
 
-- [ ] Ordinary creation does not read or write unused target capacity by default.
-- [ ] Every extra complete pass protects a named property that cannot be obtained more cheaply.
-- [ ] `docs/operation-cost-contract.json` was reviewed and updated when work scope changed.
-- [ ] User-facing progress and verification claims match the actual byte scope.
+## Checklist
+
+- [ ] The change is narrowly scoped and documented.
+- [ ] Destructive operations fail closed on ambiguous identity, capacity, geometry, or source evidence.
+- [ ] Tests cover success, cancellation, mutation, and relevant failure paths.
+- [ ] `./scripts/test.sh` passes, or any omitted gate is explained.
+- [ ] Public claims distinguish software verification from physical boot qualification.
+- [ ] No private key, credential, personal data, or unreviewed binary asset is included.

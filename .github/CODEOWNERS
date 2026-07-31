@@ -1,0 +1,10 @@
+# Default review responsibility
+* @geocausa
+
+# Privileged and destructive storage paths
+/cmd/ @geocausa
+/internal/ @geocausa
+/gui/ @geocausa
+/packaging/ @geocausa
+/scripts/ @geocausa
+/.github/workflows/ @geocausa
