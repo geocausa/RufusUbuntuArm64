@@ -7,12 +7,17 @@ The binary was built natively on Ubuntu 24.04 ARM64 from upstream commit
 `cd5e231c348c255ae5088873b5a66ee0eb96fa07` using:
 
 ```text
-./configure --without-fuse --without-ntfs-3g --disable-shared --enable-static
+./configure --without-fuse --with-ntfs-3g --disable-shared --enable-static
 ```
 
-It links only to the standard GNU C runtime and does not require Ubuntu's
-`wimtools`, FUSE, NTFS-3G, or libxml2 runtime packages. The application uses
-this private binary only for WIM splitting and validation.
+It links to the standard GNU C runtime and the exact `libntfs-3g.so.89`
+provider supplied by the package's existing `ntfs-3g` dependency. It does not
+require Ubuntu's `wimtools`, FUSE, or libxml2 runtime packages. Besides WIM
+inspection and splitting, the private binary can apply an image directly to an
+unmounted NTFS volume so Windows security descriptors, reparse points, hard
+links, object IDs, and other NTFS-specific metadata use wimlib's native path.
+Extended attributes and encrypted-file restoration remain upstream wimlib
+limitations and are not silently claimed.
 
 Upstream project: https://github.com/ebiggers/wimlib
 Licence: GPL-3.0-or-later for the command-line program. See `COPYING` and

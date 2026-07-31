@@ -39,9 +39,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential autoconf automake libtool pkg-config git ca-certificates \
-            libxml2-dev zlib1g-dev liblzma-dev libbz2-dev liblz4-dev libzstd-dev
-      - name: Build and inspect the pinned ARM64 engine
-        run: ./scripts/build-wimlib-arm64.sh
+            libxml2-dev zlib1g-dev liblzma-dev libbz2-dev liblz4-dev libzstd-dev \
+            ntfs-3g ntfs-3g-dev
+      - name: Build twice, verify direct NTFS application, and require reproducibility
+        run: |
+          ./scripts/build-wimlib-arm64.sh "${RUNNER_TEMP}/wimlib-a"
+          ./scripts/build-wimlib-arm64.sh "${RUNNER_TEMP}/wimlib-b"
+          cmp "${RUNNER_TEMP}/wimlib-a/wimlib-imagex" "${RUNNER_TEMP}/wimlib-b/wimlib-imagex"
+          cmp "${RUNNER_TEMP}/wimlib-a/wimlib-imagex.sha256" "${RUNNER_TEMP}/wimlib-b/wimlib-imagex.sha256"
+          ./scripts/test-wimlib-direct-ntfs.sh "${RUNNER_TEMP}/wimlib-a/wimlib-imagex"
+          mkdir -p vendor/wimlib/arm64
+          cp -a "${RUNNER_TEMP}/wimlib-a/." vendor/wimlib/arm64/
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: wimlib-arm64
@@ -109,7 +117,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs udftools genisoimage qemu-utils
+            shellcheck desktop-file-utils appstream lintian dosfstools e2fsprogs udftools genisoimage qemu-utils ntfs-3g
           audit_bin="${RUNNER_TEMP}/rufusarm64-audit-tools"
           mkdir -p "${audit_bin}"
           GOBIN="${audit_bin}" go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
@@ -213,6 +221,10 @@ jobs:
         with:
           name: uefi-md5sum-arm64
           path: vendor/uefi-md5sum/arm64
+      - name: Install bundled WIM runtime provider
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ntfs-3g
       - name: Resolve traceable build version
         id: version
         run: |

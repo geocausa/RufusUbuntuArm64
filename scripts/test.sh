@@ -20,6 +20,10 @@ grep -Fq "## ${PROJECT_VERSION} —" CHANGELOG.md
 grep -Fq "release version=\"${PROJECT_VERSION}\"" packaging/io.github.geocausa.RufusArm64.metainfo.xml
 grep -Fq "rufusarm64_${PROJECT_VERSION}_arm64.deb" README.md
 python3 scripts/check-version-sync.py
+grep -Fq -- '--with-ntfs-3g' vendor/wimlib/source/BUILD_CONFIGURATION
+grep -Fq 'libntfs-3g.so.89' vendor/wimlib/source/BUILD_CONFIGURATION
+grep -Fq -- '--build-id=none' vendor/wimlib/source/BUILD_CONFIGURATION
+bash -n scripts/build-wimlib-arm64.sh scripts/test-wimlib-direct-ntfs.sh
 
 unformatted="$(gofmt -l cmd internal)"
 if [[ -n "${unformatted}" ]]; then
@@ -340,12 +344,23 @@ wim_engine="${extract_dir}/usr/lib/rufusarm64/wimlib-imagex"
 [[ -x "${wim_engine}" ]]
 file "${wim_engine}" | grep -Eq 'ARM aarch64|AArch64'
 readelf -h "${wim_engine}" | grep -q 'Machine:.*AArch64'
+found_ntfs=0
 while IFS= read -r library; do
-  [[ -z "${library}" || "${library}" == "libc.so.6" || "${library}" == "ld-linux-aarch64.so.1" ]] || {
-    echo "Unexpected bundled WIM dependency: ${library}" >&2
-    exit 1
-  }
+  case "${library}" in
+    "") ;;
+    libntfs-3g.so.89) found_ntfs=1 ;;
+    libc.so.6|ld-linux-aarch64.so.1) ;;
+    *)
+      echo "Unexpected bundled WIM dependency: ${library}" >&2
+      exit 1
+      ;;
+  esac
 done < <(readelf -d "${wim_engine}" | sed -n 's/.*Shared library: \[\(.*\)\].*/\1/p')
+[[ "${found_ntfs}" -eq 1 ]]
+if readelf -n "${wim_engine}" | grep -q 'Build ID:'; then
+  echo "Bundled WIM engine contains a nondeterministic linker build ID" >&2
+  exit 1
+fi
 expected_wim_hash="$(awk '{print $1}' vendor/wimlib/arm64/wimlib-imagex.sha256)"
 actual_wim_hash="$(sha256sum "${wim_engine}" | awk '{print $1}')"
 [[ "${actual_wim_hash}" == "${expected_wim_hash}" ]]
