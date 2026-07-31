@@ -812,10 +812,13 @@ func runWrite(args []string) error {
 			if ev.Done > 0 || ev.Total > 0 {
 				eventName = "progress"
 			}
+			if ev.Stage == "log" {
+				eventName = "log"
+			}
 			if ev.Stage == "complete" {
 				eventName = "complete"
 			}
-			out.event(jsonEvent{Event: eventName, Stage: ev.Stage, Message: ev.Message, Done: ev.Done, Total: ev.Total, Hash: ev.Hash})
+			out.event(jsonEvent{Event: eventName, Stage: ev.Stage, Message: ev.Message, Done: ev.Done, Total: ev.Total, Rate: ev.Rate, Hash: ev.Hash})
 		})
 		if err != nil {
 			return err

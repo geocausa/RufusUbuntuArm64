@@ -94,6 +94,21 @@ func TestCreateRealWindowsARM64Loop(t *testing.T) {
 		result.Materialization.BootManagerSHA256 == "" || result.Materialization.OfflinePolicySHA256 == "" {
 		t.Fatalf("incomplete materialization evidence: %#v", result.Materialization)
 	}
+	var sawApplyProgress, sawApplyComplete bool
+	for _, event := range events {
+		if event.Stage != "apply" || event.Total != result.Plan.Image.TotalBytes {
+			continue
+		}
+		if event.Done > 0 && event.Done < event.Total {
+			sawApplyProgress = true
+		}
+		if event.Done == event.Total {
+			sawApplyComplete = true
+		}
+	}
+	if !sawApplyProgress || !sawApplyComplete {
+		t.Fatalf("live WIM apply progress was not complete: progress=%v complete=%v events=%#v", sawApplyProgress, sawApplyComplete, events)
+	}
 	if len(events) == 0 || events[len(events)-1].Stage != "complete" {
 		t.Fatalf("completion event missing: %#v", events)
 	}

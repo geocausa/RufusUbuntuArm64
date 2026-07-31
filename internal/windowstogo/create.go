@@ -38,11 +38,12 @@ type CreateOptions struct {
 }
 
 type Event struct {
-	Stage   string `json:"stage"`
-	Message string `json:"message"`
-	Done    uint64 `json:"done,omitempty"`
-	Total   uint64 `json:"total,omitempty"`
-	Hash    string `json:"sha256,omitempty"`
+	Stage   string  `json:"stage"`
+	Message string  `json:"message"`
+	Done    uint64  `json:"done,omitempty"`
+	Total   uint64  `json:"total,omitempty"`
+	Rate    float64 `json:"rate,omitempty"`
+	Hash    string  `json:"sha256,omitempty"`
 }
 
 type EventFunc func(Event)
@@ -341,7 +342,8 @@ func Create(ctx context.Context, isoPath, devicePath string, options CreateOptio
 		return Result{}, err
 	}
 
-	sendEvent(emit, Event{Stage: "apply", Message: fmt.Sprintf("Applying Windows image %d (%s) directly to the unmounted NTFS volume…", plan.Image.Index, plan.Image.Name), Total: plan.Image.TotalBytes})
+	applyMessage := fmt.Sprintf("Applying Windows image %d (%s) directly to the unmounted NTFS volume…", plan.Image.Index, plan.Image.Name)
+	sendEvent(emit, Event{Stage: "apply", Message: applyMessage, Total: plan.Image.TotalBytes})
 	// Direct NTFS-volume mode preserves Windows ACLs, reparse points, hard links,
 	// object IDs, streams, and timestamps by default. Do not add --strict-acls:
 	// the pinned engine's qualified real-volume path intentionally uses upstream
@@ -351,7 +353,11 @@ func Create(ctx context.Context, isoPath, devicePath string, options CreateOptio
 	for _, reference := range payload.ReferencePaths {
 		applyArgs = append(applyArgs, "--ref="+reference)
 	}
-	if err := runTool(ctx, wimExecutable, applyArgs...); err != nil {
+	health, err := newTargetHealthMonitor(devicePath, options.ExpectedDeviceID)
+	if err != nil {
+		return Result{}, fmt.Errorf("initialize Windows To Go target health monitor: %w", err)
+	}
+	if err := runWIMApply(ctx, wimExecutable, applyArgs, applyMessage, plan.Image.TotalBytes, health, applyHealthPollInterval, emit); err != nil {
 		return Result{}, fmt.Errorf("apply selected Windows image: %w", err)
 	}
 	if err := runTool(ctx, tools["blockdev"], "--flushbufs", osPath); err != nil {
