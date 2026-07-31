@@ -16,7 +16,7 @@ Existing DD writing, Windows media creation, persistent Linux media, data-only f
 
 ## Qualification status
 
-The `v0.15.0` tag and package are immutable published release artifacts. “Stable release” identifies the published channel; it does not claim universal firmware, controller, flash-media, distribution, or Secure Boot compatibility. The bounded physical evidence and remaining matrix are recorded in `docs/hardware-checklist-0.15.0.md`.
+The `v0.15.0` tag and package are immutable published release artifacts. “Stable release” identifies the published channel; it does not claim universal firmware, controller, flash-media, distribution, or Secure Boot compatibility. Physical hardware testing remains required for broader support claims, and the bounded evidence and remaining matrix are recorded in `docs/hardware-checklist-0.15.0.md`.
 
 The central physical observation is an Ubuntu ARM64 ISOHybrid written with ISO Image mode on the intended Surface Pro 11 ARM64 host. The record must show the choice dialog, ISO mode selected by default, successful creation and verification, actual UEFI boot, and ordinary writable FAT32 behavior. A bounded DD-mode regression should also be recorded where practical.
 

@@ -14,7 +14,7 @@
 
 | Channel | Current state | Intended use |
 | --- | --- | --- |
-| **Stable release** | [`v0.15.0`](https://github.com/geocausa/RufusUbuntuArm64/releases/latest) | General evaluation of the published ISO Image mode release candidate |
+| **Stable release** | **Version 0.15.0** ([`v0.15.0`](https://github.com/geocausa/RufusUbuntuArm64/releases/latest)) | General evaluation of the published ISO Image mode release candidate |
 | **`main`** | Post-`0.15.0` development, including experimental Windows To Go work | Development, review, and controlled qualification—not an automatically published binary |
 | **Windows To Go** | Software-qualified for the stated Windows 11 ARM64 profile; physical firmware boot and first boot remain unqualified | Experimental testing on disposable removable media only |
 | **Target milestone** | `1.0` | Stable release after hardware coverage, independent privileged-code review, localisation, and production trust operations |
