@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added an explicit experimental Windows To Go writer for Windows 11 client ARM64: exact WIM index/expanded-size admission, reproducible direct NTFS application, a 260 MiB unlabelled FAT32 ESP, backup-first/readback-verified GPT, Microsoft ARM64 EFI fallback files, GUID-bound transactional BCD derived from `BCD-Template`, disabled recovery, offline SAN policy 4, no-default-drive-letter attributes, private read-only verification, and a real 32 GiB loop qualification while keeping firmware boot unclaimed.
 - Rebuilt the pinned package-private ARM64 WIM engine reproducibly with direct NTFS-volume support, added an exact `libntfs-3g.so.89` runtime contract, and permanently qualified native WIM application to NTFS with filesystem and hard-link readback.
 - Added guarded Windows 11 silent-install media for qualified UEFI/NTFS layouts: exact WIM image-index and boot.wim language binding, pre-existing answer-file refusal, a verified UEFI:NTFS disk-numbering guard, automatic disk-0 EFI/MSR/Windows layout, an explicit `ERASE DISK 0` CLI acknowledgement, and a separate three-part graphical confirmation.
 - Added guarded UDF 2.01 data-only formatting with MBR/GPT parity types, logical-sector-matched blocks, bounded OSTA Unicode labels, descriptor and `blkid` agreement, closed-integrity verification, a private read-only kernel mount, GTK/CLI integration, and real loop qualification.

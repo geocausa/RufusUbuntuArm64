@@ -143,6 +143,31 @@ not expose this option.
 .TP
 .B --no-unmount
 Refuse mounted descendants rather than unmounting eligible removable media.
+
+.SH EXPERIMENTAL WINDOWS TO GO
+The explicit
+.B --mode windows-to-go
+path accepts only positively identified Windows 11 client ARM64 media and a
+reviewed GPT/UEFI/NTFS target. It creates a 260 MiB unlabelled FAT32 EFI System
+Partition, applies the exact selected WIM image directly to the unmounted NTFS
+partition, builds BCD transactionally from the image's own BCD-Template, binds
+the exact disk and partition GUIDs, disables recovery, installs the ARM64
+fallback loader, writes offline SAN policy 4, and independently reopens both
+filesystems read-only for verification.
+.PP
+The mode requires
+.B --experimental-windows-to-go,
+.BI --win-to-go-image-index " INDEX",
+and the exact acknowledgement
+.BR "--win-to-go-confirm 'CREATE EXPERIMENTAL WINDOWS TO GO'" .
+It refuses installer customizations, driver staging, DBX overrides, manual
+filesystem/layout choices, unsupported architecture, insufficient expanded
+capacity, changed sources or targets, and mounted/protected targets.
+.PP
+Microsoft removed Windows To Go from supported modern Windows releases. The
+result remains experimental: software and loop-device verification do not prove
+physical firmware boot or successful first boot. Encrypted-file restoration and
+Windows extended attributes remain upstream wimlib limitations.
 .SH LINUX PERSISTENCE
 .B persistence plan
 analyzes a caller-mounted media tree without opening a target device.

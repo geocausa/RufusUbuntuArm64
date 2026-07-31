@@ -29,6 +29,7 @@ import (
 	"github.com/geocausa/RufusArm64/internal/sourcefile"
 	"github.com/geocausa/RufusArm64/internal/windowsconfig"
 	"github.com/geocausa/RufusArm64/internal/windowsmedia"
+	"github.com/geocausa/RufusArm64/internal/windowstogo"
 )
 
 var version = "development"
@@ -144,6 +145,7 @@ Usage:
   rufusarm64-cli inspect --image FILE [--json]
   sudo rufusarm64-cli write --image FILE --device /dev/DEVICE [--verify]
   sudo rufusarm64-cli write --mode linux-persistent --experimental-persistence --image FILE --device /dev/DEVICE [--persistence-size SIZE]
+  sudo rufusarm64-cli write --mode windows-to-go --experimental-windows-to-go --win-to-go-image-index N --win-to-go-confirm 'CREATE EXPERIMENTAL WINDOWS TO GO' --image FILE --device /dev/DEVICE
   sudo rufusarm64-cli verify --image FILE --device /dev/DEVICE
   rufusarm64-cli hash [--algorithm ALGORITHM]... [--all] [--json] FILE
   rufusarm64-cli uefi validate --directory DIR [--arch ARCH] [--dbx FILE | --firmware] [--sbat-level FILE | --firmware-sbat] [--json]
@@ -360,7 +362,7 @@ func runWrite(args []string) error {
 	fs := flag.NewFlagSet("write", flag.ContinueOnError)
 	imagePath := fs.String("image", "", "image or ISO file")
 	devicePath := fs.String("device", "", "whole target disk")
-	mode := fs.String("mode", "auto", "auto, raw, windows, or linux-persistent")
+	mode := fs.String("mode", "auto", "auto, raw, windows, windows-to-go, or linux-persistent")
 	verify := fs.Bool("verify", defaultWriteVerify, "verify data after writing")
 	yes := fs.Bool("yes", false, "skip interactive confirmation")
 	allowFixed := fs.Bool("allow-fixed", false, "allow a non-removable disk")
@@ -394,6 +396,9 @@ func runWrite(args []string) error {
 	winLocale := fs.String("win-locale", "", "apply a Windows regional locale, such as en-GB")
 	winTimeZone := fs.String("win-timezone", "", "apply a Windows time-zone name")
 	experimentalPersistence := fs.Bool("experimental-persistence", false, "enable the experimental CLI-only Linux persistence writer")
+	experimentalWindowsToGo := fs.Bool("experimental-windows-to-go", false, "enable the experimental Windows To Go writer")
+	winToGoImageIndex := fs.Int("win-to-go-image-index", 0, "exact Windows image index for Windows To Go")
+	winToGoConfirm := fs.String("win-to-go-confirm", "", "required literal acknowledgement: CREATE EXPERIMENTAL WINDOWS TO GO")
 	persistenceSizeText := fs.String("persistence-size", "0", "persistent ext4 size in bytes or K/M/G/T units; zero uses remaining space")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -406,9 +411,9 @@ func runWrite(args []string) error {
 		return errors.New("the graphical writer requires an expected device identity; refresh the drive list and try again")
 	}
 	switch *mode {
-	case "auto", "raw", "windows", "linux-persistent":
+	case "auto", "raw", "windows", "windows-to-go", "linux-persistent":
 	default:
-		return errors.New("--mode must be auto, raw, windows, or linux-persistent")
+		return errors.New("--mode must be auto, raw, windows, windows-to-go, or linux-persistent")
 	}
 	if os.Getenv("PKEXEC_UID") != "" {
 		if !*jsonProgress || !*yes || *expectedIdentity == "" || *cancelFile == "" || *mode != "auto" || *allowFixed || *noUnmount || *forceRaw || *allowForeignArchitecture {
@@ -554,8 +559,18 @@ func runWrite(args []string) error {
 	if err := validateSilentInstallAcknowledgement(winOptions, *winSilentConfirm); err != nil {
 		return err
 	}
-	if selectedMode != "windows" && (winOptions.Enabled() || *winUseCA2023Bootloaders || scheme != "auto" || targetSystemChoice != "auto" || filesystemChoice != "auto" || clusterSize != 0 || *driverFolder != "" || *dbxFile != "" || *fullFormat || *badBlockCheck) {
+	if selectedMode != "windows" && selectedMode != "windows-to-go" && (winOptions.Enabled() || *winUseCA2023Bootloaders || scheme != "auto" || targetSystemChoice != "auto" || filesystemChoice != "auto" || clusterSize != 0 || *driverFolder != "" || *dbxFile != "" || *fullFormat || *badBlockCheck) {
 		return errors.New("windows partition and setup options can only be used with a supported Windows installation ISO")
+	}
+	if selectedMode == "windows-to-go" {
+		if err := validateWindowsToGoAcknowledgement(true, *experimentalWindowsToGo, *winToGoImageIndex, *winToGoConfirm); err != nil {
+			return err
+		}
+		if winOptions.Enabled() || *winUseCA2023Bootloaders || scheme != "auto" || targetSystemChoice != "auto" || filesystemChoice != "auto" || clusterSize != 0 || *driverFolder != "" || *dbxFile != "" || *fullFormat || *badBlockCheck || *forceRaw || *allowForeignArchitecture {
+			return errors.New("experimental Windows To Go currently requires automatic GPT/UEFI/NTFS settings with no installer customizations, drivers, DBX override, format override, raw override, or foreign architecture")
+		}
+	} else if err := validateWindowsToGoAcknowledgement(false, *experimentalWindowsToGo, *winToGoImageIndex, *winToGoConfirm); err != nil {
+		return err
 	}
 	if selectedMode == "linux-persistent" {
 		if !*experimentalPersistence {
@@ -698,6 +713,31 @@ func runWrite(args []string) error {
 			Hash:    persistentResult.QualificationRecordSHA256,
 		})
 		out.event(jsonEvent{Event: "complete", Stage: "complete", Message: "Experimental persistent Linux USB created and verified."})
+		return nil
+	}
+
+	if selectedMode == "windows-to-go" {
+		out.event(jsonEvent{Event: "stage", Stage: "windows_to_go", Message: "Creating experimental Windows To Go media…"})
+		wtgResult, err := windowstogo.Create(ctx, *imagePath, resolved, windowstogo.CreateOptions{
+			TargetSizeBytes: dev.Size, LogicalSectorSize: dev.LogicalSectorSize,
+			ExpectedDeviceID: kernelDeviceID, ExpectedIdentity: selectedIdentity,
+			ExpectedSource: sourceIdentity, ImageIndex: *winToGoImageIndex,
+			BeforeDestructive: postWriteTargetCheck,
+		}, func(ev windowstogo.Event) {
+			eventName := "stage"
+			if ev.Done > 0 || ev.Total > 0 {
+				eventName = "progress"
+			}
+			if ev.Stage == "complete" {
+				eventName = "complete"
+			}
+			out.event(jsonEvent{Event: eventName, Stage: ev.Stage, Message: ev.Message, Done: ev.Done, Total: ev.Total, Hash: ev.Hash})
+		})
+		if err != nil {
+			return err
+		}
+		out.event(jsonEvent{Event: "log", Stage: "windows_to_go", Message: fmt.Sprintf("Windows To Go image %d (%s) was applied and verified; firmware boot remains untested.", wtgResult.Plan.Image.Index, wtgResult.Plan.Image.Name), Hash: wtgResult.SourceSHA256})
+		out.event(jsonEvent{Event: "complete", Stage: "complete", Message: "Experimental Windows To Go media created and independently verified."})
 		return nil
 	}
 
@@ -849,8 +889,8 @@ func selectInspectionMode(inspection imaging.ImageInfo) (string, error) {
 }
 
 func selectWriteMode(requested string, inspection imaging.ImageInfo, forceRaw bool) (string, error) {
-	if requested != "auto" && requested != "raw" && requested != "windows" && requested != "linux-persistent" {
-		return "", errors.New("mode must be auto, raw, windows, or linux-persistent")
+	if requested != "auto" && requested != "raw" && requested != "windows" && requested != "windows-to-go" && requested != "linux-persistent" {
+		return "", errors.New("mode must be auto, raw, windows, windows-to-go, or linux-persistent")
 	}
 	if inspection.HasSquashFS && !inspection.HasOpticalFilesystem() && !inspection.LooksLikeRawBootMedia() && !forceRaw {
 		return "", errors.New("the selected file is a recognized SquashFS filesystem image but not a complete ISOHybrid, GPT, or MBR disk image; refusing automatic raw writing (use --force-raw only for a deliberate filesystem-byte copy)")
@@ -868,7 +908,7 @@ func selectWriteMode(requested string, inspection imaging.ImageInfo, forceRaw bo
 			selected = "raw"
 		}
 	}
-	if selected == "windows" && !inspection.HasWindowsInstallMedia() {
+	if (selected == "windows" || selected == "windows-to-go") && !inspection.HasWindowsInstallMedia() {
 		return "", errors.New("this optical image does not contain the bounded Windows installation markers sources/boot.wim plus an install.wim, install.esd, or install.swm payload")
 	}
 	if selected == "raw" && inspection.HasOpticalFilesystem() && !inspection.LooksLikeRawBootMedia() && !forceRaw {
@@ -2388,6 +2428,25 @@ func printProgress(label string, p imaging.Progress) {
 		percent = float64(p.Done) * 100 / float64(p.Total)
 	}
 	fmt.Printf("\r%-6s %6.2f%%  %s / %s  %s/s", label, percent, humanBytes(p.Done), humanBytes(p.Total), humanBytes(uint64(p.BytesPerSec)))
+}
+
+func validateWindowsToGoAcknowledgement(selected, experimental bool, imageIndex int, confirmation string) error {
+	if !selected {
+		if experimental || imageIndex != 0 || confirmation != "" {
+			return errors.New("--experimental-windows-to-go, --win-to-go-image-index, and --win-to-go-confirm require --mode windows-to-go")
+		}
+		return nil
+	}
+	if !experimental {
+		return errors.New("experimental Windows To Go requires --experimental-windows-to-go")
+	}
+	if imageIndex <= 0 || imageIndex > 256 {
+		return errors.New("experimental Windows To Go requires --win-to-go-image-index from 1 to 256")
+	}
+	if confirmation != "CREATE EXPERIMENTAL WINDOWS TO GO" {
+		return errors.New("experimental Windows To Go requires --win-to-go-confirm 'CREATE EXPERIMENTAL WINDOWS TO GO'")
+	}
+	return nil
 }
 
 func validateSilentInstallAcknowledgement(options windowsconfig.Options, confirmation string) error {

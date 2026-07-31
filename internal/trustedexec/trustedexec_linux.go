@@ -12,12 +12,20 @@ import (
 )
 
 var allowedUtilities = map[string]struct{}{
+	"blkid":       {},
 	"blockdev":    {},
 	"findmnt":     {},
+	"fsck.vfat":   {},
 	"genisoimage": {},
+	"hivexml":     {},
+	"hivexsh":     {},
 	"lsblk":       {},
+	"mkfs.ntfs":   {},
+	"mkfs.vfat":   {},
 	"mount":       {},
+	"ntfsfix":     {},
 	"qemu-img":    {},
+	"udevadm":     {},
 	"umount":      {},
 	"wipefs":      {},
 }

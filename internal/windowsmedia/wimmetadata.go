@@ -30,6 +30,7 @@ type wimInfoXML struct {
 
 type wimImageXML struct {
 	Index       string        `xml:"INDEX,attr"`
+	TotalBytes  string        `xml:"TOTALBYTES"`
 	Name        string        `xml:"NAME"`
 	DisplayName string        `xml:"DISPLAYNAME"`
 	Description string        `xml:"DESCRIPTION"`
@@ -103,9 +104,23 @@ func InspectWIMMetadata(ctx context.Context, imagePath string) (windowsconfig.Me
 	if err != nil {
 		return windowsconfig.MediaMetadata{}, err
 	}
+	return InspectWIMMetadataWithExecutable(ctx, wimlib, imagePath)
+}
+
+// InspectWIMMetadataWithExecutable runs the same bounded parser through an
+// explicitly selected WIM engine. Specialized privileged writers use this to
+// ensure that preflight metadata and image application are performed by the
+// same package-owned executable rather than an ambient PATH binary.
+func InspectWIMMetadataWithExecutable(ctx context.Context, executable, imagePath string) (windowsconfig.MediaMetadata, error) {
+	if ctx == nil {
+		return windowsconfig.MediaMetadata{}, errors.New("WIM metadata context is nil")
+	}
+	if strings.TrimSpace(executable) == "" {
+		return windowsconfig.MediaMetadata{}, errors.New("WIM metadata executable is empty")
+	}
 	stdout := NewBoundedBuffer(maxWIMMetadataBytes)
 	stderr := NewBoundedBuffer(64 * 1024)
-	command := exec.CommandContext(ctx, wimlib, "info", imagePath, "--xml")
+	command := exec.CommandContext(ctx, executable, "info", imagePath, "--xml")
 	command.Stdout = stdout
 	command.Stderr = stderr
 	if err := command.Run(); err != nil {
@@ -193,8 +208,12 @@ func parseWIMMetadata(reader io.Reader) (windowsconfig.MediaMetadata, error) {
 		if err != nil {
 			return windowsconfig.MediaMetadata{}, fmt.Errorf("WIM image %d language metadata: %w", imageIndex, err)
 		}
+		totalBytes, err := normalizeWIMTotalBytes(image.TotalBytes)
+		if err != nil {
+			return windowsconfig.MediaMetadata{}, fmt.Errorf("WIM image %d expanded-size metadata: %w", imageIndex, err)
+		}
 		result.Images = append(result.Images, windowsconfig.WindowsImage{
-			Index: imageIndex, Name: name, DefaultLanguage: language,
+			Index: imageIndex, Name: name, DefaultLanguage: language, TotalBytes: totalBytes,
 		})
 		if name != "" {
 			key := strings.ToLower(name)
@@ -206,6 +225,18 @@ func parseWIMMetadata(reader io.Reader) (windowsconfig.MediaMetadata, error) {
 	}
 	result.ImageCount = len(document.Images)
 	return result, nil
+}
+
+func normalizeWIMTotalBytes(value string) (uint64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, nil
+	}
+	total, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || total == 0 {
+		return 0, fmt.Errorf("TOTALBYTES %q is not a positive decimal integer", value)
+	}
+	return total, nil
 }
 
 func normalizeWIMLanguage(languages wimLanguagesXML) (string, error) {
