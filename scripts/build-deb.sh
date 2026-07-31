@@ -180,10 +180,11 @@ while pending:
             pending.append(dependency)
 PYPACKAGEIMPORTS
 
-# Include the verified package-private ARM64 WIM engine. It is deliberately
-# built without FUSE or NTFS-3G support and may depend only on the standard C
-# runtime. Failing closed here prevents accidentally publishing a package that
-# silently needs Ubuntu's optional wimtools package.
+# Include the verified package-private ARM64 WIM engine. It is built without
+# FUSE but with libntfs-3g so Windows images can be applied directly to an
+# unmounted NTFS volume while preserving Windows-specific metadata. Failing
+# closed here prevents accidentally publishing a package that uses an ambient
+# wimtools binary or an unreviewed runtime provider.
 WIMLIB_SOURCE="${WIMLIB_ARM64_BINARY:-${ROOT_DIR}/vendor/wimlib/arm64/wimlib-imagex}"
 if [[ ! -f "${WIMLIB_SOURCE}" ]]; then
   echo "Missing verified ARM64 WIM engine: ${WIMLIB_SOURCE}" >&2
@@ -200,12 +201,26 @@ file "${WIMLIB_SOURCE}" | grep -Eq 'ARM aarch64|AArch64' || {
   exit 1
 }
 needed="$(readelf -d "${WIMLIB_SOURCE}" | sed -n 's/.*Shared library: \[\(.*\)\].*/\1/p')"
+found_ntfs=0
 while IFS= read -r library; do
-  [[ -z "${library}" || "${library}" == "libc.so.6" || "${library}" == "ld-linux-aarch64.so.1" ]] || {
-    echo "Refusing WIM engine with unexpected runtime dependency: ${library}" >&2
-    exit 1
-  }
+  case "${library}" in
+    "") ;;
+    libntfs-3g.so.89) found_ntfs=1 ;;
+    libc.so.6|ld-linux-aarch64.so.1) ;;
+    *)
+      echo "Refusing WIM engine with unexpected runtime dependency: ${library}" >&2
+      exit 1
+      ;;
+  esac
 done <<< "${needed}"
+[[ "${found_ntfs}" -eq 1 ]] || {
+  echo "Refusing WIM engine without direct NTFS-volume support" >&2
+  exit 1
+}
+if readelf -n "${WIMLIB_SOURCE}" | grep -q 'Build ID:'; then
+  echo "Refusing WIM engine with a nondeterministic linker build ID" >&2
+  exit 1
+fi
 install -Dm755 "${WIMLIB_SOURCE}" \
   "${PACKAGE_DIR}/usr/lib/rufusarm64/wimlib-imagex"
 for file in COPYING COPYING.GPLv3 COPYING.LGPL README.md; do

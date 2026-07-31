@@ -1,3 +1,8 @@
-./configure --without-fuse --without-ntfs-3g --disable-shared --enable-static
+SOURCE_DATE_EPOCH=1769744729 (2026-01-29T19:45:29-08:00)
+CFLAGS=-O2 -ffile-prefix-map=<temporary source>=. -fdebug-prefix-map=<temporary source>=.
+LDFLAGS=-Wl,--build-id=none
+ARFLAGS=crD
+./configure --without-fuse --with-ntfs-3g --disable-shared --enable-static
 Native build: GitHub Actions ubuntu-24.04-arm
+Runtime provider: libntfs-3g.so.89 from the package's ntfs-3g dependency
 Upstream tag: v1.14.5

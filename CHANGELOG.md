@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Rebuilt the pinned package-private ARM64 WIM engine reproducibly with direct NTFS-volume support, added an exact `libntfs-3g.so.89` runtime contract, and permanently qualified native WIM application to NTFS with filesystem and hard-link readback.
 - Added guarded Windows 11 silent-install media for qualified UEFI/NTFS layouts: exact WIM image-index and boot.wim language binding, pre-existing answer-file refusal, a verified UEFI:NTFS disk-numbering guard, automatic disk-0 EFI/MSR/Windows layout, an explicit `ERASE DISK 0` CLI acknowledgement, and a separate three-part graphical confirmation.
 - Added guarded UDF 2.01 data-only formatting with MBR/GPT parity types, logical-sector-matched blocks, bounded OSTA Unicode labels, descriptor and `blkid` agreement, closed-integrity verification, a private read-only kernel mount, GTK/CLI integration, and real loop qualification.
 - Added guarded ext2 and ext3 data-only formatting with distinct formatter contracts, MBR/GPT Linux data partition types, read-only `e2fsck`, independent ext-superblock generation classification, GTK/CLI integration, and real loop-device qualification.
