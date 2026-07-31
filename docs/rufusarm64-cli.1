@@ -33,6 +33,10 @@ rufusarm64-cli \- inspect images and safely create bootable USB media on Linux
 .RI "validate|integrity manifest|integrity verify"
 .RI [ options ]
 .PP
+.B rufusarm64-cli uefi-ntfs inspect
+.RI [ --image " FILE" ]
+.RI [ --json ]
+.PP
 .B rufusarm64-cli persistence
 .RI "plan|analyze"
 .RI [ options ]
@@ -288,6 +292,22 @@ scan.
 checks the root `md5sum.txt` and reports changed, missing, unexpected, and byte
 count mismatches. MD5 is used only for compatibility with the optional
 boot-time validator; SHA-256 remains the trust primitive elsewhere.
+.SH UEFI:NTFS ASSET INSPECTION
+.B uefi-ntfs inspect
+is a read-only structural inspection of the exact pinned 1 MiB Rufus 4.15
+UEFI:NTFS FAT12 image. With no
+.B --image
+argument it locates the package asset; an explicit path must still match the
+pinned size and whole-image SHA-256.
+.PP
+The command proves exactly five architecture triplets: ARM32, ARM64, IA32,
+RISC-V64, and x64. Each triplet must contain its exact removable-media fallback
+application plus NTFS and exFAT boot-service drivers. Every embedded path, file
+size, SHA-256, PE/COFF machine, and subsystem is checked, and the deterministic
+architecture manifest SHA-256 is reported. This validates the packaged bytes
+and supported architecture set; it does not prove that physical firmware will
+execute a loader or accept it under Secure Boot.
+.PP
 .SH WINDOWS SETUP ANALYSIS
 Before optional Windows setup customizations, the identity-bound ISO is mounted
 read-only and its complete installation metadata is inspected. Every WIM/ESD

@@ -187,8 +187,8 @@
     {
       "id": "uefi-ntfs-architectures",
       "upstream_feature": "Provide UEFI:NTFS boot support across firmware architectures",
-      "status": "partial",
-      "notes": "Verified x86, x86-64, and ARM64 UEFI:NTFS assets are integrated. The exact pinned Rufus 4.15 image, including its Snapdragon X ARM64 correction, is shared by Windows installation and Linux NTFS ISO Image mode. Upstream Rufus 4.15 adds RISC-V64 support, which remains planned and is outside current ARM64 qualification.",
+      "status": "implemented",
+      "notes": "The exact pinned Rufus 4.15 1 MiB UEFI:NTFS FAT12 image is shared by Windows installation and Linux NTFS ISO Image mode and remains protected by its complete image SHA-256. A bounded in-process FAT12 reader additionally proves exactly five embedded architecture triplets—ARM32, ARM64, IA32, RISC-V64, and x64—covering each removable-media fallback application plus its NTFS and exFAT boot-service drivers. Admission binds exact long paths, sizes, per-file SHA-256 digests, PE/COFF machines, EFI subsystems, volume identity, and deterministic architecture-manifest SHA-256; the package-extracted asset is checked through the read-only `uefi-ntfs inspect` command. The parser also corrected general ARM Thumb PE machine admission. Physical firmware and Secure Boot behavior remain qualification rather than software implementation claims.",
       "upstream_sources": [
         "res/uefi/uefi-ntfs/",
         "ChangeLog.txt"

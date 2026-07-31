@@ -100,7 +100,7 @@ Windows ARM64 does not support legacy PC BIOS/CSM boot. x86 and x86-64 Windows m
 
 Before optional customizations, the exact source ISO is mounted read-only. Every installation edition must agree on Windows generation, client/server family, and architecture. The options dialog reports edition count/names plus WIM, ESD, or complete split-SWM payload type and part count. Conflicting or unknown metadata disables customizations but does not block ordinary no-customization media creation.
 
-Automatic mode prefers FAT32 and splits oversized WIM/ESD payloads when required. NTFS uses the pinned UEFI:NTFS image. Native FAT32 remains the most firmware-compatible ARM64 recovery path.
+Automatic mode prefers FAT32 and splits oversized WIM/ESD payloads when required. NTFS uses the exact pinned Rufus 4.15 UEFI:NTFS image. In addition to its whole-image SHA-256, RufusArm64 structurally proves the embedded ARM32, ARM64, IA32, RISC-V64, and x64 fallback, NTFS, and exFAT loader triplets by exact FAT path, size, SHA-256, PE machine, and subsystem. `rufusarm64-cli uefi-ntfs inspect --json` reports that read-only evidence. Native FAT32 remains the most firmware-compatible ARM64 recovery path.
 
 Optional Windows Setup changes include hardware-check bypass, offline/local account creation, privacy and regional settings, BitLocker suppression, driver loading, Quality of Life policies, installed-system SkuSiPolicy deployment, and qualified Windows UEFI CA 2023 bootloader replacement. Each option is capability-gated from the exact ISO and repeated by the privileged writer.
 

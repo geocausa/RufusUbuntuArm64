@@ -2,8 +2,14 @@ package secureboot
 
 // Exported PE/COFF constants used by audited media-tree transformations.
 const (
-	MachineARM64            = imageFileMachineARM64
-	SubsystemEFIApplication = imageSubsystemEFIApp
+	MachineI386                   = imageFileMachineI386
+	MachineARM                    = imageFileMachineARM
+	MachineThumb                  = imageFileMachineThumb
+	MachineAMD64                  = imageFileMachineAMD64
+	MachineARM64                  = imageFileMachineARM64
+	MachineRISCV64                = imageFileMachineRISCV64
+	SubsystemEFIApplication       = imageSubsystemEFIApp
+	SubsystemEFIBootServiceDriver = imageSubsystemEFIBoot
 )
 
 // EFIImageInfo is the bounded structural result for one in-memory EFI image.

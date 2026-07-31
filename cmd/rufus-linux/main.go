@@ -27,6 +27,7 @@ import (
 	"github.com/geocausa/RufusArm64/internal/safety"
 	"github.com/geocausa/RufusArm64/internal/secureboot"
 	"github.com/geocausa/RufusArm64/internal/sourcefile"
+	"github.com/geocausa/RufusArm64/internal/uefintfs"
 	"github.com/geocausa/RufusArm64/internal/windowsconfig"
 	"github.com/geocausa/RufusArm64/internal/windowsmedia"
 	"github.com/geocausa/RufusArm64/internal/windowstogo"
@@ -113,6 +114,8 @@ func run(args []string) error {
 		return runDBX(args[1:])
 	case "uefi":
 		return runUEFI(args[1:])
+	case "uefi-ntfs":
+		return runUEFINTFS(args[1:])
 	case "acquire":
 		return runAcquire(args[1:])
 	case "update":
@@ -151,6 +154,7 @@ Usage:
   rufusarm64-cli uefi validate --directory DIR [--arch ARCH] [--dbx FILE | --firmware] [--sbat-level FILE | --firmware-sbat] [--json]
   rufusarm64-cli uefi integrity manifest --directory DIR [--max-files N] [--json]
   rufusarm64-cli uefi integrity verify --directory DIR [--max-files N] [--json]
+  rufusarm64-cli uefi-ntfs inspect [--image FILE] [--json]
   rufusarm64-cli dbx inspect (--file FILE | --firmware) [--json]
   rufusarm64-cli dbx update [--arch ARCH] [--output FILE] [--json]
   rufusarm64-cli dbx check --dbx FILE --efi FILE [--json]
@@ -375,6 +379,48 @@ func inspectElToritoUEFIEvidence(file *os.File, size int64, result *inspectResul
 		return
 	}
 	result.ElToritoUEFI = &plan
+}
+
+func runUEFINTFS(args []string) error {
+	if len(args) == 0 || args[0] != "inspect" {
+		return errors.New("uefi-ntfs requires inspect")
+	}
+	flags := flag.NewFlagSet("uefi-ntfs inspect", flag.ContinueOnError)
+	imagePath := flags.String("image", "", "explicit pinned UEFI:NTFS image; default locates the package asset")
+	asJSON := flags.Bool("json", false, "output JSON")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("uefi-ntfs inspect does not accept positional arguments")
+	}
+	var (
+		asset uefintfs.Asset
+		err   error
+	)
+	if strings.TrimSpace(*imagePath) == "" {
+		asset, err = uefintfs.Locate()
+	} else {
+		asset, err = uefintfs.Open(*imagePath)
+	}
+	if err != nil {
+		return err
+	}
+	report, err := asset.ArchitectureReport()
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(report)
+	}
+	fmt.Printf("UEFI:NTFS %s %s (%d bytes)\n", report.Filesystem, report.ImageSHA256, report.ImageSize)
+	fmt.Printf("  Architecture manifest: %s\n", report.ManifestSHA256)
+	for _, architecture := range report.Architectures {
+		fmt.Printf("  %s: %s, %s, %s\n", architecture.Name, architecture.Fallback.Path, architecture.NTFS.Path, architecture.ExFAT.Path)
+	}
+	return nil
 }
 
 func runWrite(args []string) error {

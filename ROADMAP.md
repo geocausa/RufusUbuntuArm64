@@ -46,7 +46,7 @@
 ## 0.6 — Windows filesystem and firmware compatibility (software completed)
 
 - Manual Automatic/FAT32/NTFS selection
-- Verified ARM64/x86 UEFI:NTFS boot partition
+- Verified ARM32, ARM64, IA32, RISC-V64, and x64 UEFI:NTFS boot partition with exact embedded loader manifest
 - Optional Windows driver-folder staging
 - FAT32 and NTFS post-write checks
 - Windows CA 2023 and SkuSiPolicy are software-complete; guarded UEFI/NTFS silent installation is software-complete, while FAT32 silent-install parity and broader physical Windows Setup/firmware coverage remain bounded gaps
@@ -117,7 +117,7 @@
 - ISO Image mode selected as the recommended default, with explicit immutable exact-clone DD fallback
 - Automatic, FAT32, or NTFS selection; Automatic prefers FAT32 and selects NTFS only when complete-tree inspection requires it
 - Reviewed MBR or GPT layout, 4/8/16/32 KiB clusters, filesystem-specific labels, and exact option binding through confirmation, privileged helper, diagnostics, and result evidence
-- Shared pinned Rufus 4.15 UEFI:NTFS asset admission, layout planning, writing, and complete readback for Windows and Linux NTFS media
+- Shared pinned Rufus 4.15 UEFI:NTFS asset admission, exact five-architecture embedded-loader manifest, layout planning, writing, and complete readback for Windows and Linux NTFS media
 - Complete copied-file SHA-256 verification, filesystem checking, target flushing, primary/backup GPT readback, and detached/reopened MBR/GPT FAT32/NTFS loop qualification
 - Immutable `0.15.0-rc2` candidate published for the focused physical ARM64 matrix in issue #410
 - BIOS/CSM or dual-mode Linux extraction, NTFS persistence, broader distribution adaptations, and universal firmware claims remain outside this tranche

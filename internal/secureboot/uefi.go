@@ -15,6 +15,7 @@ import (
 const (
 	imageFileMachineI386     = uint16(0x014c)
 	imageFileMachineARM      = uint16(0x01c0)
+	imageFileMachineThumb    = uint16(0x01c2)
 	imageFileMachineARMNT    = uint16(0x01c4)
 	imageFileMachineIA64     = uint16(0x0200)
 	imageFileMachineEBC      = uint16(0x0ebc)
@@ -369,7 +370,7 @@ func normalizeUEFIArchitecture(value string) (uefiArchitecture, error) {
 	case "386", "i386", "i686", "x86":
 		return uefiArchitecture{name: "386", fallbackPath: "EFI/BOOT/BOOTIA32.EFI", machines: map[uint16]struct{}{imageFileMachineI386: {}}}, nil
 	case "arm":
-		return uefiArchitecture{name: "arm", fallbackPath: "EFI/BOOT/BOOTARM.EFI", machines: map[uint16]struct{}{imageFileMachineARM: {}, imageFileMachineARMNT: {}}}, nil
+		return uefiArchitecture{name: "arm", fallbackPath: "EFI/BOOT/BOOTARM.EFI", machines: map[uint16]struct{}{imageFileMachineARM: {}, imageFileMachineThumb: {}, imageFileMachineARMNT: {}}}, nil
 	case "riscv64":
 		return uefiArchitecture{name: "riscv64", fallbackPath: "EFI/BOOT/BOOTRISCV64.EFI", machines: map[uint16]struct{}{imageFileMachineRISCV64: {}}}, nil
 	case "loongarch64":
@@ -389,6 +390,8 @@ func uefiMachineName(value uint16) string {
 		return "x86"
 	case imageFileMachineARM:
 		return "ARM"
+	case imageFileMachineThumb:
+		return "ARM Thumb"
 	case imageFileMachineARMNT:
 		return "ARM Thumb-2"
 	case imageFileMachineIA64:
