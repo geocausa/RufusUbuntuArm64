@@ -485,10 +485,10 @@ class WindowsOptionsDialog(Gtk.Dialog):
         self.apply_option_capability(self.disable_bitlocker, "disable_bitlocker")
         self.windows_to_go_allowed = self.apply_option_capability(self.windows_to_go, "windows_to_go")
         self.silent_install_allowed = self.apply_option_capability(self.silent_install, "silent_install")
-        if self.silent_install_allowed and (self.selected_target_system != "uefi" or self.selected_filesystem != "ntfs"):
+        if self.silent_install_allowed and (self.selected_target_system != "uefi" or self.selected_filesystem not in {"fat32", "ntfs"}):
             self.silent_install.set_active(False)
             self.silent_install.set_sensitive(False)
-            self.silent_install.set_tooltip_text("Silent installation currently requires resolved UEFI/NTFS media so the verified UEFI:NTFS partition can guard disk numbering.")
+            self.silent_install.set_tooltip_text("Silent installation requires resolved UEFI FAT32 or NTFS media so the verified partition-2 guard can check disk numbering.")
             self.silent_install_allowed = False
         regional_keys = []
         if self.region_locale:
@@ -2489,7 +2489,7 @@ class RufusWindow(Gtk.ApplicationWindow):
             label=(
                 f"Windows Setup will select {edition} (image {index}), wipe disk 0, create a new EFI/MSR/Windows layout, "
                 "and install without showing the normal disk or edition pages when its safeguards pass. "
-                "The UEFI:NTFS partition guard is intended to make Setup show its disk page instead if the expected one-internal-disk plus USB numbering is not present; it is not a substitute for disconnecting other storage."
+                "The verified partition-2 guard is intended to make Setup show its disk page instead if the expected one-internal-disk plus USB numbering is not present; it is not a substitute for disconnecting other storage."
             )
         )
         explanation.set_xalign(0)

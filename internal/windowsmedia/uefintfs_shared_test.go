@@ -61,6 +61,39 @@ func TestSharedUEFINTFSGPTGeometryMatchesWindowsMedia(t *testing.T) {
 	assertSharedLayoutMatchesWindows(t, shared, legacy)
 }
 
+func TestSharedGuardedFAT32GeometryMatchesWindowsMedia(t *testing.T) {
+	const targetSize = uint64(64 * 1024 * 1024)
+	const sectorSize = uint64(512)
+	for _, scheme := range []string{uefintfs.SchemeMBR, uefintfs.SchemeGPT} {
+		shared, err := uefintfs.PlanLayoutForProfile(scheme, targetSize, sectorSize, uefintfs.DataPartitionFAT32ESP)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var windows diskLayout
+		if scheme == uefintfs.SchemeMBR {
+			windows, err = mbrGuardedFAT32LayoutForSize(targetSize, sectorSize, uefintfs.ImageSize)
+		} else {
+			path := filepath.Join(t.TempDir(), "guarded-fat32-gpt.img")
+			target, openErr := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
+			if openErr != nil {
+				t.Fatal(openErr)
+			}
+			if truncateErr := target.Truncate(int64(targetSize)); truncateErr != nil {
+				target.Close()
+				t.Fatal(truncateErr)
+			}
+			windows, err = writeGuardedFAT32GPT(target, targetSize, sectorSize, "WIN11", uefintfs.ImageSize)
+			if closeErr := target.Close(); closeErr != nil {
+				t.Fatal(closeErr)
+			}
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertSharedLayoutMatchesWindows(t, shared, windows)
+	}
+}
+
 func assertSharedLayoutMatchesWindows(t *testing.T, shared uefintfs.Layout, legacy diskLayout) {
 	t.Helper()
 	if shared.Data.StartBytes != legacy.Data.PartitionStartBytes || shared.Data.SizeBytes != legacy.Data.PartitionSizeBytes {

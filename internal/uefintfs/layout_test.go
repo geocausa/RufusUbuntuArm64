@@ -19,6 +19,9 @@ func TestPlanLayoutCreatesAlignedTwoPartitionGeometry(t *testing.T) {
 		if err != nil {
 			t.Fatalf("PlanLayout(%s): %v", scheme, err)
 		}
+		if layout.DataProfile != DataPartitionBasic {
+			t.Fatalf("%s default profile = %q", scheme, layout.DataProfile)
+		}
 		if layout.Data.StartBytes%oneMiB != 0 || layout.Boot.StartBytes%oneMiB != 0 {
 			t.Fatalf("%s layout is not MiB aligned: %+v", scheme, layout)
 		}
@@ -30,6 +33,26 @@ func TestPlanLayoutCreatesAlignedTwoPartitionGeometry(t *testing.T) {
 		}
 		if layout.Boot.StartBytes+layout.Boot.SizeBytes > targetSize {
 			t.Fatalf("%s boot extent exceeds target: %+v", scheme, layout)
+		}
+	}
+}
+
+func TestPlanLayoutProfilesPreserveGeometry(t *testing.T) {
+	const targetSize = uint64(64 * 1024 * 1024)
+	for _, scheme := range []string{SchemeMBR, SchemeGPT} {
+		basic, err := PlanLayoutForProfile(scheme, targetSize, 512, DataPartitionBasic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fat32, err := PlanLayoutForProfile(scheme, targetSize, 512, DataPartitionFAT32ESP)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if basic.Data != fat32.Data || basic.Boot != fat32.Boot {
+			t.Fatalf("%s profile changed geometry: basic=%+v fat32=%+v", scheme, basic, fat32)
+		}
+		if fat32.DataProfile != DataPartitionFAT32ESP {
+			t.Fatalf("%s FAT32 profile = %q", scheme, fat32.DataProfile)
 		}
 	}
 }
@@ -54,7 +77,7 @@ func TestWriteLayoutMBRPublishesAndReadsBackBothPartitions(t *testing.T) {
 	}
 	data := sector[446:462]
 	boot := sector[462:478]
-	if data[0] != 0x80 || data[4] != mbrDataPartition {
+	if data[0] != 0x80 || data[4] != mbrBasicDataPartition {
 		t.Fatalf("data partition entry = %x", data)
 	}
 	if boot[0] != 0 || boot[4] != mbrUEFINTFSPartition {
@@ -117,6 +140,52 @@ func TestWriteLayoutGPTPublishesPrimaryAndBackupMetadata(t *testing.T) {
 	}
 }
 
+func TestWriteLayoutFAT32ProfilePublishesNativePartitionTypes(t *testing.T) {
+	const targetSize = uint64(64 * 1024 * 1024)
+
+	mbrLayout, err := PlanLayoutForProfile(SchemeMBR, targetSize, 512, DataPartitionFAT32ESP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mbrTarget := createLayoutTarget(t, targetSize)
+	defer mbrTarget.Close()
+	if err := WriteLayout(mbrTarget, mbrLayout, "WIN11"); err != nil {
+		t.Fatal(err)
+	}
+	mbr := make([]byte, 512)
+	if _, err := mbrTarget.ReadAt(mbr, 0); err != nil {
+		t.Fatal(err)
+	}
+	if entry := mbr[446:462]; entry[0] != 0x80 || entry[4] != mbrFAT32LBAPartition {
+		t.Fatalf("FAT32 MBR data partition entry = %x", entry)
+	}
+	if entry := mbr[462:478]; entry[0] != 0 || entry[4] != mbrUEFINTFSPartition {
+		t.Fatalf("FAT32 MBR guard partition entry = %x", entry)
+	}
+
+	gptLayout, err := PlanLayoutForProfile(SchemeGPT, targetSize, 512, DataPartitionFAT32ESP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gptTarget := createLayoutTarget(t, targetSize)
+	defer gptTarget.Close()
+	if err := WriteLayout(gptTarget, gptLayout, "WIN11"); err != nil {
+		t.Fatal(err)
+	}
+	entries := make([]byte, 2*gptEntryBytes)
+	if _, err := gptTarget.ReadAt(entries, 2*512); err != nil {
+		t.Fatal(err)
+	}
+	data := entries[:gptEntryBytes]
+	guard := entries[gptEntryBytes:]
+	if !bytes.Equal(data[:16], efiSystemPartitionType[:]) {
+		t.Fatalf("FAT32 GPT data type = %x", data[:16])
+	}
+	if !bytes.Equal(guard[:16], microsoftBasicDataType[:]) || binary.LittleEndian.Uint64(guard[48:56]) != gptNoDriveLetter {
+		t.Fatalf("FAT32 GPT guard metadata = %x", guard[:56])
+	}
+}
+
 func TestWriteLayoutGPTMakesBackupDurableFirst(t *testing.T) {
 	const targetSize = uint64(64 * 1024 * 1024)
 	layout, err := PlanLayout(SchemeGPT, targetSize, 512)
@@ -148,6 +217,9 @@ func TestWriteLayoutGPTMakesBackupDurableFirst(t *testing.T) {
 }
 
 func TestLayoutRefusesInvalidGeometryAndChangedPlan(t *testing.T) {
+	if _, err := PlanLayoutForProfile(SchemeGPT, 64*1024*1024, 512, "unknown"); err == nil || !strings.Contains(err.Error(), "data partition profile") {
+		t.Fatalf("invalid data profile error = %v", err)
+	}
 	if _, err := PlanLayout(SchemeGPT, minimumLayoutBytes-512, 512); err == nil {
 		t.Fatal("undersized GPT target was accepted")
 	}

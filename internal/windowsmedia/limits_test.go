@@ -73,3 +73,21 @@ func TestFinalizePlanUsesCheckedCapacityArithmetic(t *testing.T) {
 		t.Fatalf("invalid answer-size error=%v", err)
 	}
 }
+
+func TestFinalizePlanReservesPartitionTwoForGuardedFAT32(t *testing.T) {
+	ordinary := mediaPlan{OtherBytes: 1024, InstallSize: 2048, Filesystem: "fat32"}
+	guarded := ordinary
+	guarded.GuardedFAT32 = true
+	if err := finalizePlan(&ordinary); err != nil {
+		t.Fatal(err)
+	}
+	if err := finalizePlan(&guarded); err != nil {
+		t.Fatal(err)
+	}
+	if guarded.CopyBytes != ordinary.CopyBytes {
+		t.Fatalf("guard changed copy bytes: ordinary=%d guarded=%d", ordinary.CopyBytes, guarded.CopyBytes)
+	}
+	if guarded.RequiredBytes-ordinary.RequiredBytes != oneMiB {
+		t.Fatalf("guard reserve delta=%d, want %d", guarded.RequiredBytes-ordinary.RequiredBytes, oneMiB)
+	}
+}

@@ -30,7 +30,7 @@ class WindowsSilentInstallStructureTests(unittest.TestCase):
         sensitivity = self.methods[("WindowsOptionsDialog", "update_silent_install_sensitivity")]
         values = self.methods[("WindowsOptionsDialog", "values")]
         self.assertIn('self.selected_target_system != "uefi"', apply_capabilities)
-        self.assertIn('self.selected_filesystem != "ntfs"', apply_capabilities)
+        self.assertIn('self.selected_filesystem not in {"fat32", "ntfs"}', apply_capabilities)
         for fragment in ("local_account", "local_user", "reduce_data", "use_region", "region_locale", "region_timezone", "windows_images"):
             self.assertIn(fragment, sensitivity)
         self.assertIn("install_image_index", values)
@@ -53,7 +53,7 @@ class WindowsSilentInstallStructureTests(unittest.TestCase):
         self.assertIn("--win-install-image-index", combined)
         self.assertIn("--win-silent-confirm", combined)
         self.assertIn("ERASE DISK 0", combined)
-        self.assertIn("verified UEFI:NTFS partition", combined)
+        self.assertIn("verified partition-2 guard", combined)
 
 
 if __name__ == "__main__":

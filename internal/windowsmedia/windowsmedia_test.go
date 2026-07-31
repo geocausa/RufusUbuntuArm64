@@ -965,6 +965,127 @@ func TestCreateNTFSWithVerifiedUEFINTFSImage(t *testing.T) {
 	}
 }
 
+func TestCreateGuardedFAT32SilentInstall(t *testing.T) {
+	fixture := t.TempDir()
+	writeTestFile(t, filepath.Join(fixture, "sources", "boot.wim"), []byte("boot"))
+	writeTestFile(t, filepath.Join(fixture, "sources", "install.wim"), []byte("install"))
+	writeTestFile(t, filepath.Join(fixture, "efi", "boot", "bootaa64.efi"), []byte("efi"))
+	writeTestFile(t, filepath.Join(fixture, "setup.exe"), []byte("setup"))
+
+	previousSetup := inspectPlanSetupMetadata
+	previousBoot := inspectPlanBootMetadata
+	t.Cleanup(func() {
+		inspectPlanSetupMetadata = previousSetup
+		inspectPlanBootMetadata = previousBoot
+	})
+	inspectPlanSetupMetadata = func(context.Context, string) (windowsconfig.MediaMetadata, error) {
+		return windowsconfig.MediaMetadata{
+			ProductName: "Windows 11 Pro", Version: "10.0.26100", Architecture: "arm64", InstallationType: "Client",
+			ImageCount: 1, Images: []windowsconfig.WindowsImage{{Index: 4, Name: "Windows 11 Pro", DefaultLanguage: "en-GB"}},
+		}, nil
+	}
+	inspectPlanBootMetadata = func(context.Context, string) (windowsconfig.MediaMetadata, error) {
+		return windowsconfig.MediaMetadata{
+			Architecture: "arm64", ImageCount: 2,
+			Images: []windowsconfig.WindowsImage{{Index: 2, Name: "Microsoft Windows Setup", DefaultLanguage: "en-GB"}},
+		}, nil
+	}
+
+	fakeBin := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "commands.log")
+	installFakeTools(t, fakeBin)
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("RUFUS_TEST_ISO", fixture)
+	t.Setenv("RUFUS_TEST_LOG", logPath)
+	usb := t.TempDir()
+	t.Setenv("RUFUS_TEST_USB", usb)
+	imagePath, err := filepath.Abs(filepath.Join("..", "..", "vendor", "uefi-ntfs", "uefi-ntfs.img"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RUFUSARM64_UEFI_NTFS_IMAGE", imagePath)
+
+	target := filepath.Join(t.TempDir(), "fake-device")
+	writeTestFile(t, target, make([]byte, 1024))
+	partition1 := target + "1"
+	partition2 := target + "2"
+	writeTestFile(t, partition1, []byte("partition-one"))
+	writeTestFile(t, partition2, []byte("partition-two"))
+	t.Setenv("RUFUS_TEST_PARTITION", partition1)
+
+	iso := fakeISOFile(t)
+	const targetSize = uint64(8 * 1024 * 1024 * 1024)
+	if err := Create(context.Background(), iso, target, Options{
+		TargetSize:      targetSize,
+		Verify:          true,
+		RequireARM64:    true,
+		Filesystem:      "fat32",
+		PartitionScheme: "gpt",
+		TargetSystem:    "uefi",
+		VolumeLabel:     "WIN11",
+		Customizations: windowsconfig.Options{
+			LocalAccount: "Tester", ReduceDataCollection: true, SilentInstall: true,
+			InstallImageIndex: 4, Locale: "en-GB", TimeZone: "GMT Standard Time",
+		},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logText := string(logData)
+	for _, want := range []string{"mkfs.vfat", "-n WIN1-SILENT", "fsck.vfat"} {
+		if !strings.Contains(logText, want) {
+			t.Fatalf("missing %q from guarded FAT32 command log:\n%s", want, logText)
+		}
+	}
+	if strings.Contains(logText, "mkfs.ntfs") || strings.Contains(logText, "ntfsfix") {
+		t.Fatalf("guarded FAT32 invoked NTFS tooling:\n%s", logText)
+	}
+
+	disk, err := os.Open(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer disk.Close()
+	entries := make([]byte, 2*gptEntrySize)
+	if _, err := disk.ReadAt(entries, 2*512); err != nil {
+		t.Fatal(err)
+	}
+	dataEntry := entries[:gptEntrySize]
+	guardEntry := entries[gptEntrySize:]
+	if string(dataEntry[:16]) != string(efiSystemPartitionType[:]) {
+		t.Fatalf("guarded FAT32 partition 1 is not an ESP: %x", dataEntry[:16])
+	}
+	if string(guardEntry[:16]) != string(microsoftBasicDataType[:]) || binary.LittleEndian.Uint64(guardEntry[48:56]) != gptNoDriveLetter {
+		t.Fatalf("partition-2 guard metadata is invalid: %x", guardEntry[:56])
+	}
+	guardStart := binary.LittleEndian.Uint64(guardEntry[32:40]) * 512
+	guardEnd := binary.LittleEndian.Uint64(guardEntry[40:48]) * 512
+	guardBytes := make([]byte, guardEnd-guardStart+512)
+	if _, err := disk.ReadAt(guardBytes, int64(guardStart)); err != nil {
+		t.Fatal(err)
+	}
+	expected, err := os.ReadFile(imagePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(guardBytes) != string(expected) {
+		t.Fatal("guarded FAT32 partition 2 does not match the pinned image")
+	}
+	answer, err := os.ReadFile(filepath.Join(usb, "autounattend.xml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"<DiskID>0</DiskID>", "<PartitionID>2</PartitionID>", "<Label>RUFUS_BOOT</Label>", "<WillWipeDisk>true</WillWipeDisk>"} {
+		if !strings.Contains(string(answer), want) {
+			t.Fatalf("guarded FAT32 answer file is missing %q", want)
+		}
+	}
+}
+
 func TestOpenWithinRootRefusesSymlinkComponents(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()
@@ -1199,23 +1320,36 @@ func TestInspectMountedISODetectsBothUnattendedFileLocations(t *testing.T) {
 	}
 }
 
-func TestCustomizationVolumeLabelMarksSilentMediaWithoutTruncation(t *testing.T) {
+func TestCustomizationVolumeLabelMarksSilentMediaWithoutAmbiguity(t *testing.T) {
 	ordinary, err := customizationVolumeLabel("WIN11", "ntfs", windowsconfig.Options{})
 	if err != nil || ordinary != "WIN11" {
 		t.Fatalf("ordinary label=%q err=%v", ordinary, err)
 	}
-	silent, err := customizationVolumeLabel("WIN11", "ntfs", windowsconfig.Options{SilentInstall: true})
-	if err != nil || silent != "WIN11 (SILENT)" {
-		t.Fatalf("silent label=%q err=%v", silent, err)
+	silentNTFS, err := customizationVolumeLabel("WIN11", "ntfs", windowsconfig.Options{SilentInstall: true})
+	if err != nil || silentNTFS != "WIN11 (SILENT)" {
+		t.Fatalf("silent NTFS label=%q err=%v", silentNTFS, err)
 	}
-	already, err := customizationVolumeLabel("WIN11 (SILENT)", "ntfs", windowsconfig.Options{SilentInstall: true})
-	if err != nil || already != silent {
-		t.Fatalf("existing marker label=%q err=%v", already, err)
+	alreadyNTFS, err := customizationVolumeLabel("WIN11 (SILENT)", "ntfs", windowsconfig.Options{SilentInstall: true})
+	if err != nil || alreadyNTFS != silentNTFS {
+		t.Fatalf("existing NTFS marker label=%q err=%v", alreadyNTFS, err)
 	}
 	if _, err := customizationVolumeLabel(strings.Repeat("x", 24), "ntfs", windowsconfig.Options{SilentInstall: true}); err == nil || !strings.Contains(err.Error(), "silent-install volume label") {
-		t.Fatalf("oversized marked label error=%v", err)
+		t.Fatalf("oversized marked NTFS label error=%v", err)
 	}
-	if _, err := customizationVolumeLabel("WIN11", "fat32", windowsconfig.Options{SilentInstall: true}); err == nil || !strings.Contains(err.Error(), "silent-install volume label") {
-		t.Fatalf("FAT32 silent marker error=%v", err)
+
+	silentFAT32, err := customizationVolumeLabel("WIN11", "fat32", windowsconfig.Options{SilentInstall: true})
+	if err != nil || silentFAT32 != "WIN1-SILENT" || len(silentFAT32) != 11 {
+		t.Fatalf("silent FAT32 label=%q err=%v", silentFAT32, err)
+	}
+	alreadyFAT32, err := customizationVolumeLabel(silentFAT32, "fat32", windowsconfig.Options{SilentInstall: true})
+	if err != nil || alreadyFAT32 != silentFAT32 {
+		t.Fatalf("existing FAT32 marker label=%q err=%v", alreadyFAT32, err)
+	}
+	defaultFAT32, err := customizationVolumeLabel("", "fat32", windowsconfig.Options{SilentInstall: true})
+	if err != nil || defaultFAT32 != "RUFU-SILENT" {
+		t.Fatalf("default silent FAT32 label=%q err=%v", defaultFAT32, err)
+	}
+	if _, err := customizationVolumeLabel("TWELVECHARS12", "fat32", windowsconfig.Options{SilentInstall: true}); err == nil || !strings.Contains(err.Error(), "silent-install volume label") {
+		t.Fatalf("invalid FAT32 source label error=%v", err)
 	}
 }

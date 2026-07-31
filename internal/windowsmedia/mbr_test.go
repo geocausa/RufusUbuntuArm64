@@ -155,3 +155,44 @@ func TestWriteUEFINTFSMBR512(t *testing.T) {
 		t.Fatalf("boot size=%d want %d", got, bootImageSize)
 	}
 }
+
+func TestWriteGuardedFAT32MBR512(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "disk-fat32-guarded.img")
+	const (
+		size          = uint64(64 * 1024 * 1024)
+		bootImageSize = uint64(1024 * 1024)
+	)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(int64(size)); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	layout, err := writeGuardedFAT32MBR(file, size, 512, bootImageSize)
+	if err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if layout.Boot == nil {
+		file.Close()
+		t.Fatal("missing partition-2 guard")
+	}
+	sector := make([]byte, 512)
+	if _, err := file.ReadAt(sector, 0); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	dataEntry := sector[446:462]
+	guardEntry := sector[462:478]
+	if dataEntry[0] != 0x80 || dataEntry[4] != 0x0c {
+		t.Fatalf("bad guarded FAT32 data entry: %x", dataEntry)
+	}
+	if guardEntry[0] != 0x00 || guardEntry[4] != 0xef {
+		t.Fatalf("bad guarded FAT32 partition-2 entry: %x", guardEntry)
+	}
+}
