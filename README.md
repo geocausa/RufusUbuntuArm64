@@ -19,7 +19,7 @@
 | **Latest release** | **Version 0.16.0** ([`v0.16.0`](https://github.com/geocausa/RufusUbuntuArm64/releases/latest)) | Complete current ARM64 code line for community use and field testing |
 | **`main`** | Matches the v0.16.0 release at publication | Future narrowly scoped fixes only |
 | **Windows To Go** | Software-qualified for the stated Windows 11 ARM64 profile; physical firmware boot and first boot remain unqualified | Experimental testing on disposable removable media only |
-| **Target milestone** | `1.0` | Stable release after hardware coverage, independent privileged-code review, localisation, and production trust operations |
+|
 
 The public `.deb` belongs to the exact tagged release shown above. Later `main` commits, when present, are unreleased until another tag is published. Exact claims and qualification boundaries are maintained in [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md), [`ROADMAP.md`](ROADMAP.md), and the machine-readable [`docs/upstream-rufus-parity.json`](docs/upstream-rufus-parity.json).
 
