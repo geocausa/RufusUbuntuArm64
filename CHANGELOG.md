@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+_No changes have been committed after v0.16.0._
+
+## 0.16.0 — 2026-07-31
 - Added Rufus-style Windows To Go first-boot customizations for online-account bypass, a local administrator, reduced data collection, Quality of Life changes, and regional settings; the exact combined `Windows/Panther/unattend.xml` is hash-bound before erasure and read back after creation, while mandatory SAN policy 4 keeps internal disks offline and installer-only choices remain refused.
 - Escalate Windows To Go hardware-I/O failures when Linux cannot release the blocked WIM writer within 45 seconds: the first event now reports that cancellation was requested, and the follow-up explicitly instructs the user to disconnect only the selected failed target so cleanup can finish.
 - Stream live Windows To Go WIM-application progress and transfer rates from the pinned direct-NTFS engine, and baseline the exact target's kernel I/O error counter so new medium failures cancel promptly with a dedicated diagnostic instead of appearing indefinitely stuck at 0%.
@@ -18,7 +21,7 @@
 - Added guarded UDF 2.01 data-only formatting with MBR/GPT parity types, logical-sector-matched blocks, bounded OSTA Unicode labels, descriptor and `blkid` agreement, closed-integrity verification, a private read-only kernel mount, GTK/CLI integration, and real loop qualification.
 - Added guarded ext2 and ext3 data-only formatting with distinct formatter contracts, MBR/GPT Linux data partition types, read-only `e2fsck`, independent ext-superblock generation classification, GTK/CLI integration, and real loop-device qualification.
 - Added guarded FAT16 data-only formatting with MBR/GPT planning, a conservative below-4-GiB capacity boundary, canonical FAT labels, read-only checking, and independent FAT16-versus-FAT32 BPB verification.
-- Added fail-closed threshold-signed release publication enforcement: canonical tags are deferred until a reviewed metadata tag exists, staged and published asset directories are descriptor-bound and matched exactly to the signed tag, commit, sizes, and SHA-256 graph, and release workflows verify deterministic metadata before upload and again after publication.
+- Added dual-mode release publication enforcement: exact-tag community releases require reproducible packages, checksums, source archives, and post-publication asset validation while the update channel is provably disabled; once enabled, canonical tags and uploads additionally require threshold-signed metadata bound to the exact commit and asset graph.
 - Added guarded Windows UEFI CA 2023 bootloader replacement for qualified Windows 11 client UEFI/FAT32 media, with three-way architecture binding, staged certificate evidence, DBX checks, exact destination replacement, and mandatory SHA-256 readback; NTFS remains explicitly outside the CA 2023-only boundary.
 - Added direct SquashFS recognition without promoting a bare filesystem to automatic bootable-media status; strengthened WIM/ESD/SWM ambiguity and size bounds, GTK runtime-validation state tests, and cancellation between partial writes during raw and compressed-image preparation.
 - Added capability-gated Windows 11 SkuSiPolicy deployment for qualified UEFI installation media, using only the installed system's own policy and refusing BIOS/CSM, missing-policy, split-SWM, server, Windows 10, and unknown-media requests.

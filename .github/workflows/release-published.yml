@@ -78,7 +78,30 @@ jobs:
             }
           fi
           echo "RELEASE_COMMIT=${commit_sha}" >> "${GITHUB_ENV}"
+      - name: Determine release trust mode
+        id: trust
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          config = json.loads(Path("release-tree/packaging/acquisition/channel.json").read_text(encoding="utf-8"))
+          root = Path("release-tree/packaging/acquisition/1.root.json")
+          if config.get("enabled") is True:
+              required = ("bootstrap_root", "root_url", "catalog_url", "release_url", "allowed_hosts")
+              if any(not config.get(key) for key in required) or not root.is_file():
+                  raise SystemExit("enabled release channel lacks its complete signed trust configuration")
+              signed = "true"
+          else:
+              expected = {"schema":1,"enabled":False,"bootstrap_root":"","root_url":"","catalog_url":"","release_url":"","allowed_hosts":[]}
+              if config != expected or root.exists():
+                  raise SystemExit("disabled release channel must remain exactly inert and contain no bootstrap root")
+              signed = "false"
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"signed={signed}\n")
+          PY
       - name: Check out signed release metadata publication
+        if: steps.trust.outputs.signed == 'true'
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: release-metadata-${{ env.RELEASE_TAG }}
@@ -86,6 +109,8 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
       - name: Download and validate the exact published asset graph
+        env:
+          SIGNED_RELEASE: ${{ steps.trust.outputs.signed }}
         run: |
           set -euo pipefail
           release_json="${RUNNER_TEMP}/release.json"
@@ -105,11 +130,13 @@ jobs:
           (
             cd release-tree
             python3 "${validator}" "${release_json}" "${asset_dir}"
-            bash scripts/verify-release-publication.sh \
-              "${GITHUB_WORKSPACE}/signed-release-metadata" \
-              "${asset_dir}" \
-              "${RELEASE_TAG}" \
-              "${RELEASE_COMMIT}" \
-              packaging/acquisition/channel.json \
-              packaging/acquisition/1.root.json
+            if [[ "${SIGNED_RELEASE}" = "true" ]]; then
+              bash scripts/verify-release-publication.sh \
+                "${GITHUB_WORKSPACE}/signed-release-metadata" \
+                "${asset_dir}" \
+                "${RELEASE_TAG}" \
+                "${RELEASE_COMMIT}" \
+                packaging/acquisition/channel.json \
+                packaging/acquisition/1.root.json
+            fi
           )

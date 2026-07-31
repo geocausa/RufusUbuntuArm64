@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       expected_version:
-        description: Canonical VERSION value whose signed metadata tag is ready
+        description: Canonical VERSION value to publish
         required: true
         type: string
 
@@ -38,7 +38,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Validate canonical state and signed metadata readiness
+      - name: Validate canonical state and release readiness
         id: version
         env:
           GH_TOKEN: ${{ github.token }}
@@ -70,21 +70,43 @@ jobs:
           decision="$(python3 scripts/canonical_tag_decision.py \
             --current-sha "${GITHUB_SHA}" \
             --existing-sha "${existing}")"
-          metadata_ref="$(
-            gh api "/repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/${metadata_tag}" \
-              --jq ".[] | select(.ref == \"refs/tags/${metadata_tag}\") | .object.sha"
+          signed_required="$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          config = json.loads(Path("packaging/acquisition/channel.json").read_text(encoding="utf-8"))
+          root = Path("packaging/acquisition/1.root.json")
+          if config.get("enabled") is True:
+              required = ("bootstrap_root", "root_url", "catalog_url", "release_url", "allowed_hosts")
+              if any(not config.get(key) for key in required) or not root.is_file():
+                  raise SystemExit("enabled release channel lacks its complete signed trust configuration")
+              print("true")
+          else:
+              expected = {"schema":1,"enabled":False,"bootstrap_root":"","root_url":"","catalog_url":"","release_url":"","allowed_hosts":[]}
+              if config != expected or root.exists():
+                  raise SystemExit("disabled release channel must remain exactly inert and contain no bootstrap root")
+              print("false")
+          PY
           )"
+          metadata_ref=""
           metadata_ready=false
+          if [[ "${signed_required}" = "true" ]]; then
+            metadata_ref="$(
+              gh api "/repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/${metadata_tag}" \
+                --jq ".[] | select(.ref == \"refs/tags/${metadata_tag}\") | .object.sha"
+            )"
+          else
+            metadata_ready=true
+          fi
           case "${decision}" in
             create)
-              if [[ -z "${metadata_ref}" ]]; then
+              if [[ "${signed_required}" = "true" && -z "${metadata_ref}" ]]; then
                 if [[ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]]; then
                   echo "Signed metadata tag ${metadata_tag} does not exist" >&2
                   exit 1
                 fi
                 echo "Deferring ${tag}: create and verify ${metadata_tag}, then dispatch this workflow at main."
                 decision=deferred
-              else
+              elif [[ "${signed_required}" = "true" ]]; then
                 metadata_ready=true
               fi
               ;;
@@ -104,10 +126,11 @@ jobs:
             echo "tag=${tag}"
             echo "metadata_tag=${metadata_tag}"
             echo "metadata_ready=${metadata_ready}"
+            echo "signed_required=${signed_required}"
             echo "decision=${decision}"
           } >> "${GITHUB_OUTPUT}"
       - name: Check out signed release metadata publication
-        if: steps.version.outputs.metadata_ready == 'true'
+        if: steps.version.outputs.signed_required == 'true' && steps.version.outputs.metadata_ready == 'true'
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ steps.version.outputs.metadata_tag }}
@@ -115,7 +138,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
       - name: Verify signed metadata binds the final main commit
-        if: steps.version.outputs.metadata_ready == 'true'
+        if: steps.version.outputs.signed_required == 'true' && steps.version.outputs.metadata_ready == 'true'
         run: |
           bash scripts/verify-release-publication.sh \
             signed-release-metadata \

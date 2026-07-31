@@ -29,3 +29,6 @@ If the target reports resets, media errors, changing capacity, a changing kernel
 ## Security reports
 
 Do not open a public issue for a suspected wrong-disk-write bypass, privilege-boundary failure, signature/trust bypass, or another vulnerability that could endanger users or data. Follow `SECURITY.md` and contact the repository owner privately.
+## Release support model
+
+RufusArm64 is community-tested software, not a universally certified hardware product. The maintainer cannot pre-test every image, firmware, USB controller, machine, or architecture combination. Please report one reproducible problem per issue with the exact release, image identity, hardware details, operation mode, and non-sensitive diagnostics. Broad parity or open-ended roadmap requests may be closed in favour of concrete defects.

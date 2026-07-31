@@ -12,14 +12,16 @@
 
 ## Project status
 
+**Version 0.16.0** is the current community release. It is software-qualified through the repository gates but is not a promise of universal boot compatibility across every image, firmware, controller, machine, or architecture.
+
 | Channel | Current state | Intended use |
 | --- | --- | --- |
-| **Stable release** | **Version 0.15.0** ([`v0.15.0`](https://github.com/geocausa/RufusUbuntuArm64/releases/latest)) | General evaluation of the published ISO Image mode release candidate |
-| **`main`** | Post-`0.15.0` development, including experimental Windows To Go work | Development, review, and controlled qualification—not an automatically published binary |
+| **Latest release** | **Version 0.16.0** ([`v0.16.0`](https://github.com/geocausa/RufusUbuntuArm64/releases/latest)) | Complete current ARM64 code line for community use and field testing |
+| **`main`** | Matches the v0.16.0 release at publication | Future narrowly scoped fixes only |
 | **Windows To Go** | Software-qualified for the stated Windows 11 ARM64 profile; physical firmware boot and first boot remain unqualified | Experimental testing on disposable removable media only |
 | **Target milestone** | `1.0` | Stable release after hardware coverage, independent privileged-code review, localisation, and production trust operations |
 
-The public `.deb` belongs to the tagged release shown above. The `main` branch may contain newer, unreleased work. Exact claims and qualification boundaries are maintained in [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md), [`ROADMAP.md`](ROADMAP.md), and the machine-readable [`docs/upstream-rufus-parity.json`](docs/upstream-rufus-parity.json).
+The public `.deb` belongs to the exact tagged release shown above. Later `main` commits, when present, are unreleased until another tag is published. Exact claims and qualification boundaries are maintained in [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md), [`ROADMAP.md`](ROADMAP.md), and the machine-readable [`docs/upstream-rufus-parity.json`](docs/upstream-rufus-parity.json).
 
 ## Supported scope
 
@@ -50,8 +52,8 @@ Download the `.deb` and checksum sidecar from the corresponding GitHub release. 
 Verify the published checksum and install:
 
 ```bash
-sha256sum -c rufusarm64_0.15.0_arm64.deb.sha256
-sudo apt install ./rufusarm64_0.15.0_arm64.deb
+sha256sum -c rufusarm64_0.16.0_arm64.deb.sha256
+sudo apt install ./rufusarm64_0.16.0_arm64.deb
 ```
 
 The package upgrades older `rufusarm64` installations in place. One visible **RufusArm64** application entry is installed. Normal launch opens the composed writer; `rufusarm64 --persistence` remains available for the guarded persistent-media workflow.
@@ -255,10 +257,10 @@ PYTHONPATH=gui python3 scripts/linux_iso_corpus.py \
 
 See `docs/linux-iso-corpus.md` for the qualification boundary and `docs/linux-iso-corpus.json` for immutable artifact identities and pending representatives.
 
-The release-candidate package is produced at:
+The release package is produced at:
 
 ```text
-dist/rufusarm64_0.15.0_arm64.deb
+dist/rufusarm64_0.16.0_arm64.deb
 ```
 
 ## Command-line examples
@@ -278,7 +280,7 @@ rufusarm64-nonbootable-format --device /dev/sdX --expected-identity TOKEN --file
 
 See:
 
-- `docs/release-0.15.0.md` for release notes, boundaries, installation, and rollback;
+- `docs/release-0.16.0.md` for release notes, boundaries, installation, and rollback;
 - `docs/hardware-checklist-0.15.0.md` for the mandatory real-machine GO/NO-GO record;
 - `docs/persistence-qualification.md` for exact persistence evidence;
 - `docs/freedos-user-guide.md` for the FreeDOS boundary.
