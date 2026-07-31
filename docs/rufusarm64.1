@@ -69,9 +69,12 @@ acknowledgements for whole-drive erasure, Microsoft's removal of Windows To Go
 support, and the exact selected edition. The privileged helper admits only the
 corresponding exact experimental command envelope. Direct NTFS WIM application
 streams live percentage and rate records. The helper also snapshots the exact
-target's kernel I/O error counter and stops with a failed-medium diagnostic if
-that counter changes or the target leaves the running state. Software
-verification does not prove physical firmware boot or Windows first boot;
+target's kernel I/O error counter and requests cancellation with a failed-medium
+diagnostic if that counter changes or the target leaves the running state. If
+Linux still cannot release the blocked writer after 45 seconds, the graphical
+status explicitly instructs the user to disconnect only the selected failed
+target so cleanup can finish. Software verification does not prove physical
+firmware boot or Windows first boot;
 encrypted-file and Windows extended-attribute restoration remain upstream
 wimlib limitations.
 .PP

@@ -357,7 +357,7 @@ func Create(ctx context.Context, isoPath, devicePath string, options CreateOptio
 	if err != nil {
 		return Result{}, fmt.Errorf("initialize Windows To Go target health monitor: %w", err)
 	}
-	if err := runWIMApply(ctx, wimExecutable, applyArgs, applyMessage, plan.Image.TotalBytes, health, applyHealthPollInterval, emit); err != nil {
+	if err := runWIMApply(ctx, wimExecutable, applyArgs, applyMessage, plan.Image.TotalBytes, health, applyHealthPollInterval, applyBlockedEscalationDelay, emit); err != nil {
 		return Result{}, fmt.Errorf("apply selected Windows image: %w", err)
 	}
 	if err := runTool(ctx, tools["blockdev"], "--flushbufs", osPath); err != nil {

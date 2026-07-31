@@ -124,7 +124,7 @@ printf 'Done applying WIM image.\n'
 	const total = uint64(24 * 1024 * 1024 * 1024)
 	if err := runWIMApply(
 		context.Background(), executable, []string{"apply", "/tmp/test.wim", "1", "/dev/test"},
-		"Applying Windows image…", total, nil, 10*time.Millisecond, recorder.emit,
+		"Applying Windows image…", total, nil, 10*time.Millisecond, 50*time.Millisecond, recorder.emit,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ exec /bin/sleep 30
 	started := time.Now()
 	err := runWIMApply(
 		ctx, executable, []string{"apply", "/tmp/test.wim", "1", "/dev/test"},
-		"Applying Windows image…", 1000, &failingHealthMonitor{}, 10*time.Millisecond, recorder.emit,
+		"Applying Windows image…", 1000, &failingHealthMonitor{}, 10*time.Millisecond, 50*time.Millisecond, recorder.emit,
 	)
 	if !errors.Is(err, errTargetIO) {
 		t.Fatalf("err=%v", err)
@@ -190,6 +190,12 @@ exec /bin/sleep 30
 	if !sawFailure {
 		t.Fatalf("target failure event missing: %#v", recorder.snapshot())
 	}
+	time.Sleep(70 * time.Millisecond)
+	for _, event := range recorder.snapshot() {
+		if event.Stage == "target_io_blocked" {
+			t.Fatalf("promptly cancelled command emitted a blocked-target escalation: %#v", recorder.snapshot())
+		}
+	}
 }
 
 func TestRunWIMApplyReportsCommandErrorDetail(t *testing.T) {
@@ -199,9 +205,29 @@ exit 7
 `)
 	err := runWIMApply(
 		context.Background(), executable, []string{"apply", "/tmp/test.wim", "1", "/dev/test"},
-		"Applying Windows image…", 1000, nil, 10*time.Millisecond, nil,
+		"Applying Windows image…", 1000, nil, 10*time.Millisecond, 50*time.Millisecond, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "controller write failed") {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestEmitBlockedTargetEscalation(t *testing.T) {
+	done := make(chan struct{})
+	var events []Event
+	emitBlockedTargetEscalation(done, 5*time.Millisecond, func(event Event) {
+		events = append(events, event)
+	})
+	if len(events) != 1 || events[0].Stage != "target_io_blocked" ||
+		!strings.Contains(events[0].Message, "Disconnect only the selected failed target") {
+		t.Fatalf("unexpected escalation events: %#v", events)
+	}
+
+	finished := make(chan struct{})
+	close(finished)
+	called := false
+	emitBlockedTargetEscalation(finished, time.Second, func(Event) { called = true })
+	if called {
+		t.Fatal("completed apply emitted a blocked-target escalation")
 	}
 }
