@@ -24,6 +24,7 @@ from rufusarm64_logic import (
     ffu_review_summary,
     inspect_source_identity,
     normalize_acquisition_channel,
+    normalize_appearance,
     normalize_acquisition_images,
     normalize_checksum_result,
     persistence_plan_summary,
@@ -210,6 +211,13 @@ class LogicTests(unittest.TestCase):
             os.symlink(real, linked)
             with self.assertRaises(OSError):
                 atomic_write_json(os.path.join(linked, "settings.json"), {"unsafe": True})
+
+    def test_appearance_normalization(self):
+        self.assertEqual(normalize_appearance("system"), "system")
+        self.assertEqual(normalize_appearance(" LIGHT "), "light")
+        self.assertEqual(normalize_appearance("dark"), "dark")
+        self.assertEqual(normalize_appearance("unsupported"), "system")
+        self.assertEqual(normalize_appearance(None), "system")
 
     def test_human_bytes(self):
         self.assertEqual(human_bytes(1024), "1.0 KiB")

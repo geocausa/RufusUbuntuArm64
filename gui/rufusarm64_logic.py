@@ -68,6 +68,13 @@ WINDOWS_TO_GO_TAIL_RESERVE_BYTES = 1024**2
 WINDOWS_TO_GO_MINIMUM_FREE_BYTES = 2 * 1024**3
 WINDOWS_TO_GO_ALIGNMENT_BYTES = 1024**2
 DEFAULT_PERSISTENCE_ENABLED = False
+APPEARANCE_MODES = ("system", "light", "dark")
+
+
+def normalize_appearance(value):
+    """Return one supported app-wide GTK appearance preference."""
+    value = str(value or "system").strip().lower()
+    return value if value in APPEARANCE_MODES else "system"
 WINDOWS_TIME_ZONES = {
     "UTC": "UTC",
     "Etc/UTC": "UTC",
