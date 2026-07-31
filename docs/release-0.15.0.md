@@ -2,7 +2,7 @@
 
 ## Highlights
 
-RufusArm64 0.15.0 is the ISO Image mode parity and physical-qualification release candidate for Ubuntu ARM64.
+RufusArm64 0.15.0 is the published ISO Image mode parity tranche for Ubuntu ARM64. It remains the latest public package; the `main` branch contains newer, unreleased development and must not be treated as part of this release.
 
 - Suitable Linux ISOHybrid images now present a Rufus-style **ISO Image mode / DD Image mode** choice.
 - **ISO Image mode (Recommended)** is selected by default when the image and target pass the bounded compatibility analysis.
@@ -14,9 +14,9 @@ RufusArm64 0.15.0 is the ISO Image mode parity and physical-qualification releas
 
 Existing DD writing, Windows media creation, persistent Linux media, data-only formatting, FreeDOS, USB qualification, drive backup, checksums, UEFI analysis, and the experimental FFU boundary remain available.
 
-## Prerelease purpose and physical testing
+## Qualification status
 
-Physical hardware testing remains required before 0.15.0 is promoted from prerelease to stable. The candidate checklist is `docs/hardware-checklist-0.15.0.md`.
+The `v0.15.0` tag and package are immutable published release artifacts. “Stable release” identifies the published channel; it does not claim universal firmware, controller, flash-media, distribution, or Secure Boot compatibility. The bounded physical evidence and remaining matrix are recorded in `docs/hardware-checklist-0.15.0.md`.
 
 The central physical observation is an Ubuntu ARM64 ISOHybrid written with ISO Image mode on the intended Surface Pro 11 ARM64 host. The record must show the choice dialog, ISO mode selected by default, successful creation and verification, actual UEFI boot, and ordinary writable FAT32 behavior. A bounded DD-mode regression should also be recorded where practical.
 
@@ -42,9 +42,9 @@ The production built-in acquisition channel remains disabled until reviewed publ
 
 ## Verification and release construction
 
-The exact candidate must pass Go 1.22 compatibility, unit/race/shuffle coverage, vet, static and vulnerability checks, native ARM64 execution, packaged-binary execution, the dedicated ISO Image mode reopened-loop qualification, existing privileged loop regressions, Lintian/AppStream/desktop validation, WIM/UEFI reproduction, and byte-for-byte Debian package reproducibility.
+The exact tagged release passed Go 1.22 compatibility, unit/race/shuffle coverage, vet, static and vulnerability checks, native ARM64 execution, packaged-binary execution, the dedicated ISO Image mode reopened-loop qualification, existing privileged loop regressions, Lintian/AppStream/desktop validation, WIM/UEFI reproduction, and byte-for-byte Debian package reproducibility.
 
-The canonical stable workflow will publish:
+The canonical stable workflow published:
 
 - `rufusarm64_0.15.0_arm64.deb`;
 - `rufusarm64_0.15.0_arm64.deb.sha256`;
