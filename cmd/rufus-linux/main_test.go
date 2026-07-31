@@ -884,3 +884,54 @@ func TestWriteRecognizesWindowsToGoFlags(t *testing.T) {
 		t.Fatalf("Windows To Go flags were not parsed before required-argument validation: %v", err)
 	}
 }
+
+func TestGraphicalWindowsToGoEnvelopeIsExact(t *testing.T) {
+	base := graphicalWriteEnvelope{
+		Mode: "windows-to-go", Yes: true, JSONProgress: true,
+		ExpectedIdentity: "identity", CancelFile: "/run/user/1000/rufusarm64.cancel",
+		VolumeLabel: "RUFUSARM64", PartitionScheme: "auto", TargetSystem: "auto",
+		Filesystem: "auto", ClusterSize: "auto", PersistenceSize: "0",
+		ExperimentalWindowsToGo: true, WinToGoImageIndex: 3,
+		WinToGoConfirm: "CREATE EXPERIMENTAL WINDOWS TO GO",
+	}
+	if err := validateGraphicalWriteEnvelope(base); err != nil {
+		t.Fatal(err)
+	}
+	mutations := map[string]func(*graphicalWriteEnvelope){
+		"verify":                func(v *graphicalWriteEnvelope) { v.Verify = true },
+		"fixed target":          func(v *graphicalWriteEnvelope) { v.AllowFixed = true },
+		"wrong mode":            func(v *graphicalWriteEnvelope) { v.Mode = "windows" },
+		"partition override":    func(v *graphicalWriteEnvelope) { v.PartitionScheme = "gpt" },
+		"filesystem override":   func(v *graphicalWriteEnvelope) { v.Filesystem = "ntfs" },
+		"cluster override":      func(v *graphicalWriteEnvelope) { v.ClusterSize = "4096" },
+		"driver":                func(v *graphicalWriteEnvelope) { v.DriverFolder = "/drivers" },
+		"DBX":                   func(v *graphicalWriteEnvelope) { v.DBXFile = "/dbx.bin" },
+		"installer option":      func(v *graphicalWriteEnvelope) { v.WinPrivacy = true },
+		"silent install":        func(v *graphicalWriteEnvelope) { v.WinSilentInstall = true },
+		"missing experimental":  func(v *graphicalWriteEnvelope) { v.ExperimentalWindowsToGo = false },
+		"missing image":         func(v *graphicalWriteEnvelope) { v.WinToGoImageIndex = 0 },
+		"wrong acknowledgement": func(v *graphicalWriteEnvelope) { v.WinToGoConfirm = "create experimental windows to go" },
+		"persistence":           func(v *graphicalWriteEnvelope) { v.ExperimentalPersistence = true },
+		"positional":            func(v *graphicalWriteEnvelope) { v.PositionalArguments = 1 },
+	}
+	for name, mutate := range mutations {
+		t.Run(name, func(t *testing.T) {
+			value := base
+			mutate(&value)
+			if err := validateGraphicalWriteEnvelope(value); err == nil || err.Error() != "unsafe or unsupported arguments were supplied to the graphical privileged writer" {
+				t.Fatalf("mutation accepted: %#v, error=%v", value, err)
+			}
+		})
+	}
+}
+
+func TestGraphicalAutoEnvelopeStillAdmitsExistingWindowsOptions(t *testing.T) {
+	envelope := graphicalWriteEnvelope{
+		Mode: "auto", Yes: true, JSONProgress: true,
+		ExpectedIdentity: "identity", CancelFile: "/run/user/1000/rufusarm64.cancel",
+		PersistenceSize: "0", WinPrivacy: true, WinLocalUser: "Tester",
+	}
+	if err := validateGraphicalWriteEnvelope(envelope); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -60,6 +60,13 @@ DEFAULT_WINDOWS_FILESYSTEM = "auto"
 DEFAULT_WINDOWS_CLUSTER_SIZE = "auto"
 DEFAULT_QUICK_FORMAT = True
 DEFAULT_BAD_BLOCK_CHECK = False
+
+WINDOWS_TO_GO_CONFIRMATION = "CREATE EXPERIMENTAL WINDOWS TO GO"
+WINDOWS_TO_GO_MINIMUM_TARGET_BYTES = 29 * 1024**3
+WINDOWS_TO_GO_ESP_BYTES = 260 * 1024**2
+WINDOWS_TO_GO_TAIL_RESERVE_BYTES = 1024**2
+WINDOWS_TO_GO_MINIMUM_FREE_BYTES = 2 * 1024**3
+WINDOWS_TO_GO_ALIGNMENT_BYTES = 1024**2
 DEFAULT_PERSISTENCE_ENABLED = False
 WINDOWS_TIME_ZONES = {
     "UTC": "UTC",
@@ -197,6 +204,12 @@ def success_message(mode, verify_requested, filesystem="auto"):
         "This does not prove firmware boot or Secure Boot acceptance; test the media on the intended computer. "
         "Remove it safely before unplugging it."
     )
+    if mode == "windows-to-go":
+        return (
+            "Experimental Windows To Go creation completed. Windows image application, boot files, BCD, "
+            "offline policy, filesystems, and GPT readback passed. Physical firmware boot and Windows first boot remain unverified. "
+            "Remove the drive safely before unplugging it."
+        )
     if verify_requested:
         return "USB media creation completed. Copied-data verification passed. " + qualification
     if mode == "windows":
@@ -796,6 +809,124 @@ def uefi_validation_summary(payload):
     lines.append("This read-only check does not prove that the intended computer will boot the media.")
     return "\n".join(lines)
 
+def _align_up(value, alignment):
+    return (value + alignment - 1) // alignment * alignment
+
+
+def _align_down(value, alignment):
+    return value // alignment * alignment
+
+
+def windows_to_go_image(analysis, image_index):
+    analysis = dict(analysis or {})
+    capability = (analysis.get("capabilities") or {}).get("windows_to_go")
+    if not isinstance(capability, dict) or not capability.get("enabled"):
+        reason = capability.get("reason") if isinstance(capability, dict) else ""
+        raise ValueError(str(reason or "Windows To Go was not proven safe by the read-only Windows media analysis."))
+    try:
+        image_index = int(image_index or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Windows To Go requires an exact Windows image index.") from exc
+    images = (analysis.get("metadata") or {}).get("images") or []
+    selected = next(
+        (item for item in images if isinstance(item, dict) and int(item.get("index") or 0) == image_index),
+        None,
+    )
+    if selected is None:
+        raise ValueError("The selected Windows To Go image index is not present in the current ISO analysis.")
+    name = str(selected.get("name") or "").strip()
+    language = str(selected.get("default_language") or "").strip()
+    try:
+        total_bytes = int(selected.get("total_bytes") or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("The selected Windows To Go image has an invalid expanded size.") from exc
+    if not name or image_index < 1 or image_index > 256 or total_bytes <= 0:
+        raise ValueError("The selected Windows To Go image has incomplete index, name, or expanded-size evidence.")
+    if not re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", language):
+        raise ValueError("The selected Windows To Go image has no proven default language.")
+    return {
+        "index": image_index,
+        "name": name,
+        "default_language": language,
+        "total_bytes": total_bytes,
+    }
+
+
+def plan_windows_to_go_target(analysis, device, image_index):
+    if not isinstance(device, dict):
+        raise ValueError("Windows To Go requires a selected target device.")
+    image = windows_to_go_image(analysis, image_index)
+    try:
+        target_size = int(device.get("size") or 0)
+        logical_sector = int(device.get("logical_sector_size") or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("The selected target reports invalid capacity or sector geometry.") from exc
+    if logical_sector not in {512, 4096}:
+        raise ValueError("Windows To Go requires a target with 512-byte or 4096-byte logical sectors.")
+    if target_size < WINDOWS_TO_GO_MINIMUM_TARGET_BYTES:
+        raise ValueError("Windows To Go requires a nominal 32 GB-class target.")
+    if target_size % logical_sector:
+        raise ValueError("The selected target capacity is not an exact logical-sector multiple.")
+    start = _align_up(WINDOWS_TO_GO_ALIGNMENT_BYTES, logical_sector)
+    esp_size = _align_up(WINDOWS_TO_GO_ESP_BYTES, logical_sector)
+    os_start = _align_up(start + esp_size, WINDOWS_TO_GO_ALIGNMENT_BYTES)
+    usable_end = _align_down(target_size - WINDOWS_TO_GO_TAIL_RESERVE_BYTES, logical_sector)
+    if usable_end <= os_start:
+        raise ValueError("The selected target has no usable Windows partition capacity after the EFI System Partition.")
+    os_size = usable_end - os_start
+    required = image["total_bytes"] + WINDOWS_TO_GO_MINIMUM_FREE_BYTES
+    if os_size < required:
+        raise ValueError(
+            f"{image['name']} needs {human_bytes(required)} including required headroom, "
+            f"but this target provides only {human_bytes(os_size)} for Windows."
+        )
+    return {
+        "image": image,
+        "target_size": target_size,
+        "logical_sector_size": logical_sector,
+        "esp_size": esp_size,
+        "windows_partition_size": os_size,
+        "minimum_free_bytes": WINDOWS_TO_GO_MINIMUM_FREE_BYTES,
+    }
+
+
+def _windows_to_go_command(pkexec, helper, image, path, identity, cancel_path, options, analysis, driver_folder, dbx_file, quick_format, bad_block_check):
+    selected = windows_to_go_image(analysis, options.get("install_image_index"))
+    forbidden = (
+        options.get("bypass_hardware"),
+        options.get("bypass_online_account"),
+        str(options.get("local_user") or "").strip(),
+        options.get("reduce_data_collection"),
+        options.get("quality_of_life"),
+        options.get("apply_sku_si_policy"),
+        options.get("use_windows_ca_2023_bootloaders"),
+        options.get("silent_install"),
+        options.get("disable_bitlocker"),
+        options.get("use_regional_settings"),
+        str(options.get("locale") or "").strip(),
+        str(options.get("timezone") or "").strip(),
+        str(driver_folder or "").strip(),
+        str(dbx_file or "").strip(),
+        not bool(quick_format),
+        bool(bad_block_check),
+    )
+    if any(forbidden):
+        raise ValueError("Windows To Go cannot be combined with Windows Setup customizations, drivers, DBX overrides, full format, or bad-block checking.")
+    return [
+        pkexec, helper, "write",
+        "--image", image,
+        "--device", path,
+        "--mode", "windows-to-go",
+        "--yes",
+        "--json-progress",
+        "--expected-identity", identity,
+        "--cancel-file", cancel_path,
+        "--experimental-windows-to-go",
+        "--win-to-go-image-index", str(selected["index"]),
+        "--win-to-go-confirm", WINDOWS_TO_GO_CONFIRMATION,
+    ]
+
+
 def build_writer_command(
     pkexec,
     helper,
@@ -829,6 +960,11 @@ def build_writer_command(
         resolved_target_system = str(analysis.get("default_target_system") or "").strip().lower()
     if resolved_filesystem == "auto":
         resolved_filesystem = str(analysis.get("default_filesystem") or "").strip().lower()
+    if options.get("windows_to_go"):
+        return _windows_to_go_command(
+            pkexec, helper, image, path, identity, cancel_path, options, analysis,
+            driver_folder, dbx_file, quick_format, bad_block_check,
+        )
     if target_system == "bios" and partition_scheme == "gpt":
         raise ValueError("BIOS/CSM cannot be combined with the GPT partition scheme.")
     if options.get("apply_sku_si_policy") and resolved_target_system != "uefi":

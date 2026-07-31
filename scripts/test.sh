@@ -417,6 +417,10 @@ if ! grep -q '^Actions=.*PersistentLiveUSB' "${extract_dir}/usr/share/applicatio
 fi
 grep -q 'Gtk.Expander(label="Persistent storage")' "${installed_gui}"
 grep -q 'Keep files and settings across reboots' "${installed_gui}"
+grep -q 'Create Windows To Go instead of installation media (experimental)' "${installed_gui}"
+grep -q 'Confirm experimental Windows To Go' "${installed_gui}"
+grep -q 'plan_windows_to_go_target' "${installed_gui}"
+grep -q 'WINDOWS_TO_GO_CONFIRMATION = "CREATE EXPERIMENTAL WINDOWS TO GO"' "${extract_dir}/usr/lib/rufusarm64/rufusarm64_logic.py"
 if grep -q 'Open Persistent USB Creator' "${installed_gui}"; then
   echo "Packaged GUI must not expose the removed secondary persistence window" >&2
   exit 1

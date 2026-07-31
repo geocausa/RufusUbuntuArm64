@@ -57,6 +57,7 @@ from rufusarm64_logic import (
     normalize_acquisition_channel,
     normalize_acquisition_images,
     persistence_plan_summary,
+    plan_windows_to_go_target,
     progress_status,
     normalize_cluster_size,
     normalize_filesystem,
@@ -167,17 +168,30 @@ def normalize_windows_capability_analysis(payload):
             raise ValueError("Windows capability analysis contains an invalid installation-image index.") from exc
         name = str(item.get("name") or "").strip()
         language = str(item.get("default_language") or "").strip()
+        try:
+            total_bytes = int(item.get("total_bytes") or 0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Windows capability analysis contains an invalid installation-image expanded size.") from exc
         if index < 1 or index > 256 or index in seen_indexes or not name or len(name.encode("utf-8")) > 256:
             raise ValueError("Windows capability analysis contains incomplete or duplicate installation-image metadata.")
+        if total_bytes < 0 or total_bytes > 2**64 - 1:
+            raise ValueError("Windows capability analysis contains an invalid installation-image expanded size.")
         if language and not re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", language):
             raise ValueError("Windows capability analysis contains an invalid installation-image language.")
         seen_indexes.add(index)
-        normalized_images.append({"index": index, "name": name, "default_language": language})
+        normalized_images.append({
+            "index": index, "name": name, "default_language": language, "total_bytes": total_bytes,
+        })
     boot_language = str(metadata.get("boot_language") or "").strip()
     silent_capability = capabilities.get("silent_install")
     if isinstance(silent_capability, dict) and silent_capability.get("enabled"):
         if not re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", boot_language):
             raise ValueError("Windows capability analysis enabled silent installation without a proven boot.wim language.")
+    windows_to_go_capability = capabilities.get("windows_to_go")
+    if isinstance(windows_to_go_capability, dict) and windows_to_go_capability.get("enabled"):
+        for image in normalized_images:
+            if image["total_bytes"] <= 0 or not re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", image["default_language"]):
+                raise ValueError("Windows capability analysis enabled Windows To Go without complete image size and language evidence.")
     metadata["image_count"] = image_count
     metadata["images"] = normalized_images
     metadata["boot_language"] = boot_language
@@ -228,6 +242,7 @@ def unavailable_windows_capability_analysis(reason):
             "apply_sku_si_policy": dict(disabled),
             "use_windows_ca_2023_bootloaders": dict(disabled),
             "silent_install": dict(disabled),
+            "windows_to_go": dict(disabled),
             "disable_bitlocker": dict(disabled),
             "load_drivers": dict(disabled),
             "locale": dict(disabled),
@@ -237,7 +252,7 @@ def unavailable_windows_capability_analysis(reason):
 
 
 class WindowsOptionsDialog(Gtk.Dialog):
-    """Explicit opt-in Windows Setup customizations."""
+    """Explicit Windows image mode and Setup customization choices."""
 
     def __init__(self, parent, previous=None, capability_analysis=None, selected_target_system=DEFAULT_WINDOWS_TARGET_SYSTEM, selected_filesystem=DEFAULT_WINDOWS_FILESYSTEM):
         super().__init__(title="Windows installation options", transient_for=parent, modal=True)
@@ -373,7 +388,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
         self.silent_install.connect("toggled", lambda *_: self.update_silent_install_sensitivity())
         edition_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         edition_row.set_margin_start(28)
-        edition_label = Gtk.Label(label="Windows edition")
+        edition_label = Gtk.Label(label="Selected Windows edition")
         edition_label.set_xalign(0)
         self.silent_edition = Gtk.ComboBoxText()
         for image in self.windows_images:
@@ -393,6 +408,13 @@ class WindowsOptionsDialog(Gtk.Dialog):
             "Does not decrypt an existing installation. It prevents automatic encryption during this new setup where supported.",
             previous.get("disable_bitlocker", False),
         )
+        self.windows_to_go = self.check(
+            box,
+            "Create Windows To Go instead of installation media (experimental)",
+            "Applies the selected Windows 11 ARM64 edition directly to this target. Microsoft removed Windows To Go support; physical firmware boot and first boot are not yet proven.",
+            previous.get("windows_to_go", False),
+        )
+        self.windows_to_go.connect("toggled", self.update_windows_to_go_sensitivity)
         self.apply_capabilities()
 
         warning = Gtk.InfoBar()
@@ -460,6 +482,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
             self.use_ca_2023_bootloaders.set_sensitive(False)
             self.use_ca_2023_bootloaders.set_tooltip_text("Windows UEFI CA 2023 bootloader replacement currently requires FAT32; the pinned UEFI:NTFS first stage carries only CA 2011 certificate-chain evidence.")
         self.apply_option_capability(self.disable_bitlocker, "disable_bitlocker")
+        self.windows_to_go_allowed = self.apply_option_capability(self.windows_to_go, "windows_to_go")
         self.silent_install_allowed = self.apply_option_capability(self.silent_install, "silent_install")
         if self.silent_install_allowed and (self.selected_target_system != "uefi" or self.selected_filesystem != "ntfs"):
             self.silent_install.set_active(False)
@@ -485,9 +508,41 @@ class WindowsOptionsDialog(Gtk.Dialog):
             self.use_region.set_tooltip_text("; ".join(dict.fromkeys(regional_reasons)))
         self.update_local_user_sensitivity()
         self.update_silent_install_sensitivity()
+        self.enforce_windows_image_mode()
+
+    def standard_option_widgets(self):
+        return (
+            self.bypass_hardware, self.bypass_online, self.local_account, self.reduce_data,
+            self.quality_of_life, self.apply_sku_si_policy, self.use_ca_2023_bootloaders,
+            self.use_region, self.silent_install, self.disable_bitlocker,
+        )
+
+    def enforce_windows_image_mode(self):
+        active = bool(getattr(self, "windows_to_go_allowed", False)) and self.windows_to_go.get_active()
+        if active:
+            for widget in self.standard_option_widgets():
+                widget.set_active(False)
+                widget.set_sensitive(False)
+            self.local_user.set_text("")
+            self.local_user.set_sensitive(False)
+            self.silent_edition.set_sensitive(bool(self.windows_images))
+        else:
+            self.update_local_user_sensitivity()
+            self.update_silent_install_sensitivity()
+
+    def update_windows_to_go_sensitivity(self, *_):
+        if self.windows_to_go.get_active():
+            self.enforce_windows_image_mode()
+        else:
+            self.apply_capabilities()
 
     def update_silent_install_sensitivity(self):
         if not hasattr(self, "silent_install"):
+            return
+        if hasattr(self, "windows_to_go") and self.windows_to_go.get_active():
+            self.silent_install.set_active(False)
+            self.silent_install.set_sensitive(False)
+            self.silent_edition.set_sensitive(bool(self.windows_images))
             return
         prerequisites = (
             bool(getattr(self, "silent_install_allowed", False))
@@ -527,15 +582,16 @@ class WindowsOptionsDialog(Gtk.Dialog):
             if not local_user:
                 raise ValueError("Enter a local account name or turn off local-account creation.")
         silent_install = self.silent_install.get_active()
+        windows_to_go = self.windows_to_go.get_active()
         image_index = 0
         image_name = ""
-        if silent_install:
-            if not (local_user and self.reduce_data.get_active() and self.use_region.get_active() and self.region_locale and self.region_timezone):
+        if silent_install or windows_to_go:
+            if silent_install and not (local_user and self.reduce_data.get_active() and self.use_region.get_active() and self.region_locale and self.region_timezone):
                 raise ValueError("Silent installation requires a local account, reduced data collection, and complete regional settings.")
             try:
                 image_index = int(self.silent_edition.get_active_id() or 0)
             except (TypeError, ValueError) as exc:
-                raise ValueError("Choose the exact Windows edition for silent installation.") from exc
+                raise ValueError("Choose the exact Windows edition for the selected image mode.") from exc
             selected = next((image for image in self.windows_images if int(image["index"]) == image_index), None)
             if selected is None:
                 raise ValueError("Choose an installation image proven by the current ISO analysis.")
@@ -549,6 +605,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
             "apply_sku_si_policy": self.apply_sku_si_policy.get_active(),
             "use_windows_ca_2023_bootloaders": self.use_ca_2023_bootloaders.get_active(),
             "silent_install": silent_install,
+            "windows_to_go": windows_to_go,
             "install_image_index": image_index,
             "install_image_name": image_name,
             "disable_bitlocker": self.disable_bitlocker.get_active(),
@@ -2432,7 +2489,50 @@ class RufusWindow(Gtk.ApplicationWindow):
         dialog.destroy()
         return response == Gtk.ResponseType.OK
 
-    def choose_windows_options(self):
+    def confirm_windows_to_go(self, options, plan, device):
+        edition = str(options.get("install_image_name") or "the selected Windows edition")
+        index = int(options.get("install_image_index") or 0)
+        path = str(device.get("path") or "the selected target")
+        model = " ".join(value for value in (device.get("vendor", ""), device.get("model", "")) if value).strip() or "target drive"
+        dialog = Gtk.Dialog(title="Confirm experimental Windows To Go", transient_for=self, modal=True)
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        continue_button = dialog.add_button("Create experimental Windows To Go", Gtk.ResponseType.OK)
+        continue_button.set_sensitive(False)
+        dialog.set_default_response(Gtk.ResponseType.CANCEL)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_border_width(18)
+        title = Gtk.Label()
+        title.set_markup("<span size='large' weight='bold'>Windows To Go is experimental and unsupported by Microsoft</span>")
+        title.set_xalign(0)
+        box.pack_start(title, False, False, 0)
+        explanation = Gtk.Label(
+            label=(
+                f"RufusArm64 will erase {path} ({model}, {human_bytes(device.get('size'))}), apply {edition} "
+                f"(image {index}) directly to NTFS, and create a {human_bytes(plan['esp_size'])} FAT32 EFI System Partition. "
+                "Software verification checks the image, BCD, boot files, filesystems, and GPT, but it does not prove that physical firmware will boot the drive or that Windows will complete first boot. "
+                "wimlib cannot restore encrypted files or Windows extended attributes."
+            )
+        )
+        explanation.set_xalign(0)
+        explanation.set_line_wrap(True)
+        box.pack_start(explanation, False, False, 0)
+        checks = [
+            Gtk.CheckButton(label="I understand that the complete selected target drive will be permanently erased."),
+            Gtk.CheckButton(label="I understand that Microsoft removed Windows To Go support and this drive may not boot or complete first boot."),
+            Gtk.CheckButton(label=f"I confirm that {edition} (image {index}) is the edition I intend to apply to this target."),
+        ]
+        def update_confirmation(*_):
+            continue_button.set_sensitive(all(check.get_active() for check in checks))
+        for check in checks:
+            check.connect("toggled", update_confirmation)
+            box.pack_start(check, False, False, 0)
+        dialog.get_content_area().pack_start(box, True, True, 0)
+        dialog.show_all()
+        response = dialog.run()
+        dialog.destroy()
+        return response == Gtk.ResponseType.OK
+
+    def choose_windows_options(self, device):
         self.windows_capability_analysis = self.analyze_windows_capabilities()
         dialog = WindowsOptionsDialog(
             self,
@@ -2453,6 +2553,29 @@ class RufusWindow(Gtk.ApplicationWindow):
                 continue
             if values.get("silent_install") and not self.confirm_silent_install(values):
                 continue
+            self.windows_to_go_plan = None
+            if values.get("windows_to_go"):
+                try:
+                    plan = plan_windows_to_go_target(
+                        self.windows_capability_analysis, device, values.get("install_image_index"),
+                    )
+                except ValueError as exc:
+                    self.message(str(exc), Gtk.MessageType.ERROR)
+                    continue
+                if not self.confirm_windows_to_go(values, plan, device):
+                    continue
+                self.windows_to_go_plan = plan
+                # Reflect the backend's fixed layout in the main window and
+                # remove stale installer-only file selections before the final
+                # whole-drive confirmation is shown.
+                self.partition_combo.set_active_id("gpt")
+                self.target_system_combo.set_active_id("uefi")
+                self.filesystem_combo.set_active_id("ntfs")
+                self.cluster_combo.set_active_id("auto")
+                self.driver_chooser.unselect_all()
+                self.dbx_chooser.unselect_all()
+                self.quick_format.set_active(True)
+                self.bad_block_check.set_active(False)
             dialog.destroy()
             self.windows_options = values
             return values
@@ -2470,6 +2593,7 @@ class RufusWindow(Gtk.ApplicationWindow):
             self.message("Connect and select a USB drive first.", Gtk.MessageType.INFO)
             return
 
+        device = self.devices[index]
         persistence_requested = self.persistence_enabled.get_active()
         if persistence_requested:
             if self.inspection.get("mode") != "raw":
@@ -2480,25 +2604,37 @@ class RufusWindow(Gtk.ApplicationWindow):
                 return
         options = {}
         if self.inspection.get("windows_options"):
-            options = self.choose_windows_options()
+            options = self.choose_windows_options(device)
             if options is None:
                 return
+        windows_to_go_requested = bool(options.get("windows_to_go"))
         if self.inspection.get("mode") == "windows":
-            try:
-                partition_scheme = normalize_partition_scheme(self.partition_combo.get_active_id() or DEFAULT_WINDOWS_PARTITION_SCHEME)
-                target_system = normalize_target_system(self.target_system_combo.get_active_id() or DEFAULT_WINDOWS_TARGET_SYSTEM)
-                if target_system == "bios" and partition_scheme == "gpt":
-                    raise ValueError("BIOS/CSM cannot be combined with the GPT partition scheme.")
-                filesystem = normalize_filesystem(self.filesystem_combo.get_active_id() or DEFAULT_WINDOWS_FILESYSTEM)
-                cluster_size = normalize_cluster_size(self.cluster_combo.get_active_id() or DEFAULT_WINDOWS_CLUSTER_SIZE)
-                label = normalize_volume_label(self.volume_label.get_text(), filesystem)
-            except ValueError as exc:
-                self.message(str(exc), Gtk.MessageType.ERROR)
-                return
-            driver_folder = self.driver_chooser.get_filename() or ""
-            dbx_file = self.dbx_chooser.get_filename() or ""
-            quick_format = self.quick_format.get_active()
-            bad_block_check = self.bad_block_check.get_active()
+            if windows_to_go_requested:
+                partition_scheme = DEFAULT_WINDOWS_PARTITION_SCHEME
+                target_system = DEFAULT_WINDOWS_TARGET_SYSTEM
+                filesystem = DEFAULT_WINDOWS_FILESYSTEM
+                cluster_size = DEFAULT_WINDOWS_CLUSTER_SIZE
+                label = "RUFUSARM64"
+                driver_folder = ""
+                dbx_file = ""
+                quick_format = DEFAULT_QUICK_FORMAT
+                bad_block_check = DEFAULT_BAD_BLOCK_CHECK
+            else:
+                try:
+                    partition_scheme = normalize_partition_scheme(self.partition_combo.get_active_id() or DEFAULT_WINDOWS_PARTITION_SCHEME)
+                    target_system = normalize_target_system(self.target_system_combo.get_active_id() or DEFAULT_WINDOWS_TARGET_SYSTEM)
+                    if target_system == "bios" and partition_scheme == "gpt":
+                        raise ValueError("BIOS/CSM cannot be combined with the GPT partition scheme.")
+                    filesystem = normalize_filesystem(self.filesystem_combo.get_active_id() or DEFAULT_WINDOWS_FILESYSTEM)
+                    cluster_size = normalize_cluster_size(self.cluster_combo.get_active_id() or DEFAULT_WINDOWS_CLUSTER_SIZE)
+                    label = normalize_volume_label(self.volume_label.get_text(), filesystem)
+                except ValueError as exc:
+                    self.message(str(exc), Gtk.MessageType.ERROR)
+                    return
+                driver_folder = self.driver_chooser.get_filename() or ""
+                dbx_file = self.dbx_chooser.get_filename() or ""
+                quick_format = self.quick_format.get_active()
+                bad_block_check = self.bad_block_check.get_active()
         else:
             # Windows-only controls must never leak saved choices into raw or
             # persistent workflows. The privileged helper treats auto values as
@@ -2513,7 +2649,6 @@ class RufusWindow(Gtk.ApplicationWindow):
             quick_format = DEFAULT_QUICK_FORMAT
             bad_block_check = DEFAULT_BAD_BLOCK_CHECK
 
-        device = self.devices[index]
         path = device.get("path")
         identity = device.get("identity")
         if not identity:
@@ -2532,6 +2667,7 @@ class RufusWindow(Gtk.ApplicationWindow):
                 (options.get("apply_sku_si_policy"), "installed-system SkuSiPolicy deployment to the EFI System Partition"),
                 (options.get("use_windows_ca_2023_bootloaders"), "Windows UEFI CA 2023 boot-file replacement with mandatory SHA-256 readback; firmware CA 2023 trust required"),
                 (options.get("silent_install"), f"silent installation of {options.get('install_image_name', 'selected edition')} (image {options.get('install_image_index', 0)}), with automatic disk-0 erasure"),
+                (options.get("windows_to_go"), f"experimental Windows To Go using {options.get('install_image_name', 'selected edition')} (image {options.get('install_image_index', 0)})"),
                 (options.get("disable_bitlocker"), "automatic encryption disabled"),
                 (options.get("use_regional_settings"), "Ubuntu regional settings"),
             )
@@ -2539,10 +2675,15 @@ class RufusWindow(Gtk.ApplicationWindow):
         ]
         if selected_options:
             summary += "\nWindows options: " + ", ".join(selected_options)
-        verify_requested = True if persistence_requested else self.verify.get_active()
+        if windows_to_go_requested and self.windows_to_go_plan:
+            summary += (
+                "\nFixed Windows To Go layout: GPT / ARM64 UEFI / unlabelled FAT32 ESP / NTFS Windows; "
+                f"Windows partition {human_bytes(self.windows_to_go_plan['windows_partition_size'])}."
+            )
+        verify_requested = True if persistence_requested or windows_to_go_requested else self.verify.get_active()
         if self.inspection.get("mode") == "windows" and dbx_file:
             summary += "\nSecure Boot: EFI boot files will be checked against " + os.path.basename(dbx_file)
-        if self.inspection.get("mode") == "windows" and not verify_requested:
+        if self.inspection.get("mode") == "windows" and not windows_to_go_requested and not verify_requested:
             summary += "\nVerification: copied-file comparison skipped; a filesystem consistency check will still run."
 
         dialog = Gtk.MessageDialog(
@@ -2570,12 +2711,19 @@ class RufusWindow(Gtk.ApplicationWindow):
         self.last_status_key = None
         self.last_ca2023_manifest = ""
         self.active_verify_requested = verify_requested
-        self.active_mode = "linux-persistent" if persistence_requested else self.inspection.get("mode", "")
-        self.active_filesystem = filesystem
+        if persistence_requested:
+            self.active_mode = "linux-persistent"
+        elif windows_to_go_requested:
+            self.active_mode = "windows-to-go"
+        else:
+            self.active_mode = self.inspection.get("mode", "")
+        self.active_filesystem = "ntfs" if windows_to_go_requested else filesystem
         self.append_log(f"Image: {image}")
         self.append_log(f"Target: {path} — {model} — {human_bytes(device.get('size'))}")
         if persistence_requested:
             layout_summary = f"GPT / UEFI / FAT32 boot + {human_bytes(self.persistence_plan['size'])} ext4 persistence"
+        elif windows_to_go_requested:
+            layout_summary = "GPT / ARM64 UEFI / FAT32 ESP + NTFS Windows To Go"
         elif self.inspection.get("mode") == "windows":
             display_scheme = partition_scheme
             display_target = target_system
