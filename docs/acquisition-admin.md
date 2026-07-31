@@ -239,7 +239,7 @@ The destination must not already exist. The tool verifies the full chain, catalo
 
 Repeated runs with the same inputs produce byte-for-byte identical files.
 
-Upload only the final public directory. Before creating the canonical release tag, publish that reviewed directory on a separate immutable `release-metadata-v<version>` Git tag. Then manually dispatch **Publish canonical version tag** with the exact `VERSION`. The workflow verifies the metadata-only publication against the final `main` commit before creating `v<version>`; the release workflow checks the freshly reproduced staged assets before upload, and the read-only published-release workflow downloads and verifies them again.
+Upload only the final public directory. When the production channel is enabled, publish that reviewed directory on a separate immutable `release-metadata-v<version>` Git tag before creating the canonical release tag. Then manually dispatch **Publish canonical version tag** with the exact `VERSION`. While the channel remains exactly disabled and no bootstrap root is packaged, the same workflow permits a checksum- and reproducibility-verified community release without claiming offline signatures. The workflow verifies the metadata-only publication against the final `main` commit before creating `v<version>`; the release workflow checks the freshly reproduced staged assets before upload, and the read-only published-release workflow downloads and verifies them again.
 
 The same gate can be run locally:
 

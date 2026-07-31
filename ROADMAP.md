@@ -122,6 +122,13 @@
 - Immutable `0.15.0-rc2` candidate published for the focused physical ARM64 matrix in issue #410
 - BIOS/CSM or dual-mode Linux extraction, NTFS persistence, broader distribution adaptations, and universal firmware claims remain outside this tranche
 
+## 0.16 — consolidated community release (completed)
+
+- Publishes the complete post-0.15 source line as one exact tagged ARM64 package.
+- Includes guarded Windows installation and Windows To Go paths, UEFI:NTFS architecture validation, Linux ISO Image mode improvements, advanced imaging utilities, and the safety/readback model documented in this repository.
+- Community release status means the exact software gates passed; it does not claim exhaustive physical testing across all images, firmware, controllers, machines, or architectures.
+- Future defects should be reported as focused GitHub issues with non-sensitive diagnostics and exact media/hardware details.
+
 ## 1.0 — supportable stable release
 
 - Signed release artifacts

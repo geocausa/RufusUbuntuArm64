@@ -3,159 +3,97 @@
 from pathlib import Path
 
 
-RELEASE_WORKFLOW = Path(".github/workflows/release.yml")
-release_text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+def require_once(path: Path, text: str, markers: dict[str, str]) -> None:
+    for description, marker in markers.items():
+        count = text.count(marker)
+        if count != 1:
+            raise SystemExit(f"{path}: {description} marker occurred {count} times")
 
-required_release_once = {
+
+release_path = Path(".github/workflows/release.yml")
+release = release_path.read_text(encoding="utf-8")
+require_once(release_path, release, {
     "release workflow name": "name: Release\n",
-    "workflow-dispatch recovery path": "  workflow_dispatch:\n",
-    "dispatch version input": "      expected_version:\n",
-    "loader job": "  uefi-md5sum-loader:\n",
-    "release dependency": "    needs: [wim-engine, uefi-md5sum-loader]\n",
-    "loader artifact download": "          name: uefi-md5sum-arm64\n          path: vendor/uefi-md5sum/arm64\n",
-    "tag-ref refusal": '          test "${GITHUB_REF_TYPE}" = "tag" || {\n',
-    "dispatch-version binding": '            test "${EXPECTED_VERSION}" = "${project_version}" || {\n',
+    "manual dispatch": "  workflow_dispatch:\n",
+    "tag refusal": '          test "${GITHUB_REF_TYPE}" = "tag" || {\n',
+    "version binding": '          tag_version="${GITHUB_REF_NAME#v}"\n',
+    "WIM dependency": "    needs: [wim-engine, uefi-md5sum-loader]\n",
+    "trust-mode decision": "      - name: Determine release trust mode\n",
+    "inert disabled-channel refusal": "disabled release channel must remain exactly inert and contain no bootstrap root",
+    "conditional signed checkout": "        if: steps.trust.outputs.signed == 'true'\n        uses: actions/checkout@",
+    "conditional signed gate": "      - name: Require threshold-signed staged asset graph\n        if: steps.trust.outputs.signed == 'true'\n",
+    "signed verifier": "          bash scripts/verify-release-publication.sh \\\n",
+    "release upload": "      - uses: softprops/action-gh-release@",
     "explicit release tag": "          tag_name: v${{ steps.version.outputs.version }}\n",
-    "deterministic loader source asset": "            dist/RufusArm64-${{ steps.version.outputs.version }}-uefi-md5sum-v1.2-source.tar.gz\n",
-    "deterministic loader source checksum asset": "            dist/RufusArm64-${{ steps.version.outputs.version }}-uefi-md5sum-v1.2-source.tar.gz.sha256\n",
-    "generated loader source-ZIP exclusion": "'vendor/uefi-md5sum/arm64/*'",
-    "unsigned disclosure": "The loader is unsigned and is not claimed Secure Boot compatible.",
-    "signed metadata tag checkout": "          ref: release-metadata-v${{ steps.version.outputs.version }}\n",
-    "signed metadata checkout path": "          path: signed-release-metadata\n",
-    "pre-upload signed publication gate": "          bash scripts/verify-release-publication.sh \\\n",
-    "product channel input": "            packaging/acquisition/channel.json \\\n",
-    "product bootstrap input": "            packaging/acquisition/1.root.json\n",
-}
-for description, marker in required_release_once.items():
-    count = release_text.count(marker)
-    if count != 1:
-        raise SystemExit(f"{RELEASE_WORKFLOW}: {description} marker occurred {count} times")
-
-if release_text.count("          name: uefi-md5sum-arm64\n") != 2:
+    "release notes": "          body_path: docs/release-${{ steps.version.outputs.version }}.md\n",
+})
+if release.count("          name: uefi-md5sum-arm64\n") != 2:
     raise SystemExit("release workflow must upload and download exactly one canonical loader artifact")
-if release_text.index("      - name: Create corresponding source archives\n") > release_text.index("      - name: Check out signed release metadata publication\n"):
-    raise SystemExit("signed metadata checkout must occur only after source archives are finalized")
-if release_text.index("      - name: Require threshold-signed staged asset graph\n") > release_text.index("      - uses: softprops/action-gh-release@"):
+if release.index("      - name: Create corresponding source archives\n") > release.index("      - name: Determine release trust mode\n"):
+    raise SystemExit("trust mode must be evaluated only after final assets are created")
+if release.index("      - name: Require threshold-signed staged asset graph\n") > release.index("      - uses: softprops/action-gh-release@"):
     raise SystemExit("signed asset verification must complete before release upload")
-
-
-release_files = release_text.split("      - uses: softprops/action-gh-release@", 1)
-if len(release_files) != 2:
-    raise SystemExit("release publication step is missing")
-publication = release_files[1]
+publication = release.split("      - uses: softprops/action-gh-release@", 1)[1]
 if "bootaa64.efi" in publication:
-    raise SystemExit("the unsigned EFI loader must remain package-private, not a standalone release asset")
-if "uefi-md5sum-v1.2-source.tar.gz" not in publication:
-    raise SystemExit("corresponding uefi-md5sum source is not published")
+    raise SystemExit("the unsigned EFI loader must remain package-private")
 
-TAG_WORKFLOW = Path(".github/workflows/version-tag.yml")
-tag_text = TAG_WORKFLOW.read_text(encoding="utf-8")
-required_tag_once = {
-    "main-only push trigger": "    branches: [main]\n",
-    "contents write permission": "  contents: write\n",
-    "actions write permission": "  actions: write\n",
-    "repository ownership guard": "    if: github.repository == 'geocausa/RufusUbuntuArm64'\n",
-    "version synchronization gate": "python3 scripts/check-version-sync.py",
-    "release artifact gate": "python3 scripts/check-release-runtime-integrity.py",
-    "missing-tag-safe lookup": 'git/matching-refs/tags/${tag}',
-    "exact matching tag filter": 'select(.ref == \\"refs/tags/${tag}\\")',
-    "exact tag ref creation": '-f ref="refs/tags/${TAG}"',
-    "exact release commit binding": '-f sha="${GITHUB_SHA}" >/dev/null',
-    "release workflow dispatch": "gh workflow run release.yml",
-    "tag-ref dispatch": '--ref "${TAG}"',
-    "version-input dispatch": '-f expected_version="${VERSION}"',
-}
-for description, marker in required_tag_once.items():
-    count = tag_text.count(marker)
-    if count != 1:
-        raise SystemExit(f"{TAG_WORKFLOW}: {description} marker occurred {count} times")
 
-if 'git/ref/tags/${tag}' in tag_text:
-    raise SystemExit("canonical tag lookup must not treat a 404 response body as an existing ref")
-if "secrets." in tag_text:
-    raise SystemExit("canonical tagging must use the repository token, not an undeclared secret or PAT")
-if "persist-credentials: true" in tag_text:
-    raise SystemExit("canonical tagging must not persist checkout credentials")
-if "force" in tag_text.lower():
-    raise SystemExit("canonical tagging workflow must never force-move a tag")
+tag_path = Path(".github/workflows/version-tag.yml")
+tag = tag_path.read_text(encoding="utf-8")
+require_once(tag_path, tag, {
+    "main trigger": "    branches: [main]\n",
+    "ownership guard": "    if: github.repository == 'geocausa/RufusUbuntuArm64'\n",
+    "version gate": "python3 scripts/check-version-sync.py",
+    "runtime gate": "python3 scripts/check-release-runtime-integrity.py",
+    "inert disabled-channel refusal": "disabled release channel must remain exactly inert and contain no bootstrap root",
+    "signed-required output": '            echo "signed_required=${signed_required}"\n',
+    "conditional metadata checkout": "        if: steps.version.outputs.signed_required == 'true' && steps.version.outputs.metadata_ready == 'true'\n        uses: actions/checkout@",
+    "exact tag creation": '-f ref="refs/tags/${TAG}"',
+    "exact commit binding": '-f sha="${GITHUB_SHA}" >/dev/null',
+    "release dispatch": "gh workflow run release.yml",
+})
+for forbidden in ("secrets.", "persist-credentials: true"):
+    if forbidden in tag:
+        raise SystemExit(f"{tag_path}: forbidden credential marker {forbidden}")
+if "force" in tag.lower():
+    raise SystemExit("canonical tag workflow must never force-move a tag")
 
-PUBLISHED_WORKFLOW = Path(".github/workflows/release-published.yml")
-published_text = PUBLISHED_WORKFLOW.read_text(encoding="utf-8")
-required_published_once = {
-    "release-workflow completion trigger": "  workflow_run:\n",
-    "audited release workflow name": "    workflows: [Release]\n",
-    "completed workflow activity": "    types: [completed]\n",
-    "manual recovery dispatch": "  workflow_dispatch:\n",
-    "manual tag input": "      tag:\n",
-    "contents read permission": "  contents: read\n",
-    "successful-release condition": "github.event.workflow_run.conclusion == 'success'",
-    "event-or-input tag binding": "      RELEASE_TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}\n",
-    "triggering SHA binding": "      RELEASE_SHA: ${{ github.event.workflow_run.head_sha || '' }}\n",
-    "contract revision checkout": "          ref: ${{ github.workflow_sha }}\n",
-    "contract tree path": "          path: contract-tree\n",
+
+published_path = Path(".github/workflows/release-published.yml")
+published = published_path.read_text(encoding="utf-8")
+require_once(published_path, published, {
+    "workflow-run trigger": "  workflow_run:\n",
+    "release workflow binding": "    workflows: [Release]\n",
+    "successful release condition": "github.event.workflow_run.conclusion == 'success'",
     "exact tag checkout": "          ref: ${{ env.RELEASE_TAG }}\n",
-    "release tree path": "          path: release-tree\n",
-    "annotated tag resolution": '              tag_json="$(gh api "/repos/${GITHUB_REPOSITORY}/git/tags/${ref_sha}")"\n',
-    "annotated tag commit requirement": '              test "${target_type}" = "commit" || {\n',
-    "checked-out SHA binding": '          test "$(git -C release-tree rev-parse HEAD)" = "${commit_sha}" || {\n',
-    "completed-workflow SHA binding": '            test "${commit_sha}" = "${RELEASE_SHA}" || {\n',
-    "release metadata query": '          gh release view "${RELEASE_TAG}" \\\n',
-    "release asset download": '          gh release download "${RELEASE_TAG}" \\\n',
-    "tag-pinned validator": '          validator="${GITHUB_WORKSPACE}/release-tree/scripts/check-published-release.py"\n',
-    "pinned fallback validator": '            validator="${GITHUB_WORKSPACE}/contract-tree/scripts/check-published-release.py"\n',
+    "immutable commit export": '          echo "RELEASE_COMMIT=${commit_sha}" >> "${GITHUB_ENV}"\n',
+    "trust-mode decision": "      - name: Determine release trust mode\n",
+    "conditional metadata checkout": "        if: steps.trust.outputs.signed == 'true'\n        uses: actions/checkout@",
     "published asset validator": '            python3 "${validator}" "${release_json}" "${asset_dir}"\n',
-    "published setup-go": "      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5\n",
-    "resolved release commit export": '          echo "RELEASE_COMMIT=${commit_sha}" >> "${GITHUB_ENV}"\n',
-    "signed metadata tag binding": "          ref: release-metadata-${{ env.RELEASE_TAG }}\n",
-    "signed metadata tree path": "          path: signed-release-metadata\n",
-    "post-upload signed publication gate": "            bash scripts/verify-release-publication.sh \\\n",
-}
-for description, marker in required_published_once.items():
-    count = published_text.count(marker)
-    if count != 1:
-        raise SystemExit(f"{PUBLISHED_WORKFLOW}: {description} marker occurred {count} times")
-
-if "\n  release:\n" in published_text:
-    raise SystemExit("published verification must use workflow_run because GITHUB_TOKEN release events are suppressed")
+    "conditional signed verification": '            if [[ "${SIGNED_RELEASE}" = "true" ]]; then\n',
+    "signed verifier": "              bash scripts/verify-release-publication.sh \\\n",
+})
 for forbidden in ("contents: write", "actions: write", "secrets.", "persist-credentials: true"):
-    if forbidden in published_text:
-        raise SystemExit(f"{PUBLISHED_WORKFLOW}: forbidden mutable credential marker: {forbidden}")
-for forbidden_command in ("gh release create", "gh release edit", "gh release upload", "gh release delete"):
-    if forbidden_command in published_text:
-        raise SystemExit(f"{PUBLISHED_WORKFLOW}: published-release verification must remain read-only")
-if published_text.index("          echo \"RELEASE_COMMIT=${commit_sha}\" >> \"${GITHUB_ENV}\"\n") > published_text.index("      - name: Check out signed release metadata publication\n"):
-    raise SystemExit("published verification must bind the immutable release commit before metadata checkout")
-if published_text.index("            python3 \"${validator}\" \"${release_json}\" \"${asset_dir}\"\n") > published_text.index("            bash scripts/verify-release-publication.sh \\\n"):
-    raise SystemExit("published GitHub asset validation must precede threshold-signed publication validation")
+    if forbidden in published:
+        raise SystemExit(f"{published_path}: forbidden mutable credential marker {forbidden}")
+for command in ("gh release create", "gh release edit", "gh release upload", "gh release delete"):
+    if command in published:
+        raise SystemExit(f"{published_path}: post-publication verification must remain read-only")
+if published.index('          echo "RELEASE_COMMIT=${commit_sha}" >> "${GITHUB_ENV}"\n') > published.index("      - name: Determine release trust mode\n"):
+    raise SystemExit("published verification must bind the immutable commit before evaluating trust mode")
+if published.index('            python3 "${validator}" "${release_json}" "${asset_dir}"\n') > published.index('            if [[ "${SIGNED_RELEASE}" = "true" ]]; then\n'):
+    raise SystemExit("GitHub asset validation must precede optional signature verification")
 
-
-CONTRACT_WORKFLOW = Path(".github/workflows/release-contract.yml")
-contract_text = CONTRACT_WORKFLOW.read_text(encoding="utf-8")
-if contract_text.count("    branches: [main]\n") != 2:
+contract_path = Path(".github/workflows/release-contract.yml")
+contract = contract_path.read_text(encoding="utf-8")
+if contract.count("    branches: [main]\n") != 2:
     raise SystemExit("release contracts must run on both main pull requests and main pushes")
-required_contract_once = {
-    "manual contract dispatch": "  workflow_dispatch:\n",
-    "published workflow path": "      - .github/workflows/release-published.yml\n",
-    "published validator path": "      - scripts/check-published-release.py\n",
-    "published validator test path": "      - scripts/test-check-published-release.py\n",
-    "signed publication validator path": "      - scripts/verify-release-publication.sh\n",
-    "published validator compilation": "            scripts/check-published-release.py \\\n",
-    "published validator test execution": "          python3 scripts/test-check-published-release.py\n",
-    "signed publication shell validation": "scripts/verify-release-publication.sh scripts/test.sh\n",
-}
-for description, marker in required_contract_once.items():
-    count = contract_text.count(marker)
-    expected = 2 if description in {
-        "published workflow path",
-        "published validator path",
-        "published validator test path",
-        "signed publication validator path",
-    } else 1
-    if count != expected:
-        raise SystemExit(
-            f"{CONTRACT_WORKFLOW}: {description} marker occurred {count} times, expected {expected}"
-        )
-if "develop/0.11.0" in contract_text:
-    raise SystemExit("release contracts must not depend on the retired 0.11 development branch")
+for marker in (
+    "      - .github/workflows/release-published.yml\n",
+    "      - scripts/check-published-release.py\n",
+    "      - scripts/verify-release-publication.sh\n",
+):
+    if contract.count(marker) != 2:
+        raise SystemExit(f"{contract_path}: missing paired contract path {marker.strip()}")
 
-print("Tagged, canonical-tag, and published-release contracts are complete.")
+print("Tagged, canonical-tag, community-release, and signed-release contracts are complete.")

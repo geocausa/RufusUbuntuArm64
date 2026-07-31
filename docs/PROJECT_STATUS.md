@@ -8,10 +8,13 @@ RufusArm64 is an independent Linux-native implementation of materially relevant 
 
 | Channel | Meaning |
 | --- | --- |
-| Tagged stable release | Immutable source and package artifacts associated with one reviewed Git tag. |
+| Tagged community release | Immutable source and package artifacts associated with one reviewed Git tag; software-qualified but not universally hardware-certified. |
 | Prerelease | A tagged release candidate intended for controlled qualification. |
-| `main` | Current integrated development. It may be ahead of every public package and must not be represented as a published release. |
+| `main` | Matches `v0.16.0` at publication. Any later commit is unreleased until another tag is published. |
 | Feature branch | Temporary review scope. Merged branches are deleted automatically; the pull request and commit history remain. |
+
+
+**Current public release:** `v0.16.0`. The project is entering maintenance mode after this consolidated publication; future work should be limited to specific, reproducible defects or explicitly selected tasks.
 
 ## Current capability summary
 
@@ -25,7 +28,7 @@ RufusArm64 is an independent Linux-native implementation of materially relevant 
 | Linux persistence | Bounded implementation | Qualified Ubuntu casper and Debian live-boot paths; broader distribution and NTFS-persistence coverage remain incomplete. |
 | UEFI runtime media validation | Software implemented | The optional ARM64 loader is unsigned; physical Secure Boot acceptance remains unqualified. |
 | FFU | Experimental partial implementation | Single-store-v1 restore only; capture and broader profiles are not implemented. |
-| Release/update trust | Software foundation implemented | Production offline-key ceremony, public signed catalogue, and mirror operations remain pending. |
+| Release/update trust | Dual-mode publication implemented | Community releases use exact tags, reproducibility, checksums, source archives, and post-publication validation while the update channel is disabled; threshold signatures become mandatory if it is enabled. |
 | Localisation | Planned | The interface and accessibility review are not yet translation-complete. |
 
 ## Qualification language

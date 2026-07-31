@@ -1,6 +1,6 @@
 # Threshold-signed release metadata and verified updates
 
-Status: **verification, persistent rollback state, exact package download, and signed release-publication enforcement implemented; production signing and installation are not yet enabled**.
+Status: **verification, persistent rollback state, exact package download, and conditional signed release-publication enforcement implemented; the production signed channel and package installation are not enabled**.
 
 RufusArm64 release assets were already reproducible and bound by published SHA-256 sidecars. That proves that downloaded bytes match release metadata served by GitHub, but it does not create an independent project-controlled publisher signature. This tranche reuses the acquisition channel's offline Ed25519 trust model for release metadata instead of introducing CI-held private keys or a second cryptographic format.
 
@@ -48,6 +48,8 @@ rufus-channel-admin verify release \
 ```
 
 A production ceremony must use independently controlled offline keys, record public-key fingerprints and custody, require the configured threshold, preserve signed root history and publish no private material. The exact production roots and signed release envelope are not yet present in the repository.
+
+The repository therefore supports two explicit publication modes. While the package-owned channel is exactly disabled and contains no bootstrap root, a community release may be published from an immutable canonical tag after the full build, test, reproducibility, checksum, source-archive, and post-publication asset checks pass. This mode does not claim project-controlled offline signatures. If the channel is enabled, the canonical tag, pre-upload workflow, and post-publication verifier all require the threshold-signed metadata publication and fail closed if it is absent.
 
 ## Release publication enforcement
 
