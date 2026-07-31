@@ -31,12 +31,24 @@ type Asset struct {
 	path   string
 	size   uint64
 	digest [sha256.Size]byte
+	report ArchitectureReport
 }
 
 func (asset Asset) Path() string { return asset.path }
 func (asset Asset) Size() uint64 { return asset.size }
 func (asset Asset) SHA256() string {
 	return fmt.Sprintf("%x", asset.digest)
+}
+
+// ArchitectureReport returns a detached copy of the structurally verified
+// multi-architecture loader manifest carried by the pinned image.
+func (asset Asset) ArchitectureReport() (ArchitectureReport, error) {
+	if asset.report.Schema != architectureReportSchema || asset.report.ManifestSHA256 == "" {
+		return ArchitectureReport{}, errors.New("UEFI:NTFS architecture evidence is unavailable")
+	}
+	report := asset.report
+	report.Architectures = append([]ArchitectureEvidence(nil), asset.report.Architectures...)
+	return report, nil
 }
 
 // Partition identifies the exact whole-disk extent reserved for UEFI:NTFS.
@@ -101,6 +113,9 @@ func WriteAndVerify(target Target, asset Asset, partition Partition) error {
 	defer image.Close()
 	if current.digest != asset.digest {
 		return errors.New("UEFI:NTFS image evidence changed before writing")
+	}
+	if asset.report.Schema != 0 && current.report.ManifestSHA256 != asset.report.ManifestSHA256 {
+		return errors.New("UEFI:NTFS architecture evidence changed before writing")
 	}
 
 	writer := io.NewOffsetWriter(target, int64(partition.StartBytes))
@@ -206,7 +221,25 @@ func openVerifiedAsset(path string, expectedSize uint64, expectedSHA256 string) 
 		file.Close()
 		return nil, Asset{}, fmt.Errorf("rewind UEFI:NTFS image %s: %w", path, err)
 	}
-	return file, Asset{path: path, size: expectedSize, digest: actual}, nil
+	asset := Asset{path: path, size: expectedSize, digest: actual}
+	pinnedDigest, digestErr := parseDigest(ImageSHA256)
+	if digestErr != nil {
+		file.Close()
+		return nil, Asset{}, fmt.Errorf("parse pinned UEFI:NTFS digest: %w", digestErr)
+	}
+	if actual == pinnedDigest {
+		report, err := inspectPinnedArchitectureManifest(file, asset.SHA256())
+		if err != nil {
+			file.Close()
+			return nil, Asset{}, fmt.Errorf("verify pinned UEFI:NTFS architecture manifest: %w", err)
+		}
+		asset.report = report
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			file.Close()
+			return nil, Asset{}, fmt.Errorf("rewind UEFI:NTFS image after architecture inspection: %w", err)
+		}
+	}
+	return file, asset, nil
 }
 
 func parseDigest(value string) ([sha256.Size]byte, error) {
