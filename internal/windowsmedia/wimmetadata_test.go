@@ -4,6 +4,7 @@ package windowsmedia
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"strings"
@@ -13,7 +14,7 @@ import (
 
 func TestParseWIMMetadata(t *testing.T) {
 	xml := `<WIM>
-  <IMAGE INDEX="1"><NAME>Windows 11 Pro</NAME><WINDOWS><ARCH>12</ARCH><PRODUCTNAME>Microsoft Windows 11 Pro</PRODUCTNAME><LANGUAGES><LANGUAGE>en-GB</LANGUAGE><DEFAULT>en-GB</DEFAULT></LANGUAGES><INSTALLATIONTYPE>Client</INSTALLATIONTYPE><VERSION><MAJOR>10</MAJOR><MINOR>0</MINOR><BUILD>26100</BUILD></VERSION></WINDOWS></IMAGE>
+  <IMAGE INDEX="1"><TOTALBYTES>26511788309</TOTALBYTES><NAME>Windows 11 Pro</NAME><WINDOWS><ARCH>12</ARCH><PRODUCTNAME>Microsoft Windows 11 Pro</PRODUCTNAME><LANGUAGES><LANGUAGE>en-GB</LANGUAGE><DEFAULT>en-GB</DEFAULT></LANGUAGES><INSTALLATIONTYPE>Client</INSTALLATIONTYPE><VERSION><MAJOR>10</MAJOR><MINOR>0</MINOR><BUILD>26100</BUILD></VERSION></WINDOWS></IMAGE>
   <IMAGE INDEX="2"><NAME>Windows 11 Home</NAME><WINDOWS><ARCH>12</ARCH><PRODUCTNAME>Microsoft Windows 11 Home</PRODUCTNAME><INSTALLATIONTYPE>Client</INSTALLATIONTYPE><VERSION><MAJOR>10</MAJOR><MINOR>0</MINOR><BUILD>26100</BUILD></VERSION></WINDOWS></IMAGE>
 </WIM>`
 	metadata, err := parseWIMMetadata(strings.NewReader(xml))
@@ -29,8 +30,17 @@ func TestParseWIMMetadata(t *testing.T) {
 	if got := strings.Join(metadata.EditionNames, "|"); got != "Windows 11 Pro|Windows 11 Home" {
 		t.Fatalf("edition names=%q", got)
 	}
-	if len(metadata.Images) != 2 || metadata.Images[0].Index != 1 || metadata.Images[0].Name != "Windows 11 Pro" || metadata.Images[0].DefaultLanguage != "en-GB" || metadata.Images[1].Index != 2 {
+	if len(metadata.Images) != 2 || metadata.Images[0].Index != 1 || metadata.Images[0].Name != "Windows 11 Pro" || metadata.Images[0].DefaultLanguage != "en-GB" || metadata.Images[0].TotalBytes != 26_511_788_309 || metadata.Images[1].Index != 2 {
 		t.Fatalf("exact images=%#v", metadata.Images)
+	}
+}
+
+func TestParseWIMMetadataRejectsInvalidExpandedSize(t *testing.T) {
+	for _, value := range []string{"0", "-1", "not-a-number", "18446744073709551616"} {
+		xml := `<WIM><IMAGE INDEX="1"><TOTALBYTES>` + value + `</TOTALBYTES><NAME>Windows 11 Pro</NAME><WINDOWS><ARCH>12</ARCH><PRODUCTNAME>Windows 11 Pro</PRODUCTNAME><INSTALLATIONTYPE>Client</INSTALLATIONTYPE></WINDOWS></IMAGE></WIM>`
+		if _, err := parseWIMMetadata(strings.NewReader(xml)); err == nil || !strings.Contains(err.Error(), "TOTALBYTES") {
+			t.Fatalf("TOTALBYTES %q error=%v", value, err)
+		}
 	}
 }
 
@@ -203,5 +213,11 @@ func TestParseWIMMetadataUsesDisplayNameForWindows11Identity(t *testing.T) {
 	}
 	if len(metadata.EditionNames) != 1 || metadata.EditionNames[0] != "Windows 11 Pro" {
 		t.Fatalf("edition names=%v", metadata.EditionNames)
+	}
+}
+
+func TestInspectWIMMetadataWithExecutableRejectsMissingBoundary(t *testing.T) {
+	if _, err := InspectWIMMetadataWithExecutable(context.Background(), "", "/tmp/install.wim"); err == nil || !strings.Contains(err.Error(), "executable") {
+		t.Fatalf("empty executable error=%v", err)
 	}
 }

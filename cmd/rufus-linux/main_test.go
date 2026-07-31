@@ -36,6 +36,8 @@ func TestSelectWriteMode(t *testing.T) {
 		{"plain optical windows", "auto", imaging.ImageInfo{HasISO9660: true, HasWindowsBootWIM: true, HasWindowsInstallPayload: true}, false, "windows", false},
 		{"plain optical Linux requires ISO mode", "auto", imaging.ImageInfo{HasISO9660: true}, false, "", true},
 		{"explicit Windows requires markers", "windows", imaging.ImageInfo{HasISO9660: true}, false, "", true},
+		{"explicit Windows To Go", "windows-to-go", imaging.ImageInfo{HasUDF: true, HasWindowsBootWIM: true, HasWindowsInstallPayload: true}, false, "windows-to-go", false},
+		{"Windows To Go requires markers", "windows-to-go", imaging.ImageInfo{HasUDF: true}, false, "", true},
 		{"gpt raw", "auto", imaging.ImageInfo{HasGPT: true}, false, "raw", false},
 		{"unknown rejected", "auto", imaging.ImageInfo{}, false, "", true},
 		{"unknown expert force", "auto", imaging.ImageInfo{}, true, "raw", false},
@@ -848,5 +850,37 @@ func TestWriteRecognizesSilentInstallFlags(t *testing.T) {
 	err := run([]string{"write", "--win-silent-install", "--win-install-image-index", "2", "--win-silent-confirm", "ERASE DISK 0"})
 	if err == nil || err.Error() != "--image and --device are required" {
 		t.Fatalf("silent-install flags were not parsed before required-argument validation: %v", err)
+	}
+}
+
+func TestWindowsToGoAcknowledgementIsIndependentAndExact(t *testing.T) {
+	if err := validateWindowsToGoAcknowledgement(true, true, 3, "CREATE EXPERIMENTAL WINDOWS TO GO"); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		selected, experimental bool
+		index                  int
+		confirmation           string
+		want                   string
+	}{
+		{true, false, 3, "CREATE EXPERIMENTAL WINDOWS TO GO", "--experimental-windows-to-go"},
+		{true, true, 0, "CREATE EXPERIMENTAL WINDOWS TO GO", "--win-to-go-image-index"},
+		{true, true, 257, "CREATE EXPERIMENTAL WINDOWS TO GO", "--win-to-go-image-index"},
+		{true, true, 3, "create experimental windows to go", "CREATE EXPERIMENTAL WINDOWS TO GO"},
+		{false, true, 0, "", "require --mode windows-to-go"},
+		{false, false, 3, "", "require --mode windows-to-go"},
+		{false, false, 0, "CREATE EXPERIMENTAL WINDOWS TO GO", "require --mode windows-to-go"},
+	} {
+		err := validateWindowsToGoAcknowledgement(test.selected, test.experimental, test.index, test.confirmation)
+		if err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Fatalf("case %#v error=%v", test, err)
+		}
+	}
+}
+
+func TestWriteRecognizesWindowsToGoFlags(t *testing.T) {
+	err := run([]string{"write", "--mode", "windows-to-go", "--experimental-windows-to-go", "--win-to-go-image-index", "3", "--win-to-go-confirm", "CREATE EXPERIMENTAL WINDOWS TO GO"})
+	if err == nil || err.Error() != "--image and --device are required" {
+		t.Fatalf("Windows To Go flags were not parsed before required-argument validation: %v", err)
 	}
 }

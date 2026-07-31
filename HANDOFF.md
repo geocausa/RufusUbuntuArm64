@@ -58,9 +58,8 @@ The current strategic sequence is:
    updates, the production official-image catalogue, localisation and portable
    distribution;
 3. continue high-value upstream Rufus parity tranches;
-4. reassess deferred long-tail items—including Windows To Go and formats whose
-   Linux implementation is currently incomplete—after the stable media paths
-   and release pipeline are physically qualified.
+4. physically qualify the experimental Windows To Go ARM64 path and continue
+   only those long-tail formats that have a trustworthy Linux-native implementation.
 
 Development policy: implement a coherent major tranche, test it locally on the
 native ARM64 host, use loop devices and the sacrificial USB where the evidence

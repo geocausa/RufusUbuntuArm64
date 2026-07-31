@@ -410,15 +410,17 @@ Priority: optional
 Architecture: ${ARCH}
 Maintainer: geocausa <noreply@github.com>
 Installed-Size: ${INSTALLED_SIZE}
-Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, mount, fdisk, dosfstools, exfatprogs, e2fsprogs, ntfs-3g, udftools, udev, xz-utils, zstd, qemu-utils, genisoimage
+Depends: libc6 (>= 2.38), python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, pkexec, mount, fdisk, dosfstools, exfatprogs, e2fsprogs, ntfs-3g, libhivex-bin, udftools, udev, xz-utils, zstd, qemu-utils, genisoimage
 Homepage: https://github.com/geocausa/RufusUbuntuArm64
 Description: Bootable USB creator for Ubuntu ARM64
  A graphical utility that writes Linux ISOHybrid/raw images, creates verified
  persistent Ubuntu/Debian live media, creates Windows installation USB media,
- creates verified x86 BIOS/Legacy FreeDOS 1.4 media, captures verified
- physical-drive images, and creates validated mounted-filesystem ISO/UDF remasters. It supports GPT or MBR,
- UEFI or x86-family BIOS/CSM, FAT32 or NTFS, compressed or virtual-disk inputs,
- Secure Boot DBX checks, verified boot assets, WIM splitting, and optional drivers.
+ provides an experimental Windows To Go ARM64 path, creates verified x86
+ BIOS/Legacy FreeDOS 1.4 media, captures verified physical-drive images, and
+ creates validated mounted-filesystem ISO/UDF remasters. It supports GPT or
+ MBR, UEFI or x86-family BIOS/CSM, FAT32 or NTFS, compressed or virtual-disk
+ inputs, Secure Boot DBX checks, verified boot assets, WIM splitting, and
+ optional drivers.
 CONTROL
 
 cat > "${PACKAGE_DIR}/DEBIAN/postinst" <<'POSTINST'

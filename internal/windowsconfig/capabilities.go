@@ -12,6 +12,7 @@ type WindowsImage struct {
 	Index           int    `json:"index"`
 	Name            string `json:"name"`
 	DefaultLanguage string `json:"default_language,omitempty"`
+	TotalBytes      uint64 `json:"total_bytes,omitempty"`
 }
 
 // MediaMetadata contains the Windows identity facts obtained from inspected

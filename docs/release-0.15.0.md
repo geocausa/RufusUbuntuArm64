@@ -38,7 +38,7 @@ Every media-creation path can destroy all accessible data on the selected target
 
 The package-owned ARM64 `uefi-md5sum` loader remains unsigned. **Secure Boot compatibility is not established** for that optional persistent-media wrapper. ISO Image mode itself does not claim Secure Boot acceptance merely because a fallback loader is structurally present.
 
-The production built-in acquisition channel remains disabled until reviewed public mirrors, offline root-key operations, and a signed catalogue are provisioned. FFU restoration remains experimental and narrowly scoped; FFU capture is not implemented. Windows To Go remains deferred.
+The production built-in acquisition channel remains disabled until reviewed public mirrors, offline root-key operations, and a signed catalogue are provisioned. FFU restoration remains experimental and narrowly scoped; FFU capture is not implemented. The Windows To Go ARM64 software path is experimental and remains unqualified on physical firmware and first boot.
 
 ## Verification and release construction
 
