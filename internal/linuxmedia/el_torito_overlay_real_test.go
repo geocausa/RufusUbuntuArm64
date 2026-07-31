@@ -203,11 +203,11 @@ func TestCreateExtractedOnRealLoopDeviceWithElToritoOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata, err := exec.Command("blkid", "-p", "-o", "export", partitionPath).CombinedOutput()
+	metadata, err := waitForExtractedBlkid(partitionPath, false, 10*time.Second)
 	if err != nil || !strings.Contains(string(metadata), "TYPE=vfat") || !strings.Contains(string(metadata), "LABEL=ELTORITO") {
 		t.Fatalf("unexpected completed metadata err=%v:\n%s", err, metadata)
 	}
-	output, err := exec.Command("mount", "-t", "vfat", "-o", "ro,nosuid,nodev,noexec", "--", partitionPath, mountRoot).CombinedOutput()
+	output, err := waitForExtractedReadOnlyMount(partitionPath, mountRoot, "vfat", 10*time.Second)
 	if err != nil {
 		t.Fatalf("mount completed target: %v: %s", err, strings.TrimSpace(string(output)))
 	}

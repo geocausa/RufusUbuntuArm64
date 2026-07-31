@@ -34,6 +34,7 @@ type CreateOptions struct {
 	ExpectedIdentity  string
 	ExpectedSource    sourcefile.Identity
 	ImageIndex        int
+	Customizations    Customizations
 	BeforeDestructive func(source *os.File) error
 }
 
@@ -233,7 +234,7 @@ func Create(ctx context.Context, isoPath, devicePath string, options CreateOptio
 	plan, err := BuildPlan(Request{
 		TargetPath: devicePath, ExpectedIdentity: options.ExpectedIdentity,
 		TargetSizeBytes: options.TargetSizeBytes, LogicalSectorSize: options.LogicalSectorSize,
-		Metadata: metadata, ImageIndex: options.ImageIndex,
+		Metadata: metadata, ImageIndex: options.ImageIndex, Customizations: options.Customizations,
 	})
 	if err != nil {
 		return Result{}, err
@@ -375,7 +376,7 @@ func Create(ctx context.Context, isoPath, devicePath string, options CreateOptio
 		return Result{}, fmt.Errorf("mount Windows To Go ESP privately: %w", err)
 	}
 	mountedESP = true
-	sendEvent(emit, Event{Stage: "boot", Message: "Installing and verifying Microsoft ARM64 EFI boot files, BCD, and offline SAN policy…"})
+	sendEvent(emit, Event{Stage: "boot", Message: "Installing and verifying Microsoft ARM64 EFI boot files, BCD, and the Windows To Go first-boot answer file…"})
 	materialization, err := Materialize(ctx, osMount, espMount, plan, layout)
 	if err != nil {
 		return Result{}, err

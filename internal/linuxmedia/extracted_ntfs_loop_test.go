@@ -169,9 +169,9 @@ func testCreateExtractedNTFSOnRealLoopDevice(t *testing.T, scheme, label string)
 		}
 	}
 
-	blkidOutput, err := exec.Command("blkid", "-p", "--no-encoding", "-o", "export", dataPartitionPath).CombinedOutput()
+	blkidOutput, err := waitForExtractedBlkid(dataPartitionPath, true, 10*time.Second)
 	if err != nil {
-		t.Fatalf("inspect completed NTFS partition: %v: %s", err, strings.TrimSpace(string(blkidOutput)))
+		t.Fatalf("inspect completed NTFS partition: %v", err)
 	}
 	metadata := string(blkidOutput)
 	if !strings.Contains(metadata, "TYPE=ntfs") || !strings.Contains(metadata, "LABEL="+label) {
@@ -181,7 +181,7 @@ func testCreateExtractedNTFSOnRealLoopDevice(t *testing.T, scheme, label string)
 		t.Fatalf("compare reopened UEFI:NTFS boot partition: %v", err)
 	}
 
-	output, err = exec.Command("mount", "-o", "ro,nosuid,nodev,noexec", "--", dataPartitionPath, mountRoot).CombinedOutput()
+	output, err = waitForExtractedReadOnlyMount(dataPartitionPath, mountRoot, "", 10*time.Second)
 	if err != nil {
 		t.Fatalf("mount completed %s NTFS media: %v: %s", scheme, err, strings.TrimSpace(string(output)))
 	}

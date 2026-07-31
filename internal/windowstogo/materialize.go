@@ -32,6 +32,8 @@ type MaterializationEvidence struct {
 	BootManagerAuthenticodeSHA256 string      `json:"boot_manager_authenticode_sha256"`
 	FallbackAuthenticodeSHA256    string      `json:"fallback_authenticode_sha256"`
 	OfflinePolicySHA256           string      `json:"offline_policy_sha256"`
+	AnswerFileSHA256              string      `json:"answer_file_sha256"`
+	AnswerFileBytes               uint64      `json:"answer_file_bytes"`
 	BCD                           BCDEvidence `json:"bcd"`
 }
 
@@ -167,21 +169,29 @@ func Materialize(ctx context.Context, osRoot, espRoot string, plan Plan, layout 
 	if err := ensureNoCaseInsensitiveEntry(panther, "unattend.xml"); err != nil {
 		return MaterializationEvidence{}, fmt.Errorf("refuse to replace existing Windows answer file: %w", err)
 	}
-	policy, err := WindowsToGoOfflinePolicy()
+	answerFile, err := WindowsToGoAnswerFile(plan.Customizations)
 	if err != nil {
 		return MaterializationEvidence{}, err
 	}
-	policyPath := filepath.Join(panther, "unattend.xml")
-	policyHash, err := writeFileExact(policyPath, policy)
+	answerDigest := sha256.Sum256(answerFile)
+	answerHash := hex.EncodeToString(answerDigest[:])
+	if uint64(len(answerFile)) != plan.AnswerFileBytes || answerHash != plan.AnswerFileSHA256 {
+		return MaterializationEvidence{}, errors.New("windows To Go answer file changed after planning")
+	}
+	answerPath := filepath.Join(panther, "unattend.xml")
+	writtenHash, err := writeFileExact(answerPath, answerFile)
 	if err != nil {
-		return MaterializationEvidence{}, fmt.Errorf("write Windows To Go offline SAN policy: %w", err)
+		return MaterializationEvidence{}, fmt.Errorf("write Windows To Go answer file: %w", err)
 	}
 
 	return MaterializationEvidence{
 		BootFiles: files, BootBytes: bytesCopied,
 		BootManagerSHA256: bootRawHash, FallbackSHA256: fallbackHash,
 		BootManagerAuthenticodeSHA256: bootPE.SHA256, FallbackAuthenticodeSHA256: fallbackPE.SHA256,
-		OfflinePolicySHA256: policyHash, BCD: bcd,
+		OfflinePolicySHA256: writtenHash,
+		AnswerFileSHA256:    writtenHash,
+		AnswerFileBytes:     uint64(len(answerFile)),
+		BCD:                 bcd,
 	}, nil
 }
 
@@ -478,19 +488,20 @@ func VerifyMaterialization(ctx context.Context, osRoot, espRoot string, plan Pla
 	if err != nil {
 		return err
 	}
-	expectedPolicy, err := WindowsToGoOfflinePolicy()
+	expectedAnswer, err := WindowsToGoAnswerFile(plan.Customizations)
 	if err != nil {
 		return err
 	}
-	if string(policy) != string(expectedPolicy) {
-		return errors.New("read-back Windows To Go offline SAN policy differs from the reviewed bytes")
+	if string(policy) != string(expectedAnswer) {
+		return errors.New("read-back Windows To Go answer file differs from the reviewed bytes")
 	}
-	policyHash, err := hashFile(policyPath)
+	answerHash, err := hashFile(policyPath)
 	if err != nil {
 		return err
 	}
-	if policyHash != expected.OfflinePolicySHA256 {
-		return errors.New("read-back Windows To Go offline SAN policy hash mismatch")
+	if uint64(len(policy)) != expected.AnswerFileBytes || expected.AnswerFileBytes != plan.AnswerFileBytes ||
+		answerHash != expected.AnswerFileSHA256 || answerHash != expected.OfflinePolicySHA256 || answerHash != plan.AnswerFileSHA256 {
+		return errors.New("read-back Windows To Go answer-file evidence mismatch")
 	}
 
 	bcdPath, err := findCaseInsensitive(bootDir, "BCD")

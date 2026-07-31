@@ -646,12 +646,26 @@ func runWrite(args []string) error {
 	if selectedMode != "windows" && selectedMode != "windows-to-go" && (winOptions.Enabled() || *winUseCA2023Bootloaders || scheme != "auto" || targetSystemChoice != "auto" || filesystemChoice != "auto" || clusterSize != 0 || *driverFolder != "" || *dbxFile != "" || *fullFormat || *badBlockCheck) {
 		return errors.New("windows partition and setup options can only be used with a supported Windows installation ISO")
 	}
+	wtgCustomizations := windowstogo.Customizations{
+		BypassOnlineAccount:  winOptions.BypassOnlineAccount,
+		LocalAccount:         winOptions.LocalAccount,
+		ReduceDataCollection: winOptions.ReduceDataCollection,
+		QualityOfLife:        winOptions.QualityOfLife,
+		Locale:               winOptions.Locale,
+		TimeZone:             winOptions.TimeZone,
+	}
 	if selectedMode == "windows-to-go" {
 		if err := validateWindowsToGoAcknowledgement(true, *experimentalWindowsToGo, *winToGoImageIndex, *winToGoConfirm); err != nil {
 			return err
 		}
-		if winOptions.Enabled() || *winUseCA2023Bootloaders || scheme != "auto" || targetSystemChoice != "auto" || filesystemChoice != "auto" || clusterSize != 0 || *driverFolder != "" || *dbxFile != "" || *fullFormat || *badBlockCheck || *forceRaw || *allowForeignArchitecture {
-			return errors.New("experimental Windows To Go currently requires automatic GPT/UEFI/NTFS settings with no installer customizations, drivers, DBX override, format override, raw override, or foreign architecture")
+		if winOptions.BypassHardwareChecks || winOptions.DisableBitLocker || winOptions.ApplySkuSiPolicy || winOptions.SilentInstall ||
+			winOptions.InstallImageIndex != 0 || *winUseCA2023Bootloaders || scheme != "auto" || targetSystemChoice != "auto" ||
+			filesystemChoice != "auto" || clusterSize != 0 || *driverFolder != "" || *dbxFile != "" || *fullFormat ||
+			*badBlockCheck || *forceRaw || *allowForeignArchitecture {
+			return errors.New("experimental Windows To Go accepts only online-account bypass, local account, reduced data collection, Quality of Life, locale, and time zone; installer-only options, drivers, DBX, format overrides, raw override, and foreign architecture remain unsupported")
+		}
+		if err := windowsconfig.ValidateWindowsToGo(winOptions); err != nil {
+			return fmt.Errorf("validate Windows To Go first-boot options: %w", err)
 		}
 	} else if err := validateWindowsToGoAcknowledgement(false, *experimentalWindowsToGo, *winToGoImageIndex, *winToGoConfirm); err != nil {
 		return err
@@ -806,7 +820,7 @@ func runWrite(args []string) error {
 			TargetSizeBytes: dev.Size, LogicalSectorSize: dev.LogicalSectorSize,
 			ExpectedDeviceID: kernelDeviceID, ExpectedIdentity: selectedIdentity,
 			ExpectedSource: sourceIdentity, ImageIndex: *winToGoImageIndex,
-			BeforeDestructive: postWriteTargetCheck,
+			Customizations: wtgCustomizations, BeforeDestructive: postWriteTargetCheck,
 		}, func(ev windowstogo.Event) {
 			eventName := "stage"
 			if ev.Done > 0 || ev.Total > 0 {
@@ -823,7 +837,7 @@ func runWrite(args []string) error {
 		if err != nil {
 			return err
 		}
-		out.event(jsonEvent{Event: "log", Stage: "windows_to_go", Message: fmt.Sprintf("Windows To Go image %d (%s) was applied and verified; firmware boot remains untested.", wtgResult.Plan.Image.Index, wtgResult.Plan.Image.Name), Hash: wtgResult.SourceSHA256})
+		out.event(jsonEvent{Event: "log", Stage: "windows_to_go", Message: fmt.Sprintf("Windows To Go image %d (%s) was applied and verified with %s; firmware boot remains untested.", wtgResult.Plan.Image.Index, wtgResult.Plan.Image.Name, wtgResult.Plan.Customizations.Summary()), Hash: wtgResult.SourceSHA256})
 		out.event(jsonEvent{Event: "complete", Stage: "complete", Message: "Experimental Windows To Go media created and independently verified."})
 		return nil
 	}
@@ -2577,12 +2591,18 @@ func validateGraphicalWriteEnvelope(envelope graphicalWriteEnvelope) error {
 		if envelope.Verify || envelope.VolumeLabel != "RUFUSARM64" || envelope.PartitionScheme != "auto" ||
 			envelope.TargetSystem != "auto" || envelope.Filesystem != "auto" || envelope.ClusterSize != "auto" ||
 			envelope.DriverFolder != "" || envelope.DBXFile != "" || envelope.FullFormat || envelope.BadBlockCheck ||
-			envelope.WinBypassHardware || envelope.WinBypassOnline || strings.TrimSpace(envelope.WinLocalUser) != "" ||
-			envelope.WinPrivacy || envelope.WinQualityOfLife || envelope.WinApplySkuSiPolicy || envelope.WinSilentInstall ||
+			envelope.WinBypassHardware || envelope.WinApplySkuSiPolicy || envelope.WinSilentInstall ||
 			envelope.WinInstallImageIndex != 0 || envelope.WinSilentConfirm != "" || envelope.WinUseCA2023Bootloaders ||
-			envelope.WinDisableBitLocker || strings.TrimSpace(envelope.WinLocale) != "" || strings.TrimSpace(envelope.WinTimeZone) != "" ||
-			envelope.ExperimentalPersistence || envelope.PersistenceSize != "0" || !envelope.ExperimentalWindowsToGo ||
-			envelope.WinToGoImageIndex < 1 || envelope.WinToGoImageIndex > 256 || envelope.WinToGoConfirm != "CREATE EXPERIMENTAL WINDOWS TO GO" {
+			envelope.WinDisableBitLocker || envelope.ExperimentalPersistence || envelope.PersistenceSize != "0" ||
+			!envelope.ExperimentalWindowsToGo || envelope.WinToGoImageIndex < 1 || envelope.WinToGoImageIndex > 256 ||
+			envelope.WinToGoConfirm != "CREATE EXPERIMENTAL WINDOWS TO GO" {
+			return unsafe
+		}
+		if err := windowsconfig.ValidateWindowsToGo(windowsconfig.Options{
+			BypassOnlineAccount: envelope.WinBypassOnline, LocalAccount: envelope.WinLocalUser,
+			ReduceDataCollection: envelope.WinPrivacy, QualityOfLife: envelope.WinQualityOfLife,
+			Locale: envelope.WinLocale, TimeZone: envelope.WinTimeZone,
+		}); err != nil {
 			return unsafe
 		}
 		return nil

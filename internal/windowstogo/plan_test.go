@@ -3,6 +3,8 @@
 package windowstogo
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 
@@ -38,7 +40,7 @@ func TestBuildPlanAdmitsBoundedARM64Windows11Media(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Schema != 1 || plan.Mode != Mode || !plan.Experimental || plan.BootableClaim {
+	if plan.Schema != 2 || plan.Mode != Mode || !plan.Experimental || plan.BootableClaim {
 		t.Fatalf("unexpected envelope: %#v", plan)
 	}
 	if plan.Image.Index != 3 || plan.Image.Name != "Windows 11 Pro" || plan.Image.TotalBytes != 26_511_788_309 {
@@ -55,6 +57,57 @@ func TestBuildPlanAdmitsBoundedARM64Windows11Media(t *testing.T) {
 	}
 	if err := ValidatePlan(plan); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBuildPlanBindsWindowsToGoFirstBootCustomizations(t *testing.T) {
+	request := baseRequest()
+	request.Customizations = Customizations{
+		BypassOnlineAccount: true, LocalAccount: "PortableUser",
+		ReduceDataCollection: true, QualityOfLife: true,
+		Locale: "en-GB", TimeZone: "GMT Standard Time",
+	}
+	plan, err := BuildPlan(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Customizations != request.Customizations || plan.AnswerFileBytes == 0 || len(plan.AnswerFileSHA256) != 64 {
+		t.Fatalf("incomplete customization evidence: %#v", plan)
+	}
+	answer, err := WindowsToGoAnswerFile(request.Customizations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(answer)
+	if plan.AnswerFileBytes != uint64(len(answer)) || plan.AnswerFileSHA256 != hex.EncodeToString(digest[:]) {
+		t.Fatalf("answer-file evidence mismatch: plan=%#v", plan)
+	}
+
+	changed := request
+	changed.Customizations.QualityOfLife = false
+	other, err := BuildPlan(changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other.AnswerFileSHA256 == plan.AnswerFileSHA256 || other.AnswerFileBytes == 0 {
+		t.Fatal("customization change did not alter the bound answer-file evidence")
+	}
+}
+
+func TestBuildPlanRejectsInvalidWindowsToGoCustomizations(t *testing.T) {
+	for name, customizations := range map[string]Customizations{
+		"reserved account":   {LocalAccount: "Administrator"},
+		"account whitespace": {LocalAccount: " PortableUser"},
+		"invalid locale":     {Locale: "../../en-GB"},
+		"invalid time zone":  {TimeZone: "GMT\nStandard Time"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := baseRequest()
+			request.Customizations = customizations
+			if _, err := BuildPlan(request); err == nil {
+				t.Fatalf("invalid customizations were accepted: %#v", customizations)
+			}
+		})
 	}
 }
 
@@ -123,6 +176,9 @@ func TestValidatePlanRejectsTampering(t *testing.T) {
 		"wrong filesystem": func(p *Plan) { p.OS.Filesystem = "fat32" },
 		"ESP label":        func(p *Plan) { p.ESP.Label = "SYSTEM" },
 		"ESP GPT name":     func(p *Plan) { p.ESP.GPTName = "SYSTEM" },
+		"answer hash":      func(p *Plan) { p.AnswerFileSHA256 = strings.Repeat("0", 64) },
+		"answer size":      func(p *Plan) { p.AnswerFileBytes++ },
+		"customization":    func(p *Plan) { p.Customizations.LocalAccount = "ChangedUser" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			copy := plan
@@ -131,5 +187,26 @@ func TestValidatePlanRejectsTampering(t *testing.T) {
 				t.Fatal("tampered plan was accepted")
 			}
 		})
+	}
+}
+
+func TestCustomizationSummaryIsExactAndAlwaysDisclosesInternalDiskPolicy(t *testing.T) {
+	zero := (Customizations{}).Summary()
+	if zero != "mandatory internal-disk offline policy" {
+		t.Fatalf("zero summary=%q", zero)
+	}
+	value := (Customizations{
+		BypassOnlineAccount: true, LocalAccount: "PortableUser",
+		ReduceDataCollection: true, QualityOfLife: true,
+		Locale: "en-GB", TimeZone: "GMT Standard Time",
+	}).Summary()
+	for _, want := range []string{
+		"online-account bypass", "local administrator PortableUser", "reduced data collection",
+		"Quality of Life changes", "locale en-GB", "time zone GMT Standard Time",
+		"mandatory internal-disk offline policy",
+	} {
+		if !strings.Contains(value, want) {
+			t.Fatalf("summary %q missing %q", value, want)
+		}
 	}
 }

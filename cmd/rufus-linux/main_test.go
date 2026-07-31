@@ -906,7 +906,9 @@ func TestGraphicalWindowsToGoEnvelopeIsExact(t *testing.T) {
 		"cluster override":      func(v *graphicalWriteEnvelope) { v.ClusterSize = "4096" },
 		"driver":                func(v *graphicalWriteEnvelope) { v.DriverFolder = "/drivers" },
 		"DBX":                   func(v *graphicalWriteEnvelope) { v.DBXFile = "/dbx.bin" },
-		"installer option":      func(v *graphicalWriteEnvelope) { v.WinPrivacy = true },
+		"installer hardware":    func(v *graphicalWriteEnvelope) { v.WinBypassHardware = true },
+		"installer bitlocker":   func(v *graphicalWriteEnvelope) { v.WinDisableBitLocker = true },
+		"installer policy":      func(v *graphicalWriteEnvelope) { v.WinApplySkuSiPolicy = true },
 		"silent install":        func(v *graphicalWriteEnvelope) { v.WinSilentInstall = true },
 		"missing experimental":  func(v *graphicalWriteEnvelope) { v.ExperimentalWindowsToGo = false },
 		"missing image":         func(v *graphicalWriteEnvelope) { v.WinToGoImageIndex = 0 },
@@ -922,6 +924,26 @@ func TestGraphicalWindowsToGoEnvelopeIsExact(t *testing.T) {
 				t.Fatalf("mutation accepted: %#v, error=%v", value, err)
 			}
 		})
+	}
+}
+
+func TestGraphicalWindowsToGoEnvelopeAdmitsFirstBootCustomizations(t *testing.T) {
+	envelope := graphicalWriteEnvelope{
+		Mode: "windows-to-go", Yes: true, JSONProgress: true,
+		ExpectedIdentity: "identity", CancelFile: "/run/user/1000/rufusarm64.cancel",
+		VolumeLabel: "RUFUSARM64", PartitionScheme: "auto", TargetSystem: "auto",
+		Filesystem: "auto", ClusterSize: "auto", PersistenceSize: "0",
+		ExperimentalWindowsToGo: true, WinToGoImageIndex: 3,
+		WinToGoConfirm:  "CREATE EXPERIMENTAL WINDOWS TO GO",
+		WinBypassOnline: true, WinLocalUser: "PortableUser", WinPrivacy: true,
+		WinQualityOfLife: true, WinLocale: "en-GB", WinTimeZone: "GMT Standard Time",
+	}
+	if err := validateGraphicalWriteEnvelope(envelope); err != nil {
+		t.Fatal(err)
+	}
+	envelope.WinLocalUser = "Administrator"
+	if err := validateGraphicalWriteEnvelope(envelope); err == nil {
+		t.Fatal("reserved Windows To Go local account was accepted")
 	}
 }
 

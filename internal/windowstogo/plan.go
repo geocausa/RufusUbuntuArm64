@@ -6,6 +6,8 @@
 package windowstogo
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -16,7 +18,7 @@ import (
 )
 
 const (
-	SchemaVersion = 1
+	SchemaVersion = 2
 	Mode          = "windows-to-go"
 
 	alignmentBytes     = uint64(1024 * 1024)
@@ -30,6 +32,72 @@ const (
 	noDefaultDriveLetter   = uint64(1) << 63
 )
 
+type Customizations struct {
+	BypassOnlineAccount  bool   `json:"bypass_online_account"`
+	LocalAccount         string `json:"local_account"`
+	ReduceDataCollection bool   `json:"reduce_data_collection"`
+	QualityOfLife        bool   `json:"quality_of_life"`
+	Locale               string `json:"locale"`
+	TimeZone             string `json:"time_zone"`
+}
+
+func (customizations Customizations) Enabled() bool {
+	return customizations.BypassOnlineAccount || strings.TrimSpace(customizations.LocalAccount) != "" ||
+		customizations.ReduceDataCollection || customizations.QualityOfLife ||
+		strings.TrimSpace(customizations.Locale) != "" || strings.TrimSpace(customizations.TimeZone) != ""
+}
+
+func (customizations Customizations) Summary() string {
+	parts := make([]string, 0, 7)
+	if customizations.BypassOnlineAccount {
+		parts = append(parts, "online-account bypass")
+	}
+	if user := strings.TrimSpace(customizations.LocalAccount); user != "" {
+		parts = append(parts, "local administrator "+user)
+	}
+	if customizations.ReduceDataCollection {
+		parts = append(parts, "reduced data collection")
+	}
+	if customizations.QualityOfLife {
+		parts = append(parts, "Quality of Life changes")
+	}
+	if locale := strings.TrimSpace(customizations.Locale); locale != "" {
+		parts = append(parts, "locale "+locale)
+	}
+	if zone := strings.TrimSpace(customizations.TimeZone); zone != "" {
+		parts = append(parts, "time zone "+zone)
+	}
+	parts = append(parts, "mandatory internal-disk offline policy")
+	return strings.Join(parts, ", ")
+}
+
+func (customizations Customizations) windowsOptions() windowsconfig.Options {
+	return windowsconfig.Options{
+		BypassOnlineAccount:  customizations.BypassOnlineAccount,
+		LocalAccount:         customizations.LocalAccount,
+		ReduceDataCollection: customizations.ReduceDataCollection,
+		QualityOfLife:        customizations.QualityOfLife,
+		Locale:               customizations.Locale,
+		TimeZone:             customizations.TimeZone,
+	}
+}
+
+func canonicalCustomizations(customizations Customizations) (Customizations, error) {
+	for name, value := range map[string]string{
+		"local account": customizations.LocalAccount,
+		"locale":        customizations.Locale,
+		"time zone":     customizations.TimeZone,
+	} {
+		if value != strings.TrimSpace(value) {
+			return Customizations{}, fmt.Errorf("windows To Go %s must be canonical without surrounding whitespace", name)
+		}
+	}
+	if err := windowsconfig.ValidateWindowsToGo(customizations.windowsOptions()); err != nil {
+		return Customizations{}, err
+	}
+	return customizations, nil
+}
+
 type Request struct {
 	TargetPath        string
 	ExpectedIdentity  string
@@ -37,6 +105,7 @@ type Request struct {
 	LogicalSectorSize uint64
 	Metadata          windowsconfig.MediaMetadata
 	ImageIndex        int
+	Customizations    Customizations
 }
 
 type Partition struct {
@@ -72,6 +141,9 @@ type Plan struct {
 	MinimumFreeBytes  uint64                     `json:"minimum_free_bytes"`
 	RequiredTools     []string                   `json:"required_tools"`
 	Warnings          []string                   `json:"warnings"`
+	Customizations    Customizations             `json:"customizations"`
+	AnswerFileBytes   uint64                     `json:"answer_file_bytes"`
+	AnswerFileSHA256  string                     `json:"answer_file_sha256"`
 }
 
 func BuildPlan(request Request) (Plan, error) {
@@ -109,6 +181,15 @@ func BuildPlan(request Request) (Plan, error) {
 	if strings.TrimSpace(image.DefaultLanguage) == "" {
 		return Plan{}, errors.New("the selected Windows image does not publish a default language")
 	}
+	customizations, err := canonicalCustomizations(request.Customizations)
+	if err != nil {
+		return Plan{}, fmt.Errorf("validate Windows To Go customizations: %w", err)
+	}
+	answerFile, err := WindowsToGoAnswerFile(customizations)
+	if err != nil {
+		return Plan{}, fmt.Errorf("generate Windows To Go answer file: %w", err)
+	}
+	answerDigest := sha256.Sum256(answerFile)
 
 	start := alignUp(alignmentBytes, request.LogicalSectorSize)
 	espSize := alignUp(espSizeBytes, request.LogicalSectorSize)
@@ -150,6 +231,9 @@ func BuildPlan(request Request) (Plan, error) {
 		MinimumFreeBytes: minimumFreeBytes,
 		RequiredTools:    requiredTools(),
 		Warnings:         warnings(),
+		Customizations:   customizations,
+		AnswerFileBytes:  uint64(len(answerFile)),
+		AnswerFileSHA256: hex.EncodeToString(answerDigest[:]),
 	}
 	if err := ValidatePlan(plan); err != nil {
 		return Plan{}, err
@@ -206,6 +290,18 @@ func ValidatePlan(plan Plan) error {
 	if !slices.Equal(plan.RequiredTools, requiredTools()) || !slices.Equal(plan.Warnings, warnings()) {
 		return errors.New("windows To Go plan tooling or warning contract was altered")
 	}
+	customizations, err := canonicalCustomizations(plan.Customizations)
+	if err != nil || customizations != plan.Customizations {
+		return errors.New("windows To Go plan customization contract is invalid")
+	}
+	answerFile, err := WindowsToGoAnswerFile(customizations)
+	if err != nil {
+		return fmt.Errorf("regenerate Windows To Go answer file: %w", err)
+	}
+	answerDigest := sha256.Sum256(answerFile)
+	if plan.AnswerFileBytes != uint64(len(answerFile)) || plan.AnswerFileSHA256 != hex.EncodeToString(answerDigest[:]) {
+		return errors.New("windows To Go plan answer-file evidence was altered")
+	}
 	return nil
 }
 
@@ -222,6 +318,7 @@ func warnings() []string {
 		"This operation erases the complete selected target drive.",
 		"Microsoft removed Windows To Go support; modern Windows compatibility is not claimed.",
 		"The resulting media is experimental and physical UEFI boot is not established by software checks.",
+		"Internal disks are kept offline through mandatory SAN policy 4 during Windows To Go first boot.",
 		"wimlib cannot restore encrypted files or Windows extended attributes; media containing them may be unsuitable.",
 	}
 }

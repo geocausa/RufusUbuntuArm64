@@ -286,13 +286,13 @@ class WindowsOptionsDialog(Gtk.Dialog):
         scroll.add(box)
 
         title = Gtk.Label()
-        title.set_markup("<span size='large' weight='bold'>Customize Windows Setup</span>")
+        title.set_markup("<span size='large' weight='bold'>Customize Windows Setup or Windows To Go first boot</span>")
         title.set_xalign(0)
         box.pack_start(title, False, False, 0)
 
         intro = Gtk.Label(
             label=(
-                "Every option below is optional. Most setup choices create an autounattend.xml file. "
+                "Every option below is optional. Installation-media choices create autounattend.xml; supported Windows To Go choices are installed as Windows/Panther/unattend.xml for first boot. "
                 "The CA 2023 option instead replaces a bounded set of boot files on the completed USB from the selected ISO's own boot.wim. "
                 "The Windows ISO itself is never modified. Leave everything unchecked for standard Microsoft setup. "
                 "Ordinary setup preferences are remembered for this user; silent installation, edition selection, Windows To Go, "
@@ -318,7 +318,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
         self.bypass_online = self.check(
             box,
             "Remove the Microsoft online-account requirement",
-            "Allows Windows setup to continue with a local account when supported by that Windows build.",
+            "Allows Windows Setup or Windows To Go first boot to continue with a local account when supported by that Windows build.",
             previous.get("bypass_online_account", False),
         )
 
@@ -342,7 +342,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
         self.reduce_data = self.check(
             box,
             "Skip privacy prompts and reduce initial data collection/recommendations",
-            "Sets Windows Setup privacy choices and disables advertising/consumer-content policies where supported.",
+            "Sets Windows Setup or Windows To Go first-boot privacy choices and disables advertising/consumer-content policies where supported.",
             previous.get("reduce_data_collection", False),
         )
         self.reduce_data.connect("toggled", lambda *_: self.update_silent_install_sensitivity())
@@ -371,7 +371,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
         if self.region_timezone:
             region_parts.append(f"time zone {self.region_timezone}")
         region_detail = (
-            "Applies " + " and ".join(region_parts) + " during Windows Setup."
+            "Applies " + " and ".join(region_parts) + " during Windows Setup or Windows To Go first boot."
             if region_parts
             else "Ubuntu's current locale or time zone could not be mapped safely to Windows."
         )
@@ -416,7 +416,7 @@ class WindowsOptionsDialog(Gtk.Dialog):
         self.windows_to_go = self.check(
             box,
             "Create Windows To Go instead of installation media (experimental)",
-            "Applies the selected Windows 11 ARM64 edition directly to this target. Microsoft removed Windows To Go support; physical firmware boot and first boot are not yet proven.",
+            "Applies the selected Windows 11 ARM64 edition directly to this target. Online-account bypass, local account, privacy, Quality of Life, and regional choices can be applied at first boot; internal disks remain offline through mandatory SAN policy 4. Microsoft removed Windows To Go support, and physical firmware boot and first boot are not yet proven.",
             previous.get("windows_to_go", False),
         )
         self.windows_to_go.connect("toggled", self.update_windows_to_go_sensitivity)
@@ -515,21 +515,20 @@ class WindowsOptionsDialog(Gtk.Dialog):
         self.update_silent_install_sensitivity()
         self.enforce_windows_image_mode()
 
-    def standard_option_widgets(self):
+    def windows_to_go_incompatible_widgets(self):
         return (
-            self.bypass_hardware, self.bypass_online, self.local_account, self.reduce_data,
-            self.quality_of_life, self.apply_sku_si_policy, self.use_ca_2023_bootloaders,
-            self.use_region, self.silent_install, self.disable_bitlocker,
+            self.bypass_hardware, self.apply_sku_si_policy, self.use_ca_2023_bootloaders,
+            self.silent_install, self.disable_bitlocker,
         )
 
     def enforce_windows_image_mode(self):
         active = bool(getattr(self, "windows_to_go_allowed", False)) and self.windows_to_go.get_active()
         if active:
-            for widget in self.standard_option_widgets():
+            for widget in self.windows_to_go_incompatible_widgets():
                 widget.set_active(False)
                 widget.set_sensitive(False)
-            self.local_user.set_text("")
-            self.local_user.set_sensitive(False)
+                widget.set_tooltip_text("This installer-only option is not supported for Windows To Go.")
+            self.update_local_user_sensitivity()
             self.silent_edition.set_sensitive(bool(self.windows_images))
         else:
             self.update_local_user_sensitivity()
@@ -2575,11 +2574,24 @@ class RufusWindow(Gtk.ApplicationWindow):
         title.set_markup("<span size='large' weight='bold'>Windows To Go is experimental and unsupported by Microsoft</span>")
         title.set_xalign(0)
         box.pack_start(title, False, False, 0)
+        first_boot_choices = [
+            name
+            for enabled, name in (
+                (options.get("bypass_online_account"), "online-account bypass"),
+                (bool(options.get("local_user")), f"local administrator {options.get('local_user', '')}"),
+                (options.get("reduce_data_collection"), "reduced data collection and privacy prompts"),
+                (options.get("quality_of_life"), "Quality of Life changes"),
+                (options.get("use_regional_settings"), "Ubuntu regional settings"),
+            )
+            if enabled
+        ]
+        first_boot_text = ", ".join(first_boot_choices) if first_boot_choices else "no optional first-boot customizations"
         explanation = Gtk.Label(
             label=(
                 f"RufusArm64 will erase {path} ({model}, {human_bytes(device.get('size'))}), apply {edition} "
                 f"(image {index}) directly to NTFS, and create a {human_bytes(plan['esp_size'])} FAT32 EFI System Partition. "
-                "Software verification checks the image, BCD, boot files, filesystems, and GPT, but it does not prove that physical firmware will boot the drive or that Windows will complete first boot. "
+                f"First boot will use {first_boot_text}; mandatory SAN policy 4 keeps internal disks offline. "
+                "Software verification checks the answer file, image, BCD, boot files, filesystems, and GPT, but it does not prove that physical firmware will boot the drive or that Windows will complete first boot. "
                 "wimlib cannot restore encrypted files or Windows extended attributes."
             )
         )
@@ -2590,6 +2602,7 @@ class RufusWindow(Gtk.ApplicationWindow):
             Gtk.CheckButton(label="I understand that the complete selected target drive will be permanently erased."),
             Gtk.CheckButton(label="I understand that Microsoft removed Windows To Go support and this drive may not boot or complete first boot."),
             Gtk.CheckButton(label=f"I confirm that {edition} (image {index}) is the edition I intend to apply to this target."),
+            Gtk.CheckButton(label="I understand that mandatory SAN policy 4 will keep this Windows To Go system from accessing internal disks."),
         ]
         def update_confirmation(*_):
             continue_button.set_sensitive(all(check.get_active() for check in checks))
@@ -2749,7 +2762,7 @@ class RufusWindow(Gtk.ApplicationWindow):
                 (options.get("apply_sku_si_policy"), "installed-system SkuSiPolicy deployment to the EFI System Partition"),
                 (options.get("use_windows_ca_2023_bootloaders"), "Windows UEFI CA 2023 boot-file replacement with mandatory SHA-256 readback; firmware CA 2023 trust required"),
                 (options.get("silent_install"), f"silent installation of {options.get('install_image_name', 'selected edition')} (image {options.get('install_image_index', 0)}), with automatic disk-0 erasure"),
-                (options.get("windows_to_go"), f"experimental Windows To Go using {options.get('install_image_name', 'selected edition')} (image {options.get('install_image_index', 0)})"),
+                (options.get("windows_to_go"), f"experimental Windows To Go using {options.get('install_image_name', 'selected edition')} (image {options.get('install_image_index', 0)}), with mandatory internal-disk offline policy"),
                 (options.get("disable_bitlocker"), "automatic encryption disabled"),
                 (options.get("use_regional_settings"), "Ubuntu regional settings"),
             )

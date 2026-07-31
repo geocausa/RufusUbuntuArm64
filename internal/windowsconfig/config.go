@@ -15,23 +15,25 @@ import (
 // Options describes optional, explicit changes to Windows Setup. A zero value
 // produces no answer file and leaves the installation media unchanged.
 type Options struct {
-	BypassHardwareChecks bool
-	BypassOnlineAccount  bool
-	LocalAccount         string
-	ReduceDataCollection bool
-	DisableBitLocker     bool
-	LoadDrivers          bool
-	QualityOfLife        bool
-	ApplySkuSiPolicy     bool
-	SilentInstall        bool
-	InstallImageIndex    int
-	BootLanguage         string
-	Locale               string
-	TimeZone             string
+	BypassHardwareChecks  bool
+	BypassOnlineAccount   bool
+	LocalAccount          string
+	ReduceDataCollection  bool
+	DisableBitLocker      bool
+	LoadDrivers           bool
+	QualityOfLife         bool
+	ApplySkuSiPolicy      bool
+	SilentInstall         bool
+	InstallImageIndex     int
+	BootLanguage          string
+	Locale                string
+	TimeZone              string
+	WindowsToGo           bool
+	OfflineInternalDrives bool
 }
 
 func (o Options) Enabled() bool {
-	return o.BypassHardwareChecks || o.BypassOnlineAccount || strings.TrimSpace(o.LocalAccount) != "" || o.ReduceDataCollection || o.DisableBitLocker || o.LoadDrivers || o.QualityOfLife || o.ApplySkuSiPolicy || o.SilentInstall || strings.TrimSpace(o.Locale) != "" || strings.TrimSpace(o.TimeZone) != ""
+	return o.BypassHardwareChecks || o.BypassOnlineAccount || strings.TrimSpace(o.LocalAccount) != "" || o.ReduceDataCollection || o.DisableBitLocker || o.LoadDrivers || o.QualityOfLife || o.ApplySkuSiPolicy || o.SilentInstall || strings.TrimSpace(o.Locale) != "" || strings.TrimSpace(o.TimeZone) != "" || o.WindowsToGo || o.OfflineInternalDrives
 }
 
 var validLocale = regexp.MustCompile(`^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$`)
@@ -96,6 +98,16 @@ func Validate(o Options) error {
 	if bootLanguage != "" && !validLocale.MatchString(bootLanguage) {
 		return fmt.Errorf("invalid Windows Setup boot language %q", bootLanguage)
 	}
+	if o.WindowsToGo {
+		if !o.OfflineInternalDrives {
+			return errors.New("windows To Go requires the internal-disk offline SAN policy")
+		}
+		if o.BypassHardwareChecks || o.DisableBitLocker || o.LoadDrivers || o.ApplySkuSiPolicy || o.SilentInstall || o.InstallImageIndex != 0 || bootLanguage != "" {
+			return errors.New("windows To Go supports only online-account bypass, local account, reduced data collection, Quality of Life, locale, time zone, and the required internal-disk offline policy")
+		}
+	} else if o.OfflineInternalDrives {
+		return errors.New("the internal-disk offline SAN policy is valid only for Windows To Go")
+	}
 	if o.SilentInstall {
 		if username == "" || !o.ReduceDataCollection || locale == "" || timeZone == "" {
 			return errors.New("silent installation requires a local account, reduced data collection, locale, and time zone")
@@ -105,6 +117,25 @@ func Validate(o Options) error {
 		}
 	}
 	return nil
+}
+
+// ValidateWindowsToGo validates the supported first-boot customizations while
+// always retaining SAN policy 4 so the portable system cannot access internal
+// disks during its first boot.
+func ValidateWindowsToGo(o Options) error {
+	o.WindowsToGo = true
+	o.OfflineInternalDrives = true
+	return Validate(o)
+}
+
+// GenerateWindowsToGo creates the answer file installed below Windows/Panther
+// on an already-applied Windows To Go volume. Installer-only windowsPE settings
+// are deliberately excluded; the required offlineServicing SAN policy and the
+// selected specialize/oobeSystem settings remain deterministic.
+func GenerateWindowsToGo(architecture string, o Options) ([]byte, error) {
+	o.WindowsToGo = true
+	o.OfflineInternalDrives = true
+	return Generate(architecture, o)
 }
 
 // Generate creates an autounattend.xml for a supported Windows installation ISO.
@@ -129,10 +160,16 @@ func Generate(architecture string, o Options) ([]byte, error) {
 	b.WriteString("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")
 	b.WriteString("<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n")
 
+	if o.OfflineInternalDrives {
+		b.WriteString("  <settings pass=\"offlineServicing\">\n")
+		fmt.Fprintf(&b, "    <component name=\"Microsoft-Windows-PartitionManager\" processorArchitecture=\"%s\" language=\"neutral\" publicKeyToken=\"31bf3856ad364e35\" versionScope=\"nonSxS\" xmlns:wcm=\"http://schemas.microsoft.com/WMIConfig/2002/State\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n", arch)
+		b.WriteString("      <SanPolicy>4</SanPolicy>\n    </component>\n  </settings>\n")
+	}
+
 	locale := strings.TrimSpace(o.Locale)
 	timeZone := strings.TrimSpace(o.TimeZone)
 	setupComponent := o.BypassHardwareChecks || o.DisableBitLocker || o.LoadDrivers || o.SilentInstall
-	if setupComponent || locale != "" {
+	if !o.WindowsToGo && (setupComponent || locale != "") {
 		b.WriteString("  <settings pass=\"windowsPE\">\n")
 		if setupComponent {
 			fmt.Fprintf(&b, "    <component name=\"Microsoft-Windows-Setup\" processorArchitecture=\"%s\" language=\"neutral\" publicKeyToken=\"31bf3856ad364e35\" versionScope=\"nonSxS\" xmlns:wcm=\"http://schemas.microsoft.com/WMIConfig/2002/State\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n", arch)

@@ -80,6 +80,11 @@ func TestCreateRealWindowsARM64Loop(t *testing.T) {
 		TargetSizeBytes: targetSize, LogicalSectorSize: 512,
 		ExpectedDeviceID: uint64(stat.Rdev), ExpectedIdentity: "real-loop-windows-to-go",
 		ExpectedSource: sourceIdentity, ImageIndex: 3,
+		Customizations: Customizations{
+			BypassOnlineAccount: true, LocalAccount: "PortableUser",
+			ReduceDataCollection: true, QualityOfLife: true,
+			Locale: "en-GB", TimeZone: "GMT Standard Time",
+		},
 	}, func(event Event) {
 		events = append(events, event)
 		t.Logf("%s: %s (%d/%d)", event.Stage, event.Message, event.Done, event.Total)
@@ -91,7 +96,9 @@ func TestCreateRealWindowsARM64Loop(t *testing.T) {
 		t.Fatalf("result escaped experimental boundary: %#v", result)
 	}
 	if result.Materialization.BootFiles == 0 || result.Materialization.BCD.OutputBytes == 0 ||
-		result.Materialization.BootManagerSHA256 == "" || result.Materialization.OfflinePolicySHA256 == "" {
+		result.Materialization.BootManagerSHA256 == "" || result.Materialization.OfflinePolicySHA256 == "" ||
+		result.Materialization.AnswerFileSHA256 != result.Plan.AnswerFileSHA256 ||
+		result.Materialization.AnswerFileBytes != result.Plan.AnswerFileBytes || !result.Plan.Customizations.Enabled() {
 		t.Fatalf("incomplete materialization evidence: %#v", result.Materialization)
 	}
 	var sawApplyProgress, sawApplyComplete bool
