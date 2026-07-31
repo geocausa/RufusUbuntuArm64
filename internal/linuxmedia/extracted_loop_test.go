@@ -136,16 +136,16 @@ func TestCreateExtractedOnRealLoopDeviceMBR(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	blkidOutput, err := exec.Command("blkid", "-p", "-o", "export", partitionPath).CombinedOutput()
+	blkidOutput, err := waitForExtractedBlkid(partitionPath, false, 10*time.Second)
 	if err != nil {
-		t.Fatalf("inspect completed FAT32 partition: %v: %s", err, strings.TrimSpace(string(blkidOutput)))
+		t.Fatalf("inspect completed FAT32 partition: %v", err)
 	}
 	metadata := string(blkidOutput)
 	if !strings.Contains(metadata, "TYPE=vfat") || !strings.Contains(metadata, "LABEL=RUFUS-LIVE") {
 		t.Fatalf("unexpected completed filesystem metadata:\n%s", metadata)
 	}
 
-	output, err = exec.Command("mount", "-t", "vfat", "-o", "ro,nosuid,nodev,noexec", "--", partitionPath, mountRoot).CombinedOutput()
+	output, err = waitForExtractedReadOnlyMount(partitionPath, mountRoot, "vfat", 10*time.Second)
 	if err != nil {
 		t.Fatalf("mount completed ISO Image mode media: %v: %s", err, strings.TrimSpace(string(output)))
 	}
